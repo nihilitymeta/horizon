@@ -22,6 +22,46 @@ struct PostOut {
     return textureSampleLevel(world, world_sampler, in.uv, 0.0);
 }
 
+override CAS_SHARPNESS: f32 = 0.6;
+
+// AMD FidelityFX Contrast Adaptive Sharpening (CAS):
+// Single-pass adaptive sharpening that restores fine texture clarity
+// while preventing halos and ringing around high-contrast edges.
+@fragment fn fs_cas(in: PostOut) -> @location(0) vec4<f32> {
+    let dims = vec2<f32>(textureDimensions(world));
+    let texel = 1.0 / dims;
+
+    // Fetch the 3x3 cross neighborhood (5 taps)
+    //     a
+    //   b e d
+    //     c
+    let a = textureSampleLevel(world, world_sampler, in.uv + vec2<f32>(0.0, -1.0) * texel, 0.0).rgb;
+    let b = textureSampleLevel(world, world_sampler, in.uv + vec2<f32>(-1.0, 0.0) * texel, 0.0).rgb;
+    let e = textureSampleLevel(world, world_sampler, in.uv, 0.0);
+    let d = textureSampleLevel(world, world_sampler, in.uv + vec2<f32>(1.0, 0.0) * texel, 0.0).rgb;
+    let c = textureSampleLevel(world, world_sampler, in.uv + vec2<f32>(0.0, 1.0) * texel, 0.0).rgb;
+
+    // Local min and max bounds per color channel
+    let min_rgb = min(e.rgb, min(min(a, b), min(d, c)));
+    let max_rgb = max(e.rgb, max(max(a, b), max(d, c)));
+
+    // Contrast calculation (FidelityFX CAS)
+    let safe_max = max(max_rgb, vec3<f32>(1e-5));
+    let amp = clamp(min(min_rgb, vec3<f32>(2.0) - max_rgb) / safe_max, vec3<f32>(0.0), vec3<f32>(1.0));
+
+    // Peak negative weight scaled by sharpness (0.0 to 1.0)
+    let w = -sqrt(amp) * (clamp(CAS_SHARPNESS, 0.0, 1.0) * 0.20);
+
+    // Filter kernel convolution and normalization
+    let denom = 4.0 * w + vec3<f32>(1.0);
+    let sharpened = (w * (a + b + d + c) + e.rgb) / denom;
+
+    // Clamp to local contrast bounds to prevent any overshoot/undershoot
+    let final_rgb = clamp(sharpened, min_rgb, max_rgb);
+
+    return vec4<f32>(final_rgb, e.a);
+}
+
 fn luma(c: vec3<f32>) -> f32 {
     return dot(c, vec3(0.299, 0.587, 0.114));
 }

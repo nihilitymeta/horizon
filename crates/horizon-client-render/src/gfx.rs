@@ -6269,12 +6269,21 @@ impl Renderer {
         self.frame_gen.on = on;
     }
     /// `upscale`: output pixels per rendered pixel, for TAA to rebuild (1: native).
-    pub fn set_world_post(&mut self, scale: f32, antialias: bool, taa: bool, upscale: f32) {
+    pub fn set_world_post(
+        &mut self,
+        scale: f32,
+        antialias: bool,
+        taa: bool,
+        upscale: f32,
+        cas: crate::graphics::CasMode,
+        cas_sharpness: f32,
+    ) {
         let taa = taa && self.world_post.supports_taa();
         self.world_post.scale = scale.clamp(0.25, 2.0);
         self.world_post.antialias = antialias && !taa;
         self.world_post.taa = taa;
         self.world_post.upscale = if taa { upscale.clamp(1.0, 4.0) } else { 1.0 };
+        self.world_post.set_cas(&self.device, cas, cas_sharpness);
     }
     /// Runs `post` over the world from now on (`None`: no pack), for the dimension `dimension`;
     /// `block_ids` gives each block sprite layer's `mc_Entity` (id, fluid) and `at_midBlock.w`

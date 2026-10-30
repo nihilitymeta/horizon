@@ -91,6 +91,8 @@ pub enum H {
     Upscaling,
     ScreenshotQuality,
     FrameGeneration,
+    Cas,
+    CasSharpness,
     Hdr,
     HdrBlackLevel,
     /// Binds `Graphics::hdr_key`.
@@ -336,6 +338,16 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
                             H::FrameGeneration,
                             Medium,
                             "Shows a made-up frame between each two real ones: smoother, a little more lag.",
+                        ),
+                        h(
+                            H::Cas,
+                            Low,
+                            "AMD FidelityFX Contrast Adaptive Sharpening: restores fine texture clarity.",
+                        ),
+                        h(
+                            H::CasSharpness,
+                            None,
+                            "Intensity of the adaptive sharpening filter.",
                         ),
                     ],
                 ),
@@ -708,6 +720,7 @@ impl H {
             }
             H::Workers => Some(g.workers as f32 / max_workers() as f32),
             H::ResolutionScale => Some((g.resolution_scale as f32 - 50.0) / 150.0),
+            H::CasSharpness => Some(g.cas_sharpness as f32 / 100.0),
             // Auto, then 10..480 by 10.
             H::HdrPaperWhite => Some(g.hdr_paper_white as f32 / 480.0),
             // Auto, then 200..2000 by 50.
@@ -726,6 +739,7 @@ impl H {
             H::UploadBudget => Some((UPLOAD_STEPS.len() - 1) as u32),
             H::Workers => Some(max_workers()),
             H::ResolutionScale => Some(30),
+            H::CasSharpness => Some(20),
             H::HdrPaperWhite => Some(41),
             H::HdrPeak => Some(37),
             H::HdrBlackLevel => Some(100),
@@ -805,6 +819,8 @@ impl H {
                 labelled("Screenshot Quality", format!("{}x", g.screenshot_quality))
             }
             H::FrameGeneration => labelled("Frame Generation", g.frame_generation.label()),
+            H::Cas => labelled("AMD CAS", g.cas.label()),
+            H::CasSharpness => labelled("CAS Sharpness", format!("{}%", g.cas_sharpness)),
             H::Hdr => labelled("HDR", on_off(g.hdr)),
             H::HdrCalibrate => Text::literal(lang::get(match setup(s) {
                 Setup::Unknown => "Calibrate...",
@@ -870,6 +886,7 @@ impl H {
             }
             H::Workers => g.workers = (v * max_workers() as f32).round() as u32,
             H::ResolutionScale => g.resolution_scale = (50.0 + (v * 30.0).round() * 5.0) as u32,
+            H::CasSharpness => g.cas_sharpness = (v * 20.0).round() as u32 * 5,
             H::HdrPaperWhite => g.hdr_paper_white = (v * 48.0).round() as u32 * 10,
             H::HdrPeak => {
                 g.hdr_peak = match (v * 37.0).round() as u32 {
@@ -954,6 +971,7 @@ impl H {
             H::FrameGeneration => {
                 g.frame_generation = step(&FrameGeneration::ALL, g.frame_generation, back)
             }
+            H::Cas => g.cas = step(&crate::graphics::CasMode::ALL, g.cas, back),
             H::Hdr => g.hdr = !g.hdr,
             H::HdrLighting => g.hdr_lighting = !g.hdr_lighting,
             H::BatteryMode => g.battery = !g.battery,
@@ -1322,9 +1340,14 @@ impl Columns {
     }
 }
 
-/// Whether a setting is on the screen now: Upscaling only while TAA is, which does it.
+/// Whether a setting is on the screen now: Upscaling only while TAA is, which does it, and
+/// CAS Sharpness only while CAS is on.
 fn shown(item: Item, s: &Settings) -> bool {
-    item != Item::Horizon(H::Upscaling) || s.horizon.taa
+    match item {
+        Item::Horizon(H::Upscaling) => s.horizon.taa,
+        Item::Horizon(H::CasSharpness) => s.horizon.cas != crate::graphics::CasMode::Off,
+        _ => true,
+    }
 }
 /// A control's label as its name and its value ("Render Distance" and "12 chunks").
 fn parts(item: Item, s: &Settings, binding: bool) -> (String, Option<String>) {
@@ -2469,11 +2492,13 @@ mod tests {
                 .filter_map(|l| l.setting.map(|r| (l.page, r.item)))
                 .collect::<Vec<_>>()
         };
-        // Upscaling shows only with TAA, off by default.
+        // Upscaling shows only with TAA, and CAS Sharpness only with CAS: both off by default.
         let on = |page| -> Vec<(Page, Item)> {
             items()
                 .into_iter()
-                .filter(|(p, i)| *p == page && *i != Item::Horizon(H::Upscaling))
+                .filter(|(p, i)| {
+                    *p == page && !matches!(i, Item::Horizon(H::Upscaling | H::CasSharpness))
+                })
                 .collect()
         };
         assert_eq!(settings(&mut ui, &s), on(Page::General));
@@ -3041,6 +3066,25 @@ mod tests {
         assert!(!shown(upscaling, &s));
         s.horizon.taa = true;
         assert!(shown(upscaling, &s));
+    }
+
+    #[test]
+    fn cas_cycles_modes_and_controls_sharpness_slider_visibility() {
+        let mut s = Settings::default();
+        let cas_item = Item::Horizon(H::Cas);
+        let sharpness_item = Item::Horizon(H::CasSharpness);
+
+        assert_eq!(cas_item.label(&s).plain(), "AMD CAS: Off");
+
+        // The sharpness slider is hidden while CAS is Off.
+        assert!(!shown(sharpness_item, &s));
+
+        // Off -> Res Scale -> Post-TAA -> TAA & Res Scale -> Always -> Off
+        for expected in ["Res Scale", "Post-TAA", "TAA & Res Scale", "Always", "Off"] {
+            cas_item.cycle(&mut s, false, [854, 480]);
+            assert_eq!(cas_item.label(&s).plain(), format!("AMD CAS: {expected}"));
+            assert_eq!(shown(sharpness_item, &s), expected != "Off");
+        }
     }
 
     #[test]

@@ -484,6 +484,62 @@ impl Upscaling {
     }
 }
 
+/// AMD FidelityFX Contrast Adaptive Sharpening (CAS) mode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum CasMode {
+    #[default]
+    Off,
+    ResScale,
+    PostTaa,
+    Both,
+    Always,
+}
+impl CasMode {
+    pub const ALL: [CasMode; 5] = [
+        CasMode::Off,
+        CasMode::ResScale,
+        CasMode::PostTaa,
+        CasMode::Both,
+        CasMode::Always,
+    ];
+    pub fn name(self) -> &'static str {
+        match self {
+            CasMode::Off => "off",
+            CasMode::ResScale => "resScale",
+            CasMode::PostTaa => "postTaa",
+            CasMode::Both => "both",
+            CasMode::Always => "always",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            CasMode::Off => "Off",
+            CasMode::ResScale => "Res Scale",
+            CasMode::PostTaa => "Post-TAA",
+            CasMode::Both => "TAA & Res Scale",
+            CasMode::Always => "Always",
+        }
+    }
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "resScale" => CasMode::ResScale,
+            "postTaa" => CasMode::PostTaa,
+            "both" => CasMode::Both,
+            "always" => CasMode::Always,
+            _ => CasMode::Off,
+        }
+    }
+    pub fn is_active(self, taa: bool, res_scale: bool) -> bool {
+        match self {
+            CasMode::Off => false,
+            CasMode::ResScale => res_scale,
+            CasMode::PostTaa => taa,
+            CasMode::Both => taa || res_scale,
+            CasMode::Always => true,
+        }
+    }
+}
+
 static REDUCED_SUGGESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Whether the settings suggest Reduced far detail: set when the renderer
 /// starts, on the GPUs `lod_capped` names (far terrain slows them most).
@@ -661,6 +717,10 @@ pub struct Graphics {
     pub screenshot_quality: u32,
     /// Frame generation (Horizon setting), off by default.
     pub frame_generation: FrameGeneration,
+    /// AMD FidelityFX Contrast Adaptive Sharpening (CAS).
+    pub cas: CasMode,
+    /// CAS sharpening strength, in percent (0..=100).
+    pub cas_sharpness: u32,
     /// HDR output (HDR10, or scRGB), where the display path offers it.
     pub hdr: bool,
     /// HDR paper white (where SDR white sits), in nits; 0 is Auto: the desktop's SDR
@@ -745,6 +805,8 @@ impl Default for Graphics {
             upscaling: Upscaling::Native,
             screenshot_quality: 1,
             frame_generation: FrameGeneration::Off,
+            cas: CasMode::Off,
+            cas_sharpness: 60,
             hdr: false,
             hdr_paper_white: 0,
             hdr_peak: 0,
@@ -867,6 +929,8 @@ impl Graphics {
                         .unwrap_or(1)
                 }
                 "frameGeneration" => g.frame_generation = FrameGeneration::parse(value),
+                "cas" => g.cas = CasMode::parse(value),
+                "casSharpness" => g.cas_sharpness = number(g.cas_sharpness).clamp(0, 100),
                 "hdr" => g.hdr = flag(g.hdr),
                 "hdrLighting" => g.hdr_lighting = flag(g.hdr_lighting),
                 "hdrPaperWhite" => {
@@ -906,7 +970,7 @@ impl Graphics {
     }
     pub fn serialize(&self) -> String {
         let mut text = format!(
-            "preset:{}\nlodDistance:{}\nfarDetail:{}\ncaveCulling:{}\nentityCulling:{}\nparticleCulling:{}\nleafCulling:{}\nblockEntityCacheShulkerBoxes:{}\nblockEntityCacheSigns:{}\nblockEntityCacheDecoratedPots:{}\nblockEntityCacheBells:{}\nblockEntityCacheChests:{}\nblockEntityCacheBanners:{}\nblockEntityCacheCopperGolemStatues:{}\nchunkUpdates:{}\nuploadBudgetKiB:{}\ntextureBudgetMiB:{}\nsky:{}\nfog:{}\nweather:{}\nanimatedTextures:{}\nditherCutoutMips:{}\npresentMode:{}\nframePacing:{}\nworkers:{}\noverlay:{}\nresolutionScale:{}\nfxaa:{}\ntaa:{}\nupscaling:{}\nscreenshotQuality:{}\nframeGeneration:{}\nhdr:{}\nhdrPaperWhite:{}\nhdrPeak:{}\nhdrBlackLevel:{}\nhdrUiBrightness:{}\nhdrLighting:{}\nhdrKey:{}\nbatteryMode:{}\nshadowCache:{}\ngraphicsApi:{}\npickedShaderPack:{}\nbatchTranslucent:{}\nhdrSmoothGradients:{}\n",
+            "preset:{}\nlodDistance:{}\nfarDetail:{}\ncaveCulling:{}\nentityCulling:{}\nparticleCulling:{}\nleafCulling:{}\nblockEntityCacheShulkerBoxes:{}\nblockEntityCacheSigns:{}\nblockEntityCacheDecoratedPots:{}\nblockEntityCacheBells:{}\nblockEntityCacheChests:{}\nblockEntityCacheBanners:{}\nblockEntityCacheCopperGolemStatues:{}\nchunkUpdates:{}\nuploadBudgetKiB:{}\ntextureBudgetMiB:{}\nsky:{}\nfog:{}\nweather:{}\nanimatedTextures:{}\nditherCutoutMips:{}\npresentMode:{}\nframePacing:{}\nworkers:{}\noverlay:{}\nresolutionScale:{}\nfxaa:{}\ntaa:{}\nupscaling:{}\ncas:{}\ncasSharpness:{}\nscreenshotQuality:{}\nframeGeneration:{}\nhdr:{}\nhdrPaperWhite:{}\nhdrPeak:{}\nhdrBlackLevel:{}\nhdrUiBrightness:{}\nhdrLighting:{}\nhdrKey:{}\nbatteryMode:{}\nshadowCache:{}\ngraphicsApi:{}\npickedShaderPack:{}\nbatchTranslucent:{}\nhdrSmoothGradients:{}\n",
             self.preset.name(),
             self.lod_distance,
             self.far_detail.name(),
@@ -944,6 +1008,8 @@ impl Graphics {
             bool_text(self.fxaa),
             bool_text(self.taa),
             self.upscaling.name(),
+            self.cas.name(),
+            self.cas_sharpness,
             self.screenshot_quality,
             self.frame_generation.name(),
             bool_text(self.hdr),
@@ -1125,6 +1191,8 @@ mod tests {
             upscaling: Upscaling::Balanced,
             screenshot_quality: 4,
             frame_generation: FrameGeneration::Fsr31,
+            cas: CasMode::Both,
+            cas_sharpness: 80,
             hdr: true,
             hdr_paper_white: 240,
             hdr_peak: 1400,

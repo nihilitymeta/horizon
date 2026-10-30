@@ -53,15 +53,22 @@ struct TaaResources {
 }
 
 pub struct Post {
+    shader: wgpu::ShaderModule,
+    pipeline_layout: wgpu::PipelineLayout,
     layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     copy: wgpu::RenderPipeline,
     fxaa: wgpu::RenderPipeline,
+    cas: wgpu::RenderPipeline,
     format: wgpu::TextureFormat,
     /// World resolution relative to the window (0.5..=2.0).
     pub scale: f32,
     pub antialias: bool,
     pub taa: bool,
+    /// AMD FidelityFX CAS mode.
+    pub cas_mode: crate::graphics::CasMode,
+    /// AMD FidelityFX CAS sharpness (0.0..=1.0).
+    pub cas_sharpness: f32,
     /// Output pixels per rendered pixel while TAA is on (1: native): the world renders
     /// this much smaller and TAA rebuilds it at the resolution scale's size.
     pub upscale: f32,
@@ -234,15 +241,25 @@ impl Post {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
+        let copy = pipeline("fs_copy", &pipeline_layout, format);
+        let fxaa = pipeline("fs_fxaa", &pipeline_layout, format);
+        let default_sharpness = 0.6_f32;
+        let cas =
+            Self::make_cas_pipeline(device, &shader, &pipeline_layout, format, default_sharpness);
         Self {
-            copy: pipeline("fs_copy", &pipeline_layout, format),
-            fxaa: pipeline("fs_fxaa", &pipeline_layout, format),
+            shader,
+            pipeline_layout,
+            copy,
+            fxaa,
+            cas,
             layout,
             sampler,
             format,
             scale: 1.0,
             antialias: false,
             taa: false,
+            cas_mode: crate::graphics::CasMode::Off,
+            cas_sharpness: default_sharpness,
             upscale: 1.0,
             taa_on: false,
             target: None,
@@ -251,6 +268,72 @@ impl Post {
             taa_previous: None,
             taa_this_frame: bytemuck::Zeroable::zeroed(),
         }
+    }
+
+    fn make_cas_pipeline(
+        device: &wgpu::Device,
+        shader: &wgpu::ShaderModule,
+        layout: &wgpu::PipelineLayout,
+        format: wgpu::TextureFormat,
+        sharpness: f32,
+    ) -> wgpu::RenderPipeline {
+        let constants = [("CAS_SHARPNESS", f64::from(sharpness))];
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Horizon post CAS"),
+            layout: Some(layout),
+            vertex: wgpu::VertexState {
+                module: shader,
+                entry_point: Some("vs_post"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            primitive: Default::default(),
+            depth_stencil: None,
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: shader,
+                entry_point: Some("fs_cas"),
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    constants: &constants,
+                    ..Default::default()
+                },
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    }
+
+    /// Updates CAS mode and sharpness; rebuilds the CAS pipeline when sharpness changes.
+    pub fn set_cas(
+        &mut self,
+        device: &wgpu::Device,
+        mode: crate::graphics::CasMode,
+        sharpness: f32,
+    ) {
+        let sharpness = sharpness.clamp(0.0, 1.0);
+        if (self.cas_sharpness - sharpness).abs() > 0.001 {
+            self.cas = Self::make_cas_pipeline(
+                device,
+                &self.shader,
+                &self.pipeline_layout,
+                self.format,
+                sharpness,
+            );
+        }
+        self.cas_mode = mode;
+        self.cas_sharpness = sharpness;
+    }
+
+    /// Whether AMD CAS is active for this frame's rendering configuration.
+    pub fn cas_active(&self) -> bool {
+        let is_res_scale = self.scale != 1.0 || (self.taa_on && self.upscale != 1.0);
+        let is_taa = self.taa_on;
+        self.cas_mode.is_active(is_taa, is_res_scale)
     }
 
     /// Whether TAA is supported on this GPU/backend.
@@ -320,7 +403,7 @@ impl Post {
         window: [u32; 2],
         always: bool,
     ) -> Option<(wgpu::TextureView, wgpu::TextureView)> {
-        if self.scale == 1.0 && !self.antialias && !self.taa_on && !always {
+        if self.scale == 1.0 && !self.antialias && !self.taa_on && !self.cas_active() && !always {
             self.target = None;
             return None;
         }
@@ -555,7 +638,9 @@ impl Post {
             color_attachments: &attachments,
             ..Default::default()
         });
-        pass.set_pipeline(if self.antialias {
+        pass.set_pipeline(if self.cas_active() {
+            &self.cas
+        } else if self.antialias {
             &self.fxaa
         } else {
             &self.copy
@@ -628,8 +713,44 @@ mod tests {
         let Some((device, _)) = test_device() else {
             return;
         };
-        let post = Post::new(&device, wgpu::TextureFormat::Rgba8Unorm);
-        // Copy and FXAA pipelines always compile; TAA compiles if supported by backend.
+        let mut post = Post::new(&device, wgpu::TextureFormat::Rgba8Unorm);
+        // Copy, FXAA and CAS pipelines always compile; TAA compiles if supported by backend.
         let _ = post.supports_taa();
+        post.set_cas(&device, crate::graphics::CasMode::Both, 0.8);
+        assert_eq!(post.cas_sharpness, 0.8);
+    }
+
+    #[test]
+    fn cas_mode_active_behavior() {
+        use crate::graphics::CasMode;
+        // Off
+        assert!(!CasMode::Off.is_active(false, false));
+        assert!(!CasMode::Off.is_active(true, false));
+        assert!(!CasMode::Off.is_active(false, true));
+        assert!(!CasMode::Off.is_active(true, true));
+
+        // ResScale
+        assert!(!CasMode::ResScale.is_active(false, false));
+        assert!(!CasMode::ResScale.is_active(true, false));
+        assert!(CasMode::ResScale.is_active(false, true));
+        assert!(CasMode::ResScale.is_active(true, true));
+
+        // PostTaa
+        assert!(!CasMode::PostTaa.is_active(false, false));
+        assert!(CasMode::PostTaa.is_active(true, false));
+        assert!(!CasMode::PostTaa.is_active(false, true));
+        assert!(CasMode::PostTaa.is_active(true, true));
+
+        // Both (TAA & Res Scale)
+        assert!(!CasMode::Both.is_active(false, false));
+        assert!(CasMode::Both.is_active(true, false));
+        assert!(CasMode::Both.is_active(false, true));
+        assert!(CasMode::Both.is_active(true, true));
+
+        // Always
+        assert!(CasMode::Always.is_active(false, false));
+        assert!(CasMode::Always.is_active(true, false));
+        assert!(CasMode::Always.is_active(false, true));
+        assert!(CasMode::Always.is_active(true, true));
     }
 }
