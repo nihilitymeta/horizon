@@ -47,6 +47,7 @@ pub enum H {
     Upscaling,
     ScreenshotQuality,
     FrameGeneration,
+    MeshShaders,
     Hdr,
     /// Opens `Level::Hdr`.
     HdrSettings,
@@ -307,6 +308,11 @@ pub fn rows(level: Level) -> Vec<Row> {
                 H::FrameGeneration,
                 Medium,
                 "Shows a made-up frame between each two real ones: smoother, a little more lag.",
+            ),
+            h(
+                H::MeshShaders,
+                Low,
+                "Uses GPU task and mesh shaders to bypass fixed vertex pipeline hardware.",
             ),
             h(
                 H::HdrSettings,
@@ -596,6 +602,7 @@ impl H {
                 labelled("Screenshot Quality", format!("{}x", g.screenshot_quality))
             }
             H::FrameGeneration => labelled("Frame Generation", g.frame_generation.label()),
+            H::MeshShaders => labelled("Mesh Shaders", g.mesh_shaders.label()),
             H::Hdr => labelled("HDR", on_off(g.hdr)),
             H::HdrSettings => Text::literal(lang::get("HDR Settings...")),
             H::HdrCalibrate => Text::literal(lang::get(match setup(s) {
@@ -724,6 +731,9 @@ impl H {
             }
             H::FrameGeneration => {
                 g.frame_generation = step(&FrameGeneration::ALL, g.frame_generation, back)
+            }
+            H::MeshShaders => {
+                g.mesh_shaders = step(&crate::graphics::MeshShadersMode::ALL, g.mesh_shaders, back)
             }
             H::Hdr => g.hdr = !g.hdr,
             H::BatteryMode => g.battery = !g.battery,
@@ -1888,6 +1898,20 @@ mod tests {
         assert!(!shown(&s));
         s.horizon.taa = true;
         assert!(shown(&s));
+    }
+
+
+    #[test]
+    fn mesh_shaders_cycles_modes() {
+        let mut s = Settings::default();
+        let item = Item::Horizon(H::MeshShaders);
+        assert_eq!(item.label(&s).plain(), "Mesh Shaders: Auto");
+        item.cycle(&mut s, false, [854, 480]);
+        assert_eq!(item.label(&s).plain(), "Mesh Shaders: On");
+        item.cycle(&mut s, false, [854, 480]);
+        assert_eq!(item.label(&s).plain(), "Mesh Shaders: Off");
+        item.cycle(&mut s, false, [854, 480]);
+        assert_eq!(item.label(&s).plain(), "Mesh Shaders: Auto");
     }
 
     #[test]

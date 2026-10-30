@@ -435,6 +435,56 @@ impl Upscaling {
     }
 }
 
+
+/// Hardware task and mesh shaders mode.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MeshShadersMode {
+    #[default]
+    Auto,
+    On,
+    Off,
+}
+
+impl MeshShadersMode {
+    pub const ALL: [MeshShadersMode; 3] = [
+        MeshShadersMode::Auto,
+        MeshShadersMode::On,
+        MeshShadersMode::Off,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::On => "on",
+            Self::Off => "off",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Auto => "Auto",
+            Self::On => "On",
+            Self::Off => "Off",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "on" => Self::On,
+            "off" => Self::Off,
+            _ => Self::Auto,
+        }
+    }
+
+    pub fn is_enabled(self, supported: bool) -> bool {
+        match self {
+            Self::Auto => supported,
+            Self::On => supported,
+            Self::Off => false,
+        }
+    }
+}
+
 static REDUCED_SUGGESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Whether the settings suggest Reduced far detail: set when the renderer
 /// starts, on the GPUs `lod_capped` names (far terrain slows them most).
@@ -582,6 +632,8 @@ pub struct Graphics {
     pub screenshot_quality: u32,
     /// Frame generation (Horizon setting), off by default.
     pub frame_generation: FrameGeneration,
+    /// Hardware task and mesh shaders (`VK_EXT_mesh_shader`).
+    pub mesh_shaders: MeshShadersMode,
     /// HDR output (HDR10, or scRGB), where the display path offers it.
     pub hdr: bool,
     /// HDR paper white (where SDR white sits), in nits; 0 is Auto: the desktop's SDR
@@ -648,6 +700,7 @@ impl Default for Graphics {
             upscaling: Upscaling::Native,
             screenshot_quality: 1,
             frame_generation: FrameGeneration::Off,
+            mesh_shaders: MeshShadersMode::Auto,
             hdr: false,
             hdr_paper_white: 0,
             hdr_peak: 0,
@@ -730,6 +783,7 @@ impl Graphics {
                         .unwrap_or(1)
                 }
                 "frameGeneration" => g.frame_generation = FrameGeneration::parse(value),
+                "meshShaders" => g.mesh_shaders = MeshShadersMode::parse(value),
                 "hdr" => g.hdr = flag(g.hdr),
                 "hdrPaperWhite" => {
                     g.hdr_paper_white = match number(g.hdr_paper_white) {
@@ -767,7 +821,7 @@ impl Graphics {
     }
     pub fn serialize(&self) -> String {
         format!(
-            "preset:{}\nlodDistance:{}\nfarDetail:{}\ncaveCulling:{}\nentityCulling:{}\nleafCulling:{}\nchunkUpdates:{}\nuploadBudgetKiB:{}\ntextureBudgetMiB:{}\nsky:{}\nfog:{}\nweather:{}\nanimatedTextures:{}\nditherCutoutMips:{}\npresentMode:{}\nframePacing:{}\nworkers:{}\noverlay:{}\nresolutionScale:{}\nfxaa:{}\ntaa:{}\nupscaling:{}\nscreenshotQuality:{}\nframeGeneration:{}\nhdr:{}\nhdrPaperWhite:{}\nhdrPeak:{}\nhdrBlackLevel:{}\nhdrUiBrightness:{}\nhdrKey:{}\nbatteryMode:{}\nshadowCache:{}\ngraphicsApi:{}\npickedShaderPack:{}\nbatchTranslucent:{}\n",
+            "preset:{}\nlodDistance:{}\nfarDetail:{}\ncaveCulling:{}\nentityCulling:{}\nleafCulling:{}\nchunkUpdates:{}\nuploadBudgetKiB:{}\ntextureBudgetMiB:{}\nsky:{}\nfog:{}\nweather:{}\nanimatedTextures:{}\nditherCutoutMips:{}\npresentMode:{}\nframePacing:{}\nworkers:{}\noverlay:{}\nresolutionScale:{}\nfxaa:{}\ntaa:{}\nupscaling:{}\nmeshShaders:{}\nscreenshotQuality:{}\nframeGeneration:{}\nhdr:{}\nhdrPaperWhite:{}\nhdrPeak:{}\nhdrBlackLevel:{}\nhdrUiBrightness:{}\nhdrKey:{}\nbatteryMode:{}\nshadowCache:{}\ngraphicsApi:{}\npickedShaderPack:{}\nbatchTranslucent:{}\n",
             self.preset.name(),
             self.lod_distance,
             self.far_detail.name(),
@@ -797,6 +851,7 @@ impl Graphics {
             bool_text(self.fxaa),
             bool_text(self.taa),
             self.upscaling.name(),
+            self.mesh_shaders.key(),
             self.screenshot_quality,
             self.frame_generation.name(),
             bool_text(self.hdr),
@@ -958,6 +1013,7 @@ mod tests {
             upscaling: Upscaling::Balanced,
             screenshot_quality: 4,
             frame_generation: FrameGeneration::Fsr31,
+            mesh_shaders: MeshShadersMode::On,
             hdr: true,
             hdr_paper_white: 240,
             hdr_peak: 1400,

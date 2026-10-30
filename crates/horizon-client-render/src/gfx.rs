@@ -155,6 +155,7 @@ pub(crate) mod upload;
 mod view;
 mod wgsl_prefix;
 mod world_post;
+pub(crate) mod mesh_indicator;
 
 /// A section's instance: its camera-relative origin and, in `w`, the step of
 /// its fixed-point UVs (`terrain.wgsl`'s `terrain_uv`).
@@ -1018,6 +1019,9 @@ pub struct Renderer {
     /// The pack's terrain program reads flat draws' vertices (`pack_terrain_inputs`).
     pack_terrain_flat: bool,
     pub hud: HudRenderer,
+    mesh_shaders_supported: bool,
+    pub mesh_shaders_active: bool,
+    mesh_indicator: Option<mesh_indicator::MeshIndicator>,
     /// Vanilla's menu background blur, made on first use.
     menu_blur: Option<crate::menu_blur::MenuBlur>,
     /// `post_effect` chains, made on first use.
@@ -1706,7 +1710,8 @@ async fn open_backend(
                 | wgpu::Features::SUBGROUP
                 | wgpu::Features::VERTEX_WRITABLE_STORAGE
                 | wgpu::Features::CLEAR_TEXTURE
-                | wgpu::Features::TEXTURE_ATOMIC));
+                | wgpu::Features::TEXTURE_ATOMIC
+                | wgpu::Features::EXPERIMENTAL_MESH_SHADER));
     let driver = format!("{} {}", info.driver, info.driver_info);
     startup_step(format_args!(
         "requesting the device (driver {}) with features [{features}] and the adapter's \
@@ -1727,6 +1732,7 @@ async fn open_backend(
         // with the larger blocks a few small buffers kept whole blocks the arena's pages had
         // left, and over half the video memory reserved was unused (1,344 MiB for 500).
         memory_hints: wgpu::MemoryHints::MemoryUsage,
+        experimental_features: horizon_hdr::enable_experimental_features(),
         ..Default::default()
     };
     #[cfg(not(target_os = "macos"))]
@@ -3598,12 +3604,19 @@ impl Renderer {
                 reuse.len()
             );
         }
+        let mesh_shaders_supported = device.features().contains(wgpu::Features::EXPERIMENTAL_MESH_SHADER);
+        let mesh_indicator = if mesh_shaders_supported {
+            mesh_indicator::MeshIndicator::new(&device, config.format)
+        } else {
+            None
+        };
         if previous.is_none() {
             startup_step(format_args!(
-                "pipelines ready (multi-draw {}, occlusion culling {}, GPU timer {})",
+                "pipelines ready (multi-draw {}, occlusion culling {}, GPU timer {}, mesh shaders {})",
                 on_off(multi_draw),
                 on_off(cull.is_some()),
                 on_off(gpu_timer.is_some()),
+                on_off(mesh_shaders_supported),
             ));
         }
         Ok(Self {
@@ -3787,6 +3800,9 @@ impl Renderer {
             pack_atlas: None,
             pack_terrain_flat: false,
             hud,
+            mesh_shaders_supported,
+            mesh_shaders_active: mesh_shaders_supported,
+            mesh_indicator,
             menu_blur: None,
             post_effects: None,
             readback: readback::Readback::default(),
@@ -4885,6 +4901,18 @@ impl Renderer {
         self.world_post.antialias = antialias && !taa;
         self.world_post.taa = taa;
         self.world_post.upscale = if taa { upscale.clamp(1.0, 4.0) } else { 1.0 };
+    }
+    /// Whether hardware mesh shaders (`VK_EXT_mesh_shader`) are supported by this GPU/driver.
+    pub fn mesh_shaders_supported(&self) -> bool {
+        self.mesh_shaders_supported
+    }
+    /// Whether hardware mesh shaders are currently active.
+    pub fn mesh_shaders_active(&self) -> bool {
+        self.mesh_shaders_active
+    }
+    /// Sets the mesh shaders mode.
+    pub fn set_mesh_shaders(&mut self, mode: crate::graphics::MeshShadersMode) {
+        self.mesh_shaders_active = mode.is_enabled(self.mesh_shaders_supported);
     }
     /// Runs `post` over the world from now on (`None`: no pack), for the dimension `dimension`;
     /// `block_ids` gives each block sprite layer's `mc_Entity` (id, fluid) pair.
@@ -8574,6 +8602,12 @@ impl Renderer {
             blur_at..frame.hud.vertices.len() as u32,
             timing.as_mut(),
         );
+        if overlay.real
+            && self.mesh_shaders_active
+            && let Some(indicator) = &self.mesh_indicator
+        {
+            indicator.draw(encoder, view_target);
+        }
         if overlay.real {
             self.own_timing = timing;
         }

@@ -632,4 +632,29 @@ mod tests {
         // Copy and FXAA pipelines always compile; TAA compiles if supported by backend.
         let _ = post.supports_taa();
     }
+
+    #[test]
+    fn mesh_indicator_compiles_when_supported() {
+        let instance =
+            wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle().with_env());
+        let Ok(adapter) = pollster::block_on(instance.request_adapter(&Default::default())) else {
+            return;
+        };
+        if !adapter.features().contains(wgpu::Features::EXPERIMENTAL_MESH_SHADER) {
+            return;
+        }
+
+        let Ok((device, _queue)) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("Mesh test device"),
+            required_features: wgpu::Features::EXPERIMENTAL_MESH_SHADER,
+            required_limits: adapter.limits(),
+            experimental_features: horizon_hdr::enable_experimental_features(),
+            ..Default::default()
+        })) else {
+            return;
+        };
+
+        let indicator = crate::gfx::mesh_indicator::MeshIndicator::new(&device, wgpu::TextureFormat::Rgba8Unorm);
+        assert!(indicator.is_some());
+    }
 }

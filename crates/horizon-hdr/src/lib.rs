@@ -6,6 +6,12 @@
 #[cfg(target_os = "linux")]
 pub mod wayland;
 
+/// Grants access to experimental features (such as `EXPERIMENTAL_MESH_SHADER`).
+pub fn enable_experimental_features() -> wgpu::ExperimentalFeatures {
+    // Safety: caller acknowledges experimental wgpu features are requested.
+    unsafe { wgpu::ExperimentalFeatures::enabled() }
+}
+
 /// Opens a Vulkan device with `VK_EXT_hdr_metadata` too, when the GPU offers
 /// it, so [`set_metadata`] can tell the compositor the real peak brightness.
 /// `None` leaves opening to wgpu.

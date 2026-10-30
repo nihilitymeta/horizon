@@ -8232,6 +8232,13 @@ impl Game<'_> {
         // Gui.extractRenderState: the debug overlay comes after the screen
         // and the toasts, so it is over everything, menus included.
         self.draw_debug_overlay(&mut batch, size);
+        if self.renderer.as_ref().is_some_and(|r| r.mesh_shaders_active()) {
+            let label = "MESH SHADER: ACTIVE";
+            let tw = HudBatch::text_width(&self.gui.atlas, label);
+            let x = batch.width - tw - 12.0;
+            let y = 10.0;
+            batch.text(&self.gui.atlas, label, x, y, 0xFF_00FFCC, true);
+        }
         self.frame_graph
             .draw(self.settings.horizon.overlay, &mut batch, &self.gui.atlas);
         self.draw_pad_cursor(&mut batch);

@@ -482,6 +482,30 @@ impl Game<'_> {
         {
             d.group("system", [r.hdr_line()]);
         }
+        if let Some(r) = self.renderer.as_ref() {
+            let mesh_status = if r.mesh_shaders_active() {
+                "ACTIVE (VK_EXT_mesh_shader, RADV GFX1201)"
+            } else if r.mesh_shaders_supported() {
+                "Disabled (available in Horizon Graphics)"
+            } else {
+                "Unsupported"
+            };
+            d.group("system", [format!("Mesh Shaders: {mesh_status}")]);
+        }
+        if self.settings.horizon.lod_distance > 0 {
+            d.group("system", [format!(
+                "LOD: {} chunks (Detail: {})",
+                self.settings.horizon.lod_distance,
+                self.settings.horizon.far_detail.label()
+            )]);
+        }
+        // Horizon's own: the shader pack's GPU time per pass (an empty group would move others).
+        let pass_lines = self.renderer.as_ref().map_or_else(Vec::new, |r| {
+            debug_overlay::shader_pass_lines(&r.shader_pass_times())
+        });
+        if !pass_lines.is_empty() {
+            d.group("shader pack", pass_lines);
+        }
     }
     /// `DebugEntryTps` for local and remote connections.
     pub(super) fn debug_tps_line(&self, d: &mut debug_overlay::Displayer) {
