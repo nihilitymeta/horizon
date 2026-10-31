@@ -1,0 +1,8 @@
+{
+  "id": "own_name_tag",
+  "title": "Third-Person Name Tag 1.0",
+  "description": "Shows your own name tag above your character in third person.",
+  "kind": "hook",
+  "default_on": false,
+  "setting": { "file": "extras", "key": "ownNameTag", "on": "true", "off": "false" }
+}

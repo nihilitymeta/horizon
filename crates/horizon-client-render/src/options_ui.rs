@@ -1329,6 +1329,7 @@ enum Act {
     /// The installed native mod's settings page.
     ModSettings(usize),
     /// A native mod's key (mod, key) waits for a key; a button of its page.
+    #[allow(dead_code)]
     NativeKey(usize, usize),
     NativeButton(usize, usize),
     OpenModFolder,
@@ -2402,39 +2403,93 @@ impl OptionsUi {
         filtered
     }
 
-    /// A native mod's page: its name, its keys as Key Binds rows (the
-    /// player's choice, else the default), then its buttons.
+    /// A native mod's page: its name, its description, its toggle, then its configuration buttons.
     fn native_rows(&self, s: &Settings, i: usize) -> Vec<Row> {
         let Some(m) = s.mods.installed.get(i) else {
             return Vec::new();
         };
         let mut rows = vec![Row::Note(m.title.clone())];
-        let Some(page) = &m.native else {
-            return rows;
-        };
-        let chosen = s.mods.keys.get(&m.id);
-        for (k, [name, label, default]) in page.keys.iter().enumerate() {
-            let key = chosen.and_then(|c| c.get(name)).unwrap_or(default);
-            let mut message = keybinds::display_name(key);
-            if self.selected_native_key == Some((i, k)) {
-                message = Text::literal("> ")
-                    .append(message.with_color(text::WHITE))
-                    .append(" <")
-                    .with_color(text::YELLOW);
-            }
-            let caption = button(0.0, 0.0, 150.0, Text::literal(label.clone()), Act::None);
-            let change = button(0.0, 0.0, 150.0, message, Act::NativeKey(i, k));
-            rows.push(Row::Buttons(inactive(caption), Some(change)));
+        if !m.description.is_empty() {
+            rows.push(Row::Note(m.description.clone()));
         }
-        for (b, label) in page.buttons.iter().enumerate() {
-            let widget = button(
+
+        let on = s.mods.is_on(i);
+        let toggle_label = format!("Mod Enabled: {}", if on { "On" } else { "Off" });
+        rows.push(Row::Buttons(
+            button(
                 0.0,
                 0.0,
                 310.0,
-                Text::literal(label.clone()),
-                Act::NativeButton(i, b),
-            );
-            rows.push(Row::Buttons(widget, None));
+                Text::literal(toggle_label),
+                Act::ToggleMod(i),
+            ),
+            None,
+        ));
+
+        let items: &[crate::extras::Item] = match m.id.as_str() {
+            "zoom" => &[
+                crate::extras::Item::ZoomSmooth,
+                crate::extras::Item::ZoomSensitivity,
+                crate::extras::Item::ZoomLevel,
+            ],
+            "minimap" => &[
+                crate::extras::Item::MinimapCorner,
+                crate::extras::Item::MinimapSize,
+                crate::extras::Item::MinimapShape,
+                crate::extras::Item::MinimapZoom,
+                crate::extras::Item::MinimapRotate,
+            ],
+            "fps_counter" => &[
+                crate::extras::Item::FpsCorner,
+                crate::extras::Item::FpsLows,
+            ],
+            "keystrokes" => &[
+                crate::extras::Item::KeystrokesCorner,
+                crate::extras::Item::KeystrokesCps,
+            ],
+            "dynamic_lights" => &[crate::extras::Item::DynamicLights],
+            "fullbright" => &[crate::extras::Item::Fullbright],
+            "inventory_sort" => &[crate::extras::Item::Sort],
+            "mouse_tweaks" => &[crate::extras::Item::MouseTweaksWheel],
+            "auto_reconnect" => &[crate::extras::Item::AutoReconnect],
+            "own_name_tag" => &[crate::extras::Item::OwnNameTag],
+            _ => &[],
+        };
+
+        if !items.is_empty() {
+            rows.push(Row::Header("horizon.mods.settings"));
+            let extra = |item: crate::extras::Item| {
+                let value = format!("{}: {}", item.caption(), item.value(&s.extras));
+                let label = if item.key_name().is_some() && self.selected_key == item.key_name() {
+                    Text::literal(format!("> {value} <")).with_color(text::YELLOW)
+                } else {
+                    Text::literal(value)
+                };
+                let widget = button(0.0, 0.0, 150.0, label, Act::Extra(item));
+                if !on || item.parent().is_some_and(|p| p.switch(&s.extras) == Some(false)) {
+                    inactive(widget)
+                } else {
+                    widget
+                }
+            };
+            for chunk in items.chunks(2) {
+                let left = extra(chunk[0]);
+                let right = chunk.get(1).map(|&item| extra(item));
+                rows.push(Row::Buttons(left, right));
+            }
+        }
+
+        if let Some(page) = &m.native {
+            for (b, label) in page.buttons.iter().enumerate() {
+                let widget = button(
+                    0.0,
+                    0.0,
+                    310.0,
+                    Text::literal(label.clone()),
+                    Act::NativeButton(i, b),
+                );
+                rows.push(Row::Buttons(widget, None));
+            }
         }
         rows
     }
@@ -8362,5 +8417,50 @@ mod tests {
             assert_eq!(s.extras.cosmetics_others, Some(Others::NameTags));
             ui.shift = false;
         }
+    }
+
+    #[test]
+    fn mod_settings_page_shows_options_and_excludes_keybinds() {
+        let mut s = Settings::default();
+        s.mods.installed.push(crate::mod_list::Installed {
+            id: "zoom".into(),
+            title: "Cinematic Zoom".into(),
+            description: "Smooth FOV zoom".into(),
+            problem: None,
+            dev: false,
+            native: Some(crate::mod_list::NativePage {
+                keys: vec![["zoom".into(), "Zoom Key".into(), "key.keyboard.c".into()]],
+                buttons: Vec::new(),
+            }),
+        });
+        let mut ui = OptionsUi::default();
+        ui.show(Page::NativeMod(0));
+        let rows = ui.list_rows(&s);
+        // Excludes duplicate keybinds from mod config screen
+        assert!(!rows.iter().any(|r| matches!(r, Row::Buttons(w, _) if matches!(w.kind, WKind::Button { act: Act::NativeKey(_, _), .. }))));
+        // Includes mod enabled toggle and mod options
+        let acts: Vec<Act> = rows
+            .iter()
+            .filter_map(|r| match r {
+                Row::Buttons(w1, w2) => {
+                    let mut a = vec![match &w1.kind {
+                        WKind::Button { act, .. } => act.clone(),
+                        _ => Act::None,
+                    }];
+                    if let Some(w2) = w2 {
+                        if let WKind::Button { act, .. } = &w2.kind {
+                            a.push(act.clone());
+                        }
+                    }
+                    Some(a)
+                }
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert!(acts.contains(&Act::ToggleMod(0)));
+        assert!(acts.contains(&Act::Extra(crate::extras::Item::ZoomSmooth)));
+        assert!(acts.contains(&Act::Extra(crate::extras::Item::ZoomSensitivity)));
+        assert!(acts.contains(&Act::Extra(crate::extras::Item::ZoomLevel)));
     }
 }

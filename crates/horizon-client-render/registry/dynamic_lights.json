@@ -1,0 +1,8 @@
+{
+  "id": "dynamic_lights",
+  "title": "Dynamic Lighting 1.0",
+  "description": "Held, dropped and burning light sources light their surroundings.",
+  "kind": "hook",
+  "default_on": false,
+  "setting": { "file": "extras", "key": "dynamicLights", "on": "true", "off": "false" }
+}

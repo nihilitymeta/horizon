@@ -1,0 +1,8 @@
+{
+  "id": "mouse_tweaks",
+  "title": "Mouse Tweaks 1.0",
+  "description": "Scroll-wheel and drag interactions in inventories.",
+  "kind": "hook",
+  "default_on": false,
+  "setting": { "file": "extras", "key": "mouseTweaks", "on": "true", "off": "false" }
+}

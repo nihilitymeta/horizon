@@ -1,0 +1,8 @@
+{
+  "id": "fullbright",
+  "title": "Fullbright 1.0",
+  "description": "Full brightness in caves and at night.",
+  "kind": "hook",
+  "default_on": false,
+  "setting": { "file": "extras", "key": "fullbright", "on": "true", "off": "false" }
+}
