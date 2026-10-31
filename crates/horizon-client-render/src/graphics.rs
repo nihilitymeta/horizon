@@ -532,6 +532,15 @@ pub fn smooth_gradients_offered() -> bool {
     SMOOTH_GRADIENTS_OFFERED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+static ANTI_LAG_OFFERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Whether the GPU and driver offer AMD Anti-Lag 2 (`VK_AMD_anti_lag`).
+pub fn offer_anti_lag(on: bool) {
+    ANTI_LAG_OFFERED.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+pub fn anti_lag_offered() -> bool {
+    ANTI_LAG_OFFERED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// The farthest LOD Distance, in chunks, on integrated GPUs other than
 /// Apple's: they share the CPU's memory bandwidth, and past it far terrain
 /// costs them more frame time than it is worth.
@@ -689,6 +698,8 @@ pub struct Graphics {
     /// pack uniforms still match. Off by default: vanilla loaders redraw every frame
     /// (or every `shadowInterval`), and a hit with a stale key shows old shadows.
     pub shadow_cache: bool,
+    /// AMD Anti-Lag 2 (VK_AMD_anti_lag), where supported by the GPU and driver.
+    pub anti_lag: bool,
     /// The graphics API (Windows only; see `GraphicsApi`).
     pub api: GraphicsApi,
     /// Translucent quads in vertex buffers of their own (`gfx`'s translucent arena), so their
@@ -754,6 +765,7 @@ impl Default for Graphics {
             hdr_key: "key.keyboard.unknown".into(),
             battery: false,
             shadow_cache: false,
+            anti_lag: true,
             api: GraphicsApi::Auto,
             translucent_batching: true,
             hdr_smooth_gradients: true,
@@ -890,6 +902,7 @@ impl Graphics {
                 "shadowCache" => g.shadow_cache = flag(g.shadow_cache),
                 "batchTranslucent" => g.translucent_batching = flag(g.translucent_batching),
                 "hdrSmoothGradients" => g.hdr_smooth_gradients = flag(g.hdr_smooth_gradients),
+                "antiLag" => g.anti_lag = flag(g.anti_lag),
                 "graphicsApi" => g.api = GraphicsApi::from_name(value).unwrap_or_default(),
                 "pickedShaderPack" => g.shader_pack = value.to_owned(),
                 "overlay" => {
@@ -906,7 +919,7 @@ impl Graphics {
     }
     pub fn serialize(&self) -> String {
         let mut text = format!(
-            "preset:{}\nlodDistance:{}\nfarDetail:{}\ncaveCulling:{}\nentityCulling:{}\nparticleCulling:{}\nleafCulling:{}\nblockEntityCacheShulkerBoxes:{}\nblockEntityCacheSigns:{}\nblockEntityCacheDecoratedPots:{}\nblockEntityCacheBells:{}\nblockEntityCacheChests:{}\nblockEntityCacheBanners:{}\nblockEntityCacheCopperGolemStatues:{}\nchunkUpdates:{}\nuploadBudgetKiB:{}\ntextureBudgetMiB:{}\nsky:{}\nfog:{}\nweather:{}\nanimatedTextures:{}\nditherCutoutMips:{}\npresentMode:{}\nframePacing:{}\nworkers:{}\noverlay:{}\nresolutionScale:{}\nfxaa:{}\ntaa:{}\nupscaling:{}\nscreenshotQuality:{}\nframeGeneration:{}\nhdr:{}\nhdrPaperWhite:{}\nhdrPeak:{}\nhdrBlackLevel:{}\nhdrUiBrightness:{}\nhdrLighting:{}\nhdrKey:{}\nbatteryMode:{}\nshadowCache:{}\ngraphicsApi:{}\npickedShaderPack:{}\nbatchTranslucent:{}\nhdrSmoothGradients:{}\n",
+            "preset:{}\nlodDistance:{}\nfarDetail:{}\ncaveCulling:{}\nentityCulling:{}\nparticleCulling:{}\nleafCulling:{}\nblockEntityCacheShulkerBoxes:{}\nblockEntityCacheSigns:{}\nblockEntityCacheDecoratedPots:{}\nblockEntityCacheBells:{}\nblockEntityCacheChests:{}\nblockEntityCacheBanners:{}\nblockEntityCacheCopperGolemStatues:{}\nchunkUpdates:{}\nuploadBudgetKiB:{}\ntextureBudgetMiB:{}\nsky:{}\nfog:{}\nweather:{}\nanimatedTextures:{}\nditherCutoutMips:{}\npresentMode:{}\nframePacing:{}\nworkers:{}\noverlay:{}\nresolutionScale:{}\nfxaa:{}\ntaa:{}\nupscaling:{}\nscreenshotQuality:{}\nframeGeneration:{}\nhdr:{}\nhdrPaperWhite:{}\nhdrPeak:{}\nhdrBlackLevel:{}\nhdrUiBrightness:{}\nhdrLighting:{}\nhdrKey:{}\nbatteryMode:{}\nshadowCache:{}\nantiLag:{}\ngraphicsApi:{}\npickedShaderPack:{}\nbatchTranslucent:{}\nhdrSmoothGradients:{}\n",
             self.preset.name(),
             self.lod_distance,
             self.far_detail.name(),
@@ -955,6 +968,7 @@ impl Graphics {
             self.hdr_key,
             bool_text(self.battery),
             bool_text(self.shadow_cache),
+            bool_text(self.anti_lag),
             self.api.name(),
             self.shader_pack,
             bool_text(self.translucent_batching),
@@ -1134,6 +1148,7 @@ mod tests {
             hdr_key: "key.keyboard.h".into(),
             battery: true,
             shadow_cache: true,
+            anti_lag: false,
             api: GraphicsApi::Dx12,
             translucent_batching: false,
             hdr_smooth_gradients: false,
