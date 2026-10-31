@@ -625,17 +625,17 @@ impl Device {
     pub unsafe fn anti_lag_update(&self, stage: u32, frame_index: u64, max_fps: u32, enabled: bool) {
         if let Some(pfn) = self.shared.extension_fns.anti_lag_update {
             let pres_info = VkAntiLagPresentationInfoAMD {
-                s_type: vk::StructureType::from_raw(1000476001),
+                s_type: vk::StructureType::from_raw(1000476002),
                 p_next: std::ptr::null_mut(),
                 stage,
                 frame_index,
             };
             let data = VkAntiLagDataAMD {
-                s_type: vk::StructureType::from_raw(1000476002),
+                s_type: vk::StructureType::from_raw(1000476001),
                 p_next: std::ptr::null(),
                 mode: if enabled { 1 } else { 2 },
                 max_fps,
-                p_presentation_info: &pres_info,
+                p_presentation_info: if enabled { &pres_info } else { std::ptr::null() },
             };
             unsafe {
                 pfn(self.shared.raw.handle(), &data);

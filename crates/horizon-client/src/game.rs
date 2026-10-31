@@ -14582,6 +14582,9 @@ impl Game<'_> {
             self.settings.gui_scale,
             std::sync::atomic::Ordering::Relaxed,
         );
+        if let Some(renderer) = self.renderer.as_mut() {
+            renderer.anti_lag = self.settings.horizon.anti_lag;
+        }
         self.apply_ui_settings();
     }
     /// The sprite layers a shader pack draws in the translucent pass: every section is meshed
