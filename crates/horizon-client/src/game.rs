@@ -18626,6 +18626,35 @@ impl Game<'_> {
                     {
                         return Ok(());
                     }
+                    // Zoom key handling: accepts C by default or the configured zoom key
+                    let is_zoom_key = if self.settings.extras.zoom_key == "key.keyboard.z" {
+                        key == KeyCode::KeyC || key == KeyCode::KeyZ
+                    } else {
+                        key == KeyCode::KeyC
+                            || horizon_client::keybinds::key_name(key)
+                                .is_some_and(|n| n == self.settings.extras.zoom_key)
+                    };
+                    if is_zoom_key {
+                        self.extras.zoom_held =
+                            self.screen == Screen::Playing && event.state == ElementState::Pressed;
+                    }
+                    // Minimap toggle key (M)
+                    if self.screen == Screen::Playing
+                        && self.title.is_none()
+                        && event.state == ElementState::Pressed
+                        && !event.repeat
+                        && (key == KeyCode::KeyM
+                            || horizon_client::keybinds::key_name(key)
+                                .is_some_and(|n| n == "key.keyboard.m"))
+                    {
+                        self.settings.extras.minimap = !self.settings.extras.minimap;
+                        if !self.settings.extras.minimap {
+                            self.settings.mods.disabled.insert("minimap".to_string());
+                        } else {
+                            self.settings.mods.disabled.remove("minimap");
+                        }
+                        self.settings.save(&Self::options_path());
+                    }
                     if event.state == ElementState::Pressed
                         && !event.repeat
                         && horizon_client::keybinds::key_name(key)

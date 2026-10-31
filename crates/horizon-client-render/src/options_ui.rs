@@ -4839,7 +4839,10 @@ impl OptionsUi {
                 return Vec::new();
             };
             let keys = s.mods.keys.entry(m.id.clone()).or_default();
-            keys.insert(key.clone(), value);
+            keys.insert(key.clone(), value.clone());
+            if m.id == "zoom" {
+                s.extras.zoom_key = value;
+            }
             return vec![Event::Changed];
         }
         if !s.extras.set_key(name, value.clone()) && !s.horizon.set_key(name, value.clone()) {
