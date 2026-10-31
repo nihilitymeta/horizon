@@ -608,7 +608,7 @@ pub enum Item {
     /// On the PvP & HUD page (`pvp::rows`).
     Pvp(crate::pvp::Opt),
 }
-/// The Extras page: headers (language keys) and items.
+/// The Extras page: headers (language keys) and items (Horizon extras only).
 pub fn rows() -> Vec<Result<Item, &'static str>> {
     use Item::*;
     let mut rows = vec![
@@ -664,6 +664,33 @@ pub fn rows() -> Vec<Result<Item, &'static str>> {
         ]);
     }
     rows
+}
+
+/// The Mod Configurations page: headers and items for all native mods.
+pub fn mod_rows() -> Vec<Result<Item, &'static str>> {
+    use Item::*;
+    vec![
+        Err("Cinematic Zoom"),
+        Ok(Zoom),
+        Ok(ZoomLevel),
+        Ok(ZoomSmooth),
+        Ok(ZoomSensitivity),
+        Err("Voxel Minimap & Radar"),
+        Ok(Minimap),
+        Ok(MinimapCorner),
+        Ok(MinimapSize),
+        Ok(MinimapShape),
+        Ok(MinimapZoom),
+        Ok(MinimapRotate),
+        Err("Performance Telemetry HUD"),
+        Ok(Fps),
+        Ok(FpsCorner),
+        Ok(FpsLows),
+        Err("Keystrokes Input Display"),
+        Ok(Keystrokes),
+        Ok(KeystrokesCorner),
+        Ok(KeystrokesCps),
+    ]
 }
 impl Item {
     /// The language key of the caption (`horizon.*`, assets/horizon/lang).

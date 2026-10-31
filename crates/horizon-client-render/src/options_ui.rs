@@ -1275,6 +1275,7 @@ pub enum Page {
     Extras,
     /// PvP & HUD (`pvp`): the extras a PvP player sets, on their own page.
     Pvp,
+    ModConfigs,
     /// CreditsAndAttributionScreen.
     Credits,
     /// Horizon Settings: every page Horizon adds, as a mod's settings
@@ -1746,6 +1747,7 @@ fn horizon_page_tooltip(page: Page) -> Option<&'static str> {
         Page::Mods => "horizon.pages.mods.tooltip",
         Page::SplitSetup => "horizon.pages.split_setup.tooltip",
         Page::Music => "horizon.pages.music.tooltip",
+        Page::ModConfigs => "horizon.pages.mod_configs.tooltip",
         _ => return None,
     })
 }
@@ -2337,6 +2339,7 @@ impl OptionsUi {
             Page::Font => "options.font.title",
             Page::Packs => "resourcePack.title",
             Page::Mods => "horizon.pages.mods",
+            Page::ModConfigs => "horizon.pages.mod_configs",
             Page::NativeMod(_) => "Mod Settings",
             Page::ShaderPacks => "horizon.pages.shader_packs",
             Page::ShaderOptions | Page::NativePackOptions(..) => "horizon.pages.shader_options",
@@ -2542,6 +2545,47 @@ impl OptionsUi {
                     _ => crate::extras::rows(),
                 };
                 for row in page_rows {
+                    match row {
+                        Err(header) => {
+                            flush(&mut rows, &mut section);
+                            rows.push(Row::Header(header));
+                        }
+                        Ok(item) => section.push(item),
+                    }
+                }
+                flush(&mut rows, &mut section);
+                rows
+            }
+            Page::ModConfigs => {
+                let extra = |item: crate::extras::Item| {
+                    let value = format!("{}: {}", item.caption(), item.value(&s.extras));
+                    let label = if item.key_name().is_some() && self.selected_key == item.key_name()
+                    {
+                        Text::literal(format!("> {value} <")).with_color(text::YELLOW)
+                    } else {
+                        Text::literal(value)
+                    };
+                    let widget = button(0.0, 0.0, 150.0, label, Act::Extra(item));
+                    if item
+                        .parent()
+                        .is_some_and(|parent| parent.switch(&s.extras) == Some(false))
+                    {
+                        inactive(widget)
+                    } else {
+                        widget
+                    }
+                };
+                let mut rows = Vec::new();
+                let mut section = Vec::new();
+                let flush = |rows: &mut Vec<Row>, section: &mut Vec<crate::extras::Item>| {
+                    rows.extend(
+                        section
+                            .chunks(2)
+                            .map(|c| Row::Buttons(extra(c[0]), c.get(1).map(|&b| extra(b)))),
+                    );
+                    section.clear();
+                };
+                for row in crate::extras::mod_rows() {
                     match row {
                         Err(header) => {
                             flush(&mut rows, &mut section);
@@ -2873,10 +2917,21 @@ impl OptionsUi {
             }
             Page::Font => pairs(&[Opt::ForceUnicode, Opt::JapaneseGlyphs]),
             Page::Mods => {
+                let mut rows = vec![Row::Buttons(
+                    button(
+                        0.0,
+                        0.0,
+                        310.0,
+                        tr("horizon.mods.all_configs"),
+                        Act::Push(Page::ModConfigs),
+                    ),
+                    None,
+                )];
                 if s.mods.installed.is_empty() {
-                    return vec![Row::Header("horizon.mods.empty")];
+                    rows.push(Row::Header("horizon.mods.empty"));
+                    return rows;
                 }
-                s.mods
+                rows.extend(s.mods
                     .installed
                     .iter()
                     .enumerate()
@@ -2925,8 +2980,8 @@ impl OptionsUi {
                             let widget = button(0.0, 0.0, 310.0, label, Act::ToggleMod(i));
                             Row::Buttons(if dead { inactive(widget) } else { widget }, None)
                         }
-                    })
-                    .collect()
+                    }));
+                rows
             }
             Page::NativeMod(i) => self.native_rows(s, i),
             Page::ShaderPacks => {
@@ -8462,5 +8517,32 @@ mod tests {
         assert!(acts.contains(&Act::Extra(crate::extras::Item::ZoomSmooth)));
         assert!(acts.contains(&Act::Extra(crate::extras::Item::ZoomSensitivity)));
         assert!(acts.contains(&Act::Extra(crate::extras::Item::ZoomLevel)));
+
+        // ModConfigs page shows all mod configs
+        ui.show(Page::ModConfigs);
+        let mod_config_rows = ui.list_rows(&s);
+        let mod_config_acts: Vec<Act> = mod_config_rows
+            .iter()
+            .filter_map(|r| match r {
+                Row::Buttons(w1, w2) => {
+                    let mut a = vec![match &w1.kind {
+                        WKind::Button { act, .. } => act.clone(),
+                        _ => Act::None,
+                    }];
+                    if let Some(w2) = w2 {
+                        if let WKind::Button { act, .. } = &w2.kind {
+                            a.push(act.clone());
+                        }
+                    }
+                    Some(a)
+                }
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert!(mod_config_acts.contains(&Act::Extra(crate::extras::Item::Zoom)));
+        assert!(mod_config_acts.contains(&Act::Extra(crate::extras::Item::Minimap)));
+        assert!(mod_config_acts.contains(&Act::Extra(crate::extras::Item::Fps)));
+        assert!(mod_config_acts.contains(&Act::Extra(crate::extras::Item::Keystrokes)));
     }
 }
