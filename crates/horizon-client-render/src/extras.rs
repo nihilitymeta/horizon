@@ -637,7 +637,6 @@ pub fn rows() -> Vec<Result<Item, &'static str>> {
         Ok(PackBrowser),
         Err("horizon.extras.header.zoom"),
         Ok(Zoom),
-        Ok(ZoomKey),
         Ok(ZoomLevel),
         Ok(ZoomSmooth),
         Ok(ZoomSensitivity),

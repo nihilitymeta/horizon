@@ -34,6 +34,8 @@ pub const MAPPINGS: &[(&str, &str, &str)] = &[
     ("key.togglePerspective", "key.keyboard.f5", "misc"),
     ("key.smoothCamera", "key.keyboard.unknown", "misc"),
     ("key.fullscreen", "key.keyboard.f11", "misc"),
+    ("key.zoom", "key.keyboard.c", "misc"),
+    ("key.minimap", "key.keyboard.m", "misc"),
     ("key.spectatorOutlines", "key.keyboard.unknown", "spectator"),
     ("key.spectatorHotbar", "key.mouse.middle", "spectator"),
     ("key.swapOffhand", "key.keyboard.f", "inventory"),
