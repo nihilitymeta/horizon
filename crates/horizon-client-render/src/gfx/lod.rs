@@ -411,6 +411,7 @@ impl Renderer {
                 }
                 return;
             };
+            let remaining = pending.meshes.len();
             let mesh = pending.meshes.remove(&key).expect("pending tile");
             let [x, _, z] = key.origin();
             let size = key.size();
@@ -420,7 +421,7 @@ impl Renderer {
                     (x..x + size).contains(&(cx * 16)) && (z..z + size).contains(&(cz * 16))
                 });
             self.upload_lod(key, &mesh, keep);
-            if start.elapsed() >= budget {
+            if start.elapsed() >= budget && remaining > 4 {
                 return;
             }
         }
