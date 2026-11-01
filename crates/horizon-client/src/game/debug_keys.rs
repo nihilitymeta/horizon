@@ -484,9 +484,9 @@ impl Game<'_> {
         }
         if let Some(r) = self.renderer.as_ref() {
             let mesh_status = if r.mesh_shaders_active() {
-                "ACTIVE (VK_EXT_mesh_shader, RADV GFX1201)"
+                "Enabled (VK_EXT_mesh_shader)"
             } else if r.mesh_shaders_supported() {
-                "Disabled (available in Horizon Graphics)"
+                "Disabled"
             } else {
                 "Unsupported"
             };

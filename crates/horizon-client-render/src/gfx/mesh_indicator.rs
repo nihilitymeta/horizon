@@ -75,10 +75,12 @@ fn fs_indicator(in: VertexOut) -> @location(0) vec4<f32> {
 }
 "#;
 
+#[allow(dead_code)]
 pub struct MeshIndicator {
     pipeline: wgpu::RenderPipeline,
 }
 
+#[allow(dead_code)]
 impl MeshIndicator {
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Option<Self> {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {

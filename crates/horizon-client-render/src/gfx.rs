@@ -1021,7 +1021,6 @@ pub struct Renderer {
     pub hud: HudRenderer,
     mesh_shaders_supported: bool,
     pub mesh_shaders_active: bool,
-    mesh_indicator: Option<mesh_indicator::MeshIndicator>,
     /// Vanilla's menu background blur, made on first use.
     menu_blur: Option<crate::menu_blur::MenuBlur>,
     /// `post_effect` chains, made on first use.
@@ -3605,11 +3604,6 @@ impl Renderer {
             );
         }
         let mesh_shaders_supported = device.features().contains(wgpu::Features::EXPERIMENTAL_MESH_SHADER);
-        let mesh_indicator = if mesh_shaders_supported {
-            mesh_indicator::MeshIndicator::new(&device, config.format)
-        } else {
-            None
-        };
         if previous.is_none() {
             startup_step(format_args!(
                 "pipelines ready (multi-draw {}, occlusion culling {}, GPU timer {}, mesh shaders {})",
@@ -3802,7 +3796,6 @@ impl Renderer {
             hud,
             mesh_shaders_supported,
             mesh_shaders_active: mesh_shaders_supported,
-            mesh_indicator,
             menu_blur: None,
             post_effects: None,
             readback: readback::Readback::default(),
@@ -8602,12 +8595,6 @@ impl Renderer {
             blur_at..frame.hud.vertices.len() as u32,
             timing.as_mut(),
         );
-        if overlay.real
-            && self.mesh_shaders_active
-            && let Some(indicator) = &self.mesh_indicator
-        {
-            indicator.draw(encoder, view_target);
-        }
         if overlay.real {
             self.own_timing = timing;
         }
