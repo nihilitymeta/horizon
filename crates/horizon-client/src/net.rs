@@ -98,6 +98,100 @@ pub enum Event {
     },
 }
 
+/// What the debug screen shows about the live connection.
+#[derive(Clone, Debug)]
+pub struct NetInfo {
+    /// The address as joined (`wss://host`, `ip:port`, `local`).
+    pub address: String,
+    /// `memory` (integrated), `tcp`, `ws` or `wss`.
+    pub transport: &'static str,
+    /// The TCP peer: the server, or the Cloudflare edge for `wss://`.
+    pub peer: Option<std::net::SocketAddr>,
+    /// `integrated`, `lan`, `cloudflare`, `tunnel` or `direct`.
+    pub path: &'static str,
+}
+impl NetInfo {
+    /// F3 lines: address, then transport · path (· edge).
+    pub fn lines(&self) -> Vec<String> {
+        let mut lines = vec![self.address.clone()];
+        let mut head = format!("{} · {}", self.transport, self.path);
+        if let Some(peer) = self.peer {
+            head.push_str(&format!(" · edge {peer}"));
+        }
+        lines.push(head);
+        lines
+    }
+    /// Classify the join address for the overlay.
+    pub fn classify(address: &str, peer: Option<std::net::SocketAddr>) -> Self {
+        let (transport, path) = if address == "local" {
+            ("memory", "integrated")
+        } else if let Some(rest) = address.strip_prefix("wss://") {
+            // TLS WebSocket: a hostname is a public edge (Cloudflare in our setup).
+            let host = host_of(rest);
+            let path = if host.parse::<std::net::IpAddr>().is_ok() {
+                "tunnel"
+            } else {
+                "cloudflare"
+            };
+            ("wss", path)
+        } else if let Some(rest) = address.strip_prefix("ws://") {
+            let host = host_of(rest);
+            let path = if is_loopback(host) {
+                "tunnel"
+            } else if is_private(host) {
+                "lan"
+            } else {
+                "direct"
+            };
+            ("ws", path)
+        } else {
+            let host = host_of(address);
+            let path = if is_private(host) { "lan" } else { "direct" };
+            ("tcp", path)
+        };
+        Self {
+            address: address.to_owned(),
+            transport,
+            peer,
+            path,
+        }
+    }
+}
+
+fn host_of(rest: &str) -> &str {
+    let rest = rest.split('/').next().unwrap_or(rest);
+    // [ipv6]:port or host:port or host
+    if let Some(tail) = rest.strip_prefix('[') {
+        return tail.split(']').next().unwrap_or(rest);
+    }
+    match rest.rsplit_once(':') {
+        Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => h,
+        _ => rest,
+    }
+}
+
+fn is_loopback(host: &str) -> bool {
+    host == "localhost"
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
+
+fn is_private(host: &str) -> bool {
+    if is_loopback(host) {
+        return true;
+    }
+    match host.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(v4)) => {
+            v4.is_private()
+                || v4.is_link_local()
+                || v4.octets()[0] == 100 && (v4.octets()[1] & 0xc0) == 64 // CGNAT / Tailscale
+        }
+        Ok(std::net::IpAddr::V6(v6)) => v6.is_unique_local() || v6.is_unicast_link_local(),
+        Err(_) => false,
+    }
+}
+
 pub struct Session {
     events: Receiver<Event>,
     writer: Arc<Mutex<Option<ConnWriter>>>,
@@ -108,6 +202,8 @@ pub struct Session {
     pub address: String,
     pub name: String,
     pub counters: Arc<Mutex<Option<Arc<Counters>>>>,
+    /// Transport and path for F3, once the socket is up.
+    pub net: Arc<Mutex<Option<NetInfo>>>,
     /// The cookies this server stored on us (`ClientboundStoreCookiePacket`).
     pub cookies: Cookies,
     /// HORIZON_NET_DEBUG=1 logs every packet sent from the game thread.
@@ -200,12 +296,14 @@ impl Session {
         let writer = Arc::new(Mutex::new(None));
         let configuring = Arc::new(AtomicBool::new(true));
         let counters = Arc::new(Mutex::new(None));
+        let net = Arc::new(Mutex::new(None));
         // Connection.initiateServerboundPlayConnection: a transfer's
         // handshake says so (ClientIntent.TRANSFER).
         let transferred = cookies.is_some();
         let cookies = cookies.unwrap_or_default();
         let (thread_writer, thread_counters, thread_cookies) =
             (writer.clone(), counters.clone(), cookies.clone());
+        let thread_net = net.clone();
         let thread_configuring = configuring.clone();
         let far = Arc::new(crate::lod_net::Inbox::default());
         let thread_far = far.clone();
@@ -224,6 +322,7 @@ impl Session {
                     &thread_writer,
                     &thread_configuring,
                     &thread_counters,
+                    &thread_net,
                     &thread_cookies,
                     &thread_far,
                     transferred,
@@ -252,6 +351,7 @@ impl Session {
             address: address.to_owned(),
             name: name.to_owned(),
             counters,
+            net,
             cookies,
             debug,
             far,
@@ -593,6 +693,7 @@ fn run(
     shared_writer: &Mutex<Option<ConnWriter>>,
     configuring: &AtomicBool,
     shared_counters: &Mutex<Option<Arc<Counters>>>,
+    shared_net: &Mutex<Option<NetInfo>>,
     cookies: &Cookies,
     far: &crate::lod_net::Inbox,
     transferred: bool,
@@ -624,6 +725,7 @@ fn run(
         (host, port, c)
     };
     *shared_counters.lock().unwrap() = Some(c.reader.counters.clone());
+    *shared_net.lock().unwrap() = Some(NetInfo::classify(address, c.peer_addr().ok()));
     let e = |e: horizon_protocol::Error| Reason::plain(connection_lost(e, lang));
     c.send(
         &handshake::Serverbound::Intention(handshake::Intention {

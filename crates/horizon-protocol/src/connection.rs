@@ -137,6 +137,17 @@ impl ConnectionStream {
             Self::Memory(p) => p.shutdown(),
         }
     }
+    /// The TCP peer: the server for TCP, the tunnel edge for a WebSocket.
+    pub fn peer_addr(&self) -> std::io::Result<std::net::SocketAddr> {
+        match self {
+            Self::Tcp(s) => s.peer_addr(),
+            Self::WebSocket(s) => s.peer_addr(),
+            Self::Memory(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "in-memory connection has no peer address",
+            )),
+        }
+    }
 }
 impl Read for ConnectionStream {
     fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
@@ -388,6 +399,10 @@ impl Connection {
     }
     pub fn recv(&mut self) -> Result<(i32, Vec<u8>)> {
         self.reader.recv()
+    }
+    /// The TCP peer of either half (same socket).
+    pub fn peer_addr(&self) -> std::io::Result<std::net::SocketAddr> {
+        self.reader.stream.peer_addr()
     }
     pub fn split(self) -> (ConnReader, ConnWriter) {
         (self.reader, self.writer)

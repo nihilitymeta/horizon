@@ -514,6 +514,10 @@ impl Game<'_> {
                     "\"{}\" server{status}, {tx} tx, {rx} rx",
                     remote.brand
                 ));
+                // Horizon: how this client reaches the server (LAN vs edge).
+                if let Some(net) = remote.session.net.lock().unwrap().clone() {
+                    d.group("net", net.lines());
+                }
             }
         }
     }

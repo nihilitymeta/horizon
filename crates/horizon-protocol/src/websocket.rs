@@ -132,6 +132,11 @@ impl WsStream {
         self.shared.stop.store(true, Ordering::Relaxed);
         let _ = self.shared.raw.shutdown(Shutdown::Both);
     }
+
+    /// The TCP peer (Cloudflare edge for `wss://`, the origin for `ws://`).
+    pub fn peer_addr(&self) -> io::Result<std::net::SocketAddr> {
+        self.shared.raw.peer_addr()
+    }
 }
 
 fn actor<S: Read + Write>(
