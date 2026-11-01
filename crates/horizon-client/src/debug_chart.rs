@@ -53,6 +53,53 @@ impl SampleLogger {
     }
 }
 
+/// Five seconds of frame durations for the F3 overlay's 1% and 0.1% lows.
+#[derive(Clone, Debug, Default)]
+pub struct FrameTimeWindow {
+    frames: VecDeque<(Instant, f32)>,
+}
+
+impl FrameTimeWindow {
+    /// The window the lows are computed over.
+    pub const WINDOW: Duration = Duration::from_secs(5);
+
+    pub fn record(&mut self, now: Instant, millis: f32) {
+        if millis > 0.0 {
+            self.frames.push_back((now, millis));
+        }
+        self.prune(now);
+    }
+    fn prune(&mut self, now: Instant) {
+        while self
+            .frames
+            .front()
+            .is_some_and(|(at, _)| now.saturating_duration_since(*at) > Self::WINDOW)
+        {
+            self.frames.pop_front();
+        }
+    }
+    /// The 1% and 0.1% worst frame durations of the window, as FPS: the
+    /// slowest 1% and 0.1% of frames, inverted.
+    pub fn lows(&self, now: Instant) -> Option<(f32, f32)> {
+        let mut millis: Vec<f32> = self
+            .frames
+            .iter()
+            .filter(|(at, _)| now.saturating_duration_since(*at) <= Self::WINDOW)
+            .map(|(_, millis)| *millis)
+            .collect();
+        let n = millis.len();
+        if n == 0 {
+            return None;
+        }
+        millis.sort_by(f32::total_cmp);
+        let worst = |fraction: f64| {
+            let rank = ((n as f64 * fraction).ceil() as usize).clamp(1, n);
+            millis[n - rank]
+        };
+        Some((1000.0 / worst(0.01), 1000.0 / worst(0.001)))
+    }
+}
+
 /// `DebugScreenOverlay`'s chart switches and the samples behind them.
 #[derive(Clone, Debug, Default)]
 pub struct DebugCharts {
@@ -64,6 +111,8 @@ pub struct DebugCharts {
     pub lightmap: bool,
     /// `frameTimeLogger`: nanoseconds between frames.
     pub frame_times: SampleLogger,
+    /// The last [`FrameTimeWindow::WINDOW`] of frames for the 1%/0.1% lows.
+    frame_window: FrameTimeWindow,
     /// `tickTimeLogger`: the integrated server's ticks.
     pub tick_times: SampleLogger,
     /// `pingLogger`: milliseconds.
@@ -80,6 +129,14 @@ pub struct DebugCharts {
     bytes_seen: Option<i64>,
 }
 impl DebugCharts {
+    /// Records a frame for the overlay's 1% and 0.1% lows.
+    pub fn record_frame(&mut self, now: Instant, millis: f32) {
+        self.frame_window.record(now, millis);
+    }
+    /// The 1% and 0.1% worst frames of the last five seconds, as FPS.
+    pub fn frame_lows(&self, now: Instant) -> Option<(f32, f32)> {
+        self.frame_window.lows(now)
+    }
     /// `toggleFpsCharts`; `overlay` is the debug overlay's visibility.
     pub fn toggle_fps(&mut self, overlay: &mut bool) {
         self.fps = !*overlay || !self.fps;
@@ -640,5 +697,26 @@ mod tests {
         let tps = Chart::Tps { mspt: 50.0 };
         assert_eq!(tps.color(10_000_000), GREEN);
         assert_eq!(Chart::Bandwidth.color(0), CYAN);
+    }
+
+    #[test]
+    fn frame_lows_are_the_worst_percent_of_the_last_five_seconds() {
+        let t0 = Instant::now();
+        let mut charts = DebugCharts::default();
+        // 200 frames of 10 ms (100 FPS), the slowest 100 ms (10 FPS) and the
+        // second slowest 50 ms (20 FPS): the 1% low is the second worst, the
+        // 0.1% low the very worst.
+        for _ in 0..198 {
+            charts.record_frame(t0, 10.0);
+        }
+        charts.record_frame(t0, 50.0);
+        charts.record_frame(t0, 100.0);
+        let (one, tenth) = charts.frame_lows(t0).unwrap();
+        assert!((one - 20.0).abs() < 1e-4, "1% low: {one}");
+        assert!((tenth - 10.0).abs() < 1e-4, "0.1% low: {tenth}");
+
+        // Frames older than the window are dropped.
+        let later = t0 + Duration::from_secs(6);
+        assert!(charts.frame_lows(later).is_none());
     }
 }

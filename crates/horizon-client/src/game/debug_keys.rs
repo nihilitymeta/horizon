@@ -15,6 +15,7 @@ use horizon_client::{
 use horizon_core::geometry::{Axis, Vec3};
 use horizon_protocol::packets::play::{BlockEntityTagQuery, EntityTagQuery, Serverbound};
 use horizon_world::nbt::Tag;
+use std::time::Instant;
 use winit::keyboard::KeyCode;
 
 /// `ChatFormatting.YELLOW` and `RED`.
@@ -374,8 +375,14 @@ impl Game<'_> {
                     (self.fps * (1.0 + share)).round() as i32
                 )
             });
+        let lows = self
+            .debug_charts
+            .frame_lows(Instant::now())
+            .map_or_else(String::new, |(one, tenth)| {
+                format!(" (1% low: {one:.1}, 0.1% low: {tenth:.1})")
+            });
         d.priority(format!(
-            "{} fps{generated} T: {}{present} @{refresh}Hz",
+            "{} fps{generated}{lows} T: {}{present} @{refresh}Hz",
             self.fps.round() as i32,
             if limit == 260 {
                 "inf".into()
@@ -481,6 +488,16 @@ impl Game<'_> {
             && let Some(r) = self.renderer.as_ref()
         {
             d.group("system", [r.hdr_line()]);
+            if let Some(memory) = debug_overlay::memory_usage() {
+                d.group(
+                    "system",
+                    [format!(
+                        "RSS: {} | Virt: {}",
+                        debug_overlay::memory_label(memory.resident),
+                        debug_overlay::memory_label(memory.virtual_size)
+                    )],
+                );
+            }
         }
     }
     /// `DebugEntryTps` for local and remote connections.
