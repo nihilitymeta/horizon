@@ -658,6 +658,11 @@ impl Game<'_> {
             }
             DebugAction::ReloadResourcePacks => {
                 self.debug_translated("debug.reload_resourcepacks.message");
+                // Assets/models/lang (pack reload) and data tables (world
+                // tables): one key refreshes both sides of a content mod.
+                if !self.world_root.as_os_str().is_empty() {
+                    self.reload_world_tables();
+                }
                 self.reload_packs();
                 true
             }

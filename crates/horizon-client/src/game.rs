@@ -19900,9 +19900,9 @@ impl Game<'_> {
     fn pack_files(&self) -> horizon_world::loot::PackOverlay<'_> {
         pack_files(&self.world_tables)
     }
-    /// Load the world's data packs' content tables (`None`: the world has no
-    /// packs, and `Resources.rest` stays in use). This re-reads the tables,
-    /// so it runs once per world open and on `/reload`.
+    /// Load the content tables: the resource root's own (vanilla and content
+    /// mods) under the world's data packs' overlay. Always rebuilt so
+    /// `/reload` re-reads the tables after the root is re-layered.
     fn build_world_tables(&self) -> Option<WorldTables> {
         // The ask of this load, both here and on `/reload`: a native mod
         // recomputes the pack files it contributes every time.
@@ -19915,15 +19915,12 @@ impl Game<'_> {
             &self.level.enabled_features,
             contributed,
         );
-        if files.is_empty() {
-            return None;
-        }
         let overlay = horizon_world::loot::PackOverlay { files: &files };
         let root = &self.options.resources;
         let items = match Items::load(root, self.pack.assets.registry, self.res.facts(), &overlay) {
             Ok(items) => items,
             Err(e) => {
-                log::warn!("Horizon: the world's data packs are not applied: {e}");
+                log::warn!("Horizon: the content tables are not reloaded: {e}");
                 return None;
             }
         };
@@ -19933,7 +19930,7 @@ impl Game<'_> {
         let recipes = match Recipes::load(root, &items, &overlay) {
             Ok(recipes) => recipes,
             Err(e) => {
-                log::warn!("Horizon: the world's data packs are not applied: {e}");
+                log::warn!("Horizon: the content tables are not reloaded: {e}");
                 return None;
             }
         };
@@ -19974,10 +19971,26 @@ impl Game<'_> {
     }
     /// Reload the content tables with the world's packs, as
     /// `/reload` reloads a server's (`ReloadableServerResources`).
+    /// Re-layers content mods first so data edits in `--dev-mod` folders and
+    /// `horizon-mods/` reach the tables without restarting the game.
     pub(super) fn reload_world_tables(&mut self) {
         if self.remote.is_some() {
             return;
         }
+        let base = packs::startup_root(
+            &self.vanilla_root(),
+            &self.settings.resource_packs,
+            &self.server_packs.active,
+        );
+        let base = match base {
+            Ok(base) => base,
+            Err(e) => {
+                log::warn!("Horizon: resource packs not applied on reload: {e}");
+                self.vanilla_root()
+            }
+        };
+        self.options.resources =
+            mods::content_root(&base, &self.settings.mods.enabled, &self.options.dev_mods);
         self.world_tables = self.build_world_tables();
         self.recipe_tables.categories = None;
         horizon_client::structure_blocks::forget_loot_data();
