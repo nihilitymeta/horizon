@@ -529,6 +529,10 @@ pub struct Lan {
     listener: Option<JoinHandle<()>>,
     /// Stops the accept loop alone: local connections stay.
     listener_stop: Arc<AtomicBool>,
+    /// Plaintext `ws://` listener for a Cloudflare Tunnel on loopback.
+    ws_listener: Option<JoinHandle<()>>,
+    ws_stop: Arc<AtomicBool>,
+    pub ws_port: u16,
     /// The multicast announcement (LanServerPinger); absent when the socket failed.
     _pinger: Option<discovery::Pinger>,
 }
@@ -569,6 +573,9 @@ impl Lan {
             port: 0,
             listener: None,
             listener_stop: Arc::new(AtomicBool::new(false)),
+            ws_listener: None,
+            ws_stop: Arc::new(AtomicBool::new(false)),
+            ws_port: 0,
             _pinger: None,
         };
         if listen {
@@ -619,6 +626,33 @@ impl Lan {
         self.listener = Some(thread);
         self.listener_stop = stop;
         self.port = port;
+        // Cloudflare Tunnel origins are plaintext `ws://` on loopback.
+        if let Err(e) = self.listen_websocket(25580) {
+            log::debug!("[lan] WebSocket listener not started: {e}");
+        }
+        Ok(port)
+    }
+    /// Accepts `ws://` connections forwarded by `cloudflared tunnel run` on
+    /// `127.0.0.1`. The tunnel terminates TLS; this side stays plaintext.
+    pub fn listen_websocket(&mut self, port: u16) -> io::Result<u16> {
+        if self.ws_listener.is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "WebSocket listener already running",
+            ));
+        }
+        let listener = TcpListener::bind(("127.0.0.1", port))?;
+        listener.set_nonblocking(true)?;
+        let port = listener.local_addr()?.port();
+        let stop = Arc::new(AtomicBool::new(false));
+        let (accept_shared, accept_stop) = (self.shared.clone(), stop.clone());
+        let thread = std::thread::Builder::new()
+            .name("horizon-ws-accept".into())
+            .spawn(move || ws_accept_loop(listener, accept_shared, &accept_stop))?;
+        self.ws_listener = Some(thread);
+        self.ws_stop = stop;
+        self.ws_port = port;
+        log::info!("[lan] WebSocket listener on ws://127.0.0.1:{port}");
         Ok(port)
     }
     /// Stop accepting connections and announcing; connections already in
@@ -628,6 +662,11 @@ impl Lan {
         if let Some(t) = self.listener.take() {
             let _ = t.join();
         }
+        self.ws_stop.store(true, Ordering::Relaxed);
+        if let Some(t) = self.ws_listener.take() {
+            let _ = t.join();
+        }
+        self.ws_port = 0;
         self._pinger = None;
         self.port = 0;
     }
@@ -882,6 +921,29 @@ fn handle(stream: TcpStream, addr: SocketAddr, shared: Arc<Shared>) {
         && std::env::var_os("HORIZON_NET_DEBUG").is_some()
     {
         log::warn!("[lan] {addr}: {e}");
+    }
+}
+fn ws_accept_loop(listener: TcpListener, shared: Arc<Shared>, stop: &AtomicBool) {
+    while !shared.stop.load(Ordering::Relaxed) && !stop.load(Ordering::Relaxed) {
+        match listener.accept() {
+            Ok((stream, addr)) => {
+                let shared = shared.clone();
+                let _ = std::thread::Builder::new()
+                    .name("horizon-ws-conn".into())
+                    .spawn(move || {
+                        let _ = stream.set_nonblocking(false);
+                        if let Err(e) = conn::serve_websocket(stream, addr, shared)
+                            && std::env::var_os("HORIZON_NET_DEBUG").is_some()
+                        {
+                            log::warn!("[ws] {addr}: {e}");
+                        }
+                    });
+            }
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            Err(_) => std::thread::sleep(Duration::from_millis(100)),
+        }
     }
 }
 

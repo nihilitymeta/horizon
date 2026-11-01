@@ -478,6 +478,21 @@ const WRITE_TIMEOUT: Duration = READ_TIMEOUT;
 pub const MEMORY_ADDRESS: std::net::SocketAddr = std::net::SocketAddr::V4(
     std::net::SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 0),
 );
+/// A player arriving through a Cloudflare Tunnel: the tunnel's origin
+/// forwards plaintext `ws://` to loopback, so the WebSocket handshake is all
+/// that is left before the normal handshake/login/configuration threads.
+pub fn serve_websocket(
+    stream: TcpStream,
+    address: std::net::SocketAddr,
+    shared: Arc<Shared>,
+) -> Result<(), String> {
+    let e = |e: horizon_protocol::Error| e.to_string();
+    serve_connection(
+        Connection::from_websocket(stream).map_err(e)?,
+        address,
+        shared,
+    )
+}
 
 /// `ServerConnectionListener.startMemoryChannel`: an integrated server's
 /// own player, over one end of an in-memory pipe.

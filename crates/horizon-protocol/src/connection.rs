@@ -101,21 +101,27 @@ impl Write for Pipe {
     }
 }
 
-/// What a connection runs over.
-enum Stream {
+/// What a connection runs over: TCP, a synchronous binary WebSocket, or the
+/// in-memory pipe between one process's client and integrated server.
+pub enum ConnectionStream {
     Tcp(TcpStream),
+    WebSocket(crate::websocket::WsStream),
     Memory(Pipe),
 }
-impl Stream {
+/// The old private name, kept so the reader/writer fields stay terse.
+type Stream = ConnectionStream;
+impl ConnectionStream {
     fn try_clone(&self) -> std::io::Result<Self> {
         Ok(match self {
             Self::Tcp(s) => Self::Tcp(s.try_clone()?),
+            Self::WebSocket(s) => Self::WebSocket(s.clone()),
             Self::Memory(p) => Self::Memory(p.try_clone()),
         })
     }
     fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
         match self {
             Self::Tcp(s) => s.set_read_timeout(timeout),
+            Self::WebSocket(s) => s.set_read_timeout(timeout),
             Self::Memory(p) => {
                 *p.timeout.lock().unwrap() = timeout;
                 Ok(())
@@ -127,28 +133,32 @@ impl Stream {
             Self::Tcp(s) => {
                 let _ = s.shutdown(Shutdown::Both);
             }
+            Self::WebSocket(s) => s.shutdown(),
             Self::Memory(p) => p.shutdown(),
         }
     }
 }
-impl Read for Stream {
+impl Read for ConnectionStream {
     fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
         match self {
             Self::Tcp(s) => s.read(out),
+            Self::WebSocket(s) => s.read(out),
             Self::Memory(p) => p.read(out),
         }
     }
 }
-impl Write for Stream {
+impl Write for ConnectionStream {
     fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
         match self {
             Self::Tcp(s) => s.write(data),
+            Self::WebSocket(s) => s.write(data),
             Self::Memory(p) => p.write(data),
         }
     }
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
             Self::Tcp(s) => s.flush(),
+            Self::WebSocket(s) => s.flush(),
             Self::Memory(p) => p.flush(),
         }
     }
@@ -205,7 +215,40 @@ pub struct Connection {
     pub writer: ConnWriter,
 }
 impl Connection {
+    /// Whether `address` names a WebSocket endpoint (`ws://` or `wss://`).
+    pub fn is_websocket_address(address: &str) -> bool {
+        address.starts_with("ws://") || address.starts_with("wss://")
+    }
+    /// The URL with the scheme's default port when the player left it out.
+    fn websocket_url(address: &str) -> String {
+        let Some((scheme, rest)) = address.split_once("://") else {
+            return address.to_owned();
+        };
+        let (authority, path) = match rest.split_once('/') {
+            Some((authority, path)) => (authority, format!("/{path}")),
+            None => (rest, String::new()),
+        };
+        if authority.contains(':') {
+            return address.to_owned();
+        }
+        let port = if scheme.eq_ignore_ascii_case("wss") {
+            443
+        } else {
+            80
+        };
+        format!("{scheme}://{authority}:{port}{path}")
+    }
+    /// Connects to a `ws://` or `wss://` endpoint (`wss` through rustls).
+    pub fn connect_websocket(address: &str, _timeout: Duration) -> Result<Self> {
+        let url = Self::websocket_url(address);
+        let stream = crate::websocket::WsStream::connect(&url)
+            .map_err(|e| Error::new(format!("WebSocket connection to {url} failed: {e}")))?;
+        Self::over(Stream::WebSocket(stream))
+    }
     pub fn connect(host: &str, port: u16, timeout: Duration) -> Result<Self> {
+        if Self::is_websocket_address(host) {
+            return Self::connect_websocket(host, timeout);
+        }
         let addrs: Vec<_> = (host, port)
             .to_socket_addrs()
             .map_err(|e| Error::new(format!("Unknown host {host}: {e}")))?
@@ -215,6 +258,9 @@ impl Connection {
     /// Connect through Minecraft's SRV redirect. Status requests still use the
     /// original address in their handshake (`ServerStatusPinger.pingServer`).
     pub fn connect_server(host: &str, port: u16, timeout: Duration) -> Result<Self> {
+        if Self::is_websocket_address(host) {
+            return Self::connect_websocket(host, timeout);
+        }
         Self::connect_server_with_address(host, port, timeout).map(|(connection, _, _)| connection)
     }
     /// `ConnectScreen.startConnecting`: login handshakes use the resolved host
@@ -224,6 +270,10 @@ impl Connection {
         port: u16,
         timeout: Duration,
     ) -> Result<(Self, String, u16)> {
+        if Self::is_websocket_address(host) {
+            let connection = Self::connect_websocket(host, timeout)?;
+            return Ok((connection, host.to_owned(), port));
+        }
         let resolved = crate::resolver::resolve(host, port)?;
         let connection = Self::connect_addresses(host, resolved.addresses, timeout)?;
         Ok((connection, resolved.host, resolved.port))
@@ -280,6 +330,13 @@ impl Connection {
     pub fn from_stream(stream: TcpStream) -> Result<Self> {
         stream.set_nodelay(true)?;
         Self::over(Stream::Tcp(stream))
+    }
+    /// A connection after the server-side WebSocket handshake: the stream a
+    /// `cloudflared tunnel` forwards in plaintext to loopback.
+    pub fn from_websocket(stream: TcpStream) -> Result<Self> {
+        let ws = crate::websocket::WsStream::accept(stream)
+            .map_err(|e| Error::new(format!("WebSocket handshake failed: {e}")))?;
+        Self::over(Stream::WebSocket(ws))
     }
     /// A connection over one end of an in-memory [`Pipe`].
     pub fn local(pipe: Pipe) -> Self {
@@ -453,6 +510,8 @@ impl ConnWriter {
             c.encrypt(&mut framed);
         }
         self.stream.write_all(&framed)?;
+        // A WebSocket writer buffers a frame until flush; TCP and pipes do not care.
+        self.stream.flush()?;
         self.counters.sent.fetch_add(1, Ordering::Relaxed);
         self.counters
             .bytes_out
@@ -492,6 +551,7 @@ mod tests {
     fn peer(c: &Connection) -> SocketAddr {
         match &c.reader.stream {
             Stream::Tcp(s) => s.peer_addr().unwrap(),
+            Stream::WebSocket(_) => panic!("not a plain socket"),
             Stream::Memory(_) => panic!("not a socket"),
         }
     }

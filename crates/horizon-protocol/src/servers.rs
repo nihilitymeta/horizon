@@ -129,11 +129,23 @@ fn write(path: &Path, root: &NamedTag) -> std::io::Result<()> {
     std::fs::rename(tmp, path)
 }
 
-/// ServerAddress.parseString: `host`, `host:port` or `[v6]:port`; default 25565.
+/// ServerAddress.parseString: `host`, `host:port`, `[v6]:port`, or a
+/// `ws://`/`wss://` endpoint (default 25565, 80 and 443 respectively).
 pub fn parse_address(text: &str) -> Option<(String, u16)> {
     let text = text.trim();
     if text.is_empty() {
         return None;
+    }
+    for (scheme, default) in [("ws://", 80u16), ("wss://", 443u16)] {
+        if let Some(rest) = text.strip_prefix(scheme) {
+            let authority = rest.split('/').next().unwrap_or(rest);
+            let port = authority
+                .rsplit_once(':')
+                .filter(|(host, _)| !host.contains(':'))
+                .and_then(|(_, port)| port.parse().ok())
+                .unwrap_or(default);
+            return Some((text.to_owned(), port));
+        }
     }
     if let Some(rest) = text.strip_prefix('[') {
         let (host, tail) = rest.split_once(']')?;
@@ -225,5 +237,17 @@ mod tests {
         assert_eq!(parse_address("[::1]:1234"), Some(("::1".into(), 1234)));
         assert_eq!(parse_address("host:notaport"), None);
         assert_eq!(parse_address(""), None);
+        assert_eq!(
+            parse_address("wss://mc.example.com"),
+            Some(("wss://mc.example.com".into(), 443))
+        );
+        assert_eq!(
+            parse_address("ws://127.0.0.1:25580"),
+            Some(("ws://127.0.0.1:25580".into(), 25580))
+        );
+        assert_eq!(
+            parse_address("wss://mc.example.com:8443/play"),
+            Some(("wss://mc.example.com:8443/play".into(), 8443))
+        );
     }
 }
