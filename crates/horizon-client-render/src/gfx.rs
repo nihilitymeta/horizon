@@ -3621,7 +3621,6 @@ impl Renderer {
                 on_off(mesh_shaders_supported),
             ));
         }
-        let pacer = horizon_hdr::create_latency_pacer(&device, vendor_id);
         let mesh_terrain = mesh_shaders_supported
             .then(|| {
                 crate::lod::MeshShaderPipeline::new(
@@ -4924,15 +4923,6 @@ impl Renderer {
     /// Whether hardware mesh shaders are currently active.
     pub fn mesh_shaders_active(&self) -> bool {
         self.mesh_shaders_active
-    }
-    /// Whether the vendor's hardware frame pacing is active.
-    pub fn anti_lag_active(&self) -> bool {
-        self.pacer.is_active()
-    }
-    /// The active pacer's name for the F3 overlay ("AMD Anti-Lag 2",
-    /// "NVIDIA Reflex", or "Off").
-    pub fn latency_pacer_label(&self) -> &'static str {
-        self.pacer.label()
     }
     /// Bytes allocated and reserved from the GPU memory allocator, for the
     /// F3 overlay's VRAM line.
