@@ -119,6 +119,7 @@ pub use hdr::Calibration as HdrCalibration;
 pub mod block_light;
 pub mod lightning;
 mod lod;
+pub(crate) mod mesh_indicator;
 mod native_material;
 mod native_pack;
 mod native_post;
@@ -155,7 +156,6 @@ pub(crate) mod upload;
 mod view;
 mod wgsl_prefix;
 mod world_post;
-pub(crate) mod mesh_indicator;
 
 /// A section's instance: its camera-relative origin and, in `w`, the step of
 /// its fixed-point UVs (`terrain.wgsl`'s `terrain_uv`).
@@ -1913,7 +1913,6 @@ impl Renderer {
             log::info!("Horizon: {split} block textures per array (the GPU's limit)");
         }
         let info = adapter.get_info();
-        let vendor_id = info.vendor;
         crate::graphics::suggest_reduced_far_detail(crate::graphics::lod_capped(&info));
         let size = window.inner_size();
         let max_side = device.limits().max_texture_dimension_2d;
@@ -3498,7 +3497,11 @@ impl Renderer {
             &device,
             std::mem::size_of::<TerrainVertex>() as u64,
             1 << 20,
-            flat_wanted,
+            // And where the GPU-driven far terrain's mesh shaders read the far tiles' quads.
+            flat_wanted
+                || device
+                    .features()
+                    .contains(wgpu::Features::EXPERIMENTAL_MESH_SHADER),
         );
         // Sections as one index list per frame where multi-draw is emulated.
         let flat = flat_wanted.then(|| {
@@ -3628,6 +3631,7 @@ impl Renderer {
                     &bindings,
                     config.format.remove_srgb_suffix(),
                     sprite_constants,
+                    include_str!("terrain.wgsl"),
                 )
             })
             .flatten();
@@ -4396,6 +4400,8 @@ impl Renderer {
             // The other pages have no room after all.
             arena.reopen();
         }
+        // Tiles' quads moved: the mesh pipeline's records name their pages.
+        self.sync_mesh_tiles();
         // With every mesh moved off, the page stays closed so this frame's
         // uploads can't refill it: `trim` returns it and clears `closing`.
         budget
@@ -4936,11 +4942,11 @@ impl Renderer {
         self.mesh_shaders_active =
             mode.is_enabled(self.mesh_shaders_supported) && self.mesh_terrain.is_some();
     }
-    /// Resident far-terrain chunks the task shader dispatches over.
-    pub fn mesh_chunk_count(&self) -> u32 {
+    /// Resident far-terrain tiles the task shader dispatches over.
+    pub fn mesh_tile_count(&self) -> u32 {
         self.mesh_terrain
             .as_ref()
-            .map_or(0, crate::lod::MeshShaderPipeline::chunk_count)
+            .map_or(0, crate::lod::MeshShaderPipeline::tile_count)
     }
     /// Runs `post` over the world from now on (`None`: no pack), for the dimension `dimension`;
     /// `block_ids` gives each block sprite layer's `mc_Entity` (id, fluid) pair.
@@ -5599,7 +5605,7 @@ impl Renderer {
         // since the last one: Metal commits every command buffer wgpu-core
         // makes (one per run of copies and two per pass) on its own.
         let section_copies = self.section_copies.take();
-        let has_section_copies = section_copies.is_some();
+        let mut has_section_copies = section_copies.is_some();
         let mut encoder = section_copies.unwrap_or_else(|| {
             self.device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -5885,6 +5891,63 @@ impl Renderer {
                     .filter_map(|(&key, tile)| tile.visible(key, camera, &view, now)),
             );
             visible_lods.sort_unstable_by_key(|v| (v.distance, v.key));
+        }
+        // The GPU-driven far terrain: every resident tile's instance; the task
+        // shader does the frustum test and the facing buckets (`Tile::visible`
+        // and `facing_runs_from` for the vertex path), over the world's culling
+        // projection and the water mirror's.
+        if self.mesh_shaders_active
+            && let Some(mesh_terrain) = self.mesh_terrain.as_mut()
+        {
+            crate::spans::time("far mesh", || {
+                mesh_terrain.set_visible(
+                    visible_lods
+                        .iter()
+                        .map(|v| (v.key, lod::instance(v.origin, v.fade))),
+                );
+                let world = crate::lod::DrawParams {
+                    view_proj: cull_proj,
+                    eye: eye.map(|e| e.to_array()),
+                    low: mirror_low,
+                    debug: self.mesh_cluster_debug,
+                };
+                let mut passes = vec![world];
+                if let Some(plane) = mirror_plane {
+                    passes.push(crate::lod::DrawParams {
+                        view_proj: mirror_view_projection(cull_proj, plane - frame.camera.y as f32),
+                        ..world
+                    });
+                }
+                let arena = &self.arena;
+                let uploads = &mut self.uploads;
+                mesh_terrain.begin_frame(
+                    &self.device,
+                    &mut |buffer, offset, bytes| {
+                        uploads.buffer(&mut encoder, buffer, offset, bytes)
+                    },
+                    |page| arena.has_page(page).then(|| arena.buffer(page)),
+                    arena.generation(),
+                    &passes,
+                );
+            });
+            // What the task and mesh stages read is uploaded by now (the tiles' quads in
+            // the section copies, the records and instances above, the globals). RADV runs
+            // task shaders on its async compute ring, and a barrier recorded before a
+            // command buffer's first task-shader draw does not hold that ring back (the
+            // task stage read the uploads before they landed, in a frame of every ten),
+            // so the uploads go in a submission of their own.
+            self.uploads.finish(&encoder);
+            if has_section_copies {
+                self.section_copy_bytes = 0;
+                self.section_uploads.finish(&encoder);
+                has_section_copies = false;
+            }
+            self.queue.submit([encoder.finish()]);
+            encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Horizon frame"),
+                });
         }
         // A shader pack's shadow pass draws the sections in its camera's box, all of them (the
         // occlusion graph follows the eye, not the light), within shadowDistanceRenderMul.
@@ -7163,6 +7226,13 @@ impl Renderer {
                     pass.set_vertex_buffer(1, self.instances.slice(..));
                     self.draw_sections(&mut pass, &self.indirect, 0, 0, solid_draws);
                 }
+                if self.mesh_shaders_active
+                    && self.native.is_none()
+                    && !pack_draws_terrain
+                    && let Some(mesh_terrain) = self.mesh_terrain.as_ref()
+                {
+                    mesh_terrain.draw(&mut pass, 1, true);
+                }
                 drop(pass);
                 reflection = Some(mirror.color.clone());
             }
@@ -7227,19 +7297,6 @@ impl Renderer {
                     && n.material.as_ref().is_some_and(|m| m.writes_surface)
             })
             .map(|n| n.frame.surface_view.clone());
-        if let Some(mesh_terrain) = self.mesh_terrain.as_mut() {
-            let yaw = frame.yaw.to_radians();
-            mesh_terrain.prepare(
-                &self.queue,
-                [
-                    frame.camera.x as f32,
-                    frame.camera.y as f32,
-                    frame.camera.z as f32,
-                ],
-                [-yaw.sin(), yaw.cos()],
-                self.mesh_cluster_debug,
-            );
-        }
         {
             let attachments = [Some(wgpu::RenderPassColorAttachment {
                 view: world_view,
@@ -7505,8 +7562,22 @@ impl Renderer {
                 && !pack_draws_terrain
                 && let Some(mesh_terrain) = self.mesh_terrain.as_ref()
             {
-                mesh_terrain.draw(&mut pass, &self.group);
+                // In a pass of its own, timed with Horizon's (`stats`' gpu_passes).
+                drop(pass);
+                pass = world_pass_after_culling(
+                    &mut encoder,
+                    world_view,
+                    world_depth,
+                    true,
+                    self.own_timing.as_mut(),
+                    "Far terrain mesh",
+                )
+                .forget_lifetime();
                 pass.set_bind_group(0, &self.group, &[]);
+                mesh_terrain.draw(&mut pass, 0, false);
+                drop(pass);
+                pass = plain_pass(&mut encoder);
+                pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
             }
             if entity_quads > 0 {
                 pass.set_pipeline(&self.entity_pipeline);

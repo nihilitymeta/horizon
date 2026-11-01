@@ -640,21 +640,29 @@ mod tests {
         let Ok(adapter) = pollster::block_on(instance.request_adapter(&Default::default())) else {
             return;
         };
-        if !adapter.features().contains(wgpu::Features::EXPERIMENTAL_MESH_SHADER) {
+        if !adapter
+            .features()
+            .contains(wgpu::Features::EXPERIMENTAL_MESH_SHADER)
+        {
             return;
         }
 
-        let Ok((device, _queue)) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("Mesh test device"),
-            required_features: wgpu::Features::EXPERIMENTAL_MESH_SHADER,
-            required_limits: adapter.limits(),
-            experimental_features: horizon_hdr::enable_experimental_features(),
-            ..Default::default()
-        })) else {
+        let Ok((device, _queue)) =
+            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+                label: Some("Mesh test device"),
+                required_features: wgpu::Features::EXPERIMENTAL_MESH_SHADER,
+                required_limits: adapter.limits(),
+                experimental_features: horizon_hdr::enable_experimental_features(),
+                ..Default::default()
+            }))
+        else {
             return;
         };
 
-        let indicator = crate::gfx::mesh_indicator::MeshIndicator::new(&device, wgpu::TextureFormat::Rgba8Unorm);
+        let indicator = crate::gfx::mesh_indicator::MeshIndicator::new(
+            &device,
+            wgpu::TextureFormat::Rgba8Unorm,
+        );
         assert!(indicator.is_some());
     }
 }

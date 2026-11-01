@@ -108,6 +108,22 @@ impl Sides {
         self.ends[13]
     }
 
+    /// Where each bucket ends, in mesh order (`BUCKETS`), for the GPU-driven
+    /// far terrain's task shader, which repeats `visible_from`'s test. A
+    /// bucket's end is its cutout part's, the last of its two (`Part`).
+    pub fn ends(&self) -> [u32; 7] {
+        std::array::from_fn(|b| self.ends[b * 2 + 1])
+    }
+
+    /// Each bucket's plane (`ends`' order): the lowest of a bucket facing a
+    /// positive direction, the highest of one facing a negative one.
+    pub fn planes(&self) -> [f32; 7] {
+        self.planes
+    }
+
+    /// `MARGIN`, for a shader repeating `visible_from`'s test.
+    pub const MARGIN: f32 = MARGIN;
+
     /// Calls `draw(first, count)` for each run of quads an eye at `eye`
     /// (relative to the mesh's origin) can see the front of, nearest the
     /// start first. Empty buckets do not break a run.

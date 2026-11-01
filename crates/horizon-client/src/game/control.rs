@@ -355,6 +355,26 @@ impl Game<'_> {
                 }
                 Ok(Some(json!({ "ok": true, "cull": r.section_cull() })))
             }
+            "mesh-shaders" => {
+                // A/B checks of the GPU-driven far terrain in a running game.
+                use horizon_client::graphics::MeshShadersMode;
+                match words.get(1).copied() {
+                    None => {}
+                    Some("on") => self.settings.horizon.mesh_shaders = MeshShadersMode::On,
+                    Some("off") => self.settings.horizon.mesh_shaders = MeshShadersMode::Off,
+                    Some("auto") => self.settings.horizon.mesh_shaders = MeshShadersMode::Auto,
+                    Some(other) => return Err(format!("unknown mesh shaders mode {other}").into()),
+                }
+                self.apply_settings();
+                let r = self.renderer.as_ref().ok_or("no renderer")?;
+                Ok(Some(json!({
+                    "ok": true,
+                    "mode": self.settings.horizon.mesh_shaders.key(),
+                    "active": r.mesh_shaders_active(),
+                    "supported": r.mesh_shaders_supported(),
+                    "tiles": r.mesh_tile_count(),
+                })))
+            }
             "gpu-passes" => {
                 match words.get(1).copied() {
                     None => {}
@@ -1188,6 +1208,8 @@ impl Game<'_> {
                 "backend": format!("{:?}", r.info.backend),
                 "size": [r.config.width, r.config.height],
                 "present_mode": format!("{:?}", r.config.present_mode),
+                "mesh_shaders": r.mesh_shaders_active(),
+                "mesh_tiles": r.mesh_tile_count(),
                 "drawn_sections": r.drawn_sections,
                 "section_draws": r.section_draws,
                 "section_draw_calls": r.section_draw_calls,

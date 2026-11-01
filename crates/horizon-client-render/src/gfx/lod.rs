@@ -156,6 +156,14 @@ impl Tile {
     pub fn meshes_mut(&mut self) -> impl Iterator<Item = &mut SectionGpu> {
         std::iter::once(&mut self.mesh).chain(self.previous.as_mut().map(|(mesh, _)| mesh))
     }
+    /// Its fade code this frame (`fade_code`, `fade_out_code`): none while
+    /// it has nothing to draw yet.
+    fn fade(&self, key: TileKey, now: Instant) -> Option<u32> {
+        match self.dying {
+            Some(since) if self.alone => Some(fade_out_code(since, key.level, now)),
+            _ => fade_code(self.shown, key.level, now),
+        }
+    }
     pub fn visible(
         &self,
         key: TileKey,
@@ -163,10 +171,7 @@ impl Tile {
         frustum: &Frustum,
         now: Instant,
     ) -> Option<Visible> {
-        let fade = match self.dying {
-            Some(since) if self.alone => fade_out_code(since, key.level, now),
-            _ => fade_code(self.shown, key.level, now)?,
-        };
+        let fade = self.fade(key, now)?;
         let origin = DVec3::from(key.origin().map(f64::from)) - camera;
         Some(Visible {
             key,
@@ -222,6 +227,43 @@ impl Renderer {
                 }
             }
         }
+        self.sync_mesh_tile(key);
+    }
+
+    /// Gives the mesh pipeline the tile's record (`TileRecord`): the mesh it
+    /// draws this frame (`drawn`), or none once it is gone.
+    pub(super) fn sync_mesh_tile(&mut self, key: TileKey) {
+        let Some(mesh_terrain) = self.mesh_terrain.as_mut() else {
+            return;
+        };
+        match self.lods.get(&key) {
+            Some(tile) => {
+                let s = tile.drawn();
+                mesh_terrain.set_tile(
+                    key,
+                    crate::lod::TileRecord {
+                        bounds: [tile.bounds.min.to_array(), tile.bounds.max.to_array()],
+                        page: s.page,
+                        first_vertex: s.start as u32,
+                        sides: s.sides,
+                    },
+                );
+            }
+            None => mesh_terrain.remove_tile(key),
+        }
+    }
+
+    /// `sync_mesh_tile` for every tile: after the arena moved their quads.
+    pub(super) fn sync_mesh_tiles(&mut self) {
+        if self.mesh_terrain.is_none() {
+            return;
+        }
+        crate::spans::time("far mesh sync", || {
+            let keys: Vec<TileKey> = self.lods.keys().copied().collect();
+            for key in keys {
+                self.sync_mesh_tile(key);
+            }
+        });
     }
 
     fn release_tile(&mut self, tile: Tile) {
@@ -298,14 +340,18 @@ impl Renderer {
         }
         let stood_in: Vec<_> = self
             .lods
-            .values_mut()
-            .filter_map(|tile| match tile.previous {
-                Some((_, Some(since))) if start - since >= FADE => tile.previous.take(),
+            .iter_mut()
+            .filter_map(|(&key, tile)| match tile.previous {
+                Some((_, Some(since))) if start - since >= FADE => {
+                    tile.previous.take().map(|(previous, _)| (key, previous))
+                }
                 _ => None,
             })
             .collect();
-        for (previous, _) in stood_in {
+        for (key, previous) in stood_in {
             self.release_mesh(previous);
+            // Its own mesh draws from now on.
+            self.sync_mesh_tile(key);
         }
         // The columns near chunks take in this job, and the tiles holding the
         // job's new finer ones: a tile meshed again around them keeps its

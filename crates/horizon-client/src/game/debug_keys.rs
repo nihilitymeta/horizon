@@ -493,11 +493,14 @@ impl Game<'_> {
             d.group("system", [format!("Mesh Shaders: {mesh_status}")]);
         }
         if self.settings.horizon.lod_distance > 0 {
-            d.group("system", [format!(
-                "LOD: {} chunks (Detail: {})",
-                self.settings.horizon.lod_distance,
-                self.settings.horizon.far_detail.label()
-            )]);
+            d.group(
+                "system",
+                [format!(
+                    "LOD: {} chunks (Detail: {})",
+                    self.settings.horizon.lod_distance,
+                    self.settings.horizon.far_detail.label()
+                )],
+            );
         }
         // Horizon's own: the shader pack's GPU time per pass (an empty group would move others).
         let pass_lines = self.renderer.as_ref().map_or_else(Vec::new, |r| {

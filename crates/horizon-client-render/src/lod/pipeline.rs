@@ -1,67 +1,137 @@
-//! GPU-driven far terrain: the task/mesh shader pipeline and the storage
-//! buffers it reads. The CPU mesher's solid quads are uploaded unchanged, so
-//! far terrain looks the same whether the mesh path or the vertex path draws
-//! it; the task shader culls whole tiles and coarsens the periphery.
-use crate::{fast_hash::FxHashMap, lod::TileKey, mesher::TerrainVertex};
+//! GPU-driven far terrain: the task/mesh pipeline over the solid quads of the
+//! resident far tiles, where they already lie in the terrain arena, and the
+//! buffers it reads. Nothing is copied: a tile's record names its arena page
+//! and first vertex, its bounds and its side buckets, and the task shader
+//! does per tile what `Renderer::render` does on the CPU for the vertex path
+//! (the frustum test, the buckets that can face the eye, the draw list).
+use crate::{fast_hash::FxHashMap, lod::TileKey, mesher::Sides};
 use bytemuck::{Pod, Zeroable};
+use glam::Mat4;
 use std::mem::size_of;
 
-const SHADER: &str = include_str!("../../shaders/lod_terrain_mesh.wgsl");
-/// `TerrainVertex` as six `u32`s: position, packed UV, packed layer/light, colour.
-const VERTEX_WORDS: u64 = 6;
-const VERTEX_BYTE_SIZE: u64 = VERTEX_WORDS * 4;
-const CHUNK_SIZE: u64 = size_of::<GpuChunkHeader>() as u64;
-const INITIAL_VERTEX_CAPACITY: u64 = 16 * 1024 * 1024; // 16 MiB (~699k vertices)
-const MAX_VERTEX_CAPACITY: u64 = 1024 * 1024 * 1024;   // 1 GiB (~44.7m vertices, well below 2GB limit)
+/// The task and mesh stages (`lod_terrain_mesh.wgsl`), appended to terrain.wgsl.
+const MESH_STAGES: &str = include_str!("../../shaders/lod_terrain_mesh.wgsl");
+/// `LodDraw`'s slot in the draws buffer: one per pass and page, at the dynamic
+/// offset alignment.
+const DRAW_STRIDE: u64 = 256;
+/// `ts_lod`'s meshlets (of 32 quads) per task workgroup at most: a tile with
+/// more is listed once per chunk of them, as written; `HORIZON_MESH_CAP`
+/// varies it.
+const MESHLETS_PER_TASK: u32 = 64;
 
+/// The module: the mesh shader extension first, then terrain.wgsl whole (the
+/// `terrain_vertex` and `fs_solid` the vertex path uses), then the stages.
+pub fn shader_source(terrain: &str) -> String {
+    format!("enable wgpu_mesh_shader;\n{terrain}\n{MESH_STAGES}")
+}
+
+/// `shader_source` with `quads` quads per meshlet (32 as written, or 64:
+/// twice the lanes and outputs), for tuning (`HORIZON_MESH_QUADS`).
+pub fn shader_source_with(terrain: &str, quads: u32) -> String {
+    let source = shader_source(terrain);
+    if quads == 32 {
+        return source;
+    }
+    assert_eq!(quads, 64, "32 or 64 quads per meshlet");
+    source
+        .replace(
+            "const QUADS_PER_MESHLET: u32 = 32u;",
+            "const QUADS_PER_MESHLET: u32 = 64u;",
+        )
+        .replace(
+            "@mesh(out_mesh) @payload(payload) @workgroup_size(128, 1, 1)",
+            "@mesh(out_mesh) @payload(payload) @workgroup_size(256, 1, 1)",
+        )
+        .replace("array<TerrainOut, 128>", "array<TerrainOut, 256>")
+        .replace("array<PrimitiveOut, 64>", "array<PrimitiveOut, 128>")
+}
+
+/// A tile's record on the GPU (`GpuTile` in the shader).
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Pod, Zeroable)]
-pub struct GpuChunkHeader {
-    /// World tile origin; w is the tile's fixed-point UV step (1/32).
-    pub origin: [f32; 4],
-    pub bounds_min: [f32; 4],
-    pub bounds_max: [f32; 4],
-    pub vertex_offset: u32,
-    pub quad_count: u32,
-    /// Bit 0: inside the foveation cone, persisted for the hysteresis band.
-    pub flags: u32,
-    pub _pad: u32,
+#[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
+struct GpuTile {
+    bounds_min: [f32; 4],
+    bounds_max: [f32; 4],
+    first_vertex: u32,
+    quads: u32,
+    _pad0: [u32; 2],
+    ends: [u32; 7],
+    _pad1: u32,
+    planes: [f32; 7],
+    _pad2: f32,
 }
 
+/// One dispatch's uniforms (`LodDraw` in the shader).
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Pod, Zeroable)]
-pub struct LodGlobals {
-    pub camera: [f32; 4],
-    /// xz forward look, z cos(enter), w cos(exit).
-    pub forward: [f32; 4],
-    /// x debug colouring, y resident chunk count.
-    pub params: [u32; 4],
+#[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
+struct LodDraw {
+    view_proj: [[f32; 4]; 4],
+    eye: [f32; 4],
+    low: [f32; 4],
+    params: [u32; 4],
 }
 
-struct Tile {
-    chunk: usize,
-    vertex_offset: u32,
-    vertex_count: u32,
+/// Where a tile's solid quads are and how they are culled: what the vertex
+/// path reads from its `SectionGpu` and `Tile` (gfx/lod.rs).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TileRecord {
+    /// Tile-relative box of its quads.
+    pub bounds: [[f32; 3]; 2],
+    pub page: u32,
+    pub first_vertex: u32,
+    pub sides: Sides,
 }
 
-/// The mesh-shader terrain pipeline and its shared buffers.
+/// A pass's culling: what `Renderer::render` hands `facing_runs_from` and
+/// `Bounds::visible`, camera-relative.
+#[derive(Clone, Copy, Debug)]
+pub struct DrawParams {
+    pub view_proj: Mat4,
+    /// `projection_center`, when the side buckets are culled.
+    pub eye: Option<[f32; 3]>,
+    /// The water mirror's low eye, a camera-relative height.
+    pub low: Option<f32>,
+    /// Colour each meshlet (F3 + M).
+    pub debug: bool,
+}
+
+/// The mesh-shader far-terrain pipelines and their buffers.
 pub struct MeshShaderPipeline {
     pipeline: wgpu::RenderPipeline,
-    bind_group_layout: wgpu::BindGroupLayout,
-    bind_group: wgpu::BindGroup,
-    globals: wgpu::Buffer,
-    chunks: wgpu::Buffer,
-    vertices: wgpu::Buffer,
-    chunk_capacity: usize,
-    vertex_capacity: u64,
-    chunk_data: Vec<GpuChunkHeader>,
-    free_chunks: Vec<usize>,
-    free_vertex_ranges: Vec<(u32, u32)>,
-    vertex_high_water: u32,
-    tile_vertices: FxHashMap<TileKey, Vec<TerrainVertex>>,
-    tiles: FxHashMap<TileKey, Tile>,
-    chunk_count: u32,
-    chunks_dirty: bool,
+    mirror_pipeline: wgpu::RenderPipeline,
+    layout: wgpu::BindGroupLayout,
+    tiles: Vec<GpuTile>,
+    /// Each slot's page; `u32::MAX` for a free slot.
+    slot_pages: Vec<u32>,
+    slots: FxHashMap<TileKey, u32>,
+    free_slots: Vec<u32>,
+    /// Slots whose record changed since the last `begin_frame`; every slot
+    /// when `all_dirty`.
+    dirty_slots: Vec<u32>,
+    all_dirty: bool,
+    instances: Vec<[f32; 4]>,
+    /// This frame's visible tiles' slots by page (`page_ranges`), nearest
+    /// first within a page, the shader's `list`.
+    list: Vec<u32>,
+    /// (page, first entry of `list`, entries).
+    page_ranges: Vec<(u32, u32, u32)>,
+    tiles_buffer: wgpu::Buffer,
+    instances_buffer: wgpu::Buffer,
+    list_buffer: wgpu::Buffer,
+    draws_buffer: wgpu::Buffer,
+    draws: Vec<u8>,
+    /// Each page's bind group over the arena's page; remade when a buffer
+    /// here is replaced (`rebind`) or a page is new.
+    bind_groups: Vec<(u32, wgpu::BindGroup)>,
+    rebind: bool,
+    /// The arena's `generation` the bind groups were made at.
+    page_generation: u64,
+    /// Passes `begin_frame` was given this frame.
+    passes: usize,
+    /// `MESHLETS_PER_TASK` the module was built with.
+    meshlets_per_task: u32,
+    /// Each slot's quads: how many chunks its tile is listed as.
+    slot_quads: Vec<u32>,
 }
 
 impl MeshShaderPipeline {
@@ -70,14 +140,60 @@ impl MeshShaderPipeline {
         terrain_layout: &wgpu::BindGroupLayout,
         format: wgpu::TextureFormat,
         sprite_constants: [(&str, f64); 2],
+        terrain_source: &str,
+    ) -> Option<Self> {
+        let quads = std::env::var("HORIZON_MESH_QUADS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|q| *q == 64)
+            .unwrap_or(32);
+        let limits = device.limits();
+        log::info!(
+            "Horizon: mesh shaders: {} quads per meshlet; limits: {} output vertices, {} primitives, \
+             {} bytes of payload, {} invocations per workgroup",
+            quads,
+            limits.max_mesh_output_vertices,
+            limits.max_mesh_output_primitives,
+            limits.max_task_payload_size,
+            limits.max_mesh_invocations_per_workgroup,
+        );
+        let mut source = shader_source_with(terrain_source, quads);
+        if let Some(n) = std::env::var("HORIZON_MESH_CAP")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .filter(|n| (1..=255).contains(n))
+        {
+            source = source.replace(
+                "const MESHLETS_PER_TASK: u32 = 64u;",
+                &format!("const MESHLETS_PER_TASK: u32 = {n}u;"),
+            );
+            log::warn!("Horizon: mesh shader probe: {n} meshlets per task workgroup");
+        }
+        Self::from_source(device, terrain_layout, format, sprite_constants, &source)
+    }
+
+    /// `new` over a module of one's own (`shader_source`'s shape): tests and
+    /// tools that vary the stages.
+    pub fn from_source(
+        device: &wgpu::Device,
+        terrain_layout: &wgpu::BindGroupLayout,
+        format: wgpu::TextureFormat,
+        sprite_constants: [(&str, f64); 2],
+        source: &str,
     ) -> Option<Self> {
         let limits = device.limits();
-        if limits.max_mesh_output_vertices < 128
-            || limits.max_mesh_output_primitives < 64
-            || limits.max_task_payload_size < 16
+        let big = source.contains("array<TerrainOut, 256>");
+        let meshlets_per_task = source
+            .split_once("const MESHLETS_PER_TASK: u32 = ")
+            .and_then(|(_, rest)| rest.split_once('u'))
+            .and_then(|(n, _)| n.parse().ok())
+            .unwrap_or(MESHLETS_PER_TASK);
+        if limits.max_mesh_output_vertices < if big { 256 } else { 128 }
+            || limits.max_mesh_output_primitives < if big { 128 } else { 64 }
+            || limits.max_task_payload_size < 4 * 65
         {
             log::warn!(
-                "Horizon: mesh-shader limits too small ({} vertices, {} primitives, {} payload)",
+                "Horizon: mesh-shader limits too small ({} vertices, {} primitives, {} payload bytes)",
                 limits.max_mesh_output_vertices,
                 limits.max_mesh_output_primitives,
                 limits.max_task_payload_size
@@ -86,472 +202,442 @@ impl MeshShaderPipeline {
         }
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("LOD terrain mesh shader"),
-            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+            label: Some("Far terrain mesh shader"),
+            source: wgpu::ShaderSource::Wgsl(source.into()),
         });
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("LOD terrain mesh bindings"),
+        let stages = wgpu::ShaderStages::TASK | wgpu::ShaderStages::MESH;
+        let storage = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: stages,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Far terrain mesh bindings"),
             entries: &[
+                storage(0),
+                storage(1),
+                storage(2),
+                storage(3),
                 wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::TASK
-                        | wgpu::ShaderStages::MESH
-                        | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::TASK
-                        | wgpu::ShaderStages::MESH
-                        | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::TASK
-                        | wgpu::ShaderStages::MESH
-                        | wgpu::ShaderStages::FRAGMENT,
+                    binding: 4,
+                    visibility: stages,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(size_of::<LodDraw>() as u64),
                     },
                     count: None,
                 },
             ],
         });
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("LOD terrain mesh layout"),
-            bind_group_layouts: &[Some(terrain_layout), Some(&bind_group_layout)],
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Far terrain mesh layout"),
+            bind_group_layouts: &[Some(terrain_layout), Some(&layout)],
             ..Default::default()
         });
         let constants = &sprite_constants;
-        let pipeline = device.create_mesh_pipeline(&wgpu::MeshPipelineDescriptor {
-            label: Some("LOD terrain mesh pipeline"),
-            layout: Some(&layout),
-            task: Some(wgpu::TaskState {
-                module: &module,
-                entry_point: Some("ts_lod"),
-                compilation_options: wgpu::PipelineCompilationOptions {
-                    constants,
+        let pipeline = |label: &str, fragment: &str| {
+            device.create_mesh_pipeline(&wgpu::MeshPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&pipeline_layout),
+                task: Some(wgpu::TaskState {
+                    module: &module,
+                    entry_point: Some("ts_lod"),
+                    compilation_options: wgpu::PipelineCompilationOptions {
+                        constants,
+                        ..Default::default()
+                    },
+                }),
+                mesh: wgpu::MeshState {
+                    module: &module,
+                    entry_point: Some("ms_lod"),
+                    compilation_options: wgpu::PipelineCompilationOptions {
+                        constants,
+                        ..Default::default()
+                    },
+                },
+                // As "Terrain solid" (gfx.rs): back faces culled, reversed depth.
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: Some(wgpu::Face::Back),
                     ..Default::default()
                 },
-            }),
-            mesh: wgpu::MeshState {
-                module: &module,
-                entry_point: Some("ms_lod"),
-                compilation_options: wgpu::PipelineCompilationOptions {
-                    constants,
-                    ..Default::default()
-                },
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("fs_lod"),
-                compilation_options: wgpu::PipelineCompilationOptions {
-                    constants,
-                    ..Default::default()
-                },
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview: None,
-            cache: None,
-        });
-
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: wgpu::TextureFormat::Depth32Float,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some(fragment),
+                    compilation_options: wgpu::PipelineCompilationOptions {
+                        constants,
+                        ..Default::default()
+                    },
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview: None,
+                cache: None,
+            })
+        };
+        let world = pipeline("Far terrain mesh", "fs_solid");
+        let mirror = pipeline("Far terrain mesh mirror", "fs_solid_mirror");
         if let Some(error) = pollster::block_on(scope.pop()) {
             log::warn!("Horizon: mesh-shader pipeline unavailable: {error}");
             return None;
         }
-        let chunk_capacity = 256;
-        let vertex_capacity = INITIAL_VERTEX_CAPACITY;
-        let chunks = Self::chunk_buffer(device, chunk_capacity);
-        let vertices = Self::vertex_buffer(device, vertex_capacity);
-        let globals = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("LOD terrain mesh globals"),
-            size: size_of::<LodGlobals>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let bind_group = Self::bind_group(device, &bind_group_layout, &chunks, &vertices, &globals);
+        let buffer = |label, size, usage| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size,
+                usage: usage | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        };
+        let storage = wgpu::BufferUsages::STORAGE;
         Some(Self {
-            pipeline,
-            bind_group_layout,
-            bind_group,
-            globals,
-            chunks,
-            vertices,
-            chunk_capacity,
-            vertex_capacity,
-            chunk_data: Vec::new(),
-            free_chunks: Vec::new(),
-            free_vertex_ranges: Vec::new(),
-            vertex_high_water: 0,
-            tile_vertices: FxHashMap::default(),
-            tiles: FxHashMap::default(),
-            chunk_count: 0,
-            chunks_dirty: false,
-        })
-    }
-
-    fn chunk_buffer(device: &wgpu::Device, chunks: usize) -> wgpu::Buffer {
-        device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("LOD terrain chunks"),
-            size: CHUNK_SIZE * chunks as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        })
-    }
-
-    fn vertex_buffer(device: &wgpu::Device, bytes: u64) -> wgpu::Buffer {
-        device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("LOD terrain vertices"),
-            size: bytes,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        })
-    }
-
-    fn bind_group(
-        device: &wgpu::Device,
-        layout: &wgpu::BindGroupLayout,
-        chunks: &wgpu::Buffer,
-        vertices: &wgpu::Buffer,
-        globals: &wgpu::Buffer,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("LOD terrain mesh resources"),
+            pipeline: world,
+            mirror_pipeline: mirror,
             layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: chunks.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: vertices.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: globals.as_entire_binding(),
-                },
-            ],
+            tiles: Vec::new(),
+            slot_pages: Vec::new(),
+            slots: FxHashMap::default(),
+            free_slots: Vec::new(),
+            dirty_slots: Vec::new(),
+            all_dirty: true,
+            instances: Vec::new(),
+            list: Vec::new(),
+            page_ranges: Vec::new(),
+            tiles_buffer: buffer(
+                "Far terrain tiles",
+                256 * size_of::<GpuTile>() as u64,
+                storage,
+            ),
+            instances_buffer: buffer("Far terrain tile instances", 256 * 16, storage),
+            list_buffer: buffer("Far terrain tile list", 256 * 4, storage),
+            draws_buffer: buffer(
+                "Far terrain draws",
+                8 * DRAW_STRIDE,
+                wgpu::BufferUsages::UNIFORM,
+            ),
+            draws: Vec::new(),
+            bind_groups: Vec::new(),
+            rebind: true,
+            page_generation: 0,
+            passes: 0,
+            meshlets_per_task,
+            slot_quads: Vec::new(),
         })
     }
 
-    fn ensure_chunk_capacity(&mut self, device: &wgpu::Device) {
-        if self.chunk_data.len() > self.chunk_capacity {
-            self.chunk_capacity = self.chunk_data.len().next_power_of_two();
-            self.chunks = Self::chunk_buffer(device, self.chunk_capacity);
-            self.bind_group = Self::bind_group(
-                device,
-                &self.bind_group_layout,
-                &self.chunks,
-                &self.vertices,
-                &self.globals,
-            );
-            self.chunks_dirty = true;
-        }
-    }
-
-    fn ensure_vertex_capacity(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, needed: u32) {
-        let capacity_in_verts = (self.vertex_capacity / VERTEX_BYTE_SIZE) as u32;
-        if self.vertex_high_water + needed <= capacity_in_verts {
-            return;
-        }
-
-        // Try defragmenting if free ranges hold significant space
-        let free_space: u32 = self.free_vertex_ranges.iter().map(|r| r.1).sum();
-        let active_space = self.vertex_high_water.saturating_sub(free_space);
-        if active_space + needed <= capacity_in_verts && free_space > (capacity_in_verts / 8) {
-            self.defragment(queue);
-            if self.vertex_high_water + needed <= capacity_in_verts {
-                return;
-            }
-        }
-
-        // Need to grow buffer
-        let needed_bytes = (u64::from(self.vertex_high_water + needed) * VERTEX_BYTE_SIZE)
-            .min(MAX_VERTEX_CAPACITY);
-        let new_capacity = (self.vertex_capacity * 2).max(needed_bytes).min(MAX_VERTEX_CAPACITY);
-        if new_capacity > self.vertex_capacity {
-            self.vertex_capacity = new_capacity;
-            self.vertices = Self::vertex_buffer(device, self.vertex_capacity);
-            self.bind_group = Self::bind_group(
-                device,
-                &self.bind_group_layout,
-                &self.chunks,
-                &self.vertices,
-                &self.globals,
-            );
-            self.defragment(queue);
-        } else {
-            self.defragment(queue);
-        }
-    }
-
-    fn defragment(&mut self, queue: &wgpu::Queue) {
-        let mut offset = 0u32;
-        for (key, tile) in &mut self.tiles {
-            if let Some(verts) = self.tile_vertices.get(key) {
-                tile.vertex_offset = offset;
-                if let Some(chunk) = self.chunk_data.get_mut(tile.chunk) {
-                    chunk.vertex_offset = offset;
-                }
-                queue.write_buffer(
-                    &self.vertices,
-                    u64::from(offset) * VERTEX_BYTE_SIZE,
-                    bytemuck::cast_slice(verts),
-                );
-                offset += verts.len() as u32;
-            }
-        }
-        self.vertex_high_water = offset;
-        self.free_vertex_ranges.clear();
-        self.chunks_dirty = true;
-    }
-
-    fn alloc_vertices(&mut self, count: u32) -> Option<u32> {
-        let mut best_idx = None;
-        let mut best_waste = u32::MAX;
-        for (i, &(_off, len)) in self.free_vertex_ranges.iter().enumerate() {
-            if len >= count && (len - count) < best_waste {
-                best_waste = len - count;
-                best_idx = Some(i);
-            }
-        }
-        if let Some(i) = best_idx {
-            let (off, len) = self.free_vertex_ranges[i];
-            if len == count {
-                self.free_vertex_ranges.swap_remove(i);
-            } else {
-                self.free_vertex_ranges[i] = (off + count, len - count);
-            }
-            return Some(off);
-        }
-
-        let capacity_in_verts = (self.vertex_capacity / VERTEX_BYTE_SIZE) as u32;
-        if self.vertex_high_water + count <= capacity_in_verts {
-            let off = self.vertex_high_water;
-            self.vertex_high_water += count;
-            return Some(off);
-        }
-
-        None
-    }
-
-    fn free_vertices(&mut self, offset: u32, count: u32) {
-        if count == 0 {
-            return;
-        }
-        if offset + count == self.vertex_high_water {
-            self.vertex_high_water = offset;
-            return;
-        }
-        self.free_vertex_ranges.push((offset, count));
-        if self.free_vertex_ranges.len() > 32 {
-            self.merge_free_ranges();
-        }
-    }
-
-    fn merge_free_ranges(&mut self) {
-        if self.free_vertex_ranges.is_empty() {
-            return;
-        }
-        self.free_vertex_ranges.sort_unstable_by_key(|r| r.0);
-        let mut merged: Vec<(u32, u32)> = Vec::with_capacity(self.free_vertex_ranges.len());
-        for (off, count) in self.free_vertex_ranges.drain(..) {
-            if let Some(last) = merged.last_mut()
-                && last.0 + last.1 == off
-            {
-                last.1 += count;
-                continue;
-            }
-            merged.push((off, count));
-        }
-        if let Some(last) = merged.last()
-            && last.0 + last.1 == self.vertex_high_water
-        {
-            self.vertex_high_water = last.0;
-            merged.pop();
-        }
-        self.free_vertex_ranges = merged;
-    }
-
-    /// Appends or updates a tile's solid quads.
-    pub fn upload_tile(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        key: TileKey,
-        mesh: &crate::mesher::SectionMesh,
-    ) {
-        if mesh.solid.is_empty() {
+    /// Records where the tile's solid quads are, replacing what it had.
+    pub fn set_tile(&mut self, key: TileKey, record: TileRecord) {
+        let quads = record.sides.quads();
+        if quads == 0 {
             self.remove_tile(key);
             return;
         }
-
-        self.remove_tile(key);
-
-        let quads = (mesh.solid.len() / 4) as u32;
-        let count = mesh.solid.len() as u32;
-
-        self.ensure_vertex_capacity(device, queue, count);
-        let Some(offset) = self.alloc_vertices(count) else {
-            return;
-        };
-
-        let origin = key.origin();
-        let mut min = [f32::MAX; 3];
-        let mut max = [f32::MIN; 3];
-        for vertex in &mesh.solid {
-            for axis in 0..3 {
-                min[axis] = min[axis].min(vertex.pos[axis] + origin[axis] as f32);
-                max[axis] = max[axis].max(vertex.pos[axis] + origin[axis] as f32);
+        let slot = match self.slots.get(&key) {
+            Some(&slot) => slot,
+            None => {
+                let slot = self.free_slots.pop().unwrap_or_else(|| {
+                    self.tiles.push(GpuTile::default());
+                    self.slot_pages.push(u32::MAX);
+                    self.slot_quads.push(0);
+                    self.instances.push([0.0; 4]);
+                    self.tiles.len() as u32 - 1
+                });
+                self.slots.insert(key, slot);
+                slot
             }
-        }
-        let chunk = GpuChunkHeader {
-            origin: [
-                origin[0] as f32,
-                origin[1] as f32,
-                origin[2] as f32,
-                1.0 / crate::mesher::TILED_UV_STEPS,
-            ],
+        };
+        let [min, max] = record.bounds;
+        self.tiles[slot as usize] = GpuTile {
             bounds_min: [min[0], min[1], min[2], 0.0],
             bounds_max: [max[0], max[1], max[2], 0.0],
-            vertex_offset: offset,
-            quad_count: quads,
-            flags: 0,
-            _pad: 0,
+            first_vertex: record.first_vertex,
+            quads,
+            ends: record.sides.ends(),
+            planes: record.sides.planes(),
+            ..Default::default()
         };
-
-        let chunk_idx = if let Some(free_idx) = self.free_chunks.pop() {
-            free_idx
-        } else {
-            self.chunk_data.push(chunk);
-            self.chunk_data.len() - 1
-        };
-
-        if chunk_idx >= self.chunk_data.len() {
-            self.chunk_data.resize(chunk_idx + 1, GpuChunkHeader::zeroed());
-        }
-        self.chunk_data[chunk_idx] = chunk;
-        self.tiles.insert(
-            key,
-            Tile {
-                chunk: chunk_idx,
-                vertex_offset: offset,
-                vertex_count: count,
-            },
-        );
-        self.tile_vertices.insert(key, mesh.solid.clone());
-        self.chunk_count = self.chunk_count.max(chunk_idx as u32 + 1);
-
-        self.ensure_chunk_capacity(device);
-
-        queue.write_buffer(
-            &self.vertices,
-            u64::from(offset) * VERTEX_BYTE_SIZE,
-            bytemuck::cast_slice(&mesh.solid),
-        );
-        queue.write_buffer(
-            &self.chunks,
-            chunk_idx as u64 * CHUNK_SIZE,
-            bytemuck::bytes_of(&chunk),
-        );
-        self.chunks_dirty = true;
+        self.slot_pages[slot as usize] = record.page;
+        self.slot_quads[slot as usize] = quads;
+        self.dirty_slots.push(slot);
     }
 
     pub fn remove_tile(&mut self, key: TileKey) {
-        if let Some(tile) = self.tiles.remove(&key) {
-            self.tile_vertices.remove(&key);
-            if let Some(chunk) = self.chunk_data.get_mut(tile.chunk) {
-                chunk.quad_count = 0;
-                chunk.flags = 0;
-                self.chunks_dirty = true;
-            }
-            self.free_chunks.push(tile.chunk);
-            self.free_vertices(tile.vertex_offset, tile.vertex_count);
-            while self.chunk_data.last().is_some_and(|c| c.quad_count == 0) {
-                let dead_idx = self.chunk_data.len() - 1;
-                self.chunk_data.pop();
-                self.free_chunks.retain(|&idx| idx != dead_idx);
-            }
-            self.chunk_count = self.chunk_data.len() as u32;
+        if let Some(slot) = self.slots.remove(&key) {
+            self.tiles[slot as usize] = GpuTile::default();
+            self.slot_pages[slot as usize] = u32::MAX;
+            self.slot_quads[slot as usize] = 0;
+            self.instances[slot as usize] = [0.0; 4];
+            self.free_slots.push(slot);
+            self.dirty_slots.push(slot);
         }
     }
 
     pub fn clear(&mut self) {
-        self.chunk_data.clear();
-        self.free_chunks.clear();
-        self.free_vertex_ranges.clear();
-        self.vertex_high_water = 0;
-        self.tile_vertices.clear();
         self.tiles.clear();
-        self.chunk_count = 0;
-        self.chunks_dirty = true;
+        self.slot_pages.clear();
+        self.slot_quads.clear();
+        self.slots.clear();
+        self.free_slots.clear();
+        self.instances.clear();
+        self.dirty_slots.clear();
+        self.all_dirty = true;
     }
 
-    pub fn chunk_count(&self) -> u32 {
-        self.chunk_count
+    /// Resident tiles with solid quads.
+    pub fn tile_count(&self) -> u32 {
+        self.slots.len() as u32
     }
 
-    /// Writes this frame's camera, look and debug state; uploads changed chunks.
-    pub fn prepare(
-        &mut self,
-        queue: &wgpu::Queue,
-        camera: [f32; 3],
-        forward: [f32; 2],
-        debug: bool,
-    ) {
-        let globals = LodGlobals {
-            camera: [camera[0], camera[1], camera[2], 0.0],
-            // 17 and 23 degrees: enter and exit the 20-degree cone.
-            forward: [forward[0], forward[1], 0.956_304_8, 0.920_504_85],
-            params: [u32::from(debug), self.chunk_count, 0, 0],
-        };
-        queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
-        if self.chunks_dirty {
-            if !self.chunk_data.is_empty() {
-                queue.write_buffer(&self.chunks, 0, bytemuck::cast_slice(&self.chunk_data));
+    /// Whether the tile has a record.
+    #[cfg(test)]
+    pub fn has_tile(&self, key: TileKey) -> bool {
+        self.slots.contains_key(&key)
+    }
+
+    /// Slots in use, the free ones between them included.
+    pub fn slot_count(&self) -> u32 {
+        self.tiles.len() as u32
+    }
+
+    /// This frame's tiles to draw, nearest first, as `Renderer::render` lists
+    /// them for the vertex path (`visible_lods`): each with its instance
+    /// (gfx/lod.rs's `instance`, its camera-relative origin and, in w, its UV
+    /// step and fade code). The order holds within a page, so the near
+    /// tiles' depth rejects the far ones' fragments as in the vertex path.
+    pub fn set_visible(&mut self, visible: impl Iterator<Item = (TileKey, [f32; 4])>) {
+        self.list.clear();
+        self.page_ranges.clear();
+        // (page, order, slot): a stable sort by page keeps the distance order.
+        let mut by_page: Vec<(u32, u32, u32)> = Vec::new();
+        for (key, instance) in visible {
+            let Some(&slot) = self.slots.get(&key) else {
+                continue;
+            };
+            self.instances[slot as usize] = instance;
+            by_page.push((self.slot_pages[slot as usize], by_page.len() as u32, slot));
+        }
+        by_page.sort_unstable();
+        // A tile once per chunk of `meshlets_per_task` meshlets its quads could fill
+        // (the eye sees some buckets: the task shader drops the chunks past them).
+        let quads_per_task = self.meshlets_per_task * 32;
+        for (page, _, slot) in by_page {
+            let chunks = self.slot_quads[slot as usize]
+                .div_ceil(quads_per_task)
+                .min(256);
+            match self.page_ranges.last_mut() {
+                Some((p, _, count)) if *p == page => *count += chunks,
+                _ => self
+                    .page_ranges
+                    .push((page, self.list.len() as u32, chunks)),
             }
-            self.chunks_dirty = false;
+            for chunk in 0..chunks {
+                self.list.push((slot << 8) | chunk);
+            }
         }
     }
 
-    pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>, terrain_group: &wgpu::BindGroup) {
-        if self.chunk_count == 0 {
+    /// Replaces `buffer` with one of `needed` bytes when it is smaller.
+    fn grow(device: &wgpu::Device, buffer: &mut wgpu::Buffer, needed: u64) -> bool {
+        if buffer.size() >= needed {
+            return false;
+        }
+        let label = "Far terrain buffer";
+        *buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: needed.next_power_of_two(),
+            usage: buffer.usage(),
+            mapped_at_creation: false,
+        });
+        true
+    }
+
+    /// Uploads this frame's list and instances (`set_visible`), the passes'
+    /// culling, and the records of tiles that changed, through `write` (the
+    /// renderer's staging belt, or `Queue::write_buffer`); `pages` are the
+    /// arena's live pages and `page_generation` its `generation`, so the
+    /// bindings follow its buffers. Call once a frame before `draw`.
+    pub fn begin_frame<'a>(
+        &mut self,
+        device: &wgpu::Device,
+        write: &mut dyn FnMut(&wgpu::Buffer, u64, &[u8]),
+        pages: impl Fn(u32) -> Option<&'a wgpu::Buffer>,
+        page_generation: u64,
+        passes: &[DrawParams],
+    ) {
+        if page_generation != self.page_generation {
+            self.page_generation = page_generation;
+            self.rebind = true;
+        }
+        let tile_bytes = size_of::<GpuTile>() as u64;
+        if Self::grow(
+            device,
+            &mut self.tiles_buffer,
+            self.tiles.len().max(1) as u64 * tile_bytes,
+        ) {
+            self.all_dirty = true;
+            self.rebind = true;
+        }
+        if self.all_dirty {
+            if !self.tiles.is_empty() {
+                write(&self.tiles_buffer, 0, bytemuck::cast_slice(&self.tiles));
+            }
+            self.all_dirty = false;
+            self.dirty_slots.clear();
+        } else if self.dirty_slots.len() > 8 {
+            // Each write is a staging copy of its own: past a few, the whole table is cheaper.
+            write(&self.tiles_buffer, 0, bytemuck::cast_slice(&self.tiles));
+            self.dirty_slots.clear();
+        } else if !self.dirty_slots.is_empty() {
+            self.dirty_slots.sort_unstable();
+            self.dirty_slots.dedup();
+            for &slot in &self.dirty_slots {
+                write(
+                    &self.tiles_buffer,
+                    u64::from(slot) * tile_bytes,
+                    bytemuck::bytes_of(&self.tiles[slot as usize]),
+                );
+            }
+            self.dirty_slots.clear();
+        }
+        self.rebind |= Self::grow(
+            device,
+            &mut self.instances_buffer,
+            (self.instances.len().max(1) * 16) as u64,
+        );
+        self.rebind |= Self::grow(
+            device,
+            &mut self.list_buffer,
+            (self.list.len().max(1) * 4) as u64,
+        );
+        if !self.instances.is_empty() {
+            write(
+                &self.instances_buffer,
+                0,
+                bytemuck::cast_slice(&self.instances),
+            );
+        }
+        if !self.list.is_empty() {
+            write(&self.list_buffer, 0, bytemuck::cast_slice(&self.list));
+        }
+        self.passes = passes.len();
+        let draws = passes.len() * self.page_ranges.len();
+        self.draws.clear();
+        self.draws.resize(draws * DRAW_STRIDE as usize, 0);
+        for (p, pass) in passes.iter().enumerate() {
+            for (i, &(_, first, count)) in self.page_ranges.iter().enumerate() {
+                let draw = LodDraw {
+                    view_proj: pass.view_proj.to_cols_array_2d(),
+                    eye: pass.eye.map_or([0.0; 4], |e| [e[0], e[1], e[2], 1.0]),
+                    low: pass.low.map_or([0.0; 4], |l| [l, 1.0, 0.0, 0.0]),
+                    params: [first, count, u32::from(pass.debug), 0],
+                };
+                let at = (p * self.page_ranges.len() + i) * DRAW_STRIDE as usize;
+                self.draws[at..at + size_of::<LodDraw>()]
+                    .copy_from_slice(bytemuck::bytes_of(&draw));
+            }
+        }
+        if draws > 0 {
+            self.rebind |= Self::grow(device, &mut self.draws_buffer, self.draws.len() as u64);
+            write(&self.draws_buffer, 0, &self.draws);
+        }
+        if self.rebind {
+            self.bind_groups.clear();
+            self.rebind = false;
+        }
+        // A bind group for each page drawn this frame, kept for the next.
+        for &(page, ..) in &self.page_ranges {
+            if self.bind_groups.iter().any(|(p, _)| *p == page) {
+                continue;
+            }
+            let Some(vertices) = pages(page) else {
+                continue;
+            };
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Far terrain mesh resources"),
+                layout: &self.layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.tiles_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: vertices.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.instances_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: self.list_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: &self.draws_buffer,
+                            offset: 0,
+                            size: wgpu::BufferSize::new(size_of::<LodDraw>() as u64),
+                        }),
+                    },
+                ],
+            });
+            self.bind_groups.push((page, group));
+        }
+    }
+
+    /// Draws every resident tile the pass sees: `pass_index` into
+    /// `begin_frame`'s passes; `mirror` for the water mirror's fragment shader.
+    /// Group 0 (terrain.wgsl's) must be bound.
+    pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>, pass_index: usize, mirror: bool) {
+        if pass_index >= self.passes || self.page_ranges.is_empty() {
             return;
         }
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, terrain_group, &[]);
-        pass.set_bind_group(1, &self.bind_group, &[]);
-        pass.draw_mesh_tasks(self.chunk_count, 1, 1);
+        pass.set_pipeline(if mirror {
+            &self.mirror_pipeline
+        } else {
+            &self.pipeline
+        });
+        for (i, &(page, _, count)) in self.page_ranges.iter().enumerate() {
+            let Some((_, group)) = self.bind_groups.iter().find(|(p, _)| *p == page) else {
+                continue;
+            };
+            let offset = ((pass_index * self.page_ranges.len() + i) as u64 * DRAW_STRIDE) as u32;
+            pass.set_bind_group(1, group, &[offset]);
+            pass.draw_mesh_tasks(count, 1, 1);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gpu_records_match_the_shader_layout() {
+        // `GpuTile` and `LodDraw` in lod_terrain_mesh.wgsl, by std430 and std140.
+        assert_eq!(size_of::<GpuTile>(), 112);
+        assert_eq!(std::mem::offset_of!(GpuTile, first_vertex), 32);
+        assert_eq!(std::mem::offset_of!(GpuTile, ends), 48);
+        assert_eq!(std::mem::offset_of!(GpuTile, planes), 80);
+        assert_eq!(size_of::<LodDraw>(), 112);
+        assert!(size_of::<LodDraw>() as u64 <= DRAW_STRIDE);
     }
 }

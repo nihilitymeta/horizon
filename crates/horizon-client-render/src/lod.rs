@@ -10,8 +10,10 @@ use crate::{
 pub mod cache;
 mod mesh;
 mod pipeline;
-pub use pipeline::MeshShaderPipeline;
 use horizon_world::registry::BlockStateId;
+pub use pipeline::{
+    DrawParams, MeshShaderPipeline, TileRecord, shader_source as mesh_shader_source,
+};
 use std::{
     collections::VecDeque,
     sync::{

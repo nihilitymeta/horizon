@@ -313,7 +313,7 @@ pub fn rows(level: Level) -> Vec<Row> {
             h(
                 H::MeshShaders,
                 Low,
-                "Uses GPU task and mesh shaders to bypass fixed vertex pipeline hardware.",
+                "Draws the far terrain through task and mesh shaders, culled on the GPU (VK_EXT_mesh_shader).",
             ),
             h(
                 H::MeshClusterDebug,
@@ -1908,7 +1908,6 @@ mod tests {
         s.horizon.taa = true;
         assert!(shown(&s));
     }
-
 
     #[test]
     fn mesh_shaders_cycles_modes() {

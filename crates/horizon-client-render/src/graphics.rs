@@ -435,7 +435,6 @@ impl Upscaling {
     }
 }
 
-
 /// Hardware task and mesh shaders mode.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MeshShadersMode {

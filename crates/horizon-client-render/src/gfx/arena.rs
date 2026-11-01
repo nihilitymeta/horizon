@@ -116,6 +116,9 @@ pub struct Arena {
     closing: Option<u32>,
     /// A page had to go to system memory (logged once).
     spilled: bool,
+    /// Counts the pages made and dropped: a page index names a new buffer
+    /// once it has changed (`generation`).
+    generation: u64,
     /// Tests: GPU-local pages fail as if video memory were full.
     #[cfg(test)]
     video_memory_full: bool,
@@ -197,6 +200,7 @@ impl Arena {
             usage,
             closing: None,
             spilled: false,
+            generation: 0,
             #[cfg(test)]
             video_memory_full: false,
         }
@@ -266,6 +270,11 @@ impl Arena {
         };
         // A page a draw names holds a range; wgpu refuses an empty slice.
         p.buffer.slice(..end.max(GRAIN) * self.stride)
+    }
+    /// Changes whenever a page is made or dropped: bindings over a page's
+    /// buffer are stale once it has.
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
     pub fn has_page(&self, page: u32) -> bool {
         self.pages.get(page as usize).is_some_and(Option::is_some)
@@ -349,6 +358,7 @@ impl Arena {
                 self.pages.len() - 1
             });
         self.pages[index] = Some(page);
+        self.generation += 1;
         Some((index as u32, start))
     }
     /// A range of `vertices` in a page that exists already and is not being
@@ -556,6 +566,7 @@ impl Arena {
                 && let Some(p) = page.take()
             {
                 released.push(p.buffer);
+                self.generation += 1;
             }
         }
         if self.closing.is_some_and(|page| !self.has_page(page)) {
