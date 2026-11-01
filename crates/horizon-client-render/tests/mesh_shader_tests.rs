@@ -168,9 +168,13 @@ fn mesh_device() -> Option<(wgpu::Device, wgpu::Queue)> {
     {
         return None;
     }
+    // With the occlusion test's features where the adapter has them, as the renderer.
+    let features = wgpu::Features::EXPERIMENTAL_MESH_SHADER
+        | (adapter.features()
+            & (wgpu::Features::VERTEX_WRITABLE_STORAGE | wgpu::Features::SHADER_EARLY_DEPTH_TEST));
     pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         label: Some("mesh shader test device"),
-        required_features: wgpu::Features::EXPERIMENTAL_MESH_SHADER,
+        required_features: features,
         required_limits: adapter.limits(),
         experimental_features: unsafe { wgpu::ExperimentalFeatures::enabled() },
         ..Default::default()
@@ -188,7 +192,8 @@ fn terrain_group(
         BindingType, BufferBindingType, SamplerBindingType, ShaderStages, TextureSampleType,
         TextureViewDimension,
     };
-    let stages = ShaderStages::TASK | ShaderStages::MESH | ShaderStages::FRAGMENT;
+    // As the renderer's: the box test's vertex stage reads the globals too.
+    let stages = ShaderStages::TASK | ShaderStages::MESH | ShaderStages::VERTEX_FRAGMENT;
     let texture = |binding, visibility, dimension| wgpu::BindGroupLayoutEntry {
         binding,
         visibility,
@@ -545,6 +550,7 @@ fn mesh_pipeline_draws_a_tiles_quad_as_the_vertex_path_would() {
                 eye,
                 low: None,
                 debug: false,
+                phase: None,
             }],
         );
         // The uploads in a submission of their own, as the renderer does: RADV's

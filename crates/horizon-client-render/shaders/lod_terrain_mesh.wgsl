@@ -22,8 +22,11 @@ struct GpuTile {
     // Its first vertex in the arena page, and its solid quads.
     first_vertex: u32,
     quads: u32,
-    _pad0: u32,
-    _pad1: u32,
+    // Occlusion (gfx/cull.rs's two phases, for far tiles): the stamp of the
+    // last frame whose box test saw it (`FRESH` for a tile not tested yet),
+    // and of the last frame phase 1 drew it.
+    seen: u32,
+    drawn: u32,
     // mesher/sides.rs's `Sides`: where each bucket ends, and its plane.
     ends: array<u32, 7>,
     _pad2: u32,
@@ -42,11 +45,12 @@ struct LodDraw {
     // y > 0 when there is one (`facing_runs_from`'s `low`).
     low: vec4<f32>,
     // x: the first entry of this page's tiles in `list`, y: how many,
-    // z: colour each meshlet (F3 + M).
+    // z: bit 0 colour each meshlet (F3 + M), bit 1 the frame culls (two
+    // phases), bit 2 this is phase 2; w: the frame's stamp.
     params: vec4<u32>,
 }
 
-@group(1) @binding(0) var<storage, read> tiles: array<GpuTile>;
+@group(1) @binding(0) var<storage, read_write> tiles: array<GpuTile>;
 // The arena page's `TerrainVertex`s as words: position, packed UV, layer and
 // light, colour (gfx.rs's `TERRAIN_ATTRIBUTES`).
 @group(1) @binding(1) var<storage, read> verts: array<u32>;
@@ -57,11 +61,33 @@ struct LodDraw {
 // `MESHLETS_PER_TASK` meshlets.
 @group(1) @binding(3) var<storage, read> list: array<u32>;
 @group(1) @binding(4) var<uniform> draw: LodDraw;
+// The frame's counts (gfx/lod/pipeline.rs's `Counts`): tiles phase 1 and
+// phase 2 dispatched, boxes tested, boxes seen.
+@group(1) @binding(5) var<storage, read_write> counts: array<atomic<u32>, 4>;
 
 const QUADS_PER_MESHLET: u32 = 32u;
 // The most meshlets one task workgroup dispatches (gfx/lod/pipeline.rs's
 // `MESHLETS_PER_TASK`).
 const MESHLETS_PER_TASK: u32 = 64u;
+// A tile seen within this many frames is phase 1's, and tested again every
+// so many frames (cull.rs's `RETEST`); one not tested yet counts as seen.
+const RETEST: u32 = 8u;
+const FRESH: u32 = 0xffffffffu;
+// A box over more than this share of the screen counts as seen (cull.rs's `BIG`).
+const BIG: f32 = 0.25;
+
+fn culling() -> bool {
+    return (draw.params.z & 2u) != 0u;
+}
+fn phase2() -> bool {
+    return (draw.params.z & 4u) != 0u;
+}
+// Whether the box test saw the tile in the last `RETEST` frames: phase 1's.
+fn seen_lately(slot: u32) -> bool {
+    let seen = tiles[slot].seen;
+    let stamp = draw.params.w;
+    return seen == FRESH || (seen <= stamp && stamp - seen <= RETEST);
+}
 // mesher/sides.rs's `MARGIN`.
 const SIDE_MARGIN: f32 = 1.0 / 16.0;
 
@@ -169,6 +195,23 @@ fn ts_lod(@builtin(workgroup_id) wg: vec3<u32>) -> @builtin(mesh_task_size) vec3
     if tiles[slot].quads == 0u || !in_view(slot, inst.xyz) {
         return vec3<u32>(0u, 1u, 1u);
     }
+    if culling() {
+        let stamp = draw.params.w;
+        if phase2() {
+            // The box test saw it this frame, and phase 1 did not draw it.
+            if tiles[slot].seen != stamp || tiles[slot].drawn == stamp {
+                return vec3<u32>(0u, 1u, 1u);
+            }
+        } else {
+            if !seen_lately(slot) {
+                return vec3<u32>(0u, 1u, 1u);
+            }
+            tiles[slot].drawn = stamp;
+        }
+    }
+    if first_meshlet == 0u {
+        atomicAdd(&counts[select(0u, 1u, phase2())], 1u);
+    }
     let mask = seen_buckets(slot, inst.xyz);
     let meshlets = (seen_quads(slot, mask) + QUADS_PER_MESHLET - 1u) / QUADS_PER_MESHLET;
     if first_meshlet >= meshlets {
@@ -246,7 +289,7 @@ fn ms_lod(
         let v = load_vertex(tiles[slot].first_vertex + quad * 4u + (lane & 3u));
         var out = terrain_vertex(v.pos, terrain_uv(v.uv, inst.w), v.layer, v.color, v.light,
             inst.xyz, inst.w);
-        if draw.params.z != 0u {
+        if (draw.params.z & 1u) != 0u {
             out.color = vec4(out.color.rgb * meshlet_tint(payload.first_meshlet + wg.x), out.color.a);
         }
         out_mesh.vertices[lane] = out;
@@ -261,4 +304,98 @@ fn ms_lod(
         );
     }
     workgroupBarrier();
+}
+
+// The occlusion test of the far tiles, as cull.wgsl's of the sections: after
+// phase 1, each listed tile's box is drawn against the depth with back faces
+// culled and the depth test forced before the fragment shader, which marks
+// the tile seen. A box failing everywhere would have every fragment of its
+// tile fail the depth test against the final depth, which is only nearer.
+// Phase 1's tiles are tested again one frame in `RETEST`, to notice when
+// they go out of sight.
+
+const BOX_CORNERS = array<u32, 36>(
+    0u, 6u, 2u, 0u, 4u, 6u, 1u, 3u, 7u, 1u, 7u, 5u, 0u, 1u, 5u, 0u, 5u, 4u,
+    2u, 7u, 3u, 2u, 6u, 7u, 0u, 3u, 1u, 0u, 2u, 3u, 4u, 5u, 7u, 4u, 7u, 6u,
+);
+
+struct TileBox {
+    @builtin(position) position: vec4<f32>,
+    @location(0) @interpolate(flat) slot: u32,
+}
+
+fn box_corner(slot: u32, origin: vec3<f32>, c: u32) -> vec3<f32> {
+    // Half a block out: the bounds are the quads' own.
+    let lo = tiles[slot].bounds_min.xyz + origin - vec3(0.5);
+    let hi = tiles[slot].bounds_max.xyz + origin + vec3(0.5);
+    return vec3(
+        select(lo.x, hi.x, (c & 1u) != 0u),
+        select(lo.y, hi.y, (c & 2u) != 0u),
+        select(lo.z, hi.z, (c & 4u) != 0u),
+    );
+}
+
+@vertex
+fn vs_tile_box(@builtin(vertex_index) v: u32, @builtin(instance_index) i: u32) -> TileBox {
+    var out: TileBox;
+    out.position = vec4(0.0, 0.0, 0.0, 1.0);
+    let entry = list[draw.params.x + i];
+    let slot = entry >> 8u;
+    out.slot = slot;
+    let inst = instances[slot];
+    let stamp = draw.params.w;
+    // Once per tile (its first chunk), for one phase 1 did not draw, or one
+    // of its whose turn it is.
+    let retest = (slot + stamp) % RETEST == 0u;
+    if (entry & 0xffu) != 0u || inst.w == 0.0 || (tiles[slot].drawn == stamp && !retest) {
+        return out;
+    }
+    if v == 0u {
+        atomicAdd(&counts[2], 1u);
+        // Tested now: a tile not tested before counted as seen until here. Its
+        // fragments set `seen` to the stamp where they pass (0 is no frame's).
+        if tiles[slot].seen == FRESH {
+            tiles[slot].seen = 0u;
+        }
+    }
+    // The box's screen rectangle, from the corners in front of the camera.
+    var lo = vec2(1e30);
+    var hi = vec2(-1e30);
+    var behind = false;
+    // Against the depth as drawn: the frame's own projection (group 0), not the culling one.
+    for (var c = 0u; c < 8u; c++) {
+        let p = globals.view_proj * vec4(box_corner(slot, inst.xyz, c), 1.0);
+        behind = behind || p.w <= 0.0;
+        let q = p.xy / max(p.w, 1e-6);
+        lo = min(lo, q);
+        hi = max(hi, q);
+    }
+    let size = max(min(hi, vec2(1.0)) - max(lo, vec2(-1.0)), vec2(0.0));
+    // A box the camera is in may cross the near plane, which clips its front
+    // faces away, and one over a large part of the screen is nearly always in
+    // sight and costly to test: both count as seen, through a small triangle
+    // in the top left corner at the nearest depth.
+    let near = all(box_corner(slot, inst.xyz, 0u) < vec3(0.0)) && all(box_corner(slot, inst.xyz, 7u) > vec3(0.0));
+    if near || (!behind && size.x * size.y > BIG * 4.0) {
+        var p = vec2(-1.0, 1.0);
+        if v == 1u {
+            p.y -= 0.05;
+        } else if v == 2u {
+            p.x += 0.05;
+        }
+        out.position = select(vec4(0.0, 0.0, 0.0, 1.0), vec4(p, 1.0, 1.0), v < 3u);
+        return out;
+    }
+    out.position = globals.view_proj * vec4(box_corner(slot, inst.xyz, BOX_CORNERS[v]), 1.0);
+    return out;
+}
+
+@fragment
+@early_depth_test(force)
+fn fs_tile_box(in: TileBox) -> @location(0) vec4<f32> {
+    if tiles[in.slot].seen != draw.params.w {
+        tiles[in.slot].seen = draw.params.w;
+        atomicAdd(&counts[3], 1u);
+    }
+    return vec4(0.0);
 }

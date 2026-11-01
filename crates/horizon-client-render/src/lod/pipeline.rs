@@ -18,6 +18,20 @@ const DRAW_STRIDE: u64 = 256;
 /// more is listed once per chunk of them, as written; `HORIZON_MESH_CAP`
 /// varies it.
 const MESHLETS_PER_TASK: u32 = 64;
+/// A tile's `seen` before its first box test: phase 1 draws it.
+const FRESH: u32 = u32::MAX;
+/// Frames' counts on their way back from the GPU at once.
+const COUNT_READBACKS: usize = 3;
+
+/// A frame's counts, from the shaders (the `counts` binding): the tiles
+/// phase 1 and phase 2 dispatched, the boxes tested and the boxes seen.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Counts {
+    pub phase1: u32,
+    pub phase2: u32,
+    pub tested: u32,
+    pub seen: u32,
+}
 
 /// The module: the mesh shader extension first, then terrain.wgsl whole (the
 /// `terrain_vertex` and `fs_solid` the vertex path uses), then the stages.
@@ -54,7 +68,11 @@ struct GpuTile {
     bounds_max: [f32; 4],
     first_vertex: u32,
     quads: u32,
-    _pad0: [u32; 2],
+    /// Occlusion: the stamp of the last frame whose box test saw it
+    /// (`FRESH` until tested), and of the last frame phase 1 drew it; the
+    /// GPU writes both.
+    seen: u32,
+    drawn: u32,
     ends: [u32; 7],
     _pad1: u32,
     planes: [f32; 7],
@@ -82,6 +100,16 @@ pub struct TileRecord {
     pub sides: Sides,
 }
 
+/// Occlusion culling's phases (gfx/cull.rs, for the far tiles): phase 1
+/// draws the tiles the box test saw lately, and is followed by the test
+/// (`test_boxes`); phase 2 draws the tiles the test saw that phase 1 did
+/// not draw.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Phase {
+    First,
+    Second,
+}
+
 /// A pass's culling: what `Renderer::render` hands `facing_runs_from` and
 /// `Bounds::visible`, camera-relative.
 #[derive(Clone, Copy, Debug)]
@@ -93,12 +121,24 @@ pub struct DrawParams {
     pub low: Option<f32>,
     /// Colour each meshlet (F3 + M).
     pub debug: bool,
+    /// The occlusion phase this draw is, when the frame culls.
+    pub phase: Option<Phase>,
 }
 
 /// The mesh-shader far-terrain pipelines and their buffers.
 pub struct MeshShaderPipeline {
     pipeline: wgpu::RenderPipeline,
     mirror_pipeline: wgpu::RenderPipeline,
+    /// The tiles' box test (`test_boxes`), where the depth test can be forced early.
+    box_pipeline: Option<wgpu::RenderPipeline>,
+    /// The frame's stamp (`LodDraw::params.w`).
+    stamp: u32,
+    counts_buffer: wgpu::Buffer,
+    /// Readbacks of `counts_buffer`, each mapped or free (`count_pending`).
+    count_readbacks: Vec<(wgpu::Buffer, std::sync::Arc<std::sync::atomic::AtomicBool>)>,
+    count_next: usize,
+    /// The last frame's counts read back.
+    counts: Counts,
     layout: wgpu::BindGroupLayout,
     tiles: Vec<GpuTile>,
     /// Each slot's page; `u32::MAX` for a free slot.
@@ -205,12 +245,17 @@ impl MeshShaderPipeline {
             label: Some("Far terrain mesh shader"),
             source: wgpu::ShaderSource::Wgsl(source.into()),
         });
-        let stages = wgpu::ShaderStages::TASK | wgpu::ShaderStages::MESH;
-        let storage = |binding| wgpu::BindGroupLayoutEntry {
+        // The box test's vertex and fragment stages read them too, and the task
+        // stage and the test's fragments write the tiles' `drawn` and `seen`.
+        let stages = wgpu::ShaderStages::TASK
+            | wgpu::ShaderStages::MESH
+            | wgpu::ShaderStages::VERTEX
+            | wgpu::ShaderStages::FRAGMENT;
+        let storage = |binding, read_only| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: stages,
             ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                ty: wgpu::BufferBindingType::Storage { read_only },
                 has_dynamic_offset: false,
                 min_binding_size: None,
             },
@@ -219,10 +264,11 @@ impl MeshShaderPipeline {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Far terrain mesh bindings"),
             entries: &[
-                storage(0),
-                storage(1),
-                storage(2),
-                storage(3),
+                storage(0, false),
+                storage(1, true),
+                storage(2, true),
+                storage(3, true),
+                storage(5, false),
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
                     visibility: stages,
@@ -294,6 +340,49 @@ impl MeshShaderPipeline {
         };
         let world = pipeline("Far terrain mesh", "fs_solid");
         let mirror = pipeline("Far terrain mesh mirror", "fs_solid_mirror");
+        // The box test needs the depth test forced before its fragments (cull.rs).
+        let box_pipeline = device
+            .features()
+            .contains(wgpu::Features::SHADER_EARLY_DEPTH_TEST)
+            .then(|| {
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("Far terrain tile boxes"),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &module,
+                        entry_point: Some("vs_tile_box"),
+                        compilation_options: Default::default(),
+                        buffers: &[],
+                    },
+                    primitive: wgpu::PrimitiveState {
+                        cull_mode: Some(wgpu::Face::Back),
+                        ..Default::default()
+                    },
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: wgpu::TextureFormat::Depth32Float,
+                        depth_write_enabled: Some(false),
+                        depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
+                        stencil: Default::default(),
+                        bias: Default::default(),
+                    }),
+                    multisample: Default::default(),
+                    fragment: Some(wgpu::FragmentState {
+                        module: &module,
+                        entry_point: Some("fs_tile_box"),
+                        compilation_options: wgpu::PipelineCompilationOptions {
+                            constants,
+                            ..Default::default()
+                        },
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::empty(),
+                        })],
+                    }),
+                    multiview_mask: None,
+                    cache: None,
+                })
+            });
         if let Some(error) = pollster::block_on(scope.pop()) {
             log::warn!("Horizon: mesh-shader pipeline unavailable: {error}");
             return None;
@@ -307,9 +396,33 @@ impl MeshShaderPipeline {
             })
         };
         let storage = wgpu::BufferUsages::STORAGE;
+        let counts_buffer = buffer(
+            "Far terrain counts",
+            16,
+            storage | wgpu::BufferUsages::COPY_SRC,
+        );
+        let count_readbacks = (0..COUNT_READBACKS)
+            .map(|_| {
+                (
+                    device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("Far terrain counts readback"),
+                        size: 16,
+                        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    }),
+                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                )
+            })
+            .collect();
         Some(Self {
             pipeline: world,
             mirror_pipeline: mirror,
+            box_pipeline,
+            stamp: 0,
+            counts_buffer,
+            count_readbacks,
+            count_next: 0,
+            counts: Counts::default(),
             layout,
             tiles: Vec::new(),
             slot_pages: Vec::new(),
@@ -369,6 +482,8 @@ impl MeshShaderPipeline {
             bounds_max: [max[0], max[1], max[2], 0.0],
             first_vertex: record.first_vertex,
             quads,
+            seen: FRESH,
+            drawn: 0,
             ends: record.sides.ends(),
             planes: record.sides.planes(),
             ..Default::default()
@@ -414,6 +529,16 @@ impl MeshShaderPipeline {
     /// Slots in use, the free ones between them included.
     pub fn slot_count(&self) -> u32 {
         self.tiles.len() as u32
+    }
+
+    /// Whether the far tiles can be occlusion culled here (`Phase`, `test_boxes`).
+    pub fn culls(&self) -> bool {
+        self.box_pipeline.is_some()
+    }
+
+    /// The last frame's counts that came back (`end_frame`).
+    pub fn counts(&self) -> Counts {
+        self.counts
     }
 
     /// This frame's tiles to draw, nearest first, as `Renderer::render` lists
@@ -485,6 +610,24 @@ impl MeshShaderPipeline {
             self.page_generation = page_generation;
             self.rebind = true;
         }
+        self.stamp = self.stamp.wrapping_add(1).max(1);
+        for (buffer, mapped) in &self.count_readbacks {
+            if mapped.swap(false, std::sync::atomic::Ordering::AcqRel) {
+                if let Ok(data) = buffer.slice(..).get_mapped_range() {
+                    let words: Vec<u32> = bytemuck::pod_collect_to_vec(&data);
+                    if let [phase1, phase2, tested, seen] = words[..] {
+                        self.counts = Counts {
+                            phase1,
+                            phase2,
+                            tested,
+                            seen,
+                        };
+                    }
+                }
+                buffer.unmap();
+            }
+        }
+        write(&self.counts_buffer, 0, &[0; 16]);
         let tile_bytes = size_of::<GpuTile>() as u64;
         if Self::grow(
             device,
@@ -542,11 +685,18 @@ impl MeshShaderPipeline {
         self.draws.resize(draws * DRAW_STRIDE as usize, 0);
         for (p, pass) in passes.iter().enumerate() {
             for (i, &(_, first, count)) in self.page_ranges.iter().enumerate() {
+                let flags = u32::from(pass.debug)
+                    | if pass.phase.is_some() { 2 } else { 0 }
+                    | if pass.phase == Some(Phase::Second) {
+                        4
+                    } else {
+                        0
+                    };
                 let draw = LodDraw {
                     view_proj: pass.view_proj.to_cols_array_2d(),
                     eye: pass.eye.map_or([0.0; 4], |e| [e[0], e[1], e[2], 1.0]),
                     low: pass.low.map_or([0.0; 4], |l| [l, 1.0, 0.0, 0.0]),
-                    params: [first, count, u32::from(pass.debug), 0],
+                    params: [first, count, flags, self.stamp],
                 };
                 let at = (p * self.page_ranges.len() + i) * DRAW_STRIDE as usize;
                 self.draws[at..at + size_of::<LodDraw>()]
@@ -597,9 +747,61 @@ impl MeshShaderPipeline {
                             size: wgpu::BufferSize::new(size_of::<LodDraw>() as u64),
                         }),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: self.counts_buffer.as_entire_binding(),
+                    },
                 ],
             });
             self.bind_groups.push((page, group));
+        }
+    }
+
+    /// After the frame's passes: copies the counts out for reading back, into a
+    /// free readback; `submitted` starts the read once the frame is submitted.
+    pub fn end_frame(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Option<impl FnOnce() + Send + 'static> {
+        let i = self.count_next;
+        let (buffer, mapped) = &self.count_readbacks[i];
+        if mapped.load(std::sync::atomic::Ordering::Acquire) {
+            return None;
+        }
+        encoder.copy_buffer_to_buffer(&self.counts_buffer, 0, buffer, 0, 16);
+        self.count_next = (i + 1) % COUNT_READBACKS;
+        let (buffer, mapped) = (buffer.clone(), mapped.clone());
+        Some(move || {
+            let flag = mapped.clone();
+            buffer
+                .slice(..)
+                .map_async(wgpu::MapMode::Read, move |result| {
+                    if result.is_ok() {
+                        flag.store(true, std::sync::atomic::Ordering::Release);
+                    }
+                });
+        })
+    }
+
+    /// After phase 1 (`Phase::First`, drawn), in a pass with the depth it
+    /// left: the box test of the tiles phase 1 did not draw, and of a share
+    /// of those it did. `pass_index` is phase 1's. Group 0 (terrain.wgsl's)
+    /// must be bound.
+    pub fn test_boxes(&self, pass: &mut wgpu::RenderPass<'_>, pass_index: usize) {
+        let Some(pipeline) = &self.box_pipeline else {
+            return;
+        };
+        if pass_index >= self.passes || self.page_ranges.is_empty() {
+            return;
+        }
+        pass.set_pipeline(pipeline);
+        for (i, &(page, _, count)) in self.page_ranges.iter().enumerate() {
+            let Some((_, group)) = self.bind_groups.iter().find(|(p, _)| *p == page) else {
+                continue;
+            };
+            let offset = ((pass_index * self.page_ranges.len() + i) as u64 * DRAW_STRIDE) as u32;
+            pass.set_bind_group(1, group, &[offset]);
+            pass.draw(0..36, 0..count);
         }
     }
 

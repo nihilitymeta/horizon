@@ -1210,6 +1210,8 @@ impl Game<'_> {
                 "present_mode": format!("{:?}", r.config.present_mode),
                 "mesh_shaders": r.mesh_shaders_active(),
                 "mesh_tiles": r.mesh_tile_count(),
+                "mesh_culled": r.far_culled,
+                "mesh_counts": r.mesh_counts(),
                 "drawn_sections": r.drawn_sections,
                 "section_draws": r.section_draws,
                 "section_draw_calls": r.section_draw_calls,

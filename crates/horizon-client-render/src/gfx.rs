@@ -1025,6 +1025,8 @@ pub struct Renderer {
     mesh_terrain: Option<crate::lod::MeshShaderPipeline>,
     /// F3+M's meshlet cluster colouring.
     pub mesh_cluster_debug: bool,
+    /// Whether the last frame drew the far tiles in occlusion culling's two phases.
+    pub far_culled: bool,
     /// Vanilla's menu background blur, made on first use.
     menu_blur: Option<crate::menu_blur::MenuBlur>,
     /// `post_effect` chains, made on first use.
@@ -3821,6 +3823,7 @@ impl Renderer {
             mesh_shaders_active,
             mesh_terrain,
             mesh_cluster_debug: false,
+            far_culled: false,
             menu_blur: None,
             post_effects: None,
             readback: readback::Readback::default(),
@@ -4942,6 +4945,16 @@ impl Renderer {
         self.mesh_shaders_active =
             mode.is_enabled(self.mesh_shaders_supported) && self.mesh_terrain.is_some();
     }
+    /// The far terrain's last counts read back (`lod::MeshCounts`): tiles phase 1 and
+    /// phase 2 dispatched, boxes tested, boxes seen.
+    pub fn mesh_counts(&self) -> [u32; 4] {
+        let c = self
+            .mesh_terrain
+            .as_ref()
+            .map(crate::lod::MeshShaderPipeline::counts)
+            .unwrap_or_default();
+        [c.phase1, c.phase2, c.tested, c.seen]
+    }
     /// Resident far-terrain tiles the task shader dispatches over.
     pub fn mesh_tile_count(&self) -> u32 {
         self.mesh_terrain
@@ -5892,10 +5905,44 @@ impl Renderer {
             );
             visible_lods.sort_unstable_by_key(|v| (v.distance, v.key));
         }
+        // A shader pack drawing terrain draws all of it: occlusion culling reads the depth of
+        // Horizon's own terrain draw.
+        let pack_terrain = !frame.title
+            && self
+                .pack_post
+                .as_ref()
+                .and_then(|p| p.1.as_ref())
+                .is_some_and(|p| p.has_terrain());
+        // Whether the frame occlusion culls (`cull`, below): decided here, as the far
+        // terrain's mesh path draws in its two phases too.
+        let cull_frame = self
+            .cull
+            .as_mut()
+            .filter(|c| {
+                self.cull_on
+                    && !frame.title
+                    && !pack_terrain
+                    && self.multi_draw
+                    // Occlusion is found from the camera, not the mirror's eye.
+                    && mirror.is_none()
+                    && visible.len() >= c.min_sections
+            })
+            .is_some_and(|cull| cull.begin(&self.device));
         // The GPU-driven far terrain: every resident tile's instance; the task
         // shader does the frustum test and the facing buckets (`Tile::visible`
         // and `facing_runs_from` for the vertex path), over the world's culling
-        // projection and the water mirror's.
+        // projection and the water mirror's. With occlusion culling, in its two
+        // phases (`lod::Phase`), where the sections' draws go through them
+        // (`draw_sections`, not flat draws).
+        let far_two_phase = self.cull.is_some()
+            && self.cull_on
+            && !frame.title
+            && !pack_terrain
+            && mirror.is_none()
+            && self.mesh_terrain.as_ref().is_some_and(|m| m.culls());
+        self.far_culled = far_two_phase && self.mesh_shaders_active;
+        let mut far_phase2 = 0;
+        let mut far_mirror = 1;
         if self.mesh_shaders_active
             && let Some(mesh_terrain) = self.mesh_terrain.as_mut()
         {
@@ -5910,11 +5957,21 @@ impl Renderer {
                     eye: eye.map(|e| e.to_array()),
                     low: mirror_low,
                     debug: self.mesh_cluster_debug,
+                    phase: far_two_phase.then_some(crate::lod::Phase::First),
                 };
                 let mut passes = vec![world];
+                if far_two_phase {
+                    passes.push(crate::lod::DrawParams {
+                        phase: Some(crate::lod::Phase::Second),
+                        ..world
+                    });
+                    far_phase2 = 1;
+                }
+                far_mirror = passes.len();
                 if let Some(plane) = mirror_plane {
                     passes.push(crate::lod::DrawParams {
                         view_proj: mirror_view_projection(cull_proj, plane - frame.camera.y as f32),
+                        phase: None,
                         ..world
                     });
                 }
@@ -6109,27 +6166,7 @@ impl Renderer {
         // Occlusion culling leaves the sections its last result did not see
         // to phase 2, after the others, with instance counts of 0. Whether
         // the frame has draws enough goes by the last one's.
-        // A shader pack drawing terrain draws all of it: occlusion culling reads the depth of
-        // Horizon's own terrain draw.
-        let pack_terrain = !frame.title
-            && self
-                .pack_post
-                .as_ref()
-                .and_then(|p| p.1.as_ref())
-                .is_some_and(|p| p.has_terrain());
-        let mut cull = self
-            .cull
-            .as_mut()
-            .filter(|c| {
-                self.cull_on
-                    && !frame.title
-                    && !pack_terrain
-                    && self.multi_draw
-                    // Occlusion is found from the camera, not the mirror's eye.
-                    && mirror.is_none()
-                    && visible.len() >= c.min_sections
-            })
-            .and_then(|cull| cull.begin(&self.device).then_some(cull));
+        let mut cull = self.cull.as_mut().filter(|_| cull_frame);
         self.phase2_draws.clear();
         self.phase2_pages.clear();
         self.solid_runs.clear();
@@ -7231,7 +7268,7 @@ impl Renderer {
                     && !pack_draws_terrain
                     && let Some(mesh_terrain) = self.mesh_terrain.as_ref()
                 {
-                    mesh_terrain.draw(&mut pass, 1, true);
+                    mesh_terrain.draw(&mut pass, far_mirror, true);
                 }
                 drop(pass);
                 reflection = Some(mirror.color.clone());
@@ -7562,19 +7599,42 @@ impl Renderer {
                 && !pack_draws_terrain
                 && let Some(mesh_terrain) = self.mesh_terrain.as_ref()
             {
-                // In a pass of its own, timed with Horizon's (`stats`' gpu_passes).
+                // In passes of their own, timed with Horizon's (`stats`' gpu_passes), after
+                // the sections, whose depth the box test reads: phase 1's tiles and, after
+                // them in the same pass, the boxes against the depth, then phase 2's in a
+                // pass of its own (its task shader reads what the boxes' fragments wrote); or
+                // all the tiles at once.
                 drop(pass);
+                if far_two_phase {
+                    pass = world_pass_after_culling(
+                        &mut encoder,
+                        world_view,
+                        world_depth,
+                        true,
+                        self.own_timing.as_mut(),
+                        "Far terrain mesh",
+                    )
+                    .forget_lifetime();
+                    pass.set_bind_group(0, &self.group, &[]);
+                    mesh_terrain.draw(&mut pass, 0, false);
+                    mesh_terrain.test_boxes(&mut pass, 0);
+                    drop(pass);
+                }
                 pass = world_pass_after_culling(
                     &mut encoder,
                     world_view,
                     world_depth,
                     true,
                     self.own_timing.as_mut(),
-                    "Far terrain mesh",
+                    if far_two_phase {
+                        "Far terrain mesh, phase 2"
+                    } else {
+                        "Far terrain mesh"
+                    },
                 )
                 .forget_lifetime();
                 pass.set_bind_group(0, &self.group, &[]);
-                mesh_terrain.draw(&mut pass, 0, false);
+                mesh_terrain.draw(&mut pass, far_phase2, false);
                 drop(pass);
                 pass = plain_pass(&mut encoder);
                 pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
@@ -8269,6 +8329,21 @@ impl Renderer {
         if culling && let Some(cull) = &mut self.cull {
             cull.end(&self.device, &mut encoder);
         }
+        // The far terrain's counts come back like culling's results.
+        let far_read: Option<submit::AfterSubmit> = self
+            .mesh_terrain
+            .as_mut()
+            .filter(|_| self.mesh_shaders_active)
+            .and_then(|m| m.end_frame(&mut encoder))
+            .map(|f| Box::new(f) as submit::AfterSubmit);
+        let chain = |a: Option<submit::AfterSubmit>, b: Option<submit::AfterSubmit>| match (a, b) {
+            (None, b) => b,
+            (a, None) => a,
+            (Some(a), Some(b)) => Some(Box::new(move || {
+                a();
+                b();
+            }) as submit::AfterSubmit),
+        };
         if let Some(timer) = &mut self.gpu_timer {
             timer.end(
                 &self.device,
@@ -8331,11 +8406,13 @@ impl Renderer {
         {
             let offscreen = surface_frame.is_none();
             // Culling reads its results back as soon as the frame is submitted, as here.
-            let after = self
-                .cull
-                .as_mut()
-                .and_then(|c| c.submitted())
-                .map(|f| Box::new(f) as submit::AfterSubmit);
+            let after = chain(
+                self.cull
+                    .as_mut()
+                    .and_then(|c| c.submitted())
+                    .map(|f| Box::new(f) as submit::AfterSubmit),
+                far_read,
+            );
             let job = submit::Job {
                 encoder,
                 surface: surface_frame,
@@ -8355,7 +8432,7 @@ impl Renderer {
                 Err(back) => (back.encoder, back.surface, back.after),
             }
         } else {
-            (encoder, surface_frame, None)
+            (encoder, surface_frame, far_read)
         };
         let commands = crate::spans::time("encode", || encoder.finish());
         if first_frame {
@@ -8365,7 +8442,8 @@ impl Renderer {
         let submission = crate::spans::time("submit", || self.queue.submit([commands]));
         if let Some(read) = after {
             read();
-        } else if let Some(read) = self.cull.as_mut().and_then(|c| c.submitted()) {
+        }
+        if let Some(read) = self.cull.as_mut().and_then(|c| c.submitted()) {
             read();
         }
         if let Some(timer) = &mut self.gpu_timer {

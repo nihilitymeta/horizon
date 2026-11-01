@@ -484,11 +484,26 @@ impl Game<'_> {
         }
         if let Some(r) = self.renderer.as_ref() {
             let mesh_status = if r.mesh_shaders_active() {
-                "Enabled (VK_EXT_mesh_shader)"
+                let [phase1, phase2, tested, _] = r.mesh_counts();
+                if r.far_culled {
+                    format!(
+                        "Enabled (VK_EXT_mesh_shader): {} tiles, {} + {} drawn, {} tested",
+                        r.mesh_tile_count(),
+                        phase1,
+                        phase2,
+                        tested
+                    )
+                } else {
+                    format!(
+                        "Enabled (VK_EXT_mesh_shader): {} tiles, {} drawn",
+                        r.mesh_tile_count(),
+                        phase1
+                    )
+                }
             } else if r.mesh_shaders_supported() {
-                "Disabled"
+                "Disabled".to_owned()
             } else {
-                "Unsupported"
+                "Unsupported".to_owned()
             };
             d.group("system", [format!("Mesh Shaders: {mesh_status}")]);
         }

@@ -12,7 +12,8 @@ mod mesh;
 mod pipeline;
 use horizon_world::registry::BlockStateId;
 pub use pipeline::{
-    DrawParams, MeshShaderPipeline, TileRecord, shader_source as mesh_shader_source,
+    Counts as MeshCounts, DrawParams, MeshShaderPipeline, Phase, TileRecord,
+    shader_source as mesh_shader_source,
 };
 use std::{
     collections::VecDeque,
