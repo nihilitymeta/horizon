@@ -627,7 +627,13 @@ impl Lan {
         self.listener_stop = stop;
         self.port = port;
         // Cloudflare Tunnel origins are plaintext `ws://` on loopback.
-        if let Err(e) = self.listen_websocket(25580) {
+        // Port: HORIZON_WS_PORT (default 25580) — loopback only; override when
+        // 25580 is taken (shared hosts with per-user port ranges).
+        let ws_port = std::env::var("HORIZON_WS_PORT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(25580);
+        if let Err(e) = self.listen_websocket(ws_port) {
             log::debug!("[lan] WebSocket listener not started: {e}");
         }
         Ok(port)
