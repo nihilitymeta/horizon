@@ -197,15 +197,19 @@ impl crate::CommandEncoder for super::CommandEncoder {
         T: Iterator<Item = crate::BufferBarrier<'a, super::Buffer>>,
     {
         //Note: this is done so that we never end up with empty stage flags
+        let mesh_shaders = self
+            .device
+            .features
+            .contains(wgt::Features::EXPERIMENTAL_MESH_SHADER);
         let mut src_stages = vk::PipelineStageFlags::TOP_OF_PIPE;
         let mut dst_stages = vk::PipelineStageFlags::BOTTOM_OF_PIPE;
         let vk_barriers = &mut self.temp.buffer_barriers;
         vk_barriers.clear();
 
         for bar in barriers {
-            let (src_stage, src_access) = conv::map_buffer_usage_to_barrier(bar.usage.from);
+            let (src_stage, src_access) = conv::map_buffer_usage_to_barrier(bar.usage.from, mesh_shaders);
             src_stages |= src_stage;
-            let (dst_stage, dst_access) = conv::map_buffer_usage_to_barrier(bar.usage.to);
+            let (dst_stage, dst_access) = conv::map_buffer_usage_to_barrier(bar.usage.to, mesh_shaders);
             dst_stages |= dst_stage;
 
             vk_barriers.push(
@@ -236,6 +240,10 @@ impl crate::CommandEncoder for super::CommandEncoder {
     where
         T: Iterator<Item = crate::TextureBarrier<'a, super::Texture>>,
     {
+        let mesh_shaders = self
+            .device
+            .features
+            .contains(wgt::Features::EXPERIMENTAL_MESH_SHADER);
         let mut src_stages = vk::PipelineStageFlags::empty();
         let mut dst_stages = vk::PipelineStageFlags::empty();
         let vk_barriers = &mut self.temp.image_barriers;
@@ -247,10 +255,10 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 bar.texture.format,
                 &self.device.private_caps,
             );
-            let (src_stage, src_access) = conv::map_texture_usage_to_barrier(bar.usage.from);
+            let (src_stage, src_access) = conv::map_texture_usage_to_barrier(bar.usage.from, mesh_shaders);
             let src_layout = conv::derive_image_layout(bar.usage.from, bar.texture.format);
             src_stages |= src_stage;
-            let (dst_stage, dst_access) = conv::map_texture_usage_to_barrier(bar.usage.to);
+            let (dst_stage, dst_access) = conv::map_texture_usage_to_barrier(bar.usage.to, mesh_shaders);
             let dst_layout = conv::derive_image_layout(bar.usage.to, bar.texture.format);
             dst_stages |= dst_stage;
 

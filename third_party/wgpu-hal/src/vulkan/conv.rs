@@ -292,14 +292,22 @@ pub fn map_texture_usage(usage: wgt::TextureUses) -> vk::ImageUsageFlags {
     flags
 }
 
+/// `mesh_shaders`: the device has `VK_EXT_mesh_shader` on, so shader reads
+/// and writes happen in its task and mesh stages too (the stage bits are
+/// only valid with the extension).
 pub fn map_texture_usage_to_barrier(
     usage: wgt::TextureUses,
+    mesh_shaders: bool,
 ) -> (vk::PipelineStageFlags, vk::AccessFlags) {
     let mut stages = vk::PipelineStageFlags::empty();
     let mut access = vk::AccessFlags::empty();
-    let shader_stages = vk::PipelineStageFlags::VERTEX_SHADER
+    let mut shader_stages = vk::PipelineStageFlags::VERTEX_SHADER
         | vk::PipelineStageFlags::FRAGMENT_SHADER
         | vk::PipelineStageFlags::COMPUTE_SHADER;
+    if mesh_shaders {
+        shader_stages |= vk::PipelineStageFlags::TASK_SHADER_EXT
+            | vk::PipelineStageFlags::MESH_SHADER_EXT;
+    }
 
     if usage.contains(wgt::TextureUses::COPY_SRC) {
         stages |= vk::PipelineStageFlags::TRANSFER;
@@ -600,14 +608,22 @@ pub fn map_buffer_usage(usage: wgt::BufferUses) -> vk::BufferUsageFlags {
     flags
 }
 
+/// `mesh_shaders`: the device has `VK_EXT_mesh_shader` on, so shader reads
+/// and writes happen in its task and mesh stages too (the stage bits are
+/// only valid with the extension).
 pub fn map_buffer_usage_to_barrier(
     usage: wgt::BufferUses,
+    mesh_shaders: bool,
 ) -> (vk::PipelineStageFlags, vk::AccessFlags) {
     let mut stages = vk::PipelineStageFlags::empty();
     let mut access = vk::AccessFlags::empty();
-    let shader_stages = vk::PipelineStageFlags::VERTEX_SHADER
+    let mut shader_stages = vk::PipelineStageFlags::VERTEX_SHADER
         | vk::PipelineStageFlags::FRAGMENT_SHADER
         | vk::PipelineStageFlags::COMPUTE_SHADER;
+    if mesh_shaders {
+        shader_stages |= vk::PipelineStageFlags::TASK_SHADER_EXT
+            | vk::PipelineStageFlags::MESH_SHADER_EXT;
+    }
 
     if usage.contains(wgt::BufferUses::MAP_READ) {
         stages |= vk::PipelineStageFlags::HOST;

@@ -60,6 +60,10 @@ large_enum_variant = "allow"
 # And gfx-rs/wgpu#10714: on Windows, Vulkan waits for the acquire fence only in
 # FIFO (VSync), where it was meant to pace frames; with VSync off it made every
 # frame wait for the GPU to finish the one before (#4604).
+# And one of ours: the Vulkan backend's buffer and image barriers cover only
+# the vertex, fragment and compute stages, so with VK_EXT_mesh_shader on, a
+# task or mesh shader could read a buffer or texture before the copy into it
+# had landed (vulkan/conv.rs's map_*_usage_to_barrier take `mesh_shaders`).
 # Drop this and the folder once a wgpu release has these fixes.
 [patch.crates-io]
 wgpu-hal = { path = "third_party/wgpu-hal" }
