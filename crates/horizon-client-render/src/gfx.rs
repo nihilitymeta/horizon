@@ -1021,6 +1021,10 @@ pub struct Renderer {
     pub hud: HudRenderer,
     mesh_shaders_supported: bool,
     pub mesh_shaders_active: bool,
+    /// The task/mesh far-terrain pipeline, when the GPU supports it.
+    mesh_terrain: Option<crate::lod::MeshShaderPipeline>,
+    /// F3+M's meshlet cluster colouring.
+    pub mesh_cluster_debug: bool,
     /// Vanilla's menu background blur, made on first use.
     menu_blur: Option<crate::menu_blur::MenuBlur>,
     /// `post_effect` chains, made on first use.
@@ -1909,6 +1913,7 @@ impl Renderer {
             log::info!("Horizon: {split} block textures per array (the GPU's limit)");
         }
         let info = adapter.get_info();
+        let vendor_id = info.vendor;
         crate::graphics::suggest_reduced_far_detail(crate::graphics::lod_capped(&info));
         let size = window.inner_size();
         let max_side = device.limits().max_texture_dimension_2d;
@@ -1999,6 +2004,9 @@ impl Renderer {
             count: None,
         };
         let vf = wgpu::ShaderStages::VERTEX_FRAGMENT;
+        // The mesh far-terrain pipeline reads the same atlas and lightmap in
+        // its mesh stage, so its bindings also have to be visible there.
+        let terrain_vf = vf | wgpu::ShaderStages::TASK | wgpu::ShaderStages::MESH;
         let sprite_array = wgpu::BindingType::Texture {
             sample_type: wgpu::TextureSampleType::Float { filterable: true },
             view_dimension: wgpu::TextureViewDimension::D2Array,
@@ -2017,7 +2025,7 @@ impl Renderer {
             entries: &[
                 entry(
                     0,
-                    vf,
+                    terrain_vf,
                     wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -2026,7 +2034,7 @@ impl Renderer {
                 ),
                 entry(
                     1,
-                    vf,
+                    terrain_vf,
                     wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::D2Array,
@@ -2035,12 +2043,12 @@ impl Renderer {
                 ),
                 entry(
                     1 + 1,
-                    vf,
+                    terrain_vf,
                     wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 ),
                 entry(
                     3,
-                    vf,
+                    terrain_vf,
                     wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::D2,
@@ -2049,7 +2057,7 @@ impl Renderer {
                 ),
                 entry(
                     4,
-                    vf,
+                    terrain_vf,
                     wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 ),
                 entry(5, vf, sprite_array),
@@ -3613,6 +3621,18 @@ impl Renderer {
                 on_off(mesh_shaders_supported),
             ));
         }
+        let pacer = horizon_hdr::create_latency_pacer(&device, vendor_id);
+        let mesh_terrain = mesh_shaders_supported
+            .then(|| {
+                crate::lod::MeshShaderPipeline::new(
+                    &device,
+                    &bindings,
+                    config.format.remove_srgb_suffix(),
+                    sprite_constants,
+                )
+            })
+            .flatten();
+        let mesh_shaders_active = mesh_shaders_supported && mesh_terrain.is_some();
         Ok(Self {
             display: DisplayWatch::default(),
             display_fresh: false,
@@ -3795,7 +3815,9 @@ impl Renderer {
             pack_terrain_flat: false,
             hud,
             mesh_shaders_supported,
-            mesh_shaders_active: mesh_shaders_supported,
+            mesh_shaders_active,
+            mesh_terrain,
+            mesh_cluster_debug: false,
             menu_blur: None,
             post_effects: None,
             readback: readback::Readback::default(),
@@ -4903,9 +4925,32 @@ impl Renderer {
     pub fn mesh_shaders_active(&self) -> bool {
         self.mesh_shaders_active
     }
+    /// Whether the vendor's hardware frame pacing is active.
+    pub fn anti_lag_active(&self) -> bool {
+        self.pacer.is_active()
+    }
+    /// The active pacer's name for the F3 overlay ("AMD Anti-Lag 2",
+    /// "NVIDIA Reflex", or "Off").
+    pub fn latency_pacer_label(&self) -> &'static str {
+        self.pacer.label()
+    }
+    /// Bytes allocated and reserved from the GPU memory allocator, for the
+    /// F3 overlay's VRAM line.
+    pub fn vram_usage(&self) -> Option<(u64, u64)> {
+        self.device
+            .generate_allocator_report()
+            .map(|report| (report.total_allocated_bytes, report.total_reserved_bytes))
+    }
     /// Sets the mesh shaders mode.
     pub fn set_mesh_shaders(&mut self, mode: crate::graphics::MeshShadersMode) {
-        self.mesh_shaders_active = mode.is_enabled(self.mesh_shaders_supported);
+        self.mesh_shaders_active =
+            mode.is_enabled(self.mesh_shaders_supported) && self.mesh_terrain.is_some();
+    }
+    /// Resident far-terrain chunks the task shader dispatches over.
+    pub fn mesh_chunk_count(&self) -> u32 {
+        self.mesh_terrain
+            .as_ref()
+            .map_or(0, crate::lod::MeshShaderPipeline::chunk_count)
     }
     /// Runs `post` over the world from now on (`None`: no pack), for the dimension `dimension`;
     /// `block_ids` gives each block sprite layer's `mc_Entity` (id, fluid) pair.
@@ -6109,6 +6154,11 @@ impl Renderer {
         }
         // Distant terrain tiles are never occlusion tested: phase 1.
         for (i, v) in visible_lods.iter().enumerate() {
+            // The task/mesh pipeline draws the solid tiles; a shader pack owns
+            // terrain again, so keep the ordinary path for it.
+            if self.mesh_shaders_active && self.native.is_none() {
+                continue;
+            }
             let s = self.lods[&v.key].drawn();
             let instance = (visible.len() + i) as u32;
             for &(group, part) in parts(v.fade != 0) {
@@ -7187,6 +7237,19 @@ impl Renderer {
                     && n.material.as_ref().is_some_and(|m| m.writes_surface)
             })
             .map(|n| n.frame.surface_view.clone());
+        if let Some(mesh_terrain) = self.mesh_terrain.as_mut() {
+            let yaw = frame.yaw.to_radians();
+            mesh_terrain.prepare(
+                &self.queue,
+                [
+                    frame.camera.x as f32,
+                    frame.camera.y as f32,
+                    frame.camera.z as f32,
+                ],
+                [-yaw.sin(), yaw.cos()],
+                self.mesh_cluster_debug,
+            );
+        }
         {
             let attachments = [Some(wgpu::RenderPassColorAttachment {
                 view: world_view,
@@ -7446,6 +7509,14 @@ impl Renderer {
                 drop(pass);
                 pass = plain_pass(&mut encoder);
                 pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
+            }
+            if self.mesh_shaders_active
+                && self.native.is_none()
+                && !pack_draws_terrain
+                && let Some(mesh_terrain) = self.mesh_terrain.as_ref()
+            {
+                mesh_terrain.draw(&mut pass, &self.group);
+                pass.set_bind_group(0, &self.group, &[]);
             }
             if entity_quads > 0 {
                 pass.set_pipeline(&self.entity_pipeline);

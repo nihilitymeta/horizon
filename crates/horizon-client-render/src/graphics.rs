@@ -634,6 +634,8 @@ pub struct Graphics {
     pub frame_generation: FrameGeneration,
     /// Hardware task and mesh shaders (`VK_EXT_mesh_shader`).
     pub mesh_shaders: MeshShadersMode,
+    /// False-colour each far-terrain meshlet cluster (F3+M).
+    pub mesh_cluster_debug: bool,
     /// HDR output (HDR10, or scRGB), where the display path offers it.
     pub hdr: bool,
     /// HDR paper white (where SDR white sits), in nits; 0 is Auto: the desktop's SDR
@@ -701,6 +703,7 @@ impl Default for Graphics {
             screenshot_quality: 1,
             frame_generation: FrameGeneration::Off,
             mesh_shaders: MeshShadersMode::Auto,
+            mesh_cluster_debug: false,
             hdr: false,
             hdr_paper_white: 0,
             hdr_peak: 0,
@@ -784,6 +787,7 @@ impl Graphics {
                 }
                 "frameGeneration" => g.frame_generation = FrameGeneration::parse(value),
                 "meshShaders" => g.mesh_shaders = MeshShadersMode::parse(value),
+                "meshClusterDebug" => g.mesh_cluster_debug = flag(g.mesh_cluster_debug),
                 "hdr" => g.hdr = flag(g.hdr),
                 "hdrPaperWhite" => {
                     g.hdr_paper_white = match number(g.hdr_paper_white) {
@@ -1014,6 +1018,7 @@ mod tests {
             screenshot_quality: 4,
             frame_generation: FrameGeneration::Fsr31,
             mesh_shaders: MeshShadersMode::On,
+            mesh_cluster_debug: false,
             hdr: true,
             hdr_paper_white: 240,
             hdr_peak: 1400,

@@ -60,9 +60,12 @@ fn frustum_test_culls_boxes_beyond_one_plane() {
     assert!(!outside([0.0, 0.0, 0.25], [0.5, 0.5, 0.75]));
 }
 
+static GPU_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 #[ignore = "requires a Vulkan mesh-shader GPU"]
 fn mesh_pipeline_creates_and_draws() {
+    let _guard = GPU_LOCK.lock().unwrap();
     let Some((device, queue)) = mesh_device() else {
         eprintln!("no mesh-shader GPU: skipped");
         return;
@@ -386,6 +389,7 @@ fn terrain_group(
 #[test]
 #[ignore = "requires a Vulkan mesh-shader GPU"]
 fn tile_churn_recycles_vertex_and_chunk_memory_without_leak() {
+    let _guard = GPU_LOCK.lock().unwrap();
     let Some((device, queue)) = mesh_device() else {
         eprintln!("no mesh-shader GPU: skipped");
         return;

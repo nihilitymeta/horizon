@@ -48,6 +48,7 @@ pub enum H {
     ScreenshotQuality,
     FrameGeneration,
     MeshShaders,
+    MeshClusterDebug,
     Hdr,
     /// Opens `Level::Hdr`.
     HdrSettings,
@@ -313,6 +314,11 @@ pub fn rows(level: Level) -> Vec<Row> {
                 H::MeshShaders,
                 Low,
                 "Uses GPU task and mesh shaders to bypass fixed vertex pipeline hardware.",
+            ),
+            h(
+                H::MeshClusterDebug,
+                None,
+                "False-colours each far-terrain meshlet cluster (also F3+M).",
             ),
             h(
                 H::HdrSettings,
@@ -603,6 +609,7 @@ impl H {
             }
             H::FrameGeneration => labelled("Frame Generation", g.frame_generation.label()),
             H::MeshShaders => labelled("Mesh Shaders", g.mesh_shaders.label()),
+            H::MeshClusterDebug => labelled("Meshlet Debug", on_off(g.mesh_cluster_debug)),
             H::Hdr => labelled("HDR", on_off(g.hdr)),
             H::HdrSettings => Text::literal(lang::get("HDR Settings...")),
             H::HdrCalibrate => Text::literal(lang::get(match setup(s) {
@@ -735,6 +742,7 @@ impl H {
             H::MeshShaders => {
                 g.mesh_shaders = step(&crate::graphics::MeshShadersMode::ALL, g.mesh_shaders, back)
             }
+            H::MeshClusterDebug => g.mesh_cluster_debug = !g.mesh_cluster_debug,
             H::Hdr => g.hdr = !g.hdr,
             H::BatteryMode => g.battery = !g.battery,
             H::ShadowCache => g.shadow_cache = !g.shadow_cache,
@@ -809,6 +817,7 @@ impl Item {
             Item::Horizon(H::BatteryMode) => g.battery,
             Item::Horizon(H::ShadowCache) => g.shadow_cache,
             Item::Horizon(H::TranslucentBatching) => g.translucent_batching,
+            Item::Horizon(H::MeshClusterDebug) => g.mesh_cluster_debug,
             Item::Vanilla(Opt::ViewBobbing) => s.view_bobbing,
             Item::Vanilla(Opt::Vsync) => s.vsync,
             Item::Vanilla(Opt::Fullscreen) => s.fullscreen,

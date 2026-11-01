@@ -9,6 +9,8 @@ use crate::{
 };
 pub mod cache;
 mod mesh;
+mod pipeline;
+pub use pipeline::MeshShaderPipeline;
 use horizon_world::registry::BlockStateId;
 use std::{
     collections::VecDeque,

@@ -12,7 +12,7 @@ const VERTEX_WORDS: u64 = 6;
 const VERTEX_BYTE_SIZE: u64 = VERTEX_WORDS * 4;
 const CHUNK_SIZE: u64 = size_of::<GpuChunkHeader>() as u64;
 const INITIAL_VERTEX_CAPACITY: u64 = 16 * 1024 * 1024; // 16 MiB (~699k vertices)
-const MAX_VERTEX_CAPACITY: u64 = 256 * 1024 * 1024;    // 256 MiB (~11m vertices, well below 2GB limit)
+const MAX_VERTEX_CAPACITY: u64 = 1024 * 1024 * 1024;   // 1 GiB (~44.7m vertices, well below 2GB limit)
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -337,7 +337,7 @@ impl MeshShaderPipeline {
         self.chunks_dirty = true;
     }
 
-    fn alloc_vertices(&mut self, count: u32) -> u32 {
+    fn alloc_vertices(&mut self, count: u32) -> Option<u32> {
         let mut best_idx = None;
         let mut best_waste = u32::MAX;
         for (i, &(_off, len)) in self.free_vertex_ranges.iter().enumerate() {
@@ -353,12 +353,17 @@ impl MeshShaderPipeline {
             } else {
                 self.free_vertex_ranges[i] = (off + count, len - count);
             }
-            return off;
+            return Some(off);
         }
 
-        let off = self.vertex_high_water;
-        self.vertex_high_water += count;
-        off
+        let capacity_in_verts = (self.vertex_capacity / VERTEX_BYTE_SIZE) as u32;
+        if self.vertex_high_water + count <= capacity_in_verts {
+            let off = self.vertex_high_water;
+            self.vertex_high_water += count;
+            return Some(off);
+        }
+
+        None
     }
 
     fn free_vertices(&mut self, offset: u32, count: u32) {
@@ -418,7 +423,9 @@ impl MeshShaderPipeline {
         let count = mesh.solid.len() as u32;
 
         self.ensure_vertex_capacity(device, queue, count);
-        let offset = self.alloc_vertices(count);
+        let Some(offset) = self.alloc_vertices(count) else {
+            return;
+        };
 
         let origin = key.origin();
         let mut min = [f32::MAX; 3];

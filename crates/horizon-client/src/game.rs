@@ -14015,6 +14015,7 @@ impl Game<'_> {
             self.settings.gui_scale,
             std::sync::atomic::Ordering::Relaxed,
         );
+            renderer.mesh_cluster_debug = self.settings.horizon.mesh_cluster_debug;
         self.apply_ui_settings();
     }
     /// The sprite layers a shader pack draws in the translucent pass: every section is meshed
@@ -15700,6 +15701,7 @@ impl Game<'_> {
         };
         let result = match self.renderer.as_mut() {
             Some(renderer) => {
+                renderer.mesh_cluster_debug = self.settings.horizon.mesh_cluster_debug;
                 renderer.set_pass_timing(self.debug || self.gpu_passes);
                 horizon_client::spans::time("renderer", || renderer.render(&frame))
             }
@@ -17949,6 +17951,8 @@ impl Game<'_> {
                     }
                     if rendered {
                         self.frame_stats.record(elapsed.as_secs_f32() * 1000.0);
+                        self.debug_charts
+                            .record_frame(Instant::now(), elapsed.as_secs_f32() * 1000.0);
                         self.debug_charts.frame_times.log(elapsed.as_nanos() as i64);
                         if self.frames == 0 {
                             // The launcher times Play to this line (launcher/src/perf.rs).

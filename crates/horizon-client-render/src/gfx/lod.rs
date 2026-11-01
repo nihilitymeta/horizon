@@ -235,6 +235,9 @@ impl Renderer {
         if let Some(tile) = self.lods.remove(&key) {
             self.release_tile(tile);
         }
+        if let Some(mesh_terrain) = self.mesh_terrain.as_mut() {
+            mesh_terrain.remove_tile(key);
+        }
     }
 
     pub fn clear_lods(&mut self) {
@@ -251,6 +254,9 @@ impl Renderer {
         }
         for (_, tile) in std::mem::take(&mut self.lods) {
             self.release_tile(tile);
+        }
+        if let Some(mesh_terrain) = self.mesh_terrain.as_mut() {
+            mesh_terrain.clear();
         }
         self.set_lod_cutout(Default::default());
     }
