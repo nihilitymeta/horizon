@@ -103,9 +103,13 @@ pub enum Capability {
     /// The recipes and items the game knows, for recipe viewers
     /// (interface `recipes`).
     Recipes,
+    /// Lua scripts in the mod's `scripts/` (`scripts/init.lua` first), run by
+    /// the game on its hook points: behaviour for the mod's blocks and mobs
+    /// (docs/lua-bindings.md). No WIT interface.
+    Scripts,
 }
 impl Capability {
-    pub const ALL: [Capability; 12] = [
+    pub const ALL: [Capability; 13] = [
         Capability::GameRead,
         Capability::Chat,
         Capability::Hud,
@@ -118,12 +122,13 @@ impl Capability {
         Capability::Players,
         Capability::World,
         Capability::Recipes,
+        Capability::Scripts,
     ];
     /// Whether a server mod may have it: the others act on a local player.
     pub fn on_server(self) -> bool {
         matches!(
             self,
-            Capability::Storage | Capability::Players | Capability::World
+            Capability::Storage | Capability::Players | Capability::World | Capability::Scripts
         )
     }
     /// The WIT interface it grants, in `horizon:mods`.
@@ -141,6 +146,7 @@ impl Capability {
             Capability::Players => "players",
             Capability::World => "world",
             Capability::Recipes => "recipes",
+            Capability::Scripts => "scripts",
         }
     }
     /// May change in any release: a mod uses it only with
@@ -148,7 +154,11 @@ impl Capability {
     pub fn is_experimental(self) -> bool {
         matches!(
             self,
-            Capability::Ui | Capability::Render | Capability::Input | Capability::Recipes
+            Capability::Ui
+                | Capability::Render
+                | Capability::Input
+                | Capability::Recipes
+                | Capability::Scripts
         )
     }
     /// What the player reads before turning the mod on: "May <this>".
@@ -171,6 +181,9 @@ impl Capability {
             Capability::World => "read and change the world's blocks",
             Capability::Recipes => {
                 "read the game's recipes and items and which recipes you know, place recipes in your crafting grid and, in creative mode, give you items"
+            }
+            Capability::Scripts => {
+                "run its own scripts in your worlds: behaviour for its blocks and mobs"
             }
         }
     }
@@ -213,6 +226,7 @@ impl fmt::Display for Capability {
             Capability::Players => "players",
             Capability::World => "world",
             Capability::Recipes => "recipes",
+            Capability::Scripts => "scripts",
         };
         f.write_str(name)
     }
@@ -238,10 +252,12 @@ impl Manifest {
                 APIS.join(" and ")
             ));
         }
-        if m.capabilities.contains(&Capability::Registries) && m.api == API {
-            return Err(format!(
-                "{MANIFEST}: capability registries needs api = \"0.2\""
-            ));
+        if let Some(c) = m
+            .capabilities
+            .iter()
+            .find(|c| matches!(c, Capability::Registries | Capability::Scripts) && m.api == API)
+        {
+            return Err(format!("{MANIFEST}: capability {c} needs api = \"0.2\""));
         }
         let server = m.side == Side::Server;
         if server != (m.api == SERVER_API) {
@@ -249,11 +265,9 @@ impl Manifest {
                 "{MANIFEST}: a server mod is side = \"server\" with api = \"{SERVER_API}\", and only it"
             ));
         }
-        if let Some(c) = m
-            .capabilities
-            .iter()
-            .find(|c| c.on_server() != server && **c != Capability::Storage)
-        {
+        if let Some(c) = m.capabilities.iter().find(|c| {
+            c.on_server() != server && !matches!(c, Capability::Storage | Capability::Scripts)
+        }) {
             let side = if server { "client" } else { "server" };
             return Err(format!("{MANIFEST}: capability {c} is for {side} mods"));
         }
@@ -355,9 +369,14 @@ impl Package {
             return Err(format!("{WASM} is over {} MiB", MAX_WASM >> 20));
         }
         let manifest = Manifest::parse(&toml)?;
-        if wasm.is_none() && !manifest.capabilities.contains(&Capability::Registries) {
+        if wasm.is_none()
+            && !manifest
+                .capabilities
+                .iter()
+                .any(|c| matches!(c, Capability::Registries | Capability::Scripts))
+        {
             return Err(format!(
-                "{WASM}: missing (only a content mod, with capability registries, may have no code)"
+                "{WASM}: missing (only a content mod, with capability registries or scripts, may have no code)"
             ));
         }
         Ok(Package { manifest, wasm })

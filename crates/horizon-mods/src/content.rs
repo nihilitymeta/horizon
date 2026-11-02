@@ -22,13 +22,22 @@ pub const MAX_FILES: usize = 65_536;
 pub const MAX_FILE: u64 = 16 << 20;
 pub const MAX_TOTAL: u64 = 512 << 20;
 
+/// The script a scripted mod starts from (capability `scripts`).
+pub const SCRIPT_ENTRY: &str = "scripts/init.lua";
+
 /// Checks a content path: `assets/` or `data/`, then `/`-separated parts of
 /// `[a-z0-9_.-]`, none of them `.` or `..` (vanilla's resource-location
-/// characters, so the path means the same on every OS).
+/// characters, so the path means the same on every OS); or `scripts/`, then
+/// such parts ending in a `.lua` file.
 pub fn check_path(name: &str) -> Result<(), String> {
-    let bad = || format!("{name:?} is not a plain assets/ or data/ path");
+    let bad = || format!("{name:?} is not a plain assets/, data/ or scripts/ path");
     let mut parts = name.split('/');
-    if !matches!(parts.next(), Some("assets" | "data")) {
+    let top = parts.next();
+    if !matches!(top, Some("assets" | "data" | "scripts")) {
+        return Err(bad());
+    }
+    let script = top == Some("scripts");
+    if script && !name.ends_with(".lua") {
         return Err(bad());
     }
     let mut count = 0;
@@ -41,8 +50,8 @@ pub fn check_path(name: &str) -> Result<(), String> {
             return Err(bad());
         }
     }
-    // assets/<namespace>/<file> at least.
-    if count < 2 {
+    // assets/<namespace>/<file> at least; scripts/<file>.
+    if count < if script { 1 } else { 2 } {
         return Err(bad());
     }
     Ok(())
@@ -690,6 +699,9 @@ pub struct Content {
     source: Source,
     /// Every content file (`assets/...`, `data/...`), sorted.
     pub files: Vec<String>,
+    /// Every script (`scripts/...`), sorted: [`SCRIPT_ENTRY`] among them when
+    /// the mod has capability `scripts`.
+    pub scripts: Vec<String>,
     pub blocks: Vec<Block>,
     pub items: Vec<Item>,
     pub effects: Vec<MobEffect>,
@@ -754,7 +766,7 @@ impl Content {
     ) -> Result<Content, String> {
         let (source, sized) = if path.is_dir() {
             let mut out = Vec::new();
-            for top in ["assets", "data"] {
+            for top in ["assets", "data", "scripts"] {
                 walk(path, &path.join(top), &mut out)?;
             }
             (Source::Dir(path.to_owned()), out)
@@ -764,13 +776,17 @@ impl Content {
             for i in 0..zip.len() {
                 let entry = zip.by_index_raw(i).map_err(|e| e.to_string())?;
                 let name = entry.name().map_err(|e| e.to_string())?.into_owned();
-                if (name.starts_with("assets/") || name.starts_with("data/")) && !entry.is_dir() {
+                let content = ["assets/", "data/", "scripts/"]
+                    .iter()
+                    .any(|top| name.starts_with(top));
+                if content && !entry.is_dir() {
                     out.push((name.to_owned(), entry.size()));
                 }
             }
             (Source::Zip(path.to_owned()), out)
         };
         let mut files = Vec::with_capacity(sized.len());
+        let mut scripts = Vec::new();
         let mut total = 0u64;
         for (name, size) in sized {
             check_path(&name)?;
@@ -778,9 +794,13 @@ impl Content {
                 return Err(format!("{name} is over {} MiB", MAX_FILE >> 20));
             }
             total += size;
-            files.push(name);
+            if name.starts_with("scripts/") {
+                scripts.push(name);
+            } else {
+                files.push(name);
+            }
         }
-        if files.len() > MAX_FILES {
+        if files.len() + scripts.len() > MAX_FILES {
             return Err(format!("more than {MAX_FILES} content files"));
         }
         if total > MAX_TOTAL {
@@ -788,9 +808,12 @@ impl Content {
         }
         files.sort();
         files.dedup();
+        scripts.sort();
+        scripts.dedup();
         let mut content = Content {
             source,
             files,
+            scripts,
             blocks: Vec::new(),
             items: Vec::new(),
             effects: Vec::new(),
@@ -809,6 +832,7 @@ impl Content {
         Content {
             source: Source::Code,
             files: Vec::new(),
+            scripts: Vec::new(),
             blocks: Vec::new(),
             items: Vec::new(),
             effects: Vec::new(),
@@ -919,6 +943,17 @@ impl Content {
         if !self.files.is_empty() && !manifest.capabilities.contains(&Capability::Registries) {
             return Err(format!(
                 "has assets/ or data/ but not capability registries in {MANIFEST}"
+            ));
+        }
+        let scripted = manifest.capabilities.contains(&Capability::Scripts);
+        if !self.scripts.is_empty() && !scripted {
+            return Err(format!(
+                "has scripts/ but not capability scripts in {MANIFEST}"
+            ));
+        }
+        if scripted && !self.scripts.iter().any(|s| s == SCRIPT_ENTRY) {
+            return Err(format!(
+                "capability scripts in {MANIFEST} but no {SCRIPT_ENTRY}"
             ));
         }
         let mut blocks = Vec::new();
@@ -2610,6 +2645,8 @@ capabilities = ["registries"]
     fn paths_are_plain() {
         assert!(check_path("assets/ruby/textures/block/ruby_block.png").is_ok());
         assert!(check_path("data/ruby/loot_table/blocks/a.json").is_ok());
+        assert!(check_path("scripts/init.lua").is_ok());
+        assert!(check_path("scripts/ai/stalk.lua").is_ok());
         for bad in [
             "assets/ruby",
             "assets/../x/y",
@@ -2619,8 +2656,46 @@ capabilities = ["registries"]
             "/assets/ruby/a",
             "other/ruby/a",
             "assets\\ruby\\a",
+            "scripts",
+            "scripts/init.txt",
+            "scripts/../init.lua",
+            "scripts/Init.lua",
         ] {
             assert!(check_path(bad).is_err(), "{bad}");
         }
+    }
+
+    const SCRIPTED: &str = r#"
+id = "ruby"
+name = "Ruby"
+version = "0.1.0"
+api = "0.2"
+side = "both"
+capabilities = ["registries", "scripts"]
+experimental = ["scripts"]
+"#;
+
+    #[test]
+    fn scripts_travel_in_the_hmod_with_the_capability() {
+        let lang: &[(&str, &[u8])] = &[
+            ("assets/ruby/lang/en_us.json", b"{}"),
+            ("scripts/init.lua", b"require('grow')"),
+            ("scripts/grow.lua", b"return 1"),
+        ];
+        let content = hmod("scripted", SCRIPTED, lang).unwrap();
+        assert_eq!(content.files, ["assets/ruby/lang/en_us.json"]);
+        assert_eq!(content.scripts, ["scripts/grow.lua", "scripts/init.lua"]);
+
+        // Scripts without the capability, and the capability without its entry script.
+        let e = hmod("scripts-no-cap", MANIFEST_TEXT, &lang[1..]).unwrap_err();
+        assert!(e.contains("not capability scripts"), "{e}");
+        let e = hmod("scripts-no-init", SCRIPTED, &lang[..1]).unwrap_err();
+        assert!(e.contains("no scripts/init.lua"), "{e}");
+
+        // Scripts alone are a mod: no code, no registries.
+        let alone = SCRIPTED.replace("[\"registries\", \"scripts\"]", "[\"scripts\"]");
+        let content = hmod("scripts-only", &alone, &lang[1..]).unwrap();
+        assert!(content.files.is_empty());
+        assert_eq!(content.scripts.len(), 2);
     }
 }

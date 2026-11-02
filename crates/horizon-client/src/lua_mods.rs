@@ -17,11 +17,15 @@
 use crate::mod_api::{
     Hooks, Host, MobSpawnedEvent, Mods, ServerTickEvent, ServerTickPhase, WorldLifecycleEvent,
 };
+use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// The file a scripted mod starts from, inside its folder.
-pub const ENTRY: &str = "scripts/init.lua";
+pub const ENTRY: &str = horizon_mods::content::SCRIPT_ENTRY;
+
 /// The content mod's manifest, which names the mod.
 const MANIFEST: &str = "horizon-mod.toml";
 /// The Lua global the game provides.
@@ -34,22 +38,31 @@ const QUEUE: &str = "horizon_queue";
 /// One scripted mod: its folder and its Lua state.
 pub struct LuaMod {
     id: String,
-    dir: PathBuf,
+    /// The `.hmod` or folder the scripts came from.
+    source: PathBuf,
     lua: Lua,
 }
 
 impl std::fmt::Debug for LuaMod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LuaMod").field("id", &self.id).finish()
+        f.debug_struct("LuaMod")
+            .field("id", &self.id)
+            .field("source", &self.source)
+            .finish()
     }
 }
 
-/// The scripted mods among the `--dev-mod` folders of a command line, in
-/// order, as the trait mod list `entry::main_with` takes. A folder without
-/// `scripts/init.lua` is content only and is skipped; one whose script fails
-/// to load is left out with the error in the log.
+/// The scripts of a mod, by path (`scripts/init.lua`), read once from its
+/// `.hmod` or folder.
+type Scripts = Arc<HashMap<String, String>>;
+
+/// The scripted mods the game runs, in order, as the trait mod list
+/// `entry::main_with` takes: the installed mods in `horizon-mods/` that are
+/// on (`horizon-mods.txt`, as the content loader reads it) and the `--dev-mod`
+/// folders of the command line, when they have capability `scripts`. One
+/// whose scripts fail to load is left out with the error in the log.
 pub fn discover(args: impl Iterator<Item = String>) -> Mods {
-    let mut mods: Vec<Box<dyn Hooks>> = Vec::new();
+    let mut dev: Vec<PathBuf> = Vec::new();
     let mut args = args.peekable();
     while let Some(arg) = args.next() {
         let folder = match arg.strip_prefix("--dev-mod=") {
@@ -61,37 +74,70 @@ pub fn discover(args: impl Iterator<Item = String>) -> Mods {
             None => continue,
         };
         let dir = PathBuf::from(folder);
-        if !dir.join(ENTRY).is_file() {
+        dev.push(std::path::absolute(&dir).unwrap_or(dir));
+    }
+    let here = std::env::current_dir().unwrap_or_default();
+    let enabled = crate::mod_list::ModList::load(&crate::logging::shared_dir(&here)).enabled;
+    let mut paths = horizon_mods::find(&here.join(crate::mod_list::DIR));
+    paths.retain(|p| !dev.contains(p));
+    paths.extend(dev.iter().cloned());
+    let mut mods: Vec<Box<dyn Hooks>> = Vec::new();
+    let mut ids: Vec<String> = Vec::new();
+    for path in &paths {
+        let Ok(package) = Package::read(path) else {
+            continue;
+        };
+        let m = &package.manifest;
+        if !m.capabilities.contains(&Capability::Scripts) {
+            if dev.contains(path) && path.join(ENTRY).is_file() {
+                log::warn!(
+                    "Horizon: {} has {ENTRY} but no capability scripts in {MANIFEST}: not run",
+                    path.display()
+                );
+            }
             continue;
         }
-        match LuaMod::load(&dir) {
-            Ok(m) => {
-                log::info!("Horizon: Lua mod {} loaded from {}", m.id, dir.display());
-                mods.push(Box::new(m));
+        if !(enabled.contains(&m.id) || dev.contains(path)) || ids.contains(&m.id) {
+            continue;
+        }
+        match LuaMod::load(path) {
+            Ok(lua) => {
+                log::info!("Horizon: Lua mod {} loaded from {}", lua.id, path.display());
+                ids.push(lua.id.clone());
+                mods.push(Box::new(lua));
             }
-            Err(e) => log::error!("Horizon: Lua mod in {} not loaded: {e}", dir.display()),
+            Err(e) => log::error!("Horizon: Lua mod in {} not loaded: {e}", path.display()),
         }
     }
     mods.into()
 }
 
 impl LuaMod {
-    /// Load the mod in `dir`: its id from `horizon-mod.toml` and its
-    /// `scripts/init.lua`, run once.
-    pub fn load(dir: &Path) -> Result<Self, String> {
-        let manifest_path = dir.join(MANIFEST);
-        let manifest_text = std::fs::read_to_string(&manifest_path)
-            .map_err(|e| format!("{}: {e}", manifest_path.display()))?;
-        let manifest = horizon_mods::Manifest::parse(&manifest_text)
-            .map_err(|e| format!("{}: {e}", manifest_path.display()))?;
-        let lua = Lua::new();
+    /// Load the mod at `path` (a `.hmod` or a mod folder): its id from
+    /// `horizon-mod.toml`, its scripts read once, `scripts/init.lua` run.
+    pub fn load(path: &Path) -> Result<Self, String> {
+        let at = |e: String| format!("{}: {e}", path.display());
+        let package = Package::read(path).map_err(at)?;
+        let manifest = package.manifest;
+        if !manifest.capabilities.contains(&Capability::Scripts) {
+            return Err(at(format!("no capability scripts in {MANIFEST}")));
+        }
+        let content = Content::read(path, &manifest).map_err(at)?;
+        let mut reader = content.reader().map_err(at)?;
+        let mut scripts = HashMap::with_capacity(content.scripts.len());
+        for name in &content.scripts {
+            let bytes = reader.read(name).map_err(at)?;
+            let code = String::from_utf8(bytes).map_err(|_| at(format!("{name}: not UTF-8")))?;
+            scripts.insert(name.clone(), code);
+        }
+        let scripts: Scripts = Arc::new(scripts);
         let m = LuaMod {
             id: manifest.id.clone(),
-            dir: dir.to_owned(),
-            lua,
+            source: path.to_owned(),
+            lua: Lua::new(),
         };
-        m.install_api().map_err(|e| e.to_string())?;
-        m.run_file(&dir.join(ENTRY)).map_err(|e| e.to_string())?;
+        m.install_api(scripts.clone()).map_err(|e| e.to_string())?;
+        m.run(&scripts, ENTRY).map_err(|e| e.to_string())?;
         Ok(m)
     }
 
@@ -100,7 +146,7 @@ impl LuaMod {
         &self.id
     }
 
-    fn install_api(&self) -> mlua::Result<()> {
+    fn install_api(&self, scripts: Scripts) -> mlua::Result<()> {
         let lua = &self.lua;
         lua.set_named_registry_value(HANDLERS, lua.create_table()?)?;
         lua.set_named_registry_value(QUEUE, lua.create_table()?)?;
@@ -145,7 +191,6 @@ impl LuaMod {
             )?;
         }
         // `require("name")`: `scripts/name.lua` of this mod, run once.
-        let scripts = self.dir.join("scripts");
         let loaded = lua.create_table()?;
         api.set(
             "require",
@@ -158,10 +203,11 @@ impl LuaMod {
                 if let Some(v) = loaded.get::<Option<Value>>(name.as_str())? {
                     return Ok(v);
                 }
-                let path = scripts.join(format!("{name}.lua"));
-                let code = std::fs::read_to_string(&path)
-                    .map_err(|e| mlua::Error::runtime(format!("{}: {e}", path.display())))?;
-                let v: Value = lua.load(&code).set_name(format!("{name}.lua")).eval()?;
+                let key = format!("scripts/{name}.lua");
+                let code = scripts.get(&key).ok_or_else(|| {
+                    mlua::Error::runtime(format!("require({name:?}): no {key} in the mod"))
+                })?;
+                let v: Value = lua.load(code.as_str()).set_name(&key).eval()?;
                 let v = if v.is_nil() { Value::Boolean(true) } else { v };
                 loaded.set(name.as_str(), &v)?;
                 Ok(v)
@@ -173,16 +219,12 @@ impl LuaMod {
         Ok(())
     }
 
-    fn run_file(&self, path: &Path) -> mlua::Result<()> {
-        let code = std::fs::read_to_string(path)
-            .map_err(|e| mlua::Error::runtime(format!("{}: {e}", path.display())))?;
-        self.lua
-            .load(&code)
-            .set_name(
-                path.file_name()
-                    .map_or("init.lua".into(), |n| n.to_string_lossy().into_owned()),
-            )
-            .exec()
+    /// Runs the script at `name` (`scripts/init.lua`).
+    fn run(&self, scripts: &Scripts, name: &str) -> mlua::Result<()> {
+        let code = scripts
+            .get(name)
+            .ok_or_else(|| mlua::Error::runtime(format!("{name}: not in the mod")))?;
+        self.lua.load(code.as_str()).set_name(name).exec()
     }
 
     /// Call the handlers of `hook` with `args`, then run what they queued.
@@ -281,5 +323,66 @@ impl Hooks for LuaMod {
             "mob_spawned",
             (dimension, kind, pos[0], pos[1], pos[2], natural),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MANIFEST_TEXT: &str = r#"
+id = "ruby"
+name = "Ruby"
+version = "0.1.0"
+api = "0.2"
+side = "both"
+capabilities = ["scripts"]
+experimental = ["scripts"]
+"#;
+
+    fn hmod(name: &str, files: &[(&str, &[u8])]) -> (PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("horizon-lua-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ruby.hmod");
+        std::fs::write(
+            &path,
+            Package::write_files(MANIFEST_TEXT, None, files).unwrap(),
+        )
+        .unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn a_scripted_hmod_loads_and_its_scripts_see_each_other() {
+        let (dir, path) = hmod(
+            "ok",
+            &[
+                (
+                    "scripts/init.lua",
+                    b"local n = require('util')\nassert(n == 42, 'util')\nassert(require('util') == 42)\nhorizon.on('server_tick', function() end)\nhorizon.log('ready ' .. horizon.mod_id)",
+                ),
+                ("scripts/util.lua", b"return 42"),
+            ],
+        );
+        let m = LuaMod::load(&path).unwrap();
+        assert_eq!(m.id(), "ruby");
+        let handlers: Table = m.lua.named_registry_value(HANDLERS).unwrap();
+        let ticks: Table = handlers.get("server_tick").unwrap();
+        assert_eq!(ticks.len().unwrap(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_missing_module_or_a_failing_script_is_an_error_with_the_file_named() {
+        let (dir, path) = hmod("missing", &[("scripts/init.lua", b"require('nothing')")]);
+        let e = LuaMod::load(&path).unwrap_err();
+        assert!(e.contains("scripts/nothing.lua"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        let (dir, path) = hmod("broken", &[("scripts/init.lua", b"error('boom')")]);
+        let e = LuaMod::load(&path).unwrap_err();
+        assert!(e.contains("boom") && e.contains("scripts/init.lua"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

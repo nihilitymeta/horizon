@@ -1,6 +1,7 @@
 # Lua as a modding language
 
-Status: a first runtime is built (`crates/horizon-client/src/lua_mods.rs`); the rest is the plan. Branch
+Status: the runtime (`crates/horizon-client/src/lua_mods.rs`) and scripts inside the `.hmod` are built; the rest is the
+plan. Branch
 `lua-bindings` of whos-carmen/horizon, `main` + this one concern.
 
 ## Why
@@ -32,13 +33,14 @@ reaches Lua by one adapter method, and a hook added for Rust is available to scr
 
 | | |
 |---|---|
-| Entry | `scripts/init.lua` in a `--dev-mod` folder; the mod's id from its `horizon-mod.toml` |
+| Entry | `scripts/init.lua` of a mod with capability `scripts` (and `experimental = ["scripts"]`), installed in `horizon-mods/` and on, or a `--dev-mod` folder; the mod's id from its `horizon-mod.toml` |
 | `horizon.on(name, fn)` | Register a handler: `server_tick(phase, world_running)`, `mob_spawned(dimension, kind, x, y, z, natural)`, `world_lifecycle(phase)` |
 | `horizon.log(msg)` | The game log, tagged `[lua:<id>]` |
 | `horizon.broadcast(text)` | A chat line to every player |
 | `horizon.summon(dimension, kind, x, y, z)` | `/summon` |
 | `horizon.kill_mob(dimension, id)` | `/kill` a mob |
 | `require("name")` | `scripts/name.lua` of the same mod, once |
+| The `.hmod` | `cargo horizon-mod build` packs `scripts/` beside `assets/` and `data/`; `horizon_mods::Content` lists them (`scripts`), checks the paths and that `scripts/init.lua` is there; the Mods page says "May run its own scripts in your worlds" |
 
 ```lua
 -- scripts/init.lua
@@ -51,13 +53,14 @@ horizon.on("mob_spawned", function(dimension, kind, x, y, z, natural)
 end)
 ```
 
-Run: `horizon-client --dev-mod /path/to/mod`. A folder without `scripts/init.lua` is content only, as before.
+Run: install the `.hmod` and turn it on, or `horizon-client --dev-mod /path/to/mod`. A mod without capability `scripts`
+is content only, as before. Scripted mods are gathered when the game starts, like trait mods: turning one on or off on
+the Mods page takes effect at the next start.
 
 ## The plan
 
 | Step | What | Why |
 |---|---|---|
-| 1 | Installed mods: `horizon-mods` accepts a `scripts/` top-level entry and a capability `scripts` in the manifest (today any other entry refuses the file, [api/mod-files.md](api/mod-files.md)); the game reads the scripts out of the `.hmod`; Options > Mods says "runs scripts" | Ship one `.hmod` with data, assets and behaviour |
 | 2 | Hook coverage by generation: `xtask mod-api` emits the Lua adapter for every `listen` hook from the catalog, as it emits the trait | Every hook point reaches Lua without hand-written glue |
 | 3 | Host reads: `horizon.block(dimension, x, y, z)`, `horizon.mobs(dimension)`, `horizon.mob(dimension, id)`, returned synchronously (reads borrow the host for the call) | Scripts need to look before they act |
 | 4 | Mob goals in Lua: a `NativeGoal` adapter ([mob-ai-hooks.md](mob-ai-hooks.md), step 3) whose `can_use`, `start`, `tick`, `stop` call Lua functions, attached in `mob_ai_register` | The parasite mod's own mob behaviour in a script |
@@ -65,6 +68,6 @@ Run: `horizon-client --dev-mod /path/to/mod`. A folder without `scripts/init.lua
 | 6 | Reload: `/reload` and the resource-reload key re-run `init.lua` with the handlers cleared (the `hot-reload` branch's path) | Edit a script, press a key |
 | 7 | Limits: an instruction budget per handler (`Lua::set_interrupt`), memory cap per state, no `io`/`os` | A script cannot hang or read the player's files; a content mod stays shareable |
 
-Steps 1 and 6 give the content team the workflow; steps 4 and 5 give the parasite mod its behaviour. Everything
+Step 6 completes the content team's workflow; steps 4 and 5 give the parasite mod its behaviour. Everything
 stays off unless a mod carries scripts, and the launcher needs no change: a scripted `.hmod` installs like any
 content mod.

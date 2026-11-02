@@ -212,16 +212,20 @@ fn build_in(root: &Path) -> Result<PathBuf, String> {
     if root.join("Cargo.toml").exists() {
         return Err("a Cargo.toml: code mods are native now (docs/native-mods.md)".into());
     }
-    if !manifest.capabilities.contains(&Capability::Registries) {
+    if !manifest
+        .capabilities
+        .iter()
+        .any(|c| matches!(c, Capability::Registries | Capability::Scripts))
+    {
         return Err(format!(
-            "a content mod has capability registries in {MANIFEST}"
+            "a content mod has capability registries (or scripts) in {MANIFEST}"
         ));
     }
     // The same checks as the game's, and the files in the order it lists them.
     let content = Content::read(root, &manifest)?;
     let mut reader = content.reader()?;
-    let mut files = Vec::with_capacity(content.files.len());
-    for name in &content.files {
+    let mut files = Vec::with_capacity(content.files.len() + content.scripts.len());
+    for name in content.files.iter().chain(&content.scripts) {
         files.push((name.as_str(), reader.read(name)?));
     }
     let files: Vec<(&str, &[u8])> = files.iter().map(|(n, b)| (*n, b.as_slice())).collect();
