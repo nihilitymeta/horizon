@@ -1,0 +1,8 @@
+{
+  "id": "cas",
+  "title": "AMD FidelityFX CAS 1.0",
+  "description": "Contrast adaptive sharpening after TAA and resolution scaling. The mode and strength are under Graphics.",
+  "kind": "engine",
+  "default_on": false,
+  "setting": { "file": "graphics", "key": "cas", "on": "always", "off": "off" }
+}
