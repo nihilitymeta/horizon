@@ -50,20 +50,37 @@ VERSIONS="$LAUNCHER_HOME/versions"
 TARGET="$VERSIONS/$TAG"
 [[ -d "$VERSIONS" ]] || { echo "Error: no launcher data at $VERSIONS (open the launcher once)" >&2; exit 1; }
 
+# The newest prepared version lends its resources (an APFS clone costs no
+# space) and, where this tree has none, its exporters bundle.
+REF=""
+for candidate in "$VERSIONS"/*/; do
+    candidate="${candidate%/}"
+    [[ "$candidate" == "$TARGET" ]] && continue
+    [[ -d "$candidate/.local/horizon-client" ]] || continue
+    if [[ -z "$REF" || "$candidate" -nt "$REF" ]]; then
+        REF="$candidate"
+    fi
+done
+
+# xtask package wants the Java exporters' bundle in exporters/ (gitignored):
+# compiled here when this tree holds the imported game files, else borrowed.
+if [[ ! -f "$ROOT/exporters/manifest.json" ]]; then
+    if [[ -f "$ROOT/.local/minecraft/26.3/manifest.json" ]]; then
+        echo "==> Compiling the exporters..."
+        "$ROOT/target/$PROFILE/horizon-prepare" compile-exporters --root "$ROOT"
+    elif [[ -n "$REF" && -f "$REF/exporters/manifest.json" ]]; then
+        echo "==> Borrowing the exporters bundle from $(basename "$REF")..."
+        rm -rf "$ROOT/exporters"
+        cp -c -R "$REF/exporters" "$ROOT/exporters"
+    else
+        echo "Error: no exporters/manifest.json; run horizon-prepare --prepare, then compile-exporters" >&2
+        exit 1
+    fi
+fi
+
 echo "==> Packaging $TAG..."
 # xtask package replaces the folder and copies the three tools from beside the binary.
 cargo run -q -p xtask -- package "$BIN" "$TARGET"
-
-# The newest prepared version lends its resources: an APFS clone costs no space.
-REF=""
-for candidate in $(ls -1dt "$VERSIONS"/*/ 2>/dev/null); do
-    candidate="${candidate%/}"
-    [[ "$candidate" == "$TARGET" ]] && continue
-    if [[ -d "$candidate/.local/horizon-client" ]]; then
-        REF="$candidate"
-        break
-    fi
-done
 if [[ -n "$REF" ]]; then
     echo "==> Cloning prepared resources from $(basename "$REF")..."
     cp -c -R "$REF/.local" "$TARGET/.local"
