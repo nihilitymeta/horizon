@@ -114,10 +114,12 @@ impl RenderHooks for DevTools {
             size_in_pixels: [w, h],
             pixels_per_point: scale,
         };
-        for (id, delta) in &output.textures_delta.set {
-            painter
-                .renderer
-                .update_texture(world.device, world.queue, *id, delta);
+        for (id, deltas) in &output.textures_delta.set {
+            for delta in deltas {
+                painter
+                    .renderer
+                    .update_texture(world.device, world.queue, *id, delta);
+            }
         }
         let jobs = self.ctx.tessellate(output.shapes, output.pixels_per_point);
         painter
