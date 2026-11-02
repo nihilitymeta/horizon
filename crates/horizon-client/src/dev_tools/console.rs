@@ -527,14 +527,15 @@ pub fn window(ctx: &egui::Context) {
                     .map(|chars| text.char_indices().nth(chars.into()).map_or(text.len(), |(b, _)| b))
                     .unwrap_or(text.len())
             };
-            if FOCUS_INPUT.swap(false, Ordering::Relaxed) {
+            let just_focused = FOCUS_INPUT.swap(false, Ordering::Relaxed);
+            if just_focused {
                 ui.memory_mut(|m| m.request_focus(edit_id));
             }
             let cursor = cursor_of(ui.ctx(), &line);
             let made = completions_for(&line, cursor);
             let hint = made.as_ref().and_then(|c| c.hint.clone());
             let shown = made.filter(|c| !c.items.is_empty());
-            let mut set_cursor_to: Option<usize> = None;
+            let mut set_cursor_to: Option<usize> = if just_focused { Some(line.len()) } else { None };
             // With no completions to pick from, Up and Down walk the lines
             // run before, as a shell does; Down past the newest gives back
             // what was being typed.
@@ -607,7 +608,6 @@ pub fn window(ctx: &egui::Context) {
                 ui.style_mut().visuals.text_cursor.blink = false;
                 let out = egui::TextEdit::singleline(&mut line)
                     .id(edit_id)
-                    .hint_text("Lua, e.g. print(mc.snbt(\"@e[type=pig,limit=1]\", \"Health\"))")
                     .desired_width(ui.available_width() - 150.0)
                     .font(egui::TextStyle::Monospace)
                     .lock_focus(true)
@@ -620,10 +620,15 @@ pub fn window(ctx: &egui::Context) {
                     )));
                     st.store(ui.ctx(), edit_id);
                 }
-                if out.response.has_focus()
-                    && let Some(range) = out.cursor_range
-                {
-                    let at = out.galley.pos_from_cursor(range.primary);
+                // The block cursor: at egui's cursor, or at the end of the
+                // line while the field has focus but no cursor yet (just
+                // focused by /lua, before a click or a key).
+                if out.response.has_focus() {
+                    let ccursor = out.cursor_range.map_or_else(
+                        || egui::text::CCursor::new(line.chars().count()),
+                        |r| r.primary,
+                    );
+                    let at = out.galley.pos_from_cursor(ccursor);
                     let font = egui::TextStyle::Monospace.resolve(ui.style());
                     let (w, h) = ui
                         .ctx()
