@@ -35,7 +35,7 @@ export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 if [[ "$BUILD" == true ]]; then
     echo "==> Building horizon-client, horizon-ctl, horizon-prepare and horizon-server ($PROFILE)..."
     # horizon-ctl is horizon-client-lib's binary.
-    cargo build --profile "$PROFILE" -p horizon-client --bins -p horizon-prepare -p horizon-server --bin horizon-ctl
+    cargo build --profile "$PROFILE" -p horizon-client -p horizon-client-lib --bins -p horizon-prepare -p horizon-server
 fi
 BIN="$ROOT/target/$PROFILE/horizon-client"
 [[ -f "$BIN" ]] || { echo "Error: $BIN not found" >&2; exit 1; }
