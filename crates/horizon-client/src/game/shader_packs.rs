@@ -950,6 +950,7 @@ mod native_pack_tests {
         let mut mods = ModList::default();
         mods.installed.push(Installed {
             id: "horizon_better_visuals".into(),
+            kind: horizon_client::mod_list::ModKind::Native,
             title: "Better Visuals".into(),
             description: String::new(),
             problem: None,

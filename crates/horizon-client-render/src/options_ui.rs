@@ -4286,6 +4286,7 @@ impl OptionsUi {
                         }
                         Act::ToggleMod(i) => {
                             s.mods.toggle(i);
+                            crate::mod_registry::sync_from_mods(s);
                             events.push(Event::Changed);
                         }
                         Act::ModSettings(i) => {
@@ -5225,6 +5226,7 @@ impl OptionsUi {
                         }
                         Act::ToggleMod(i) => {
                             s.mods.toggle(i);
+                            crate::mod_registry::sync_from_mods(s);
                             events.push(Event::Changed);
                         }
                         Act::ModSettings(i) => {
@@ -6020,6 +6022,7 @@ mod tests {
         );
         for (id, dev) in [("normal", false), ("dev", true), ("", false)] {
             s.mods.installed.push(crate::mod_list::Installed {
+                kind: crate::mod_list::ModKind::Native,
                 id: id.into(),
                 title: id.into(),
                 description: "May show HUD panels.".into(),
@@ -6087,6 +6090,7 @@ mod tests {
         let mut ui = OptionsUi::default();
         let size = (480.0, 240.0);
         s.mods.installed.push(crate::mod_list::Installed {
+            kind: crate::mod_list::ModKind::Native,
             id: "native".into(),
             title: "Native 1.0".into(),
             description: String::new(),
@@ -6132,6 +6136,7 @@ mod tests {
         let mut s = Settings::default();
         let mut ui = OptionsUi::default();
         s.mods.installed.push(crate::mod_list::Installed {
+            kind: crate::mod_list::ModKind::Native,
             id: "no_settings".into(),
             title: "Native 1.0".into(),
             description: String::new(),
@@ -6184,6 +6189,7 @@ mod tests {
         let mut ui = OptionsUi::default();
         let size = (480.0, 240.0);
         s.mods.installed.push(crate::mod_list::Installed {
+            kind: crate::mod_list::ModKind::Native,
             id: "zoom".into(),
             title: "Zoom 2.0.0".into(),
             description: String::new(),

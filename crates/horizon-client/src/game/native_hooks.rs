@@ -10060,6 +10060,7 @@ impl Game<'_> {
             };
             self.settings.mods.installed.push(Installed {
                 id: m.id,
+                kind: crate::mod_list::ModKind::Native,
                 title: m.title,
                 description: m.description,
                 problem: None,
@@ -10067,6 +10068,29 @@ impl Game<'_> {
                 native: Some(page),
             });
         }
+        // The build's own features (`registry/<id>.json`): hook mods and engine patches, each a
+        // switch the list's `mod.<id>` line mirrors.
+        for entry in crate::mod_registry::entries() {
+            if self
+                .settings
+                .mods
+                .installed
+                .iter()
+                .any(|m| m.id == entry.id)
+            {
+                continue;
+            }
+            self.settings.mods.installed.push(Installed {
+                id: entry.id,
+                kind: entry.kind.into(),
+                title: entry.title,
+                description: entry.description,
+                problem: None,
+                dev: false,
+                native: Some(NativePage::default()),
+            });
+        }
+        crate::mod_registry::sync_to_mods(&mut self.settings);
     }
     /// A click on button `button` of native mod `i`'s page (its index in
     /// Options > Mods), and the page's labels after it.

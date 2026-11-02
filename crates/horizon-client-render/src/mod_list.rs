@@ -32,10 +32,35 @@ pub struct ModList {
     pub installed: Vec<Installed>,
 }
 
+/// What an installed mod is, for the sections of the Mods page and of the launcher's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ModKind {
+    /// A content mod (`.hmod`), on only when the player turns it on.
+    #[default]
+    Content,
+    /// A native mod built into this game by the launcher (`docs/native-mods.md`).
+    Native,
+    /// A native hook mod built into every game (zoom, minimap, the HUD counters):
+    /// `mod_registry::Kind::Hook`.
+    Hook,
+    /// An engine patch with a switch: `mod_registry::Kind::Engine`.
+    Engine,
+}
+
+impl From<crate::mod_registry::Kind> for ModKind {
+    fn from(kind: crate::mod_registry::Kind) -> Self {
+        match kind {
+            crate::mod_registry::Kind::Hook => Self::Hook,
+            crate::mod_registry::Kind::Engine => Self::Engine,
+        }
+    }
+}
+
 /// One installed mod as the Mods page shows it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Installed {
     pub id: String,
+    pub kind: ModKind,
     /// `Name 1.0` (the file name when the manifest is unreadable).
     pub title: String,
     pub description: String,
@@ -176,6 +201,7 @@ mod tests {
     fn toggles_installed_and_native_mods_but_not_dev_ones() {
         let installed = |id: &str, dev| Installed {
             id: id.into(),
+            kind: ModKind::Content,
             title: id.into(),
             description: String::new(),
             problem: None,
@@ -195,6 +221,7 @@ mod tests {
         assert!(!list.is_on(0));
         list.installed.push(Installed {
             native: Some(NativePage::default()),
+            kind: ModKind::Native,
             ..installed("c", false)
         });
         // On until turned off; off, the launcher leaves it out.
