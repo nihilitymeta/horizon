@@ -421,20 +421,29 @@ impl Game<'_> {
         let Some((text, cursor)) = console::take_completion_request() else {
             return;
         };
-        let completions = match console::command_context(&text, cursor) {
-            Some((start, command)) => {
-                let tree = crate::game::chat::chat_tree(&self.remote);
-                let parse = tree.parse(&command, &self.ui.registries);
-                let (range, list) =
-                    tree.client_suggestions(&parse, command.len(), &self.ui.registries);
-                console::Completions {
-                    text: text.clone(),
-                    cursor,
-                    range: (start + range.0, start + range.1),
-                    items: list.into_iter().map(|s| (s.text, s.tooltip)).collect(),
-                }
+        let tree_completions = |start: usize, command: &str, skip: usize| {
+            // `skip` bytes of `command` are a prefix the line does not hold.
+            let tree = crate::game::chat::chat_tree(&self.remote);
+            let parse = tree.parse(command, &self.ui.registries);
+            let (range, list) = tree.client_suggestions(&parse, command.len(), &self.ui.registries);
+            let map = |i: usize| start + i.saturating_sub(skip);
+            console::Completions {
+                text: text.clone(),
+                cursor,
+                range: (map(range.0), map(range.1)),
+                items: list.into_iter().map(|s| (s.text, s.tooltip)).collect(),
+                hint: console::call_context(&text, cursor)
+                    .and_then(|c| console::signature_hint(&c.name)),
             }
-            None => console::lua_completions(&text, cursor),
+        };
+        let completions = if let Some((start, command)) = console::command_context(&text, cursor)
+        {
+            tree_completions(start, &command, 0)
+        } else if let Some((start, partial)) = console::entity_context(&text, cursor) {
+            // An entity argument completes as /tp's target does.
+            tree_completions(start, &format!("tp {partial}"), 3)
+        } else {
+            console::lua_completions(&text, cursor)
         };
         console::set_completions(completions);
     }
@@ -444,7 +453,11 @@ impl Game<'_> {
         match code {
             None => {
                 let open = !console::OPEN.load(Ordering::Relaxed);
-                console::OPEN.store(open, Ordering::Relaxed);
+                if open {
+                    console::open_from_command();
+                } else {
+                    console::OPEN.store(false, Ordering::Relaxed);
+                }
                 self.feedback(horizon_client::text::Text::literal(if open {
                     "Lua console open"
                 } else {
@@ -453,7 +466,7 @@ impl Game<'_> {
                 Ok(1)
             }
             Some(code) => {
-                console::OPEN.store(true, Ordering::Relaxed);
+                console::open_from_command();
                 console::submit(format!("> {code}"), code);
                 Ok(1)
             }

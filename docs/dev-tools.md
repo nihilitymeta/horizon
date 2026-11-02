@@ -44,14 +44,17 @@ An entity that stops updating (gone, unloaded, the game paused) keeps its last d
 | `/watch <targets> <path>` | A numeric NBT path (`Health`, `Pos[1]`, `Brain.memories…`) sampled once a server tick, as a line chart of the last 1200 samples with min, max and last; hover for a sample. A path that is not a number says so. |
 | `/mobai log <targets>` | Each server tick, the mob's AI snapshot (everything `/goals`, `/senses` and `/nav` show) as one JSON line in `dev-tools/logs/mobai-<name>-<id>-<time>.jsonl` under the game folder, for diffing offline; `/mobai log stop` closes the files. |
 
-**The Lua console.** `/lua` opens it (`/lua <code>` runs a line in it): a Luau state on the server thread
+**The Lua console.** `/lua` opens it, takes the pointer for the tools and focuses the line (`/lua <code>` runs a
+line in it): a Luau state on the server thread
 (`game/commands/lua_console.rs`, mlua, built from source) that runs what the window queues
 (`dev_tools/console.rs`) once a server tick, after the levels ticked. The window lists the `.lua` files of
 `dev-tools/scripts/` under the game folder with a run button each, shows the output, and takes a line. The line
 completes like the chat box: `Tab` takes the completion, `Up` and `Down` pick one; with nothing to pick, `Up` and
 `Down` recall the lines run before, as a shell does (kept in `dev-tools/console-history.txt`). Inside an `mc.cmd("…")` string the
 completions are the chat box's own, from the tree the server sent (`Dispatcher::client_suggestions` on the window's
-game, asked once a frame through `dev_tools::console`); elsewhere they are the `mc` names and Lua's keywords. The `mc`
+game, asked once a frame through `dev_tools::console`); an entity argument (`mc.get("@e[ty`) completes as `/tp`'s
+target does; a path argument offers common NBT keys and `mc.inspect`'s second argument its views; elsewhere they are
+the `mc` names and Lua's keywords. Inside any call the popup shows its signature and an example. The `mc`
 table is bound to the game for the chunk's duration (`Lua::scope`), so a script cannot keep the game past its run;
 `mc` is bound afresh each run and each tick. An entity argument is a selector string (`"@e[type=pig,limit=1]"`) or
 an id a selector found before (`mc.select` returns them); players have no id here, so reach them by selector in a

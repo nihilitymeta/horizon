@@ -16,6 +16,17 @@ const KEEP: usize = 1000;
 
 /// Whether the window is open (`/lua` toggles it).
 pub static OPEN: AtomicBool = AtomicBool::new(false);
+/// `/lua` just opened the window: the tools take the pointer and the line
+/// takes the keyboard.
+pub static WANT_POINTER: AtomicBool = AtomicBool::new(false);
+static FOCUS_INPUT: AtomicBool = AtomicBool::new(false);
+
+/// Open the window from a command: with the pointer and the focus.
+pub fn open_from_command() {
+    OPEN.store(true, Ordering::Relaxed);
+    WANT_POINTER.store(true, Ordering::Relaxed);
+    FOCUS_INPUT.store(true, Ordering::Relaxed);
+}
 /// A click on "stop callbacks": the tick handlers are dropped.
 pub static STOP_TICKS: AtomicBool = AtomicBool::new(false);
 
@@ -43,13 +54,122 @@ static OUTPUT: Mutex<VecDeque<(Kind, String)>> = Mutex::new(VecDeque::new());
 pub static TICKING: AtomicBool = AtomicBool::new(false);
 
 /// Completions for the input line: the byte range they replace and the
-/// candidates (text, tooltip), for the line and cursor they were made for.
+/// candidates (text, tooltip), for the line and cursor they were made for,
+/// and a hint shown above them (the call's signature and an example).
 #[derive(Clone, Debug, Default)]
 pub struct Completions {
     pub text: String,
     pub cursor: usize,
     pub range: (usize, usize),
     pub items: Vec<(String, Option<String>)>,
+    pub hint: Option<String>,
+}
+
+/// Where the cursor is in a call: `mc.watch(` is `name`, the argument
+/// being typed is `arg` (0 first), and `string` is the string literal
+/// the cursor is inside, if any: where its content starts, and the
+/// content up to the cursor.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CallContext {
+    pub name: String,
+    pub arg: usize,
+    pub string: Option<(usize, String)>,
+}
+
+/// The innermost open call at the cursor.
+pub fn call_context(text: &str, cursor: usize) -> Option<CallContext> {
+    let cursor = cursor.min(text.len());
+    let head = &text[..cursor];
+    let mut frames: Vec<(usize, usize)> = Vec::new(); // (index of '(', args so far)
+    let mut quote: Option<(char, usize)> = None;
+    let mut escaped = false;
+    for (i, c) in head.char_indices() {
+        match quote {
+            Some((q, _)) => {
+                if escaped {
+                    escaped = false;
+                } else if c == '\\' {
+                    escaped = true;
+                } else if c == q {
+                    quote = None;
+                }
+            }
+            None => match c {
+                '"' | '\'' => quote = Some((c, i + 1)),
+                '(' => frames.push((i, 0)),
+                ')' => {
+                    frames.pop();
+                }
+                ',' => {
+                    if let Some(f) = frames.last_mut() {
+                        f.1 += 1;
+                    }
+                }
+                _ => {}
+            },
+        }
+    }
+    let &(paren, arg) = frames.last()?;
+    let name_start = head[..paren]
+        .char_indices()
+        .rev()
+        .take_while(|(_, c)| c.is_alphanumeric() || *c == '_' || *c == '.')
+        .last()
+        .map_or(paren, |(i, _)| i);
+    let name = head[name_start..paren].to_string();
+    if name.is_empty() {
+        return None;
+    }
+    Some(CallContext {
+        name,
+        arg,
+        string: quote.map(|(_, start)| (start, head[start..].to_string())),
+    })
+}
+
+/// The `mc` functions, their signatures and an example each.
+pub const SIGNATURES: &[(&str, &str, &str)] = &[
+    ("mc.cmd", "mc.cmd(line) -> ok, lines", "mc.cmd(\"time set day\")"),
+    ("mc.select", "mc.select(selector) -> {id, ...}", "mc.select(\"@e[type=pig,distance=..10]\")"),
+    ("mc.get", "mc.get(entity[, path]) -> table or value", "mc.get(\"@e[type=pig,limit=1]\", \"Pos\")"),
+    ("mc.snbt", "mc.snbt(entity[, path]) -> SNBT text", "mc.snbt(\"@e[type=pig,limit=1]\", \"Health\")"),
+    ("mc.set", "mc.set(entity, path, value) -> changed", "mc.set(\"@e[type=pig,limit=1]\", \"Health\", \"20.0f\")"),
+    ("mc.merge", "mc.merge(entity, value) -> changed", "mc.merge(\"@e[type=pig,limit=1]\", \"{NoAI:1b}\")"),
+    ("mc.pos", "mc.pos(entity) -> x, y, z", "local x, y, z = mc.pos(\"@p\")"),
+    ("mc.name", "mc.name(entity) -> string", "mc.name(\"@e[type=pig,limit=1]\")"),
+    ("mc.inspect", "mc.inspect(entity[, view])  view: \"data\" \"goals\" \"senses\" \"nav\"", "mc.inspect(\"@e[type=pig,limit=1]\", \"nav\")"),
+    ("mc.watch", "mc.watch(entity, path)  a chart of a numeric path", "mc.watch(\"@e[type=pig,limit=1]\", \"Health\")"),
+    ("mc.on_tick", "mc.on_tick(function() ... end)  every server tick", "mc.on_tick(function() print(mc.pos(\"@p\")) end)"),
+    ("mc.off_tick", "mc.off_tick()", "mc.off_tick()"),
+    ("mc.run", "mc.run(file)  a script of the scripts folder", "mc.run(\"hello.lua\")"),
+    ("mc.scripts_dir", "mc.scripts_dir() -> path", "print(mc.scripts_dir())"),
+    ("mc.log", "mc.log(message)  the window and the game log", "mc.log(\"hi\")"),
+    ("print", "print(...)  the window", "print(mc.snbt(\"@p\", \"Pos\"))"),
+];
+
+/// The functions whose first argument names an entity: a selector string
+/// there completes as the chat box completes `/tp`'s.
+pub const ENTITY_FIRST: &[&str] = &[
+    "mc.select", "mc.get", "mc.snbt", "mc.set", "mc.merge", "mc.pos", "mc.name", "mc.inspect",
+    "mc.watch",
+];
+/// The functions whose second argument is an NBT path.
+pub const PATH_SECOND: &[&str] = &["mc.get", "mc.snbt", "mc.set", "mc.watch"];
+/// NBT keys most entities have, offered for a path argument.
+const PATH_KEYS: &[&str] = &[
+    "Health", "Pos", "Motion", "Rotation", "NoAI", "NoGravity", "Silent", "Invulnerable",
+    "CustomName", "CustomNameVisible", "Glowing", "Fire", "Air", "OnGround", "FallDistance",
+    "PersistenceRequired", "Age", "InLove", "Brain", "attributes", "Tags", "UUID",
+    "HurtTime", "DeathTime", "AbsorptionAmount", "LeftHanded", "CanPickUpLoot", "equipment",
+    "active_effects", "Pos[0]", "Pos[1]", "Pos[2]",
+];
+
+/// The hint for a call: its signature and example.
+pub fn signature_hint(name: &str) -> Option<String> {
+    SIGNATURES
+        .iter()
+        .find(|(n, _, _)| *n == name)
+        .map(|(_, sig, example)| format!("{sig}\n   e.g. {example}"))
 }
 
 static COMPLETION_REQUEST: Mutex<Option<(String, usize)>> = Mutex::new(None);
@@ -131,9 +251,37 @@ const LUA_NAMES: &[(&str, &str)] = &[
 ];
 
 /// Completions of a Lua name at the cursor: the identifier before it
-/// (letters, digits, `_`, `.`) against [`LUA_NAMES`].
+/// (letters, digits, `_`, `.`) against [`LUA_NAMES`]; inside a call, its
+/// signature as the hint, and for a string argument the values it takes
+/// (an `mc.inspect` view, an NBT key). Entity arguments complete on the
+/// window's game, which has the command tree.
 pub fn lua_completions(text: &str, cursor: usize) -> Completions {
     let cursor = cursor.min(text.len());
+    let call = call_context(text, cursor);
+    let hint = call.as_ref().and_then(|c| signature_hint(&c.name));
+    if let Some(c) = &call
+        && let Some((start, partial)) = &c.string
+    {
+        let candidates: Vec<&str> = if c.name == "mc.inspect" && c.arg == 1 {
+            vec!["data", "goals", "senses", "nav"]
+        } else if PATH_SECOND.contains(&c.name.as_str()) && c.arg == 1 {
+            PATH_KEYS.to_vec()
+        } else {
+            Vec::new()
+        };
+        let items = candidates
+            .into_iter()
+            .filter(|k| k.starts_with(partial.as_str()) && *k != partial.as_str())
+            .map(|k| (k.to_string(), None))
+            .collect();
+        return Completions {
+            text: text.to_string(),
+            cursor,
+            range: (*start, cursor),
+            items,
+            hint,
+        };
+    }
     let before = &text[..cursor];
     let start = before
         .char_indices()
@@ -161,6 +309,7 @@ pub fn lua_completions(text: &str, cursor: usize) -> Completions {
         cursor,
         range: (start, cursor),
         items,
+        hint,
     }
 }
 
@@ -168,35 +317,23 @@ pub fn lua_completions(text: &str, cursor: usize) -> Completions {
 /// the command text starts (after the quote and a slash, if any) and the
 /// command typed so far.
 pub fn command_context(text: &str, cursor: usize) -> Option<(usize, String)> {
-    let cursor = cursor.min(text.len());
-    let mut quote: Option<(char, usize)> = None;
-    let mut escaped = false;
-    for (i, c) in text[..cursor].char_indices() {
-        match quote {
-            Some((q, _)) => {
-                if escaped {
-                    escaped = false;
-                } else if c == '\\' {
-                    escaped = true;
-                } else if c == q {
-                    quote = None;
-                }
-            }
-            None if c == '"' || c == '\'' => quote = Some((c, i + 1)),
-            None => {}
-        }
-    }
-    let (_, start) = quote?;
-    let call = text[..start - 1].trim_end();
-    if !call.ends_with("mc.cmd(") {
+    let c = call_context(text, cursor)?;
+    if c.name != "mc.cmd" || c.arg != 0 {
         return None;
     }
-    let start = if text[start..cursor].starts_with('/') {
-        start + 1
-    } else {
-        start
-    };
-    Some((start, text[start..cursor].to_string()))
+    let (start, partial) = c.string?;
+    let start = if partial.starts_with('/') { start + 1 } else { start };
+    Some((start, text[start..cursor.min(text.len())].to_string()))
+}
+
+/// When the cursor is inside the string that names an entity (the first
+/// argument of [`ENTITY_FIRST`]): where it starts and what is typed.
+pub fn entity_context(text: &str, cursor: usize) -> Option<(usize, String)> {
+    let c = call_context(text, cursor)?;
+    if !ENTITY_FIRST.contains(&c.name.as_str()) || c.arg != 0 {
+        return None;
+    }
+    c.string
 }
 
 /// The lines run so far, newest last, kept across runs in
@@ -390,8 +527,13 @@ pub fn window(ctx: &egui::Context) {
                     .map(|chars| text.char_indices().nth(chars.into()).map_or(text.len(), |(b, _)| b))
                     .unwrap_or(text.len())
             };
+            if FOCUS_INPUT.swap(false, Ordering::Relaxed) {
+                ui.memory_mut(|m| m.request_focus(edit_id));
+            }
             let cursor = cursor_of(ui.ctx(), &line);
-            let shown = completions_for(&line, cursor).filter(|c| !c.items.is_empty());
+            let made = completions_for(&line, cursor);
+            let hint = made.as_ref().and_then(|c| c.hint.clone());
+            let shown = made.filter(|c| !c.items.is_empty());
             let mut set_cursor_to: Option<usize> = None;
             // With no completions to pick from, Up and Down walk the lines
             // run before, as a shell does; Down past the newest gives back
@@ -510,8 +652,15 @@ pub fn window(ctx: &egui::Context) {
             // Ask for this frame's completions; they show next frame.
             let cursor = set_cursor_to.unwrap_or_else(|| cursor_of(ui.ctx(), &line));
             request_completions(&line, cursor);
-            if focused && let Some(c) = &shown {
+            if focused && (shown.is_some() || hint.is_some()) {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    if let Some(h) = &hint {
+                        ui.label(egui::RichText::new(h).monospace().weak());
+                    }
+                    let Some(c) = &shown else { return };
+                    if hint.is_some() {
+                        ui.separator();
+                    }
                     for (i, (text, tooltip)) in c.items.iter().take(10).enumerate() {
                         let label = egui::RichText::new(text).monospace();
                         let label = if i == selected { label.strong() } else { label };
@@ -579,6 +728,25 @@ mod tests {
         assert_eq!(command_context("mc.cmd(", 7), None);
         // An escaped quote stays inside the string.
         assert_eq!(command_context("mc.cmd(\"say \\\"hi\\\" x", 20), Some((8, "say \\\"hi\\\" x".to_string())));
+    }
+
+    #[test]
+    fn the_innermost_call_and_its_argument_are_found() {
+        let c = call_context("mc.watch(\"@e[type=pig]\", \"He", 28).unwrap();
+        assert_eq!(c.name, "mc.watch");
+        assert_eq!(c.arg, 1);
+        assert_eq!(c.string, Some((26, "He".to_string())));
+        // Nested: the inner call wins; a closed one is forgotten.
+        let c = call_context("print(mc.pos(\"@p", 16).unwrap();
+        assert_eq!((c.name.as_str(), c.arg), ("mc.pos", 0));
+        let c = call_context("print(mc.pos(\"@p\"), x", 21).unwrap();
+        assert_eq!((c.name.as_str(), c.arg, c.string), ("print", 1, None));
+        assert_eq!(call_context("x = 1", 5), None);
+        assert_eq!(entity_context("mc.get(\"@e[ty", 13), Some((8, "@e[ty".to_string())));
+        assert_eq!(entity_context("mc.get(\"@p\", \"Po", 16), None);
+        let c = lua_completions("mc.get(\"@p\", \"Po", 16);
+        assert_eq!(c.items.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(), ["Pos", "Pos[0]", "Pos[1]", "Pos[2]"]);
+        assert!(c.hint.unwrap().starts_with("mc.get(entity[, path])"));
     }
 
     #[test]
