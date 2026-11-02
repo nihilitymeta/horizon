@@ -1,7 +1,7 @@
 # Lua as a modding language
 
-Status: the runtime (`crates/horizon-client/src/lua_mods.rs`) and scripts inside the `.hmod` are built; the rest is the
-plan. Branch
+Status: the runtime (`crates/horizon-client/src/lua_mods.rs`), scripts inside the `.hmod` and mob goals in Lua
+(`lua_mods/goals.rs`) are built; the rest is the plan. The branch builds on `mob-ai-hooks`. Branch
 `lua-bindings` of whos-carmen/horizon, `main` + this one concern.
 
 ## Why
@@ -40,6 +40,11 @@ reaches Lua by one adapter method, and a hook added for Rust is available to scr
 | `horizon.summon(dimension, kind, x, y, z)` | `/summon` |
 | `horizon.kill_mob(dimension, id)` | `/kill` a mob |
 | `require("name")` | `scripts/name.lua` of the same mod, once |
+| `horizon.goal(name, def)` | Define a mob goal: `def.flags` (`{"move", "look", "jump", "target"}`), `def.every_tick`, `def.interruptable`, and `can_use(mob, state, out)` (required), `can_continue`, `start`, `tick`, `stop`. `mob` is the mob's view, `state` a table of the goal's own that lives with the mob, `out` the actions |
+| `mob_ai_register(mob)` | A hook: as a mob's goals are set up. Handlers call `horizon.add_goal(priority, name)`, `horizon.add_target_goal(priority, name)`, `horizon.clear_goals()`, `horizon.clear_target_goals()` |
+| `mob` (the view) | `id`, `kind`, `position`, `velocity` (`{x, y, z}`), `yaw`, `head_pitch`, `health`, `max_health`, `age`, `on_ground`, `in_water`, `in_lava`, `hurt_time`, `last_hurt_by`, `target` (`"player"`, a mob id or nil), `target_position`, `target_in_melee_range`, `navigation_done`, `nearest_player`, `home` (`{x, y, z, radius}`) |
+| `out` (the actions) | `navigate_to(x, y, z, speed)`, `navigate_to_target(speed)`, `stop_navigation()`, `move_toward(x, y, z, speed)`, `look_at(x, y, z)`, `look_at_target()`, `set_target(who)`, `jump()`, `attack(who)`, `swing()`; applied in order after the call |
+| `horizon.distance(a, b)` | Between two `{x, y, z}` tables |
 | The `.hmod` | `cargo horizon-mod build` packs `scripts/` beside `assets/` and `data/`; `horizon_mods::Content` lists them (`scripts`), checks the paths and that `scripts/init.lua` is there; the Mods page says "May run its own scripts in your worlds" |
 
 ```lua
@@ -53,6 +58,25 @@ horizon.on("mob_spawned", function(dimension, kind, x, y, z, natural)
 end)
 ```
 
+```lua
+horizon.goal("stalk", {
+  flags = { "move", "look" },
+  can_use = function(mob) return mob.nearest_player and horizon.distance(mob.position, mob.nearest_player) < 24 end,
+  tick = function(mob, state, out)
+    local p = mob.nearest_player
+    out.look_at(p.x, p.y + 1.6, p.z)
+    if mob.navigation_done then out.navigate_to(p.x, p.y, p.z, 1.1) end
+  end,
+})
+horizon.on("mob_ai_register", function(mob)
+  if mob.kind == "minecraft:zombie" then horizon.add_goal(3, "stalk") end
+end)
+```
+
+A Lua goal is a `NativeGoal` over a `LuaBehaviour` ([mob-ai-hooks.md](mob-ai-hooks.md)): the game copies the mob into
+the view before each call and applies the actions after it, so a script never holds the mob. A goal function's error
+is logged once at error level, then at debug level, and reads as "no".
+
 Run: install the `.hmod` and turn it on, or `horizon-client --dev-mod /path/to/mod`. A mod without capability `scripts`
 is content only, as before. Scripted mods are gathered when the game starts, like trait mods: turning one on or off on
 the Mods page takes effect at the next start.
@@ -63,11 +87,10 @@ the Mods page takes effect at the next start.
 |---|---|---|
 | 2 | Hook coverage by generation: `xtask mod-api` emits the Lua adapter for every `listen` hook from the catalog, as it emits the trait | Every hook point reaches Lua without hand-written glue |
 | 3 | Host reads: `horizon.block(dimension, x, y, z)`, `horizon.mobs(dimension)`, `horizon.mob(dimension, id)`, returned synchronously (reads borrow the host for the call) | Scripts need to look before they act |
-| 4 | Mob goals in Lua: a `NativeGoal` adapter ([mob-ai-hooks.md](mob-ai-hooks.md), step 3) whose `can_use`, `start`, `tick`, `stop` call Lua functions, attached in `mob_ai_register` | The parasite mod's own mob behaviour in a script |
 | 5 | Block behaviour: `random_tick`, `block_use`, `block_entity_tick` to Lua with the block's position and state, `horizon.set_block_property` back | A staged block (the parasite hive) grows from a script |
 | 6 | Reload: `/reload` and the resource-reload key re-run `init.lua` with the handlers cleared (the `hot-reload` branch's path) | Edit a script, press a key |
 | 7 | Limits: an instruction budget per handler (`Lua::set_interrupt`), memory cap per state, no `io`/`os` | A script cannot hang or read the player's files; a content mod stays shareable |
 
-Step 6 completes the content team's workflow; steps 4 and 5 give the parasite mod its behaviour. Everything
+Step 6 completes the content team's workflow; step 5 gives the parasite hive its behaviour. Everything
 stays off unless a mod carries scripts, and the launcher needs no change: a scripted `.hmod` installs like any
 content mod.

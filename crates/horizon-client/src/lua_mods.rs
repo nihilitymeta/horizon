@@ -11,17 +11,19 @@
 //! and run by the runtime once the handler returns, in order, with the host
 //! the hook was given.
 //!
-//! Today scripts load from `--dev-mod` folders only. Installed `.hmod`s need
-//! the packer and the manifest to accept a `scripts/` entry (the plan in the
-//! document).
+//! Scripts travel inside the `.hmod` under capability `scripts`, or load from
+//! `--dev-mod` folders. Mob behaviour is written as goals ([`goals`]).
 use crate::mod_api::{
-    Hooks, Host, MobSpawnedEvent, Mods, ServerTickEvent, ServerTickPhase, WorldLifecycleEvent,
+    Hooks, Host, MobAiRegisterEvent, MobSpawnedEvent, MobView, Mods, ServerTickEvent,
+    ServerTickPhase, WorldLifecycleEvent,
 };
 use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+pub mod goals;
 
 /// The file a scripted mod starts from, inside its folder.
 pub const ENTRY: &str = horizon_mods::content::SCRIPT_ENTRY;
@@ -41,7 +43,12 @@ pub struct LuaMod {
     /// The `.hmod` or folder the scripts came from.
     source: PathBuf,
     lua: Lua,
+    /// The goals the scripts defined (`horizon.goal`), by name.
+    goals: Goals,
 }
+
+/// A mod's goal definitions, shared with the `horizon.goal` function.
+type Goals = Arc<Mutex<HashMap<String, goals::GoalDef>>>;
 
 impl std::fmt::Debug for LuaMod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -135,6 +142,7 @@ impl LuaMod {
             id: manifest.id.clone(),
             source: path.to_owned(),
             lua: Lua::new(),
+            goals: Goals::default(),
         };
         m.install_api(scripts.clone()).map_err(|e| e.to_string())?;
         m.run(&scripts, ENTRY).map_err(|e| e.to_string())?;
@@ -176,8 +184,34 @@ impl LuaMod {
                 Ok(())
             })?,
         )?;
-        // Actions on the game, run after the handler with the hook's host.
-        for action in ["broadcast", "summon", "kill_mob"] {
+        // Goals: `horizon.goal(name, def)` defines one for `horizon.add_goal`.
+        let goals = self.goals.clone();
+        api.set(
+            "goal",
+            lua.create_function(move |lua, (name, def): (String, Table)| {
+                let mut goals = goals.lock().map_err(|_| mlua::Error::runtime("goals"))?;
+                // One name for the game's life: a redefinition keeps the first string.
+                let leaked: &'static str = match goals.get(name.as_str()) {
+                    Some(g) => g.name,
+                    None => Box::leak(name.clone().into_boxed_str()),
+                };
+                let def = goals::GoalDef::parse(lua, leaked, def)?;
+                goals.insert(name, def);
+                Ok(())
+            })?,
+        )?;
+        api.set("distance", lua.create_function(goals::distance)?)?;
+        // Actions on the game, run after the handler with the hook's host
+        // (or, in `mob_ai_register`, on the mob).
+        for action in [
+            "broadcast",
+            "summon",
+            "kill_mob",
+            "add_goal",
+            "add_target_goal",
+            "clear_goals",
+            "clear_target_goals",
+        ] {
             api.set(
                 action,
                 lua.create_function(move |lua, args: MultiValue| {
@@ -228,17 +262,30 @@ impl LuaMod {
     }
 
     /// Call the handlers of `hook` with `args`, then run what they queued.
+    /// Call the handlers of `hook` with `args`, then run what they queued
+    /// with the hook's host (none: the actions are dropped with a warning).
     fn call(&self, host: Option<&mut dyn Host>, hook: &str, args: impl mlua::IntoLuaMulti) {
-        if let Err(e) = self.call_inner(host, hook, args) {
+        let r = match host {
+            Some(host) => self.call_with(hook, args, &mut |action, a| {
+                self.run_action(host, action, a)
+            }),
+            None => self.call_with(hook, args, &mut |action, _| {
+                log::warn!("[lua:{}] {hook}: {action} needs a host; dropped", self.id);
+                Ok(())
+            }),
+        };
+        if let Err(e) = r {
             log::error!("[lua:{}] {hook}: {e}", self.id);
         }
     }
 
-    fn call_inner(
+    /// Call the handlers of `hook` with `args`, then hand each queued action
+    /// (its name and arguments) to `apply`, in order.
+    fn call_with(
         &self,
-        host: Option<&mut dyn Host>,
         hook: &str,
         args: impl mlua::IntoLuaMulti,
+        apply: &mut dyn FnMut(&str, &Table) -> mlua::Result<()>,
     ) -> mlua::Result<()> {
         let lua = &self.lua;
         let handlers: Table = lua.named_registry_value(HANDLERS)?;
@@ -255,18 +302,10 @@ impl LuaMod {
         }
         let actions: Vec<Table> = queue.sequence_values().collect::<mlua::Result<_>>()?;
         queue.clear()?;
-        let Some(host) = host else {
-            log::warn!(
-                "[lua:{}] {hook}: actions need a host; {} dropped",
-                self.id,
-                actions.len()
-            );
-            return Ok(());
-        };
         for entry in actions {
             let action: String = entry.get("action")?;
             let args: Table = entry.get("args")?;
-            self.run_action(host, &action, &args)?;
+            apply(&action, &args)?;
         }
         Ok(())
     }
@@ -309,6 +348,50 @@ impl Hooks for LuaMod {
             ServerTickPhase::ServerTickEnd { world_running } => ("end", world_running),
         };
         self.call(Some(host), "server_tick", (phase, running));
+    }
+    /// A mob's goals as its species set them up: handlers see the mob's view
+    /// and add Lua goals (`horizon.add_goal(priority, name)`,
+    /// `horizon.add_target_goal`) or clear the selectors first
+    /// (`horizon.clear_goals()`, `horizon.clear_target_goals()`).
+    fn mob_ai_register(&self, event: &mut MobAiRegisterEvent<'_>) {
+        let mob = &mut *event.mob;
+        let view = match goals::view_table(&self.lua, &MobView::of(mob, None)) {
+            Ok(view) => view,
+            Err(e) => return log::error!("[lua:{}] mob_ai_register: {e}", self.id),
+        };
+        let r = self.call_with("mob_ai_register", view, &mut |action, args| {
+            match action {
+                "add_goal" | "add_target_goal" => {
+                    let (priority, name): (i32, String) = (args.get(1)?, args.get(2)?);
+                    let def = self
+                        .goals
+                        .lock()
+                        .ok()
+                        .and_then(|g| g.get(&name).cloned())
+                        .ok_or_else(|| {
+                            mlua::Error::runtime(format!(
+                                "{action}({priority}, {name:?}): no such goal; define it with horizon.goal"
+                            ))
+                        })?;
+                    let goal = def.goal(self.lua.clone(), &self.id)?;
+                    if action == "add_goal" {
+                        mob.ai.goals.add(priority, goal);
+                    } else {
+                        mob.ai.targets.add(priority, goal);
+                    }
+                }
+                "clear_goals" => mob.ai.goals.clear(),
+                "clear_target_goals" => mob.ai.targets.clear(),
+                other => log::warn!(
+                    "[lua:{}] mob_ai_register: {other} needs a host; dropped",
+                    self.id
+                ),
+            }
+            Ok(())
+        });
+        if let Err(e) = r {
+            log::error!("[lua:{}] mob_ai_register: {e}", self.id);
+        }
     }
     fn mob_spawned(&self, host: &mut dyn Host, event: &mut MobSpawnedEvent<'_>) {
         let MobSpawnedEvent {
@@ -370,6 +453,60 @@ experimental = ["scripts"]
         let handlers: Table = m.lua.named_registry_value(HANDLERS).unwrap();
         let ticks: Table = handlers.get("server_tick").unwrap();
         assert_eq!(ticks.len().unwrap(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_script_defines_goals_and_attaches_them_from_mob_ai_register() {
+        let (dir, path) = hmod(
+            "goals",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.goal("stalk", {
+                  flags = {"move", "look"},
+                  can_use = function(mob, state, out) return mob.nearest_player ~= nil end,
+                  tick = function(mob, state, out) out.look_at(0, 0, 0) end,
+                })
+                horizon.on("mob_ai_register", function(mob)
+                  if mob.kind == "minecraft:cow" then
+                    horizon.clear_goals()
+                    horizon.add_goal(2, "stalk")
+                    horizon.add_target_goal(1, "missing")
+                  end
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path).unwrap();
+        let view = m.lua.create_table().unwrap();
+        view.set("kind", "minecraft:cow").unwrap();
+        let mut seen = Vec::new();
+        let r = m.call_with("mob_ai_register", view, &mut |action, args| {
+            let name: Option<String> = args.get(2)?;
+            if let Some(name) = &name {
+                // The game resolves the goal here; a missing one is the handler's error.
+                let def = m.goals.lock().unwrap().get(name).cloned();
+                let def = def.ok_or_else(|| mlua::Error::runtime(format!("no goal {name}")))?;
+                let goal = def.goal(m.lua.clone(), m.id()).unwrap();
+                assert!(!goal.state().started());
+                assert_eq!(
+                    def.flags,
+                    crate::mod_api::GOAL_MOVE | crate::mod_api::GOAL_LOOK
+                );
+            }
+            seen.push((action.to_owned(), args.get::<Option<i32>>(1)?, name));
+            Ok(())
+        });
+        assert_eq!(
+            seen,
+            [
+                ("clear_goals".to_owned(), None, None),
+                ("add_goal".to_owned(), Some(2), Some("stalk".to_owned())),
+            ]
+        );
+        let e = r.unwrap_err().to_string();
+        assert!(e.contains("no goal missing"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
