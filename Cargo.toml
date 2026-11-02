@@ -64,6 +64,14 @@ large_enum_variant = "allow"
 # the vertex, fragment and compute stages, so with VK_EXT_mesh_shader on, a
 # task or mesh shader could read a buffer or texture before the copy into it
 # had landed (vulkan/conv.rs's map_*_usage_to_barrier take `mesh_shaders`).
+# And gfx-rs/wgpu#10043 (merged after 30.0.1): the Metal backend laid a bind
+# group's resources out in the order vertex, fragment, compute, task, mesh, but
+# bound the fragment stage's from vertex + task + mesh, the task's from 0 and the
+# mesh's from the task count, which is right only while no binding is visible to
+# a task or mesh stage. With the terrain bindings visible to the far terrain's
+# mesh stage, every terrain fragment shader on Metal read the wrong lightmap and
+# atlas: a black world. Stages now lay out as vertex, task, mesh, fragment,
+# compute, and each binds from its own offset.
 # Drop this and the folder once a wgpu release has these fixes.
 [patch.crates-io]
 wgpu-hal = { path = "third_party/wgpu-hal" }
