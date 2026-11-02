@@ -8547,10 +8547,10 @@ mod tests {
                         WKind::Button { act, .. } => act.clone(),
                         _ => Act::None,
                     }];
-                    if let Some(w2) = w2 {
-                        if let WKind::Button { act, .. } = &w2.kind {
-                            a.push(act.clone());
-                        }
+                    if let Some(w2) = w2
+                        && let WKind::Button { act, .. } = &w2.kind
+                    {
+                        a.push(act.clone());
                     }
                     Some(a)
                 }
@@ -8574,10 +8574,10 @@ mod tests {
                         WKind::Button { act, .. } => act.clone(),
                         _ => Act::None,
                     }];
-                    if let Some(w2) = w2 {
-                        if let WKind::Button { act, .. } = &w2.kind {
-                            a.push(act.clone());
-                        }
+                    if let Some(w2) = w2
+                        && let WKind::Button { act, .. } = &w2.kind
+                    {
+                        a.push(act.clone());
                     }
                     Some(a)
                 }
