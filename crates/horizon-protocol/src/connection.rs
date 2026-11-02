@@ -343,11 +343,17 @@ impl Connection {
         Self::over(Stream::Tcp(stream))
     }
     /// A connection after the server-side WebSocket handshake: the stream a
-    /// `cloudflared tunnel` forwards in plaintext to loopback.
-    pub fn from_websocket(stream: TcpStream) -> Result<Self> {
-        let ws = crate::websocket::WsStream::accept(stream)
+    /// `cloudflared tunnel` forwards in plaintext to loopback. The handshake
+    /// must finish within `handshake_timeout`. Also returns the player's
+    /// address as the proxy's headers report it, for the caller to trust or
+    /// not ([`crate::websocket::forwarded_address`]).
+    pub fn from_websocket(
+        stream: TcpStream,
+        handshake_timeout: Option<Duration>,
+    ) -> Result<(Self, Option<std::net::IpAddr>)> {
+        let (ws, forwarded) = crate::websocket::WsStream::accept(stream, handshake_timeout)
             .map_err(|e| Error::new(format!("WebSocket handshake failed: {e}")))?;
-        Self::over(Stream::WebSocket(ws))
+        Ok((Self::over(Stream::WebSocket(ws))?, forwarded))
     }
     /// A connection over one end of an in-memory [`Pipe`].
     pub fn local(pipe: Pipe) -> Self {

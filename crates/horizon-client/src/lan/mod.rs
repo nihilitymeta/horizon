@@ -140,6 +140,15 @@ pub struct NetLog {
 
 /// The server.properties key that lets only the Horizon client join (off unless "true").
 pub const HORIZON_CLIENTS_ONLY: &str = "horizon-clients-only";
+/// server.properties' line for `server.toml`'s `websocket_port` (horizon-server writes it): the
+/// loopback port where a tunnel on this computer forwards players over a WebSocket; 0 is off.
+pub const WEBSOCKET_PORT_PROPERTY: &str = "horizon-websocket-port";
+/// The [`WEBSOCKET_PORT_PROPERTY`] value: a port, or 0 (off) when absent or not a port.
+pub fn websocket_port_property(value: Option<&str>) -> u16 {
+    value
+        .and_then(|v| v.trim().parse::<u16>().ok())
+        .unwrap_or(0)
+}
 /// What another client is told.
 pub const HORIZON_CLIENTS_ONLY_REASON: &str =
     "This server is for the Horizon client: playhorizon.dev";
@@ -203,6 +212,12 @@ pub struct NetConfig {
     /// far, in chunks, the server samples far terrain for Horizon clients
     /// (`lod_net`); 0 serves none.
     pub lod_distance: u32,
+    /// `horizon-websocket-port` (Horizon's own server.properties key, 0: off):
+    /// a second door on `127.0.0.1:<port>` that takes players over a binary
+    /// WebSocket, for a tunnel daemon on this computer (`cloudflared`) that
+    /// terminates TLS and forwards `ws://` to loopback. Loopback only: the
+    /// tunnel is the only peer, and its forwarded-address header is trusted.
+    pub websocket_port: u16,
     /// The shapes of the world's levels: their dimension types go to
     /// clients when the world's data packs changed them.
     pub levels: crate::chunk::LevelShapes,
@@ -238,6 +253,11 @@ impl NetConfig {
             server_links: Vec::new(),
             horizon_clients_only: false,
             lod_distance: crate::lod_net::DEFAULT_DISTANCE,
+            // A LAN world has no server.properties: HORIZON_WS_PORT opens the
+            // WebSocket door for a tunnel on this computer; unset, it stays shut.
+            websocket_port: websocket_port_property(
+                std::env::var("HORIZON_WS_PORT").ok().as_deref(),
+            ),
             levels: crate::chunk::LevelShapes::VANILLA,
             owner_profile: None,
         }
@@ -613,11 +633,28 @@ impl Lan {
             ));
         }
         let port = listener.local_addr()?.port();
+        // The WebSocket door first: a port it cannot take fails the start
+        // with nothing running, instead of a server half open.
+        let websocket_port = self.shared.config.websocket_port;
+        if websocket_port != 0 {
+            self.listen_websocket(websocket_port)?;
+        }
         let stop = Arc::new(AtomicBool::new(false));
         let (accept_shared, accept_stop) = (self.shared.clone(), stop.clone());
         let thread = std::thread::Builder::new()
             .name("horizon-lan-accept".into())
-            .spawn(move || accept_loop(listener, accept_shared, &accept_stop))?;
+            .spawn(move || {
+                accept_loop(
+                    listener,
+                    accept_shared,
+                    &accept_stop,
+                    Door {
+                        thread: "horizon-lan-conn",
+                        tag: "lan",
+                        serve: conn::serve,
+                    },
+                )
+            })?;
         self._pinger = if announce {
             discovery::Pinger::start(self.shared.motd(), port).ok()
         } else {
@@ -626,20 +663,12 @@ impl Lan {
         self.listener = Some(thread);
         self.listener_stop = stop;
         self.port = port;
-        // Cloudflare Tunnel origins are plaintext `ws://` on loopback.
-        // Port: HORIZON_WS_PORT (default 25580) — loopback only; override when
-        // 25580 is taken (shared hosts with per-user port ranges).
-        let ws_port = std::env::var("HORIZON_WS_PORT")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(25580);
-        if let Err(e) = self.listen_websocket(ws_port) {
-            log::debug!("[lan] WebSocket listener not started: {e}");
-        }
         Ok(port)
     }
-    /// Accepts `ws://` connections forwarded by `cloudflared tunnel run` on
-    /// `127.0.0.1`. The tunnel terminates TLS; this side stays plaintext.
+    /// Accepts `ws://` connections a tunnel daemon on this computer
+    /// (`cloudflared tunnel run`) forwards to `127.0.0.1:port`. The tunnel
+    /// terminates TLS; this side stays plaintext and never binds elsewhere.
+    /// Connections are counted and turned away like the TCP door's.
     pub fn listen_websocket(&mut self, port: u16) -> io::Result<u16> {
         if self.ws_listener.is_some() {
             return Err(io::Error::new(
@@ -647,14 +676,30 @@ impl Lan {
                 "WebSocket listener already running",
             ));
         }
-        let listener = TcpListener::bind(("127.0.0.1", port))?;
+        let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!("WebSocket listener (websocket_port) on 127.0.0.1:{port}: {e}"),
+            )
+        })?;
         listener.set_nonblocking(true)?;
         let port = listener.local_addr()?.port();
         let stop = Arc::new(AtomicBool::new(false));
         let (accept_shared, accept_stop) = (self.shared.clone(), stop.clone());
         let thread = std::thread::Builder::new()
             .name("horizon-ws-accept".into())
-            .spawn(move || ws_accept_loop(listener, accept_shared, &accept_stop))?;
+            .spawn(move || {
+                accept_loop(
+                    listener,
+                    accept_shared,
+                    &accept_stop,
+                    Door {
+                        thread: "horizon-ws-conn",
+                        tag: "ws",
+                        serve: conn::serve_websocket,
+                    },
+                )
+            })?;
         self.ws_listener = Some(thread);
         self.ws_stop = stop;
         self.ws_port = port;
@@ -893,7 +938,20 @@ impl Shared {
     }
 }
 
-fn accept_loop(listener: TcpListener, shared: Arc<Shared>, stop: &AtomicBool) {
+/// One way into the server: the plain TCP port, or the loopback WebSocket
+/// port a tunnel forwards to. Both doors share the accept loop, so the
+/// connection count, the per-address limit and the flood handling are the
+/// same whichever a player comes through.
+#[derive(Clone, Copy)]
+struct Door {
+    /// The name of a connection's thread.
+    thread: &'static str,
+    /// The tag of its log lines.
+    tag: &'static str,
+    serve: fn(TcpStream, SocketAddr, Arc<Shared>) -> Result<(), String>,
+}
+
+fn accept_loop(listener: TcpListener, shared: Arc<Shared>, stop: &AtomicBool, door: Door) {
     while !shared.stop.load(Ordering::Relaxed) && !stop.load(Ordering::Relaxed) {
         match listener.accept() {
             Ok((stream, addr)) => {
@@ -908,10 +966,10 @@ fn accept_loop(listener: TcpListener, shared: Arc<Shared>, stop: &AtomicBool) {
                 };
                 shared.wait(&counted, &stream);
                 let _ = std::thread::Builder::new()
-                    .name("horizon-lan-conn".into())
+                    .name(door.thread.into())
                     .spawn(move || {
                         WAITING.set(Some(counted.2));
-                        handle(stream, addr, counted.0.clone());
+                        handle(stream, addr, counted.0.clone(), door);
                     });
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -921,35 +979,12 @@ fn accept_loop(listener: TcpListener, shared: Arc<Shared>, stop: &AtomicBool) {
         }
     }
 }
-fn handle(stream: TcpStream, addr: SocketAddr, shared: Arc<Shared>) {
+fn handle(stream: TcpStream, addr: SocketAddr, shared: Arc<Shared>, door: Door) {
     let _ = stream.set_nonblocking(false);
-    if let Err(e) = conn::serve(stream, addr, shared)
+    if let Err(e) = (door.serve)(stream, addr, shared)
         && std::env::var_os("HORIZON_NET_DEBUG").is_some()
     {
-        log::warn!("[lan] {addr}: {e}");
-    }
-}
-fn ws_accept_loop(listener: TcpListener, shared: Arc<Shared>, stop: &AtomicBool) {
-    while !shared.stop.load(Ordering::Relaxed) && !stop.load(Ordering::Relaxed) {
-        match listener.accept() {
-            Ok((stream, addr)) => {
-                let shared = shared.clone();
-                let _ = std::thread::Builder::new()
-                    .name("horizon-ws-conn".into())
-                    .spawn(move || {
-                        let _ = stream.set_nonblocking(false);
-                        if let Err(e) = conn::serve_websocket(stream, addr, shared)
-                            && std::env::var_os("HORIZON_NET_DEBUG").is_some()
-                        {
-                            log::warn!("[ws] {addr}: {e}");
-                        }
-                    });
-            }
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                std::thread::sleep(Duration::from_millis(25));
-            }
-            Err(_) => std::thread::sleep(Duration::from_millis(100)),
-        }
+        log::warn!("[{}] {addr}: {e}", door.tag);
     }
 }
 
@@ -1010,6 +1045,72 @@ mod tests {
             );
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    /// The WebSocket door counts its connections with the TCP door's: a flood on it is turned away
+    /// at the same limit, and sockets that never finish their handshake free their places.
+    #[test]
+    fn the_websocket_door_shares_the_connection_limit() {
+        let config = NetConfig {
+            announce: false,
+            ..NetConfig::lan(0, "Flood".into(), 1)
+        };
+        let mut lan = Lan::start_with(Arc::new(data::SyncData::empty()), config).unwrap();
+        let ws_port = lan.listen_websocket(0).unwrap();
+        assert_eq!(ws_port, lan.ws_port);
+        let address = (std::net::Ipv4Addr::LOCALHOST, ws_port);
+        let most = 1 + SPARE_CONNECTIONS;
+        let held: Vec<TcpStream> = (0..most)
+            .map(|_| TcpStream::connect(address).unwrap())
+            .collect();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while lan.shared.connections.load(Ordering::Acquire) < most {
+            assert!(
+                Instant::now() < deadline,
+                "the held sockets were not all accepted"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let mut late = TcpStream::connect(address).unwrap();
+        late.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut byte = [0u8; 1];
+        assert!(
+            match late.read(&mut byte) {
+                Ok(n) => n == 0,
+                Err(e) => !matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ),
+            },
+            "the socket past the limit should be closed"
+        );
+        assert_eq!(lan.shared.connections.load(Ordering::Acquire), most);
+        drop(held);
+        while lan.shared.connections.load(Ordering::Acquire) > 0 {
+            assert!(
+                Instant::now() < deadline,
+                "the closed sockets' threads did not end"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// A status request through the WebSocket door is answered like one on the TCP port.
+    #[test]
+    fn the_websocket_door_answers_a_status_request() {
+        let config = NetConfig {
+            announce: false,
+            ..NetConfig::lan(0, "Behind a tunnel".into(), 3)
+        };
+        let mut lan = Lan::start_with(Arc::new(data::SyncData::empty()), config).unwrap();
+        let ws_port = lan.listen_websocket(0).unwrap();
+        let (status, _rtt) = crate::net::ping(
+            &format!("ws://127.0.0.1:{ws_port}"),
+            Duration::from_secs(10),
+        )
+        .unwrap();
+        assert_eq!(status["description"], "Behind a tunnel");
+        assert_eq!(status["players"]["max"], 3);
     }
 
     /// One public address takes at most [`PER_ADDRESS`] places, its own coming back as they end;

@@ -30,6 +30,7 @@ view_distance = 10           # chunks sent around each player
 simulation_distance = 10     # chunks around each player where mobs, crops and redstone tick
 max_view_distance = 0        # past view_distance, saved chunks only, up to this (never generated; 0: off)
 admin_feedback_to_ops = true # operators see each other's commands ([name: ...], vanilla); false: only the log
+websocket_port = 0           # loopback port where a tunnel on this computer (cloudflared) hands players over a WebSocket; 0: off
 
 [world]
 name = "world"               # the world folder
@@ -95,7 +96,7 @@ enabled = true               # false pauses it and keeps the webhook
 "##;
 
 /// Each typed setting: its section, its name, and the vanilla key it writes.
-pub(crate) const TYPED: [(&str, &str, &str); 16] = [
+pub(crate) const TYPED: [(&str, &str, &str); 17] = [
     ("server", "motd", "motd"),
     ("server", "port", "server-port"),
     ("server", "bind", "server-ip"),
@@ -111,6 +112,7 @@ pub(crate) const TYPED: [(&str, &str, &str); 16] = [
         "admin_feedback_to_ops",
         "horizon-admin-feedback-to-ops",
     ),
+    ("server", "websocket_port", "horizon-websocket-port"),
     ("world", "name", "level-name"),
     ("world", "seed", "level-seed"),
     ("world", "game_mode", "gamemode"),
@@ -174,6 +176,9 @@ pub struct Server {
     /// Whether operators get each other's command feedback (`[name: ...]`, vanilla's broadcastToAdmins);
     /// false leaves it to the console's log, so nobody in game sees an operator's commands.
     pub admin_feedback_to_ops: bool,
+    /// Horizon's WebSocket door (docs/websocket.md): the game also takes players over a binary WebSocket on
+    /// `127.0.0.1:<port>`, where a tunnel daemon on this computer (`cloudflared`) forwards them; 0 is off.
+    pub websocket_port: u16,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -322,6 +327,7 @@ impl Default for Server {
             simulation_distance: 10,
             max_view_distance: 0,
             admin_feedback_to_ops: true,
+            websocket_port: 0,
         }
     }
 }

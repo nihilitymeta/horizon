@@ -8,23 +8,70 @@
 //! `TcpStream` clone interrupts the actor on shutdown.
 use std::{
     io::{self, Read, Write},
-    net::{Shutdown, TcpStream},
+    net::{IpAddr, Shutdown, TcpStream},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc::{self, Receiver, RecvTimeoutError, Sender},
     },
     thread,
     time::{Duration, Instant},
 };
-use tungstenite::{Message, WebSocket, stream::MaybeTlsStream};
+use tungstenite::{
+    Message, WebSocket,
+    handshake::server::{ErrorResponse, Request, Response},
+    http::HeaderMap,
+    protocol::WebSocketConfig,
+    stream::MaybeTlsStream,
+};
 
 /// Cloudflare's edge buffers frames up to 64 KiB; larger packets are split.
 pub const MAX_FRAME: usize = 64 * 1024;
+/// The largest message a peer may send: one Minecraft frame (`frame::MAX_FRAME`
+/// plus its three-byte length prefix). Our own end never sends more than
+/// [`MAX_FRAME`] in one message; the limit is for a peer that is not us, so
+/// that it cannot make this side buffer tungstenite's default of 64 MiB.
+pub const MAX_MESSAGE: usize = crate::frame::MAX_FRAME + 3;
+/// Frames tungstenite may keep for a peer that reads slowly before `write`
+/// reports the buffer full and the actor waits.
+const MAX_WRITE_BUFFER: usize = 16 * MAX_FRAME;
+/// Bytes read from the peer but not yet taken by the reader: past this the
+/// actor stops reading, and TCP tells the peer to wait, as a plain socket would.
+const MAX_BACKLOG: usize = 64 * MAX_FRAME;
 /// Origin-side chunk streaming budget per connection.
 const BYTES_PER_SECOND: usize = 2 * 1024 * 1024;
 /// Cloudflare closes idle WebSocket connections; ping well inside that.
 const PING_INTERVAL: Duration = Duration::from_secs(30);
+
+fn config() -> WebSocketConfig {
+    WebSocketConfig::default()
+        .max_message_size(Some(MAX_MESSAGE))
+        .max_frame_size(Some(MAX_MESSAGE))
+        .max_write_buffer_size(MAX_WRITE_BUFFER)
+}
+
+/// The player's address as a trusted proxy on loopback reports it:
+/// Cloudflare's `CF-Connecting-IP`, else the first hop of `X-Forwarded-For`,
+/// else `X-Real-IP`. The caller decides whether the peer is trusted.
+pub fn forwarded_address(headers: &HeaderMap) -> Option<IpAddr> {
+    let parse = |text: &str| {
+        let text = text.trim();
+        let text = text
+            .strip_prefix('[')
+            .and_then(|t| t.strip_suffix(']'))
+            .unwrap_or(text);
+        text.parse::<IpAddr>().ok()
+    };
+    let header = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
+    header("cf-connecting-ip")
+        .and_then(parse)
+        .or_else(|| {
+            header("x-forwarded-for")
+                .and_then(|list| list.split(',').next())
+                .and_then(parse)
+        })
+        .or_else(|| header("x-real-ip").and_then(parse))
+}
 
 struct WsReader {
     incoming: Receiver<Vec<u8>>,
@@ -47,6 +94,8 @@ struct Shared {
     writer: Mutex<WsWriter>,
     raw: TcpStream,
     stop: Arc<AtomicBool>,
+    /// Bytes in `incoming` the reader has not taken yet ([`MAX_BACKLOG`]).
+    backlog: Arc<AtomicUsize>,
 }
 
 impl Drop for Shared {
@@ -65,7 +114,7 @@ pub struct WsStream {
 impl WsStream {
     /// Connects to `ws://` or `wss://` (TLS via rustls) and starts its actor.
     pub fn connect(url: &str) -> io::Result<Self> {
-        let (ws, _response) = tungstenite::connect(url)
+        let (ws, _response) = tungstenite::client::connect_with_config(url, Some(config()), 3)
             .map_err(|e| io::Error::new(io::ErrorKind::ConnectionRefused, e))?;
         let raw = match ws.get_ref() {
             MaybeTlsStream::Plain(stream) => stream.try_clone()?,
@@ -82,14 +131,30 @@ impl WsStream {
     }
 
     /// Completes the server handshake on a connection forwarded by
-    /// `cloudflared tunnel run` (plaintext `ws://` on loopback).
-    pub fn accept(stream: TcpStream) -> io::Result<Self> {
+    /// `cloudflared tunnel run` (plaintext `ws://` on loopback). A peer that
+    /// does not finish its upgrade request within `handshake_timeout` is
+    /// dropped instead of holding the thread. Also returns the player's
+    /// address as the proxy's headers report it ([`forwarded_address`]).
+    pub fn accept(
+        stream: TcpStream,
+        handshake_timeout: Option<Duration>,
+    ) -> io::Result<(Self, Option<IpAddr>)> {
         stream.set_nonblocking(false)?;
+        stream.set_read_timeout(handshake_timeout)?;
+        stream.set_write_timeout(handshake_timeout)?;
         let handshake = stream.try_clone()?;
-        let ws = tungstenite::accept(handshake)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let mut forwarded = None;
+        // tungstenite's callback type returns its (large) refusal response by value.
+        #[allow(clippy::result_large_err)]
+        let headers = |request: &Request, response: Response| -> Result<Response, ErrorResponse> {
+            forwarded = forwarded_address(request.headers());
+            Ok(response)
+        };
+        // The error carries the callback, which borrows `forwarded`: keep its text only.
+        let ws = tungstenite::accept_hdr_with_config(handshake, headers, Some(config()))
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
         stream.set_nodelay(true)?;
-        Ok(Self::spawn("server", ws, stream))
+        Ok((Self::spawn("server", ws, stream), forwarded))
     }
 
     fn spawn<S: Read + Write + Send + 'static>(
@@ -100,11 +165,20 @@ impl WsStream {
         let (incoming_tx, incoming) = mpsc::channel();
         let (outgoing, outgoing_rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
-        let actor_stop = stop.clone();
+        let backlog = Arc::new(AtomicUsize::new(0));
+        let (actor_stop, actor_backlog) = (stop.clone(), backlog.clone());
         raw.set_nonblocking(true).ok();
         thread::Builder::new()
             .name(format!("horizon-websocket-{role}"))
-            .spawn(move || actor(&mut ws, outgoing_rx, incoming_tx, &actor_stop))
+            .spawn(move || {
+                actor(
+                    &mut ws,
+                    outgoing_rx,
+                    incoming_tx,
+                    &actor_stop,
+                    &actor_backlog,
+                )
+            })
             .expect("websocket actor");
         Self {
             shared: Arc::new(Shared {
@@ -119,6 +193,7 @@ impl WsStream {
                 }),
                 raw,
                 stop,
+                backlog,
             }),
         }
     }
@@ -144,6 +219,7 @@ fn actor<S: Read + Write>(
     outgoing: Receiver<Outgoing>,
     incoming: Sender<Vec<u8>>,
     stop: &AtomicBool,
+    backlog: &AtomicUsize,
 ) {
     let mut window = Instant::now();
     let mut sent = 0usize;
@@ -222,8 +298,14 @@ fn actor<S: Read + Write>(
             Err(tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed) => return,
             Err(_) => return,
         }
+        // A reader that lags leaves its bytes in the socket, not in memory.
+        if backlog.load(Ordering::Acquire) >= MAX_BACKLOG {
+            thread::sleep(Duration::from_millis(1));
+            continue;
+        }
         match ws.read() {
             Ok(Message::Binary(data)) => {
+                backlog.fetch_add(data.len(), Ordering::AcqRel);
                 if incoming.send(data.to_vec()).is_err() {
                     return;
                 }
@@ -261,6 +343,7 @@ impl Read for WsStream {
                     Err(RecvTimeoutError::Disconnected) => return Ok(0),
                 },
             };
+            self.shared.backlog.fetch_sub(data.len(), Ordering::AcqRel);
             reader.buffer = data;
         }
         let n = out.len().min(reader.buffer.len());
@@ -312,7 +395,8 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
-            let mut ws = WsStream::accept(stream).unwrap();
+            let (mut ws, forwarded) = WsStream::accept(stream, None).unwrap();
+            assert_eq!(forwarded, None, "no proxy header on a direct connection");
             let mut request = vec![0u8; 200_000];
             ws.read_exact(&mut request).unwrap();
             let expected: Vec<u8> = (0..200_000).map(|i| (i % 251) as u8).collect();
@@ -329,5 +413,56 @@ mod tests {
         client.read_exact(&mut reply).unwrap();
         assert_eq!(&reply, b"pong");
         server.join().unwrap();
+    }
+
+    #[test]
+    fn a_peer_that_never_finishes_its_handshake_is_dropped() {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let _silent = TcpStream::connect(address).unwrap();
+        let (stream, _) = listener.accept().unwrap();
+        let started = Instant::now();
+        let result = WsStream::accept(stream, Some(Duration::from_millis(200)));
+        assert!(result.is_err(), "a silent socket must not become a stream");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the handshake waited {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn a_message_past_the_limit_closes_the_connection() {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let (mut ws, _) = WsStream::accept(stream, None).unwrap();
+            ws.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+            let mut byte = [0u8; 1];
+            // The oversized message is refused: the stream ends without data.
+            ws.read(&mut byte)
+        });
+        // A raw tungstenite client with no limits of its own sends one
+        // message larger than MAX_MESSAGE.
+        let (mut raw, _) = tungstenite::connect(format!("ws://{address}")).unwrap();
+        let _ = raw.send(Message::binary(vec![0u8; MAX_MESSAGE + 1]));
+        let _ = raw.flush();
+        let read = server.join().unwrap();
+        assert!(matches!(read, Ok(0) | Err(_)), "got {read:?}");
+    }
+
+    #[test]
+    fn the_forwarded_address_comes_from_the_proxy_headers() {
+        let mut headers = HeaderMap::new();
+        assert_eq!(forwarded_address(&headers), None);
+        headers.insert("x-real-ip", "10.0.0.9".parse().unwrap());
+        assert_eq!(forwarded_address(&headers), "10.0.0.9".parse().ok());
+        headers.insert("x-forwarded-for", "203.0.113.7, 10.0.0.1".parse().unwrap());
+        assert_eq!(forwarded_address(&headers), "203.0.113.7".parse().ok());
+        headers.insert("cf-connecting-ip", "[2001:db8::1]".parse().unwrap());
+        assert_eq!(forwarded_address(&headers), "2001:db8::1".parse().ok());
+        headers.insert("cf-connecting-ip", "not an address".parse().unwrap());
+        assert_eq!(forwarded_address(&headers), "203.0.113.7".parse().ok());
     }
 }

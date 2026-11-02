@@ -10,7 +10,9 @@ fn websocket_connection_round_trips_a_packet_larger_than_64_kib() {
     thread::spawn(move || {
         let result = (|| {
             let (stream, _) = listener.accept()?;
-            let mut server = Connection::from_websocket(stream)?;
+            let (mut server, forwarded) =
+                Connection::from_websocket(stream, Some(Duration::from_secs(10)))?;
+            assert_eq!(forwarded, None);
             server
                 .reader
                 .set_read_timeout(Some(Duration::from_secs(10)))?;

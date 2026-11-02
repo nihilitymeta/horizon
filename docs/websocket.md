@@ -15,9 +15,11 @@ have it.
 - **Any `ws://` or `wss://` address joins.** Direct Connect, Add Server and `horizon-ctl`'s connect take
   `wss://mc.example.com`, `ws://127.0.0.1:25580` or `wss://mc.example.com:8443/play`. The port defaults to
   443 for `wss://` and 80 for `ws://`. The server list pings such entries like any other.
-- **Every listening server has a WebSocket door.** `horizon-server`, and a client that opened a world to the
-  LAN, listen on `ws://127.0.0.1:25580` next to the normal port. Only loopback: it is meant for a tunnel
-  daemon on the same machine, which terminates TLS and forwards the plaintext WebSocket.
+- **A server can open a WebSocket door.** With `websocket_port` set in `server.toml` (off by default),
+  `horizon-server` also listens on `ws://127.0.0.1:<port>` next to the normal port; a world opened to the
+  LAN does the same with `HORIZON_WS_PORT`. Only loopback: it is meant for a tunnel daemon on the same
+  machine, which terminates TLS and forwards the plaintext WebSocket. Players who come through it are
+  counted, limited, logged and bannable like players on the TCP port, under the address the tunnel reports.
 - **Everything above the socket is unchanged.** Handshake, login, encryption in online mode, compression,
   configuration, play, secure chat: the Minecraft packet stream is the same bytes, carried in WebSocket binary
   frames instead of straight TCP. Whitelist, ops, bans and `server.toml` apply as they do to TCP players.
@@ -29,26 +31,34 @@ have it.
 
 ### The server
 
-Nothing to configure. When the server starts accepting players it also binds `127.0.0.1:25580`, and the
-log says so:
+One setting. In `server.toml`:
+
+```toml
+[server]
+websocket_port = 25580       # loopback port where a tunnel on this computer (cloudflared) hands players over a WebSocket; 0: off
+```
+
+(or `horizon-server config set server.websocket_port=25580`). The server writes it to `server.properties` as
+`horizon-websocket-port`, which is what the game reads, so a vanilla-style folder can set that line directly.
+When the server starts accepting players it also binds `127.0.0.1:<port>`, and the log says so:
 
 ```
 [lan] WebSocket listener on ws://127.0.0.1:25580
 ```
 
-If 25580 is taken (a shared host with per-user port ranges, two servers on one machine), set
-`HORIZON_WS_PORT` in the environment the server or the game is started from:
+A port it cannot take fails the start with the reason, like the main port would, so nothing runs half open.
+Pick another port when 25580 is taken (a shared host with per-user port ranges, two servers on one machine).
+`HORIZON_NET_DEBUG=1` additionally logs every WebSocket handshake that fails.
 
-```sh
-HORIZON_WS_PORT=25581 horizon-server run
-```
+**Open to LAN** has no `server.properties`: set `HORIZON_WS_PORT` in the environment the game is started from
+and the integrated server opens the same door when you publish the world, so a quick tunnel (below) shares a
+singleplayer world across the internet. Unset, the door stays shut.
 
-A listener that cannot bind is logged at debug level only and the TCP port keeps working, so check the log
-line above before you blame the tunnel. `HORIZON_NET_DEBUG=1` additionally logs every WebSocket handshake
-that fails.
-
-This applies to **Open to LAN** too: the integrated server starts the same listener when you publish a world,
-so a quick tunnel (below) shares a singleplayer world across the internet.
+**Who can join is the same question as on the TCP port.** A tunnel makes the server reachable by anyone who
+knows the address. In online mode (the default for `horizon-server`, and a LAN world whose host is signed
+in) every player joins with their own account, and the whitelist applies. An offline server, or a LAN
+world from a host who is not signed in, lets anyone join under any name: through a tunnel that is the whole
+internet, not your living room. Read hosting.md's "Before you start" before you publish an address.
 
 ### The tunnel: Cloudflare
 
@@ -96,6 +106,17 @@ setting:
 | Frame size | 64 KiB | The edge buffers frames up to 64 KiB; larger packets (chunks) are split into several frames and reassembled as a byte stream on the other side |
 | Send budget | 2 MiB/s per connection, each direction | Keeps a world-join's chunk burst inside what the free tunnel passes without stalling |
 | Keepalive | a ping every 30 s when nothing is being read | The edge closes idle WebSockets; the ping keeps the connection open while a player stands still |
+
+And the limits that protect the server from a peer that is not a Horizon client, since a tunnel lets anyone
+reach the door:
+
+| What | Value | Why |
+|---|---|---|
+| Handshake deadline | 10 s, the login phase's | A socket that never finishes its upgrade request is dropped instead of holding a thread |
+| Largest message | one Minecraft frame (2 MiB) | tungstenite would otherwise buffer up to 64 MiB per connection before the game's own packet limit saw a byte |
+| Read backlog | 4 MiB | Past this the actor stops reading until the game catches up, so a flood waits in the socket, as it would on TCP |
+| Write buffer | 1 MiB | Frames kept for a peer that reads slowly before the actor waits |
+| Connections | the TCP door's count | Both doors share one accept loop: the player limit plus 64 spare connections, and the flood handling, apply to the sum |
 
 ### Other relays
 
@@ -159,11 +180,18 @@ needs. `parse_address` recognises the two schemes, returns the whole URL as the 
 URL or the scheme, so the Add Server screen and the server list ping accept and use them unchanged.
 
 **`horizon-client`, `src/lan/mod.rs`, `src/lan/conn.rs`, `src/net.rs`, `src/game/debug_keys.rs`: the
-listener and F3.** `Lan::listen` binds `127.0.0.1:HORIZON_WS_PORT` and spawns `ws_accept_loop`, a
-non-blocking accept loop polled every 25 ms that gives each socket its own `horizon-ws-conn` thread.
-`conn::serve_websocket` completes the WebSocket handshake (`Connection::from_websocket`) and then calls the
-same `serve_connection` that TCP players go through, so from the handshake packet on there is one code path.
-`Lan::stop` stops the WebSocket listener with the TCP one. On the client, `net.rs` carries a `NetInfo` on the
+listener and F3.** `NetConfig::websocket_port` comes from `horizon-websocket-port` on a dedicated server
+(`dedicated.rs`) and from `HORIZON_WS_PORT` on a LAN world. When it is set, `Lan::listen_on` binds
+`127.0.0.1:<port>` before it starts the TCP accept thread, so a port it cannot take fails the start cleanly.
+Both ports run the same `accept_loop`, each with its `Door` (thread name, log tag, serve function): every
+accepted socket is counted against the player limit plus the spare connections, registered as waiting, and
+turned away past the limit, whichever door it came through. `conn::serve_websocket` completes the WebSocket
+handshake (`Connection::from_websocket`, with the login phase's 10 s deadline on the socket), replaces the
+socket's loopback address with the one the tunnel reports in `CF-Connecting-IP` or `X-Forwarded-For` (the
+same substitution Velocity forwarding makes, trusted only because a loopback listener's only peer is a
+process on this computer), and then calls the same `serve_connection` that TCP players go through, so from
+the handshake packet on there is one code path, and IP bans, the connection log and the per-address count
+see the player. `Lan::stop` stops the WebSocket listener with the TCP one. On the client, `net.rs` carries a `NetInfo` on the
 session: once the socket is up, `NetInfo::classify` labels the join address, and the F3 screen renders it as
 the `net` group. Loopback, RFC 1918, link-local, CGNAT (which is what Tailscale uses) and unique-local IPv6
 count as `lan`.
@@ -178,15 +206,25 @@ Because the launcher workspace locks the game crates it builds against, the depe
 cargo test -p horizon-protocol websocket
 ```
 
-runs the unit test in `websocket.rs` (a 200 000-byte request across many 64 KiB frames, and a reply) and
-`tests/websocket_transport_tests.rs` (a Minecraft-framed packet larger than one frame through
-`Connection::from_websocket` and `connect_websocket`, plus the address check). To try the whole path on one
-machine without Cloudflare: start a server, join at `ws://127.0.0.1:25580`, and read F3.
+runs the unit tests in `websocket.rs` (a 200 000-byte request across many 64 KiB frames and a reply; a
+socket that never finishes its handshake is dropped within the deadline; a message past the limit closes
+the connection; the forwarded address comes from the proxy headers) and `tests/websocket_transport_tests.rs`
+(a Minecraft-framed packet larger than one frame through `Connection::from_websocket` and
+`connect_websocket`, plus the address check). The host's side is in `lan/mod.rs`'s tests
+(`cargo test -p horizon-client-lib --lib websocket_door`): a flood on the WebSocket door is turned away at
+the shared limit, and a status request through it is answered. To try the whole path on one machine without
+Cloudflare: set `websocket_port`, start the server, join at `ws://127.0.0.1:25580`, and read F3.
 
 ## What it does not do yet
 
-- **No setting.** The port comes from `HORIZON_WS_PORT` only; there is no `server.toml` key and no way to
-  turn the listener off. It binds loopback, so leaving it on is harmless.
+- **The per-address share is counted on the proxy's address.** A socket is counted when it is accepted,
+  before the handshake reveals the player's address, so the ten-places-an-address rule sees loopback (which
+  is exempt) and not the player; only the total limit holds for tunnel players. IP bans and the log do see
+  the player.
+- **The forwarded address is trusted from loopback.** Any process on the server's computer can connect to
+  the door and claim an address. The listener never binds elsewhere, so that is the host's own processes.
+- **No LAN screen setting.** A LAN world opens the door from `HORIZON_WS_PORT` only; there is no checkbox in
+  the Open to LAN screen yet.
 - **No TLS in the game.** `wss://` is only a client-side scheme. A server exposed directly to the internet
   over WebSocket needs a proxy or a tunnel in front of it; the game will not bind a public `wss://` listener.
 - **Only Horizon clients from this fork.** Vanilla and upstream Horizon clients cannot use the WebSocket door;

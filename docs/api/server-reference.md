@@ -88,6 +88,7 @@ Horizon server settings (docs/server.md). The server writes them into server.pro
 | `simulation_distance` | `10` | `simulation-distance` | chunks around each player where mobs, crops and redstone tick |
 | `max_view_distance` | `0` | `horizon-max-view-distance` | past view_distance, saved chunks only, up to this (never generated; 0: off) |
 | `admin_feedback_to_ops` | `true` | `horizon-admin-feedback-to-ops` | operators see each other's commands ([name: ...], vanilla); false: only the log |
+| `websocket_port` | `0` | `horizon-websocket-port` | loopback port where a tunnel on this computer (cloudflared) hands players over a WebSocket; 0: off |
 
 ### `[world]`
 

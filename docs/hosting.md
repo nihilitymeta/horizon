@@ -155,6 +155,7 @@ view_distance = 10
 simulation_distance = 10
 max_view_distance = 0        # past view_distance, saved chunks only, up to this (0: off)
 admin_feedback_to_ops = true # operators see each other's commands ([name: ...]); false: only the log
+websocket_port = 0           # loopback port where a tunnel (cloudflared) hands players over a WebSocket; 0: off
 
 [world]
 name = "world"

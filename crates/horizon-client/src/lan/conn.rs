@@ -478,20 +478,28 @@ const WRITE_TIMEOUT: Duration = READ_TIMEOUT;
 pub const MEMORY_ADDRESS: std::net::SocketAddr = std::net::SocketAddr::V4(
     std::net::SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 0),
 );
-/// A player arriving through a Cloudflare Tunnel: the tunnel's origin
-/// forwards plaintext `ws://` to loopback, so the WebSocket handshake is all
-/// that is left before the normal handshake/login/configuration threads.
+/// A player arriving through a tunnel (`cloudflared`, or any proxy that
+/// terminates TLS): the tunnel forwards plaintext `ws://` to loopback, so the
+/// WebSocket handshake is all that is left before the normal handshake, login
+/// and configuration threads. The upgrade request has the login phase's
+/// deadline, and the write timeout the TCP path sets. The proxy's
+/// `CF-Connecting-IP` (or `X-Forwarded-For`) becomes the player's address, as
+/// Velocity's forwarding does, so that IP bans, the connection log and the
+/// per-address count see the player and not the proxy; it is believed only
+/// from a proxy on this computer, which is the only peer a loopback listener
+/// has.
 pub fn serve_websocket(
     stream: TcpStream,
     address: std::net::SocketAddr,
     shared: Arc<Shared>,
 ) -> Result<(), String> {
     let e = |e: horizon_protocol::Error| e.to_string();
-    serve_connection(
-        Connection::from_websocket(stream).map_err(e)?,
-        address,
-        shared,
-    )
+    let (c, forwarded) = Connection::from_websocket(stream, Some(LOGIN_TIMEOUT)).map_err(e)?;
+    let address = match forwarded {
+        Some(ip) if address.ip().is_loopback() => std::net::SocketAddr::new(ip, address.port()),
+        _ => address,
+    };
+    serve_connection(c, address, shared)
 }
 
 /// `ServerConnectionListener.startMemoryChannel`: an integrated server's

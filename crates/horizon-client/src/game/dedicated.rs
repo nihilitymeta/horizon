@@ -957,6 +957,9 @@ impl Game<'_> {
             lod_distance: horizon_client::lod_net::distance_property(
                 props.raw.get(horizon_client::lod_net::PROPERTY),
             ),
+            websocket_port: horizon_client::lan::websocket_port_property(
+                props.raw.get(horizon_client::lan::WEBSOCKET_PORT_PROPERTY),
+            ),
             server_links: if props.bug_report_link.is_empty() {
                 Vec::new()
             } else if super::server_links::valid_untrusted_uri(&props.bug_report_link) {
