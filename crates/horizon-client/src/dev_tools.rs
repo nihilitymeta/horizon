@@ -711,7 +711,7 @@ fn nav_window(ctx: &egui::Context, item: &Inspected) {
                         block_label(p.target),
                         if p.reached { ", reached" } else { "" }
                     ));
-                    ui.weak("drawn in the world: green the next node, grey walked, yellow ahead, red the target");
+                    ui.weak("drawn in the world under the nodes: green the next, yellow the six ahead, red the target");
                     for (i, node) in p.nodes.iter().enumerate() {
                         let text = format!("[{i}] {}", block_label(*node));
                         if i == p.next {
@@ -823,36 +823,41 @@ impl Hooks for DevTools {
     fn render(&self) -> Option<&dyn RenderHooks> {
         Some(self)
     }
-    /// `/nav`: the path drawn in the world as block outlines.
+    /// `/nav`: the path drawn in the world as block outlines. A node is
+    /// where the mob's feet go, usually air, and a rim takes the shape of
+    /// the block at its position, so the block under each node is outlined.
+    /// The game draws eight rims a frame, within 32 blocks: the next node
+    /// and the target go first, then the nodes ahead.
     fn visuals(&self, _host: &dyn Host, event: &mut VisualsEvent<'_>) {
         if !observe::watching() {
             return;
         }
+        let under = |p: [i32; 3]| [p[0], p[1] - 1, p[2]];
         for item in observe::snapshots() {
             if !item.views.contains(&View::Nav) {
                 continue;
             }
             let Some(b) = &item.brain else { continue };
             let Some(p) = &b.path else { continue };
-            for (i, node) in p.nodes.iter().enumerate() {
-                let argb = if i == p.next {
-                    0xFF40FF40
-                } else if i < p.next {
-                    0x80A0A0A0
-                } else {
-                    0xFFFFE040
-                };
+            if let Some(next) = p.nodes.get(p.next) {
                 event.rims.push(NativeBlockRim {
-                    pos: *node,
-                    argb,
-                    width: if i == p.next { 3.0 } else { 1.5 },
+                    pos: under(*next),
+                    argb: 0xFF40FF40,
+                    width: 3.0,
                 });
             }
             event.rims.push(NativeBlockRim {
-                pos: p.target,
+                pos: under(p.target),
                 argb: 0xFFFF4040,
                 width: 2.0,
             });
+            for node in p.nodes.iter().skip(p.next + 1).take(6) {
+                event.rims.push(NativeBlockRim {
+                    pos: under(*node),
+                    argb: 0xFFFFE040,
+                    width: 1.5,
+                });
+            }
         }
     }
 }
