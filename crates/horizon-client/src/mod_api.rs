@@ -33,9 +33,14 @@ pub use crate::hud_layout::{GuiDraw, HealthInputs};
 pub use crate::items::ItemStack;
 pub use crate::merchant::MerchantOffer;
 pub use crate::mesher::TintSource;
+pub use crate::mobs::Who;
 pub use crate::mobs::{
     Mob, MobType,
-    goals::{Cx as GoalCx, Goal, GoalSelector},
+    goals::{
+        Cx as GoalCx, Goal, GoalSelector, JUMP as GOAL_JUMP, LOOK as GOAL_LOOK, MOVE as GOAL_MOVE,
+        TARGET as GOAL_TARGET,
+    },
+    native_goal::{Actions, GoalAction, MobView, NativeBehaviour, NativeGoal},
 };
 pub use crate::music::{Music, MusicLayer};
 pub use crate::particles::{ParticleOptions, ParticleType};

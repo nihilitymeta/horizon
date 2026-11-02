@@ -1,6 +1,6 @@
 # Mob AI for mods
 
-Status: the first hook point is built (`mob_ai_register`, pending its API number); the rest is the plan. Branch
+Status: the hook point (`mob_ai_register`, pending its API number) and the goal adapter for mods are built; the rest is the plan. Branch
 `mob-ai-hooks` of whos-carmen/horizon, `main` + this one concern. Written for horizon-parasite-mod, whose first needs
 are custom blocks and custom mob behaviour.
 
@@ -27,16 +27,67 @@ the mob's vanilla goals are in `mob.ai.goals` and `mob.ai.targets` and nothing h
 Fragment: `tools/native-hook-fragments/mob_ai_register.json`. The API number is given when it is stamped
 (`python3 tools/stamp_native_hooks.py`), which this fork does not do: a bundle on the fork pins the fork commit.
 
+## Goals from outside the crate (built)
+
+`Goal` itself is public through `horizon_client::mod_api`, so a trait mod may implement it and touch everything a
+vanilla goal does. Most mods, and every script, should not need to: `mobs/native_goal.rs` gives a goal a fixed
+shape that borrows nothing of the mob.
+
+- `MobView`: what a call sees of its mob (id, kind, position, velocity, health, target and where it stands, whether
+  it is in melee range, whether a path is being walked, the nearest player, the home). A plain copy, made before the
+  call.
+- `Actions` / `GoalAction`: what the call asks for (`navigate_to`, `navigate_to_target`, `stop_navigation`,
+  `move_toward`, `look_at`, `look_at_target`, `set_target`, `jump`, `attack`, `swing`). Applied in order after the
+  call, with the mob and the world.
+- `NativeBehaviour`: the decisions (`can_use`, `can_continue`, `start`, `tick`, `stop`) over a `MobView` and an
+  `Actions`. One value is shared by every mob the goal is on; the per-mob part is its `State` (`Default` when added).
+- `NativeGoal::new(name, flags, behaviour)`: the `Goal` to add, with `GOAL_MOVE | GOAL_LOOK | GOAL_JUMP | GOAL_TARGET`
+  for the control flags it locks, `.updated_every_tick()` and `.uninterruptable()`.
+
+```rust
+use horizon_client::mod_api::{
+    Actions, GOAL_LOOK, GOAL_MOVE, Hooks, MobAiRegisterEvent, MobView, NativeBehaviour, NativeGoal,
+};
+
+/// Walks at the nearest player while one is within range; a melee goal of its own would attack.
+#[derive(Debug)]
+struct Stalk { range: f64, speed: f64 }
+impl NativeBehaviour for Stalk {
+    type State = ();
+    fn can_use(&self, _: &mut (), mob: &MobView, _: &mut Actions) -> bool {
+        mob.nearest_player.is_some_and(|p| mob.distance_to(p) < self.range)
+    }
+    fn tick(&self, _: &mut (), mob: &MobView, out: &mut Actions) {
+        if let Some(p) = mob.nearest_player {
+            out.look_at(p);
+            if mob.navigation_done { out.navigate_to(p, self.speed); }
+        }
+    }
+}
+
+struct Mod;
+impl Hooks for Mod {
+    fn mob_ai_register(&self, event: &mut MobAiRegisterEvent<'_>) {
+        if event.mob.kind.id == "minecraft:zombie" {
+            event.mob.ai.goals.add(2, NativeGoal::new("Stalk", GOAL_MOVE | GOAL_LOOK, Stalk { range: 24.0, speed: 1.1 }));
+        }
+    }
+}
+```
+
+The same two types are what the Lua runtime hands a script's goal ([lua-bindings.md](lua-bindings.md), step 4): the
+view becomes a table, the actions come back from it. Unit tests cover the view and the world-free actions; the path
+and attack actions run only in a game with the vanilla data.
+
 ## The plan
 
 | Step | What | Why |
 |---|---|---|
-| 2 | `native_set_mob_target(dimension, id, target)` and `native_mob_navigate_to(dimension, id, pos, speed)` helpers | A tick hook or a script can drive a mob without writing a `Goal` |
-| 3 | A `NativeGoal` adapter: a `Goal` whose methods call `fn` callbacks (or a trait object) owned by the mod | Goals for mods that are not compiled inside the crate: trait mods and the Lua runtime ([lua-bindings.md](lua-bindings.md)) |
+| 2 | `native_set_mob_target(dimension, id, target)` and `native_mob_navigate_to(dimension, id, pos, speed)` helpers | A tick hook can drive a mob it did not register a goal on. Later: the goal adapter above covers the parasite mod |
 | 4 | Content entity types from a mob template: `"template": "minecraft:zombie"` in `entity_type/*.json`, with `attributes`, `size` and a `goals` list naming vanilla goals by name with their arguments | A parasite is declared in data, as a block is; its behaviour comes from step 1's hook or a script |
 | 5 | `mob_ai_tick(mob)` listen hook each AI tick, and `mob_target_changed` | Reactive scripts (infection spreading, host conversion) without a goal |
 | 6 | Brain species: a hook after a brain's activities are built | Villagers, piglins and wardens use brains, not goals |
 
 Each step is one fragment and one hook or helper, named by the NeoForge rules in
 [native-hooks-neoforge.md](native-hooks-neoforge.md) where an event exists (there is none for `registerGoals`, so
-this one keeps a Horizon name). Steps 2 and 3 are what the Lua branch needs first.
+this one keeps a Horizon name). Step 4 is what the Lua branch needs next, so a parasite can be its own entity type rather than a redressed zombie.

@@ -57,6 +57,7 @@ pub mod leash;
 pub mod living;
 pub mod llama;
 pub mod monster_brain;
+pub mod native_goal;
 pub mod nautilus;
 pub mod nav;
 pub mod nether;
