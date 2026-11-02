@@ -1480,7 +1480,7 @@ impl Hub {
                     permission,
                     dedicated,
                     &self.sync.builtin,
-                    &self.mod_commands.0,
+                    &super::commands::with_horizon_commands(&self.mod_commands.0),
                     &self.sync.features,
                 )
             }

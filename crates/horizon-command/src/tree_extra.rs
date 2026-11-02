@@ -6,7 +6,7 @@
 use super::{
     Dispatcher, Suggests,
     args::ArgType,
-    vanilla::{ENTITY, GAMEMASTERS, PLAYER, PLAYERS},
+    vanilla::{ENTITIES, ENTITY, GAMEMASTERS, PLAYER, PLAYERS},
 };
 
 const ADMINS: u8 = 3;
@@ -105,6 +105,39 @@ pub fn register(d: &mut Dispatcher, root: usize) {
     let set = d.literal(style, "set");
     let st = d.argument(set, "style", ArgType::Id("none"));
     d.executes(st, "waypoint.modify");
+
+    // Horizon's developer tools (docs/dev-tools.md): inspect|goals|senses|nav <targets>|clear,
+    // watch <targets> <path> | watch clear, mobai log <targets> | mobai log stop
+    for (name, clear_id) in [
+        ("inspect", "inspect.clear"),
+        ("goals", "goals.clear"),
+        ("senses", "senses.clear"),
+        ("nav", "nav.clear"),
+    ] {
+        let cmd = d.literal(root, name);
+        d.requires(cmd, GAMEMASTERS);
+        if name == "inspect" {
+            d.executes(cmd, "inspect.list");
+        }
+        let t = d.argument(cmd, "targets", ENTITIES);
+        d.executes(t, name);
+        let clear = d.literal(cmd, "clear");
+        d.executes(clear, clear_id);
+    }
+    let watch = d.literal(root, "watch");
+    d.requires(watch, GAMEMASTERS);
+    let t = d.argument(watch, "targets", ENTITIES);
+    let path = d.argument(t, "path", ArgType::NbtPath);
+    d.executes(path, "watch");
+    let clear = d.literal(watch, "clear");
+    d.executes(clear, "watch.clear");
+    let mobai = d.literal(root, "mobai");
+    d.requires(mobai, GAMEMASTERS);
+    let log = d.literal(mobai, "log");
+    let t = d.argument(log, "targets", ENTITIES);
+    d.executes(t, "mobai.log");
+    let stop = d.literal(log, "stop");
+    d.executes(stop, "mobai.log.stop");
 
     // DebugCommand
     let debug = d.literal(root, "debug");

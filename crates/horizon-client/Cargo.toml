@@ -80,8 +80,9 @@ fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
 # Lua scripts as mods (docs/lua-bindings.md): Luau, built from source, one state per mod shared across threads.
 mlua = { version = "0.12", features = ["luau", "vendored", "send"] }
 # Developer tools drawn with egui over the world (docs/dev-tools.md): HORIZON_DEV_TOOLS=1.
-egui = { version = "0.37", default-features = false }
+egui = { version = "0.37", default-features = false, features = ["default_fonts"] }
 egui-wgpu = { version = "0.37", default-features = false }
+egui-winit = { version = "0.37", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 # The server thread's CPU time per tick (`HORIZON_SPIKES`, spans.rs).

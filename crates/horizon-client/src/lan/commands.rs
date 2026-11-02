@@ -74,6 +74,86 @@ fn required_level(node: &Value) -> u8 {
     }
 }
 
+/// Horizon's own commands in the report's format, so the chat box colours,
+/// completes and accepts them as it does vanilla's: `/inspect` of the
+/// developer tools (docs/dev-tools.md; `tree_extra.rs` registers it). The
+/// server runs them whether or not the client's tree lists them; this is
+/// what the client sees.
+pub fn horizon_commands() -> Value {
+    let gamemasters = serde_json::json!({
+        "type": "minecraft:require",
+        "permission": { "type": "minecraft:command_level", "level": "gamemasters" }
+    });
+    let targets = serde_json::json!({
+        "type": "argument",
+        "executable": true,
+        "parser": "minecraft:entity",
+        "properties": { "type": "entities", "amount": "multiple" }
+    });
+    let clear = serde_json::json!({ "type": "literal", "executable": true });
+    let mut children = serde_json::Map::new();
+    for name in ["inspect", "goals", "senses", "nav"] {
+        children.insert(
+            name.to_string(),
+            serde_json::json!({
+                "type": "literal",
+                "executable": name == "inspect",
+                "permissions": gamemasters,
+                "children": { "targets": targets, "clear": clear }
+            }),
+        );
+    }
+    children.insert(
+        "watch".to_string(),
+        serde_json::json!({
+            "type": "literal",
+            "permissions": gamemasters,
+            "children": {
+                "targets": {
+                    "type": "argument",
+                    "parser": "minecraft:entity",
+                    "properties": { "type": "entities", "amount": "multiple" },
+                    "children": {
+                        "path": { "type": "argument", "executable": true, "parser": "minecraft:nbt_path" }
+                    }
+                },
+                "clear": clear
+            }
+        }),
+    );
+    children.insert(
+        "mobai".to_string(),
+        serde_json::json!({
+            "type": "literal",
+            "permissions": gamemasters,
+            "children": {
+                "log": {
+                    "type": "literal",
+                    "children": { "targets": targets, "stop": clear }
+                }
+            }
+        }),
+    );
+    Value::Object(serde_json::Map::from_iter([(
+        "children".to_string(),
+        Value::Object(children),
+    )]))
+}
+
+/// `extra` (the mods' commands root, or Null) with [`horizon_commands`]
+/// added: a mod's command of the same name keeps the mod's.
+pub fn with_horizon_commands(extra: &Value) -> Value {
+    let mut out = horizon_commands();
+    if let Some(children) = extra["children"].as_object()
+        && let Some(target) = out["children"].as_object_mut()
+    {
+        for (name, node) in children {
+            target.insert(name.clone(), node.clone());
+        }
+    }
+    out
+}
+
 impl CommandTree {
     /// commands.json next to registries.json (the data generator's reports).
     pub fn load(resources: &Path) -> Option<Self> {
@@ -430,5 +510,33 @@ mod tests {
                 .len(),
             3
         );
+    }
+
+    #[test]
+    fn horizons_own_commands_join_the_tree_by_level() {
+        let report: Value = serde_json::from_str(
+            r#"{"type":"root","children":{"me":{"type":"literal","executable":true}}}"#,
+        )
+        .unwrap();
+        let tree = CommandTree { root: report };
+        let names = |level: u8, extra: &Value| -> Vec<String> {
+            tree.packet_with(level, false, &Builtin::default(), &with_horizon_commands(extra))
+                .nodes
+                .iter()
+                .map(|n| n.name.clone())
+                .collect()
+        };
+        // A gamemaster gets the tools' commands with their arguments; a player does not.
+        let ops = names(2, &Value::Null);
+        assert_eq!(&ops[..8], ["", "me", "goals", "inspect", "mobai", "nav", "senses", "watch"]);
+        assert!(ops.iter().filter(|n| *n == "targets").count() >= 6);
+        assert!(ops.contains(&"path".to_string()) && ops.contains(&"log".to_string()));
+        assert_eq!(names(0, &Value::Null), ["", "me"]);
+        // A mod's command of another name comes along; one named inspect wins.
+        let mods: Value = serde_json::from_str(
+            r#"{"children":{"beacon":{"type":"literal","executable":true},"inspect":{"type":"literal","executable":true}}}"#,
+        )
+        .unwrap();
+        assert_eq!(names(0, &mods), ["", "me", "beacon", "inspect"]);
     }
 }

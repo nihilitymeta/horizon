@@ -532,6 +532,10 @@ impl Game<'_> {
             self.native_lifecycle.cancel_server_tick();
             return Err(error);
         }
+        // The developer tools' inspected entities, after every level ticked.
+        if !paused {
+            self.dev_inspect_tick();
+        }
         // `ServerTickEnd`: an errored tick or an idle-close failure (at
         // the `?` above) never reaches this site.
         self.native_lifecycle_server_tick_end(paused);
