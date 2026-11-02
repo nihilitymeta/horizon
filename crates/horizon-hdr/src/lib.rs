@@ -136,7 +136,13 @@ pub fn supports_anti_lag(device: &wgpu::Device) -> bool {
 /// - `frame_index`: monotonic frame sequence number
 /// - `max_fps`: frame limit or 0 for none
 /// - `enabled`: whether Anti-Lag is active
-pub fn anti_lag_update(device: &wgpu::Device, stage: u32, frame_index: u64, max_fps: u32, enabled: bool) {
+pub fn anti_lag_update(
+    device: &wgpu::Device,
+    stage: u32,
+    frame_index: u64,
+    max_fps: u32,
+    enabled: bool,
+) {
     #[cfg(not(target_os = "macos"))]
     {
         use wgpu::hal::api::Vulkan;
