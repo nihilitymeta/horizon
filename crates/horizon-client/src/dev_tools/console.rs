@@ -373,6 +373,9 @@ pub fn window(ctx: &egui::Context) {
             ui.input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Text(t) if t == "\t")));
             let mut run = false;
             ui.horizontal(|ui| {
+                // egui's thin line cursor is replaced by a blinking block below.
+                ui.style_mut().visuals.text_cursor.stroke = egui::Stroke::NONE;
+                ui.style_mut().visuals.text_cursor.blink = false;
                 let out = egui::TextEdit::singleline(&mut line)
                     .id(edit_id)
                     .hint_text("Lua, e.g. print(mc.snbt(\"@e[type=pig,limit=1]\", \"Health\"))")
@@ -387,6 +390,25 @@ pub fn window(ctx: &egui::Context) {
                         egui::text::CCursor::new(chars),
                     )));
                     st.store(ui.ctx(), edit_id);
+                }
+                if out.response.has_focus()
+                    && let Some(range) = out.cursor_range
+                {
+                    let at = out.galley.pos_from_cursor(range.primary);
+                    let font = egui::TextStyle::Monospace.resolve(ui.style());
+                    let (w, h) = ui
+                        .ctx()
+                        .fonts_mut(|f| (f.glyph_width(&font, ' '), f.row_height(&font)));
+                    let on = ui.input(|i| i.time) % 1.0 < 0.6;
+                    if on {
+                        let min = out.galley_pos + at.min.to_vec2();
+                        ui.painter().rect_filled(
+                            egui::Rect::from_min_size(min, egui::vec2(w.max(4.0), h)),
+                            1.0,
+                            egui::Color32::from_white_alpha(150),
+                        );
+                    }
+                    ui.ctx().request_repaint();
                 }
                 let enter =
                     out.response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
