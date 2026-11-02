@@ -18,7 +18,7 @@ use crate::mod_api::{
     BlockPos, BlockStateId, Compound, DataPackFilesEvent, EntityTickListenedEvent,
     EntityTickPostEvent, Flow, Holder, Hooks, Host, InteractEntityEvent, LevelDimension, LevelHost,
     LevelWriteHost, LivingIncomingDamageEvent, MobAiRegisterEvent, MobKilledEvent, MobSpawnedEvent,
-    MobView, Mods, RandomTickEvent, RightClickBlockEvent, ServerTickEvent, ServerTickPhase,
+    MobView, RandomTickEvent, RightClickBlockEvent, ServerTickEvent, ServerTickPhase,
     TickBlockEvent, WorldLifecycleEvent,
 };
 use crate::mod_api::{
@@ -945,7 +945,7 @@ type Scripts = Arc<Mutex<HashMap<String, String>>>;
 /// on (`horizon-mods.txt`, as the content loader reads it) and the `--dev-mod`
 /// folders of the command line, when they have capability `scripts`. One
 /// whose scripts fail to load is left out with the error in the log.
-pub fn discover(args: impl Iterator<Item = String>) -> Mods {
+pub fn discover(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
     let mut dev: Vec<PathBuf> = Vec::new();
     let mut game_dir: Option<PathBuf> = None;
     let mut args = args.peekable();
@@ -1036,7 +1036,7 @@ pub fn discover(args: impl Iterator<Item = String>) -> Mods {
             Err(e) => log::error!("Horizon: Lua mod in {} not loaded: {e}", c.path.display()),
         }
     }
-    mods.into()
+    mods
 }
 
 /// Loads the mod at `path` headlessly, as the game would at start, with the

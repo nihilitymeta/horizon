@@ -34,7 +34,10 @@ pub fn main() {
             }
         }
     }
-    main_with(crate::lua_mods::discover(std::env::args().skip(1)));
+    // Built in first: the developer tools, then the Lua mods found on the command line and in the mods folder.
+    let mut mods = crate::dev_tools::mods();
+    mods.extend(crate::lua_mods::discover(std::env::args().skip(1)));
+    main_with(mods.into());
 }
 
 /// Start the game with trait mods in dispatch order.
