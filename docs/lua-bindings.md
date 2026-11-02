@@ -1,7 +1,8 @@
 # Lua as a modding language
 
-Status: the runtime (`crates/horizon-client/src/lua_mods.rs`), scripts inside the `.hmod` and mob goals in Lua
-(`lua_mods/goals.rs`) are built; the rest is the plan. The branch builds on `mob-ai-hooks`. Branch
+Status: the runtime (`crates/horizon-client/src/lua_mods.rs`), scripts inside the `.hmod`, mob goals in Lua
+(`lua_mods/goals.rs`) and block behaviour (random and scheduled ticks, right clicks) are built; the rest is the plan.
+The branch builds on `mob-ai-hooks`. Branch
 `lua-bindings` of whos-carmen/horizon, `main` + this one concern.
 
 ## Why
@@ -45,6 +46,9 @@ reaches Lua by one adapter method, and a hook added for Rust is available to scr
 | `mob` (the view) | `id`, `kind`, `position`, `velocity` (`{x, y, z}`), `yaw`, `head_pitch`, `health`, `max_health`, `age`, `on_ground`, `in_water`, `in_lava`, `hurt_time`, `last_hurt_by`, `target` (`"player"`, a mob id or nil), `target_position`, `target_in_melee_range`, `navigation_done`, `nearest_player`, `home` (`{x, y, z, radius}`) |
 | `out` (the actions) | `navigate_to(x, y, z, speed)`, `navigate_to_target(speed)`, `stop_navigation()`, `move_toward(x, y, z, speed)`, `look_at(x, y, z)`, `look_at_target()`, `set_target(who)`, `jump()`, `attack(who)`, `swing()`; applied in order after the call |
 | `horizon.distance(a, b)` | Between two `{x, y, z}` tables |
+| `random_tick(dimension, block, x, y, z, props)` | A block that ticks randomly does (a mod block as its template does; the parasite hive through `random_ticks`); `props` is the state's properties by name. Handlers may queue `horizon.set_block_property(key, value[, flags])` (flags 2, clients see it, by default), `horizon.schedule_tick(delay)` and `horizon.handled()`, which skips the block's own random tick |
+| `tick_block(dimension, block, x, y, z, props)` | A scheduled tick of the block is due: the same actions |
+| `right_click_block(x, y, z, block, face, player, held)` | A player right-clicks a block, before the block and the item act; `face` and `player.position` are `{x, y, z}`, `player` has `name`, `dimension`, `game_mode`, `held` has `item`, `count`, `plain`. Handlers may queue `horizon.set_block_property(key, value)`, `horizon.cancel()` (nothing acts, no swing) and the host actions |
 | The `.hmod` | `cargo horizon-mod build` packs `scripts/` beside `assets/` and `data/`; `horizon_mods::Content` lists them (`scripts`), checks the paths and that `scripts/init.lua` is there; the Mods page says "May run its own scripts in your worlds" |
 
 ```lua
@@ -87,10 +91,10 @@ the Mods page takes effect at the next start.
 |---|---|---|
 | 2 | Hook coverage by generation: `xtask mod-api` emits the Lua adapter for every `listen` hook from the catalog, as it emits the trait | Every hook point reaches Lua without hand-written glue |
 | 3 | Host reads: `horizon.block(dimension, x, y, z)`, `horizon.mobs(dimension)`, `horizon.mob(dimension, id)`, returned synchronously (reads borrow the host for the call) | Scripts need to look before they act |
-| 5 | Block behaviour: `random_tick`, `block_use`, `block_entity_tick` to Lua with the block's position and state, `horizon.set_block_property` back | A staged block (the parasite hive) grows from a script |
 | 6 | Reload: `/reload` and the resource-reload key re-run `init.lua` with the handlers cleared (the `hot-reload` branch's path) | Edit a script, press a key |
 | 7 | Limits: an instruction budget per handler (`Lua::set_interrupt`), memory cap per state, no `io`/`os` | A script cannot hang or read the player's files; a content mod stays shareable |
 
-Step 6 completes the content team's workflow; step 5 gives the parasite hive its behaviour. Everything
+Step 6 completes the content team's workflow. The block hooks needed one addition to the mod API: `LevelHost::state_block`
+and `state_properties`, so a hook that gets a state can name its block without a world lookup (trait mods get them too). Everything
 stays off unless a mod carries scripts, and the launcher needs no change: a scripted `.hmod` installs like any
 content mod.

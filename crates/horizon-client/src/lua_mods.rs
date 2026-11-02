@@ -14,8 +14,9 @@
 //! Scripts travel inside the `.hmod` under capability `scripts`, or load from
 //! `--dev-mod` folders. Mob behaviour is written as goals ([`goals`]).
 use crate::mod_api::{
-    Hooks, Host, MobAiRegisterEvent, MobSpawnedEvent, MobView, Mods, ServerTickEvent,
-    ServerTickPhase, WorldLifecycleEvent,
+    BlockPos, BlockStateId, Flow, Hooks, Host, LevelDimension, LevelWriteHost, MobAiRegisterEvent,
+    MobSpawnedEvent, MobView, Mods, RandomTickEvent, RightClickBlockEvent, ServerTickEvent,
+    ServerTickPhase, TickBlockEvent, WorldLifecycleEvent,
 };
 use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
@@ -211,6 +212,10 @@ impl LuaMod {
             "add_target_goal",
             "clear_goals",
             "clear_target_goals",
+            "set_block_property",
+            "schedule_tick",
+            "handled",
+            "cancel",
         ] {
             api.set(
                 action,
@@ -262,6 +267,84 @@ impl LuaMod {
     }
 
     /// Call the handlers of `hook` with `args`, then run what they queued.
+    /// Whether any handler is registered for `hook`: the hooks that fire
+    /// often (random ticks) build their arguments only then.
+    fn has_handlers(&self, hook: &str) -> bool {
+        let handlers: mlua::Result<Table> = self.lua.named_registry_value(HANDLERS);
+        handlers.is_ok_and(|h| h.get::<Option<Table>>(hook).ok().flatten().is_some())
+    }
+
+    /// A block hook on a level (`random_tick`, `tick_block`): handlers get
+    /// `(dimension, block, x, y, z, props)` and may queue
+    /// `set_block_property(key, value[, flags])`, `schedule_tick(delay)` and
+    /// `handled()`, which skips the block's own tick.
+    fn level_hook(
+        &self,
+        hook: &str,
+        level: &mut dyn LevelWriteHost,
+        dimension: LevelDimension,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) -> Flow {
+        if !self.has_handlers(hook) {
+            return Flow::Continue;
+        }
+        let Some(block) = level.state_block(state) else {
+            return Flow::Continue;
+        };
+        let at = [pos.x, pos.y, pos.z];
+        let props = match self.lua.create_table() {
+            Ok(t) => t,
+            Err(e) => return self.hook_error(hook, e),
+        };
+        for (k, v) in level.state_properties(state) {
+            if let Err(e) = props.set(k, v) {
+                return self.hook_error(hook, e);
+            }
+        }
+        let mut handled = false;
+        let r = self.call_with(
+            hook,
+            (
+                dimension_id(dimension),
+                block.as_str(),
+                pos.x,
+                pos.y,
+                pos.z,
+                props,
+            ),
+            &mut |action, args| {
+                match action {
+                    "set_block_property" => {
+                        let (key, value): (String, String) = (args.get(1)?, args.get(2)?);
+                        let flags = args.get::<Option<i32>>(3)?.unwrap_or(UPDATE_CLIENTS);
+                        level.set_block_property(at, &key, &value, flags);
+                    }
+                    "schedule_tick" => {
+                        let delay: i32 = args.get(1)?;
+                        level.schedule_block_tick(at, &block, delay);
+                    }
+                    "handled" => handled = true,
+                    other => log::warn!("[lua:{}] {hook}: {other} needs a host; dropped", self.id),
+                }
+                Ok(())
+            },
+        );
+        if let Err(e) = r {
+            return self.hook_error(hook, e);
+        }
+        if handled {
+            Flow::Cancel
+        } else {
+            Flow::Continue
+        }
+    }
+
+    fn hook_error(&self, hook: &str, e: mlua::Error) -> Flow {
+        log::error!("[lua:{}] {hook}: {e}", self.id);
+        Flow::Continue
+    }
+
     /// Call the handlers of `hook` with `args`, then run what they queued
     /// with the hook's host (none: the actions are dropped with a warning).
     fn call(&self, host: Option<&mut dyn Host>, hook: &str, args: impl mlua::IntoLuaMulti) {
@@ -337,7 +420,102 @@ impl LuaMod {
     }
 }
 
+/// `Level.setBlock`'s flag a crop grows with: clients see it, no neighbour update.
+const UPDATE_CLIENTS: i32 = 2;
+
+fn dimension_id(dimension: LevelDimension) -> &'static str {
+    match dimension {
+        LevelDimension::Overworld => "minecraft:overworld",
+        LevelDimension::Nether => "minecraft:the_nether",
+        LevelDimension::End => "minecraft:the_end",
+    }
+}
+
 impl Hooks for LuaMod {
+    /// A block that ticks randomly does: `random_tick(dimension, block, x, y, z, props)`.
+    fn random_tick(&self, level: &mut dyn LevelWriteHost, event: &mut RandomTickEvent) -> Flow {
+        self.level_hook(
+            "random_tick",
+            level,
+            event.dimension,
+            event.pos,
+            event.state,
+        )
+    }
+    /// A scheduled block tick is due: `tick_block(dimension, block, x, y, z, props)`.
+    fn tick_block(&self, level: &mut dyn LevelWriteHost, event: &mut TickBlockEvent) -> Flow {
+        self.level_hook("tick_block", level, event.dimension, event.pos, event.state)
+    }
+    /// A player right-clicks a block: `right_click_block(x, y, z, block, face,
+    /// player, held)`, `face` and `player.position` as `{x, y, z}`, `player`
+    /// with `name`, `dimension` and `game_mode`, `held` with `item`, `count`
+    /// and `plain`. Handlers may queue `set_block_property(key, value)`,
+    /// `cancel()` (neither the block nor the item acts) and the host actions.
+    fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
+        let hook = "right_click_block";
+        if !self.has_handlers(hook) {
+            return Flow::Continue;
+        }
+        let lua = &self.lua;
+        let [x, y, z] = event.pos;
+        let block = host.block(event.pos);
+        let tables = (|| -> mlua::Result<(Table, Value, Value)> {
+            let face = goals::vec3(
+                lua,
+                [
+                    event.face[0] as f64,
+                    event.face[1] as f64,
+                    event.face[2] as f64,
+                ],
+            )?;
+            let player = match host.acting_player() {
+                Some(p) => {
+                    let t = lua.create_table()?;
+                    t.set("name", p.name.as_str())?;
+                    t.set("dimension", p.dimension.as_str())?;
+                    t.set("position", goals::vec3(lua, p.position)?)?;
+                    t.set("game_mode", p.game_mode)?;
+                    Value::Table(t)
+                }
+                None => Value::Nil,
+            };
+            let held = match host.held() {
+                Some((item, count, plain)) => {
+                    let t = lua.create_table()?;
+                    t.set("item", item)?;
+                    t.set("count", count)?;
+                    t.set("plain", plain)?;
+                    Value::Table(t)
+                }
+                None => Value::Nil,
+            };
+            Ok((face, player, held))
+        })();
+        let (face, player, held) = match tables {
+            Ok(t) => t,
+            Err(e) => return self.hook_error(hook, e),
+        };
+        let mut cancel = false;
+        let r = self.call_with(
+            hook,
+            (x, y, z, block.as_str(), face, player, held),
+            &mut |action, args| {
+                match action {
+                    "set_block_property" => {
+                        let (key, value): (String, String) = (args.get(1)?, args.get(2)?);
+                        host.set_block_property(event.pos, &key, &value);
+                    }
+                    "cancel" => cancel = true,
+                    other => self.run_action(host, other, args)?,
+                }
+                Ok(())
+            },
+        );
+        if let Err(e) = r {
+            return self.hook_error(hook, e);
+        }
+        if cancel { Flow::Cancel } else { Flow::Continue }
+    }
     fn world_lifecycle(&self, host: &mut dyn Host, event: &mut WorldLifecycleEvent<'_>) {
         let phase = format!("{:?}", event.phase);
         self.call(Some(host), "world_lifecycle", phase);
@@ -507,6 +685,140 @@ experimental = ["scripts"]
         );
         let e = r.unwrap_err().to_string();
         assert!(e.contains("no goal missing"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A level of one block whose writes and scheduled ticks are recorded.
+    struct FakeLevel {
+        block: &'static str,
+        props: Vec<(String, String)>,
+        writes: Vec<([i32; 3], String, String, i32)>,
+        ticks: Vec<([i32; 3], String, i32)>,
+    }
+    impl crate::mod_api::LevelHost for FakeLevel {
+        fn block_state(&self, _: [i32; 3]) -> BlockStateId {
+            BlockStateId(7)
+        }
+        fn is_client_side(&self) -> bool {
+            false
+        }
+        fn state_with_property(&self, _: BlockStateId, _: &str, _: &str) -> Option<BlockStateId> {
+            None
+        }
+        fn state_block(&self, state: BlockStateId) -> Option<String> {
+            (state == BlockStateId(7)).then(|| self.block.to_owned())
+        }
+        fn state_properties(&self, _: BlockStateId) -> Vec<(String, String)> {
+            self.props.clone()
+        }
+    }
+    impl crate::mod_api::LevelRandomHost for FakeLevel {
+        fn attachments(
+            &mut self,
+            _: crate::mod_api::Holder,
+        ) -> Result<&mut crate::mod_api::Attachments, crate::mod_api::AttachmentError> {
+            Err(crate::mod_api::AttachmentError::MissingHolder)
+        }
+        fn random(&mut self) -> Option<&mut crate::mod_api::LegacyRandom> {
+            None
+        }
+    }
+    impl crate::mod_api::LevelTicksHost for FakeLevel {
+        fn schedule_block_tick(&mut self, pos: [i32; 3], block: &str, delay: i32) -> bool {
+            self.ticks.push((pos, block.to_owned(), delay));
+            true
+        }
+        fn schedule_fluid_tick(&mut self, _: [i32; 3], _: &str, _: i32) -> bool {
+            false
+        }
+    }
+    impl LevelWriteHost for FakeLevel {
+        fn set_block_property(
+            &mut self,
+            pos: [i32; 3],
+            key: &str,
+            value: &str,
+            flags: i32,
+        ) -> bool {
+            self.writes
+                .push((pos, key.to_owned(), value.to_owned(), flags));
+            true
+        }
+        fn play_sound(&mut self, _: &str, _: [f64; 3], _: usize, _: f32, _: f32) -> bool {
+            false
+        }
+        fn send_particles(
+            &mut self,
+            _: &crate::mod_api::ParticleOptions,
+            _: Option<BlockStateId>,
+            _: [f64; 3],
+            _: [f64; 3],
+            _: f64,
+            _: i32,
+        ) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn a_random_tick_handler_grows_a_block_and_takes_the_tick() {
+        let (dir, path) = hmod(
+            "ticks",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.on("random_tick", function(dimension, block, x, y, z, props)
+                  if block ~= "ruby:hive" then return end
+                  if props.stage == "dormant" then
+                    horizon.set_block_property("stage", "growing")
+                    horizon.schedule_tick(40)
+                    horizon.handled()
+                  end
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path).unwrap();
+        let mut level = FakeLevel {
+            block: "ruby:hive",
+            props: vec![("stage".into(), "dormant".into())],
+            writes: Vec::new(),
+            ticks: Vec::new(),
+        };
+        let mut event = RandomTickEvent {
+            dimension: LevelDimension::Nether,
+            pos: BlockPos::new(1, 64, -3),
+            state: BlockStateId(7),
+        };
+        assert!(matches!(
+            m.random_tick(&mut level, &mut event),
+            Flow::Cancel
+        ));
+        assert_eq!(
+            level.writes,
+            [([1, 64, -3], "stage".to_owned(), "growing".to_owned(), 2)]
+        );
+        assert_eq!(level.ticks, [([1, 64, -3], "ruby:hive".to_owned(), 40)]);
+
+        // A mature hive, and another block: nothing happens and the block keeps its tick.
+        level.props = vec![("stage".into(), "mature".into())];
+        assert!(matches!(
+            m.random_tick(&mut level, &mut event),
+            Flow::Continue
+        ));
+        level.block = "minecraft:grass_block";
+        assert!(matches!(
+            m.tick_block(
+                &mut level,
+                &mut TickBlockEvent {
+                    dimension: LevelDimension::Overworld,
+                    pos: BlockPos::new(0, 0, 0),
+                    state: BlockStateId(7),
+                }
+            ),
+            Flow::Continue
+        ));
+        assert_eq!(level.writes.len(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

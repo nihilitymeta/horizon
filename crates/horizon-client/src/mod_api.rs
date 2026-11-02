@@ -680,6 +680,12 @@ pub trait LevelHost {
         key: &str,
         value: &str,
     ) -> Option<BlockStateId>;
+    /// The block `state` is a state of (`BlockState.getBlock()`): its name,
+    /// `mymod:cable`; None for an unknown state. No lookup in the world.
+    fn state_block(&self, state: BlockStateId) -> Option<String>;
+    /// Every property of `state` with its value (`facing` → `north`), in the
+    /// block's order; empty for a block without properties or an unknown state.
+    fn state_properties(&self, state: BlockStateId) -> Vec<(String, String)>;
 }
 
 /// Access vanilla's `Level.random`, so draws come in vanilla's order.
