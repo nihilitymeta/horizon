@@ -22,6 +22,9 @@ const MESHLETS_PER_TASK: u32 = 64;
 const FRESH: u32 = u32::MAX;
 /// Frames' counts on their way back from the GPU at once.
 const COUNT_READBACKS: usize = 3;
+const FREE: u8 = 0;
+const PENDING: u8 = 1;
+const MAPPED: u8 = 2;
 
 /// A frame's counts, from the shaders (the `counts` binding): the tiles
 /// phase 1 and phase 2 dispatched, the boxes tested and the boxes seen.
@@ -134,8 +137,9 @@ pub struct MeshShaderPipeline {
     /// The frame's stamp (`LodDraw::params.w`).
     stamp: u32,
     counts_buffer: wgpu::Buffer,
-    /// Readbacks of `counts_buffer`, each mapped or free (`count_pending`).
-    count_readbacks: Vec<(wgpu::Buffer, std::sync::Arc<std::sync::atomic::AtomicBool>)>,
+    /// Readbacks of `counts_buffer`, each `FREE`, `PENDING` (its map requested
+    /// after the frame's submission) or `MAPPED` (read in `begin_frame`).
+    count_readbacks: Vec<(wgpu::Buffer, std::sync::Arc<std::sync::atomic::AtomicU8>)>,
     count_next: usize,
     /// The last frame's counts read back.
     counts: Counts,
@@ -410,7 +414,7 @@ impl MeshShaderPipeline {
                         usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                         mapped_at_creation: false,
                     }),
-                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                    std::sync::Arc::new(std::sync::atomic::AtomicU8::new(FREE)),
                 )
             })
             .collect();
@@ -611,21 +615,23 @@ impl MeshShaderPipeline {
             self.rebind = true;
         }
         self.stamp = self.stamp.wrapping_add(1).max(1);
-        for (buffer, mapped) in &self.count_readbacks {
-            if mapped.swap(false, std::sync::atomic::Ordering::AcqRel) {
-                if let Ok(data) = buffer.slice(..).get_mapped_range() {
-                    let words: Vec<u32> = bytemuck::pod_collect_to_vec(&data);
-                    if let [phase1, phase2, tested, seen] = words[..] {
-                        self.counts = Counts {
-                            phase1,
-                            phase2,
-                            tested,
-                            seen,
-                        };
-                    }
-                }
-                buffer.unmap();
+        for (buffer, state) in &self.count_readbacks {
+            if state.load(std::sync::atomic::Ordering::Acquire) != MAPPED {
+                continue;
             }
+            if let Ok(data) = buffer.slice(..).get_mapped_range() {
+                let words: Vec<u32> = bytemuck::pod_collect_to_vec(&data);
+                if let [phase1, phase2, tested, seen] = words[..] {
+                    self.counts = Counts {
+                        phase1,
+                        phase2,
+                        tested,
+                        seen,
+                    };
+                }
+            }
+            buffer.unmap();
+            state.store(FREE, std::sync::atomic::Ordering::Release);
         }
         write(&self.counts_buffer, 0, &[0; 16]);
         let tile_bytes = size_of::<GpuTile>() as u64;
@@ -758,27 +764,32 @@ impl MeshShaderPipeline {
     }
 
     /// After the frame's passes: copies the counts out for reading back, into a
-    /// free readback; `submitted` starts the read once the frame is submitted.
+    /// free readback, which the returned closure maps once the frame is
+    /// submitted (call it right after the submission). `None` when every
+    /// readback is still on its way: its map requested but not done, or done and
+    /// not yet read, since a copy into either fails the submission.
     pub fn end_frame(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Option<impl FnOnce() + Send + 'static> {
         let i = self.count_next;
-        let (buffer, mapped) = &self.count_readbacks[i];
-        if mapped.load(std::sync::atomic::Ordering::Acquire) {
+        let (buffer, state) = &self.count_readbacks[i];
+        if state.load(std::sync::atomic::Ordering::Acquire) != FREE {
             return None;
         }
         encoder.copy_buffer_to_buffer(&self.counts_buffer, 0, buffer, 0, 16);
         self.count_next = (i + 1) % COUNT_READBACKS;
-        let (buffer, mapped) = (buffer.clone(), mapped.clone());
+        state.store(PENDING, std::sync::atomic::Ordering::Release);
+        let (buffer, state) = (buffer.clone(), state.clone());
         Some(move || {
-            let flag = mapped.clone();
+            let done = state.clone();
             buffer
                 .slice(..)
                 .map_async(wgpu::MapMode::Read, move |result| {
-                    if result.is_ok() {
-                        flag.store(true, std::sync::atomic::Ordering::Release);
-                    }
+                    done.store(
+                        if result.is_ok() { MAPPED } else { FREE },
+                        std::sync::atomic::Ordering::Release,
+                    );
                 });
         })
     }

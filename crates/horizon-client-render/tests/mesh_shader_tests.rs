@@ -3,7 +3,7 @@
 //! `Sides::visible_from`, and on a mesh-shader GPU it draws a tile's quad
 //! where the vertex path would, and nothing where that path draws nothing.
 use horizon_client_render::{
-    lod::{DrawParams, MeshShaderPipeline, TileKey, TileRecord, mesh_shader_source},
+    lod::{DrawParams, MeshCounts, MeshShaderPipeline, TileKey, TileRecord, mesh_shader_source},
     mesher::{Part, SectionMesh, Sides, TerrainVertex},
 };
 use naga::valid::{Capabilities, ValidationFlags, Validator};
@@ -595,6 +595,102 @@ fn mesh_pipeline_draws_a_tiles_quad_as_the_vertex_path_would() {
     assert_eq!((mesh.tile_count(), mesh.slot_count()), (1, 1));
     let (top, _) = draw(&mut mesh, other, origin, None);
     assert!(top > 0);
+}
+
+/// Frames submitted faster than their count readbacks come back (the loading
+/// screen's, the title's) must not copy into a readback whose map is still
+/// pending: wgpu fails the submission ("Buffer ... is still mapped"), which the
+/// game treats as fatal.
+#[test]
+#[ignore = "requires a Vulkan mesh-shader GPU"]
+fn counts_readbacks_skip_frames_until_their_maps_land() {
+    let _guard = GPU_LOCK.lock().unwrap();
+    let Some((device, queue)) = mesh_device() else {
+        eprintln!("no mesh-shader GPU: skipped");
+        return;
+    };
+    let (terrain_layout, _) = terrain_group(&device, &queue);
+    let mut mesh = MeshShaderPipeline::new(
+        &device,
+        &terrain_layout,
+        wgpu::TextureFormat::Rgba8Unorm,
+        [("SPRITE_ARRAYS", 1.0), ("SPRITE_SPLIT", 2048.0)],
+        TERRAIN,
+    )
+    .expect("mesh pipeline");
+    let page = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("test arena page"),
+        size: 64,
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+    let params = [DrawParams {
+        view_proj: glam::Mat4::IDENTITY,
+        eye: None,
+        low: None,
+        debug: false,
+        phase: None,
+    }];
+    let frame = |mesh: &mut MeshShaderPipeline| {
+        mesh.set_visible(std::iter::empty());
+        mesh.begin_frame(
+            &device,
+            &mut |buffer, offset, bytes| queue.write_buffer(buffer, offset, bytes),
+            |p| (p == 0).then_some(&page),
+            0,
+            &params,
+        );
+        let mut encoder = device.create_command_encoder(&Default::default());
+        let read = mesh.end_frame(&mut encoder);
+        queue.submit([encoder.finish()]);
+        let copied = read.is_some();
+        if let Some(read) = read {
+            read();
+        }
+        copied
+    };
+    // The GPU busy for a while first, as it is with frames in flight, so the
+    // copies behind it leave the maps pending (a submission's own poll would
+    // land them otherwise). Then ten frames with no polling in between: once the
+    // readbacks are all on their way, the frames skip the copy instead of
+    // failing the submission.
+    let busy = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("busy"),
+        size: wgpu::Extent3d {
+            width: 4096,
+            height: 4096,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let view = busy.create_view(&Default::default());
+    let mut encoder = device.create_command_encoder(&Default::default());
+    for _ in 0..2000 {
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            ..Default::default()
+        });
+    }
+    queue.submit([encoder.finish()]);
+    let copied = (0..10).map(|_| frame(&mut mesh)).filter(|&c| c).count();
+    assert!(copied <= 3, "{copied} copies into 3 readbacks");
+    // Once the maps land, the readbacks are read and reused.
+    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+    assert!(frame(&mut mesh), "no readback freed after the maps landed");
+    assert_eq!(mesh.counts(), MeshCounts::default());
 }
 
 #[test]
