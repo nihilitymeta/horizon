@@ -83,6 +83,8 @@ mlua = { version = "0.12", features = ["luau", "vendored", "send"] }
 egui = { version = "0.37", default-features = false, features = ["default_fonts"] }
 egui-wgpu = { version = "0.37", default-features = false }
 egui-winit = { version = "0.37", default-features = false }
+# The developer tools' Lua console (docs/dev-tools.md): Luau, built from source, no system library.
+mlua = { version = "0.12", features = ["luau", "vendored", "send"] }
 
 [target.'cfg(unix)'.dependencies]
 # The server thread's CPU time per tick (`HORIZON_SPIKES`, spans.rs).

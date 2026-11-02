@@ -134,6 +134,17 @@ pub fn horizon_commands() -> Value {
             }
         }),
     );
+    children.insert(
+        "lua".to_string(),
+        serde_json::json!({
+            "type": "literal",
+            "executable": true,
+            "permissions": gamemasters,
+            "children": {
+                "code": { "type": "argument", "executable": true, "parser": "brigadier:string", "properties": { "type": "greedy" } }
+            }
+        }),
+    );
     Value::Object(serde_json::Map::from_iter([(
         "children".to_string(),
         Value::Object(children),
@@ -528,7 +539,7 @@ mod tests {
         };
         // A gamemaster gets the tools' commands with their arguments; a player does not.
         let ops = names(2, &Value::Null);
-        assert_eq!(&ops[..8], ["", "me", "goals", "inspect", "mobai", "nav", "senses", "watch"]);
+        assert_eq!(&ops[..9], ["", "me", "goals", "inspect", "lua", "mobai", "nav", "senses", "watch"]);
         assert!(ops.iter().filter(|n| *n == "targets").count() >= 6);
         assert!(ops.contains(&"path".to_string()) && ops.contains(&"log".to_string()));
         assert_eq!(names(0, &Value::Null), ["", "me"]);

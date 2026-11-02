@@ -4,6 +4,7 @@ mod admin;
 pub(super) mod compute;
 mod data;
 mod inspect;
+mod lua_console;
 pub(super) use data::place_summoned;
 mod effects;
 pub(super) mod execute;
@@ -1136,6 +1137,14 @@ impl Game<'_> {
             "watch.clear" => self.cmd_watch(ctx, true),
             "mobai.log" => self.cmd_mobai_log(ctx, false),
             "mobai.log.stop" => self.cmd_mobai_log(ctx, true),
+            "lua.toggle" => self.cmd_lua(None),
+            "lua.run" => {
+                let code = match ctx.get("code") {
+                    Some(Arg::Str(s)) => s.clone(),
+                    _ => String::new(),
+                };
+                self.cmd_lua(Some(code))
+            }
             "jfr" => self.cmd_jfr(ctx),
             "version" => self.cmd_version(),
             id if id.starts_with("test.") => self.cmd_test(id, ctx),

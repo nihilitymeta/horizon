@@ -138,6 +138,11 @@ pub fn register(d: &mut Dispatcher, root: usize) {
     d.executes(t, "mobai.log");
     let stop = d.literal(log, "stop");
     d.executes(stop, "mobai.log.stop");
+    let lua = d.literal(root, "lua");
+    d.requires(lua, GAMEMASTERS);
+    d.executes(lua, "lua.toggle");
+    let code = d.argument(lua, "code", ArgType::Greedy);
+    d.executes(code, "lua.run");
 
     // DebugCommand
     let debug = d.literal(root, "debug");

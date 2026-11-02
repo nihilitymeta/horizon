@@ -535,6 +535,7 @@ impl Game<'_> {
         // The developer tools' inspected entities, after every level ticked.
         if !paused {
             self.dev_inspect_tick();
+            self.dev_console_tick();
         }
         // `ServerTickEnd`: an errored tick or an idle-close failure (at
         // the `?` above) never reaches this site.

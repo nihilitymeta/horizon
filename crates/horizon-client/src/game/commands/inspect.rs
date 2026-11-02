@@ -28,7 +28,7 @@ pub const DIR: &str = "dev-tools";
 
 /// A target's entity id; players have none here (`/data get entity @s` reads
 /// the acting player, who is nobody on a tick).
-fn id_of(t: Target) -> Option<u32> {
+pub(super) fn id_of(t: Target) -> Option<u32> {
     match t {
         Target::Player | Target::Guest(_) => None,
         Target::Mob(id)
@@ -47,7 +47,20 @@ fn id_of(t: Target) -> Option<u32> {
         | Target::Falling(id)
         | Target::Rocket(id)
         | Target::Trident(id)
-        | Target::Spawner(id) => Some(id),
+        | Target::Spawner(id)
+        | Target::Fangs(id)
+        | Target::Cloud(id) => Some(id),
+    }
+}
+
+/// Remember ids the Lua console named, so the tick reads their data: the
+/// targets it found are in its own table.
+pub(super) fn remember_ids(ids: &[u32]) {
+    let mut watch = WATCH.lock().unwrap_or_else(|e| e.into_inner());
+    for &id in ids {
+        if !watch.iter().any(|t| id_of(*t) == Some(id)) {
+            watch.push(Target::Mob(id));
+        }
     }
 }
 

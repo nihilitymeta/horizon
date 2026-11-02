@@ -14,6 +14,8 @@
 //! (`mobs::observe`). The pointer is the game's until the tools' key frees it
 //! ([`holds_pointer`], which `Game::capture` obeys); while free, the mouse is
 //! the tools' and the keyboard is theirs only when a text field has focus.
+pub mod console;
+
 use crate::gfx::native_render::{RenderHooks, WorldDrawnEvent};
 use crate::mobs::observe::{self, BrainSnapshot, GoalRow, HistoryTick, Inspected, Series, View};
 use crate::mod_api::{Hooks, Host, Mods, NativeBlockRim, VisualsEvent};
@@ -800,6 +802,7 @@ fn watch_window(ctx: &egui::Context, item: &Inspected, series: &Series) {
 
 impl DevTools {
     fn ui(&self, ctx: &egui::Context) {
+        console::window(ctx);
         for item in &observe::snapshots() {
             for view in &item.views {
                 match view {
