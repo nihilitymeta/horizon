@@ -48,7 +48,8 @@ An entity that stops updating (gone, unloaded, the game paused) keeps its last d
 (`game/commands/lua_console.rs`, mlua, built from source) that runs what the window queues
 (`dev_tools/console.rs`) once a server tick, after the levels ticked. The window lists the `.lua` files of
 `dev-tools/scripts/` under the game folder with a run button each, shows the output, and takes a line. The line
-completes like the chat box: `Tab` takes the completion, `Up` and `Down` pick one. Inside an `mc.cmd("…")` string the
+completes like the chat box: `Tab` takes the completion, `Up` and `Down` pick one; with nothing to pick, `Up` and
+`Down` recall the lines run before, as a shell does (kept in `dev-tools/console-history.txt`). Inside an `mc.cmd("…")` string the
 completions are the chat box's own, from the tree the server sent (`Dispatcher::client_suggestions` on the window's
 game, asked once a frame through `dev_tools::console`); elsewhere they are the `mc` names and Lua's keywords. The `mc`
 table is bound to the game for the chunk's duration (`Lua::scope`), so a script cannot keep the game past its run;

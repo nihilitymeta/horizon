@@ -199,6 +199,54 @@ pub fn command_context(text: &str, cursor: usize) -> Option<(usize, String)> {
     Some((start, text[start..cursor].to_string()))
 }
 
+/// The lines run so far, newest last, kept across runs in
+/// `dev-tools/console-history.txt` under the game folder.
+static HISTORY: Mutex<Option<Vec<String>>> = Mutex::new(None);
+/// Where the history is kept.
+pub const HISTORY_FILE: &str = "dev-tools/console-history.txt";
+/// Lines of history kept.
+const HISTORY_KEEP: usize = 500;
+
+fn with_history<R>(f: impl FnOnce(&mut Vec<String>) -> R) -> R {
+    let mut slot = HISTORY.lock().unwrap_or_else(|e| e.into_inner());
+    let history = slot.get_or_insert_with(|| {
+        std::fs::read_to_string(HISTORY_FILE)
+            .map(|text| {
+                let lines: Vec<String> = text.lines().map(str::to_string).collect();
+                lines[lines.len().saturating_sub(HISTORY_KEEP)..].to_vec()
+            })
+            .unwrap_or_default()
+    });
+    f(history)
+}
+
+/// A line that was run: the newest of the history, unless it repeats the
+/// last one.
+pub fn remember(line: &str) {
+    let line = line.trim();
+    if line.is_empty() {
+        return;
+    }
+    with_history(|h| {
+        if h.last().is_some_and(|l| l == line) {
+            return;
+        }
+        h.push(line.to_string());
+        if h.len() > HISTORY_KEEP {
+            h.remove(0);
+        }
+        if let Some(dir) = Path::new(HISTORY_FILE).parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(HISTORY_FILE, h.join("\n") + "\n");
+    });
+}
+
+/// The history, oldest first.
+pub fn history() -> Vec<String> {
+    with_history(|h| h.clone())
+}
+
 /// Queue `code` to run on the server thread.
 pub fn submit(label: impl Into<String>, code: impl Into<String>) {
     INPUT
@@ -345,6 +393,45 @@ pub fn window(ctx: &egui::Context) {
             let cursor = cursor_of(ui.ctx(), &line);
             let shown = completions_for(&line, cursor).filter(|c| !c.items.is_empty());
             let mut set_cursor_to: Option<usize> = None;
+            // With no completions to pick from, Up and Down walk the lines
+            // run before, as a shell does; Down past the newest gives back
+            // what was being typed.
+            let hist_pos_id = window_id.with("history pos");
+            let draft_id = window_id.with("draft");
+            if focused && shown.is_none() {
+                let (down, up) = ui.input_mut(|i| {
+                    (
+                        i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown),
+                        i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp),
+                    )
+                });
+                if up || down {
+                    let history = history();
+                    let mut pos: Option<usize> = ui.data_mut(|d| d.get_temp(hist_pos_id)).flatten();
+                    if up && !history.is_empty() {
+                        let next = match pos {
+                            None => {
+                                ui.data_mut(|d| d.insert_temp(draft_id, line.clone()));
+                                history.len() - 1
+                            }
+                            Some(p) => p.saturating_sub(1),
+                        };
+                        pos = Some(next);
+                        line = history[next].clone();
+                        set_cursor_to = Some(line.len());
+                    } else if down && let Some(p) = pos {
+                        if p + 1 < history.len() {
+                            pos = Some(p + 1);
+                            line = history[p + 1].clone();
+                        } else {
+                            pos = None;
+                            line = ui.data_mut(|d| d.get_temp(draft_id)).unwrap_or_default();
+                        }
+                        set_cursor_to = Some(line.len());
+                    }
+                    ui.data_mut(|d| d.insert_temp(hist_pos_id, pos));
+                }
+            }
             if focused && let Some(c) = &shown {
                 let n = c.items.len();
                 selected = selected.min(n - 1);
@@ -455,12 +542,14 @@ pub fn window(ctx: &egui::Context) {
                     }
                     ui.weak("mc.on_tick handlers are running");
                 } else {
-                    ui.weak("Tab completes mc.* and, inside mc.cmd(\"…\"), vanilla commands; Enter runs");
+                    ui.weak("Tab completes mc.* and, inside mc.cmd(\"…\"), vanilla commands; Up/Down pick or recall; Enter runs");
                 }
             });
             if run && !line.trim().is_empty() {
+                remember(&line);
                 submit(format!("> {line}"), line.clone());
                 line.clear();
+                ui.data_mut(|d| d.insert_temp(hist_pos_id, None::<usize>));
             }
             ui.data_mut(|d| {
                 d.insert_temp(input_id, line);
