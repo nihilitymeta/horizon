@@ -14,14 +14,15 @@
 //! Scripts travel inside the `.hmod` under capability `scripts`, or load from
 //! `--dev-mod` folders. Mob behaviour is written as goals ([`goals`]).
 use crate::mod_api::{
-    BlockPos, BlockStateId, Flow, Hooks, Host, LevelDimension, LevelWriteHost, MobAiRegisterEvent,
-    MobSpawnedEvent, MobView, Mods, RandomTickEvent, RightClickBlockEvent, ServerTickEvent,
-    ServerTickPhase, TickBlockEvent, WorldLifecycleEvent,
+    BlockPos, BlockStateId, DataPackFilesEvent, Flow, Hooks, Host, LevelDimension, LevelWriteHost,
+    MobAiRegisterEvent, MobSpawnedEvent, MobView, Mods, RandomTickEvent, RightClickBlockEvent,
+    ServerTickEvent, ServerTickPhase, TickBlockEvent, WorldLifecycleEvent,
 };
 use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 pub mod goals;
@@ -37,6 +38,8 @@ const GLOBAL: &str = "horizon";
 const HANDLERS: &str = "horizon_handlers";
 /// The registry key of the queue of actions a handler asked for.
 const QUEUE: &str = "horizon_queue";
+/// The registry key of the modules `require` ran: `name -> value`.
+const LOADED: &str = "horizon_loaded";
 
 /// One scripted mod: its folder and its Lua state.
 pub struct LuaMod {
@@ -44,8 +47,12 @@ pub struct LuaMod {
     /// The `.hmod` or folder the scripts came from.
     source: PathBuf,
     lua: Lua,
+    /// The scripts, by path, as last read from `source`.
+    scripts: Scripts,
     /// The goals the scripts defined (`horizon.goal`), by name.
     goals: Goals,
+    /// Data loads seen (`data_pack_files`): the scripts reload from the second on.
+    loads: AtomicU32,
 }
 
 /// A mod's goal definitions, shared with the `horizon.goal` function.
@@ -60,9 +67,9 @@ impl std::fmt::Debug for LuaMod {
     }
 }
 
-/// The scripts of a mod, by path (`scripts/init.lua`), read once from its
-/// `.hmod` or folder.
-type Scripts = Arc<HashMap<String, String>>;
+/// The scripts of a mod, by path (`scripts/init.lua`), read from its
+/// `.hmod` or folder, shared with `require`.
+type Scripts = Arc<Mutex<HashMap<String, String>>>;
 
 /// The scripted mods the game runs, in order, as the trait mod list
 /// `entry::main_with` takes: the installed mods in `horizon-mods/` that are
@@ -124,6 +131,22 @@ impl LuaMod {
     /// Load the mod at `path` (a `.hmod` or a mod folder): its id from
     /// `horizon-mod.toml`, its scripts read once, `scripts/init.lua` run.
     pub fn load(path: &Path) -> Result<Self, String> {
+        let (id, scripts) = Self::read_scripts(path)?;
+        let m = LuaMod {
+            id,
+            source: path.to_owned(),
+            lua: Lua::new(),
+            scripts: Arc::new(Mutex::new(scripts)),
+            goals: Goals::default(),
+            loads: AtomicU32::new(0),
+        };
+        m.install_api().map_err(|e| e.to_string())?;
+        m.run(ENTRY).map_err(|e| e.to_string())?;
+        Ok(m)
+    }
+
+    /// The mod's id and scripts, read from its `.hmod` or folder.
+    fn read_scripts(path: &Path) -> Result<(String, HashMap<String, String>), String> {
         let at = |e: String| format!("{}: {e}", path.display());
         let package = Package::read(path).map_err(at)?;
         let manifest = package.manifest;
@@ -138,16 +161,30 @@ impl LuaMod {
             let code = String::from_utf8(bytes).map_err(|_| at(format!("{name}: not UTF-8")))?;
             scripts.insert(name.clone(), code);
         }
-        let scripts: Scripts = Arc::new(scripts);
-        let m = LuaMod {
-            id: manifest.id.clone(),
-            source: path.to_owned(),
-            lua: Lua::new(),
-            goals: Goals::default(),
+        Ok((manifest.id, scripts))
+    }
+
+    /// Reads the scripts again and runs `scripts/init.lua` afresh: the
+    /// handlers, the goals and the modules `require` ran are forgotten first;
+    /// the Lua state and its globals stay. On an error the mod keeps running
+    /// as it was, with its old handlers.
+    pub fn reload(&self) -> Result<(), String> {
+        let (_, scripts) = Self::read_scripts(&self.source)?;
+        let lua = &self.lua;
+        let reset = || -> mlua::Result<()> {
+            lua.set_named_registry_value(HANDLERS, lua.create_table()?)?;
+            lua.set_named_registry_value(QUEUE, lua.create_table()?)?;
+            lua.set_named_registry_value(LOADED, lua.create_table()?)?;
+            Ok(())
         };
-        m.install_api(scripts.clone()).map_err(|e| e.to_string())?;
-        m.run(&scripts, ENTRY).map_err(|e| e.to_string())?;
-        Ok(m)
+        reset().map_err(|e| e.to_string())?;
+        if let Ok(mut goals) = self.goals.lock() {
+            goals.clear();
+        }
+        if let Ok(mut current) = self.scripts.lock() {
+            *current = scripts;
+        }
+        self.run(ENTRY).map_err(|e| e.to_string())
     }
 
     /// The mod's id, as its manifest says.
@@ -155,10 +192,12 @@ impl LuaMod {
         &self.id
     }
 
-    fn install_api(&self, scripts: Scripts) -> mlua::Result<()> {
+    fn install_api(&self) -> mlua::Result<()> {
         let lua = &self.lua;
+        let scripts = self.scripts.clone();
         lua.set_named_registry_value(HANDLERS, lua.create_table()?)?;
         lua.set_named_registry_value(QUEUE, lua.create_table()?)?;
+        lua.set_named_registry_value(LOADED, lua.create_table()?)?;
         let api = lua.create_table()?;
         let id = self.id.clone();
         api.set("mod_id", id.as_str())?;
@@ -230,7 +269,6 @@ impl LuaMod {
             )?;
         }
         // `require("name")`: `scripts/name.lua` of this mod, run once.
-        let loaded = lua.create_table()?;
         api.set(
             "require",
             lua.create_function(move |lua, name: String| {
@@ -239,13 +277,18 @@ impl LuaMod {
                         "require({name:?}): a plain module name"
                     )));
                 }
+                let loaded: Table = lua.named_registry_value(LOADED)?;
                 if let Some(v) = loaded.get::<Option<Value>>(name.as_str())? {
                     return Ok(v);
                 }
                 let key = format!("scripts/{name}.lua");
-                let code = scripts.get(&key).ok_or_else(|| {
-                    mlua::Error::runtime(format!("require({name:?}): no {key} in the mod"))
-                })?;
+                let code = scripts
+                    .lock()
+                    .ok()
+                    .and_then(|s| s.get(&key).cloned())
+                    .ok_or_else(|| {
+                        mlua::Error::runtime(format!("require({name:?}): no {key} in the mod"))
+                    })?;
                 let v: Value = lua.load(code.as_str()).set_name(&key).eval()?;
                 let v = if v.is_nil() { Value::Boolean(true) } else { v };
                 loaded.set(name.as_str(), &v)?;
@@ -259,14 +302,16 @@ impl LuaMod {
     }
 
     /// Runs the script at `name` (`scripts/init.lua`).
-    fn run(&self, scripts: &Scripts, name: &str) -> mlua::Result<()> {
-        let code = scripts
-            .get(name)
+    fn run(&self, name: &str) -> mlua::Result<()> {
+        let code = self
+            .scripts
+            .lock()
+            .ok()
+            .and_then(|s| s.get(name).cloned())
             .ok_or_else(|| mlua::Error::runtime(format!("{name}: not in the mod")))?;
         self.lua.load(code.as_str()).set_name(name).exec()
     }
 
-    /// Call the handlers of `hook` with `args`, then run what they queued.
     /// Whether any handler is registered for `hook`: the hooks that fire
     /// often (random ticks) build their arguments only then.
     fn has_handlers(&self, hook: &str) -> bool {
@@ -432,6 +477,21 @@ fn dimension_id(dimension: LevelDimension) -> &'static str {
 }
 
 impl Hooks for LuaMod {
+    /// The server's data tables load (the world opens, `/reload`): from the
+    /// second load on, the scripts are read and run again, so an edited
+    /// script is live after `/reload`.
+    fn data_pack_files(&self, _host: &dyn Host, _event: &mut DataPackFilesEvent<'_>) {
+        if self.loads.fetch_add(1, Ordering::Relaxed) == 0 {
+            return;
+        }
+        match self.reload() {
+            Ok(()) => log::info!("Horizon: Lua mod {} reloaded", self.id),
+            Err(e) => log::error!(
+                "Horizon: Lua mod {} not reloaded, still running as before: {e}",
+                self.id
+            ),
+        }
+    }
     /// A block that ticks randomly does: `random_tick(dimension, block, x, y, z, props)`.
     fn random_tick(&self, level: &mut dyn LevelWriteHost, event: &mut RandomTickEvent) -> Flow {
         self.level_hook(
@@ -819,6 +879,62 @@ experimental = ["scripts"]
             Flow::Continue
         ));
         assert_eq!(level.writes.len(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A host nothing is asked of.
+    struct NoHost;
+    impl Host for NoHost {}
+
+    #[test]
+    fn reload_reads_the_scripts_again_and_forgets_the_old_handlers() {
+        let (dir, path) = hmod(
+            "reload",
+            &[
+                ("scripts/init.lua", b"VERSION = require('v')\nhorizon.on('server_tick', function() end)\nhorizon.on('server_tick', function() end)"),
+                ("scripts/v.lua", b"return 1"),
+            ],
+        );
+        let m = LuaMod::load(&path).unwrap();
+        let handlers = |m: &LuaMod| -> i64 {
+            let h: Table = m.lua.named_registry_value(HANDLERS).unwrap();
+            h.get::<Option<Table>>("server_tick")
+                .unwrap()
+                .map_or(0, |l| l.len().unwrap())
+        };
+        assert_eq!(handlers(&m), 2);
+        // The mod's file changes under it: one handler, a new module value.
+        std::fs::write(
+            &path,
+            Package::write_files(
+                MANIFEST_TEXT,
+                None,
+                &[
+                    (
+                        "scripts/init.lua",
+                        b"VERSION = require('v')\nhorizon.on('server_tick', function() end)",
+                    ),
+                    ("scripts/v.lua", b"return 2"),
+                ],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        // The first data load is the one the scripts were loaded for; the next reloads.
+        let mut files = Vec::new();
+        m.data_pack_files(&NoHost, &mut DataPackFilesEvent { files: &mut files });
+        assert_eq!(handlers(&m), 2);
+        m.data_pack_files(&NoHost, &mut DataPackFilesEvent { files: &mut files });
+        assert_eq!(handlers(&m), 1);
+        assert_eq!(m.lua.globals().get::<i64>("VERSION").unwrap(), 2);
+        // A broken edit leaves the running handlers alone.
+        std::fs::write(
+            &path,
+            Package::write_files(MANIFEST_TEXT, None, &[("scripts/init.lua", b"error('x')")])
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(m.reload().is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
