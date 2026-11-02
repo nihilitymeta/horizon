@@ -286,7 +286,7 @@ mod tests {
         s.extras.fullbright = true;
         // The launcher turned it off while the game was closed.
         s.mods.disabled.insert("fullbright".into());
-        sync_from_mods_with(&[e.clone()], &mut s);
+        sync_from_mods_with(std::slice::from_ref(&e), &mut s);
         assert!(!s.extras.fullbright);
         // The player turns it on in Extras: the list follows at save.
         s.extras.fullbright = true;
