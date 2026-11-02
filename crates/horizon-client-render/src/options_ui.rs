@@ -2442,10 +2442,7 @@ impl OptionsUi {
                 crate::extras::Item::MinimapZoom,
                 crate::extras::Item::MinimapRotate,
             ],
-            "fps_counter" => &[
-                crate::extras::Item::FpsCorner,
-                crate::extras::Item::FpsLows,
-            ],
+            "fps_counter" => &[crate::extras::Item::FpsCorner, crate::extras::Item::FpsLows],
             "keystrokes" => &[
                 crate::extras::Item::KeystrokesCorner,
                 crate::extras::Item::KeystrokesCps,
@@ -2462,14 +2459,18 @@ impl OptionsUi {
         if !items.is_empty() {
             rows.push(Row::Header("horizon.mods.settings"));
             let extra = |item: crate::extras::Item| {
-                let value = format!("{}: {}", item.caption(), item.value(&s.extras));
+                let value = format!("{}: {}", item.caption_text(), item.value(&s.extras));
                 let label = if item.key_name().is_some() && self.selected_key == item.key_name() {
                     Text::literal(format!("> {value} <")).with_color(text::YELLOW)
                 } else {
                     Text::literal(value)
                 };
                 let widget = button(0.0, 0.0, 150.0, label, Act::Extra(item));
-                if !on || item.parent().is_some_and(|p| p.switch(&s.extras) == Some(false)) {
+                if !on
+                    || item
+                        .parent()
+                        .is_some_and(|p| p.switch(&s.extras) == Some(false))
+                {
                     inactive(widget)
                 } else {
                     widget
@@ -2561,7 +2562,7 @@ impl OptionsUi {
                     return vec![Row::Header("horizon.mods.empty")];
                 }
                 let extra = |item: crate::extras::Item| {
-                    let value = format!("{}: {}", item.caption(), item.value(&s.extras));
+                    let value = format!("{}: {}", item.caption_text(), item.value(&s.extras));
                     let label = if item.key_name().is_some() && self.selected_key == item.key_name()
                     {
                         Text::literal(format!("> {value} <")).with_color(text::YELLOW)
