@@ -1,0 +1,8 @@
+{
+  "id": "anti_lag",
+  "title": "AMD Anti-Lag 2 1.0",
+  "description": "Paces the CPU to the GPU through VK_AMD_anti_lag for lower input latency. Vulkan on AMD only; inert elsewhere.",
+  "kind": "engine",
+  "default_on": true,
+  "setting": { "file": "graphics", "key": "antiLag", "on": "true", "off": "false" }
+}
