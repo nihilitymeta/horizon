@@ -189,9 +189,10 @@ turned away past the limit, whichever door it came through. `conn::serve_websock
 handshake (`Connection::from_websocket`, with the login phase's 10 s deadline on the socket), replaces the
 socket's loopback address with the one the tunnel reports in `CF-Connecting-IP` or `X-Forwarded-For` (the
 same substitution Velocity forwarding makes, trusted only because a loopback listener's only peer is a
-process on this computer), and then calls the same `serve_connection` that TCP players go through, so from
-the handshake packet on there is one code path, and IP bans, the connection log and the per-address count
-see the player. `Lan::stop` stops the WebSocket listener with the TCP one. On the client, `net.rs` carries a `NetInfo` on the
+process on this computer), moves the connection's counted place from loopback to that address (so one
+player address behind the tunnel gets its ten places and no more, and an eleventh is turned away), and
+then calls the same `serve_connection` that TCP players go through, so from the handshake packet on there
+is one code path, and IP bans, the connection log and the per-address count see the player. `Lan::stop` stops the WebSocket listener with the TCP one. On the client, `net.rs` carries a `NetInfo` on the
 session: once the socket is up, `NetInfo::classify` labels the join address, and the F3 screen renders it as
 the `net` group. Loopback, RFC 1918, link-local, CGNAT (which is what Tailscale uses) and unique-local IPv6
 count as `lan`.
@@ -217,10 +218,6 @@ Cloudflare: set `websocket_port`, start the server, join at `ws://127.0.0.1:2558
 
 ## What it does not do yet
 
-- **The per-address share is counted on the proxy's address.** A socket is counted when it is accepted,
-  before the handshake reveals the player's address, so the ten-places-an-address rule sees loopback (which
-  is exempt) and not the player; only the total limit holds for tunnel players. IP bans and the log do see
-  the player.
 - **The forwarded address is trusted from loopback.** Any process on the server's computer can connect to
   the door and claim an address. The listener never binds elsewhere, so that is the host's own processes.
 - **No LAN screen setting.** A LAN world opens the door from `HORIZON_WS_PORT` only; there is no checkbox in

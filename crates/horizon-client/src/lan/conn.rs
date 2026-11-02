@@ -488,15 +488,24 @@ pub const MEMORY_ADDRESS: std::net::SocketAddr = std::net::SocketAddr::V4(
 /// per-address count see the player and not the proxy; it is believed only
 /// from a proxy on this computer, which is the only peer a loopback listener
 /// has.
-pub fn serve_websocket(
+pub(super) fn serve_websocket(
     stream: TcpStream,
     address: std::net::SocketAddr,
     shared: Arc<Shared>,
+    counted: &mut super::Counted,
 ) -> Result<(), String> {
     let e = |e: horizon_protocol::Error| e.to_string();
     let (c, forwarded) = Connection::from_websocket(stream, Some(LOGIN_TIMEOUT)).map_err(e)?;
     let address = match forwarded {
-        Some(ip) if address.ip().is_loopback() => std::net::SocketAddr::new(ip, address.port()),
+        Some(ip) if address.ip().is_loopback() => {
+            // The place taken at accept was the proxy's: now it is the player's,
+            // so one address behind the tunnel gets its share and no more.
+            if !counted.recount(ip) {
+                shared.turned_away();
+                return Ok(());
+            }
+            std::net::SocketAddr::new(ip, address.port())
+        }
         _ => address,
     };
     serve_connection(c, address, shared)

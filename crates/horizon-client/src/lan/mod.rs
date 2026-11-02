@@ -651,7 +651,7 @@ impl Lan {
                     Door {
                         thread: "horizon-lan-conn",
                         tag: "lan",
-                        serve: conn::serve,
+                        serve: serve_tcp,
                     },
                 )
             })?;
@@ -801,6 +801,31 @@ thread_local! {
 
 /// An accepted connection, uncounted once its thread ends (or couldn't start).
 struct Counted(Arc<Shared>, IpAddr, u64);
+impl Counted {
+    /// Moves this connection's place to `ip`, the player's address once a
+    /// proxy's handshake has revealed it; false when `ip` already holds its
+    /// [`PER_ADDRESS`] places, in which case the place stays where it was and
+    /// the caller closes the connection.
+    fn recount(&mut self, ip: IpAddr) -> bool {
+        if ip == self.1 {
+            return true;
+        }
+        let mut by = self.0.by_address.lock().unwrap_or_else(|e| e.into_inner());
+        let there = by.get(&ip).copied().unwrap_or(0);
+        if there >= PER_ADDRESS && !shared_address(ip) {
+            return false;
+        }
+        if let Some(n) = by.get_mut(&self.1) {
+            *n -= 1;
+            if *n == 0 {
+                by.remove(&self.1);
+            }
+        }
+        by.insert(ip, there + 1);
+        self.1 = ip;
+        true
+    }
+}
 impl Drop for Counted {
     fn drop(&mut self) {
         self.0
@@ -948,7 +973,19 @@ struct Door {
     thread: &'static str,
     /// The tag of its log lines.
     tag: &'static str,
-    serve: fn(TcpStream, SocketAddr, Arc<Shared>) -> Result<(), String>,
+    /// Serves one accepted socket; the [`Counted`] place is the connection's
+    /// to move to the player's address once a proxy's handshake reveals it.
+    serve: fn(TcpStream, SocketAddr, Arc<Shared>, &mut Counted) -> Result<(), String>,
+}
+
+/// The TCP door: the socket's address is the player's.
+fn serve_tcp(
+    stream: TcpStream,
+    address: SocketAddr,
+    shared: Arc<Shared>,
+    _counted: &mut Counted,
+) -> Result<(), String> {
+    conn::serve(stream, address, shared)
 }
 
 fn accept_loop(listener: TcpListener, shared: Arc<Shared>, stop: &AtomicBool, door: Door) {
@@ -969,7 +1006,7 @@ fn accept_loop(listener: TcpListener, shared: Arc<Shared>, stop: &AtomicBool, do
                     .name(door.thread.into())
                     .spawn(move || {
                         WAITING.set(Some(counted.2));
-                        handle(stream, addr, counted.0.clone(), door);
+                        handle(stream, addr, counted, door);
                     });
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -979,9 +1016,10 @@ fn accept_loop(listener: TcpListener, shared: Arc<Shared>, stop: &AtomicBool, do
         }
     }
 }
-fn handle(stream: TcpStream, addr: SocketAddr, shared: Arc<Shared>, door: Door) {
+fn handle(stream: TcpStream, addr: SocketAddr, mut counted: Counted, door: Door) {
     let _ = stream.set_nonblocking(false);
-    if let Err(e) = (door.serve)(stream, addr, shared)
+    let shared = counted.0.clone();
+    if let Err(e) = (door.serve)(stream, addr, shared, &mut counted)
         && std::env::var_os("HORIZON_NET_DEBUG").is_some()
     {
         log::warn!("[{}] {addr}: {e}", door.tag);
@@ -1111,6 +1149,48 @@ mod tests {
         .unwrap();
         assert_eq!(status["description"], "Behind a tunnel");
         assert_eq!(status["players"]["max"], 3);
+    }
+
+    /// A tunnel's connections are all accepted from loopback; once the handshake names the player's
+    /// address, the place moves there, and that address gets its [`PER_ADDRESS`] and no more.
+    #[test]
+    fn a_place_moves_to_the_forwarded_address_and_counts_there() {
+        let config = NetConfig {
+            announce: false,
+            listen: false,
+            ..NetConfig::lan(0, "Tunnel".into(), 20)
+        };
+        let lan = Lan::start_with(Arc::new(data::SyncData::empty()), config).unwrap();
+        let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+        let mut places: Vec<Counted> = (0..PER_ADDRESS + 1)
+            .map(|_| lan.shared.count(ip("127.0.0.1")).unwrap())
+            .collect();
+        let moved: Vec<bool> = places
+            .iter_mut()
+            .map(|place| place.recount(ip("203.0.113.7")))
+            .collect();
+        assert_eq!(moved.iter().filter(|m| **m).count(), PER_ADDRESS);
+        assert!(!moved[PER_ADDRESS], "the eleventh place stays refused");
+        {
+            let by = lan.shared.by_address.lock().unwrap();
+            assert_eq!(by.get(&ip("203.0.113.7")), Some(&PER_ADDRESS));
+            assert_eq!(
+                by.get(&ip("127.0.0.1")),
+                Some(&1),
+                "the refused place stays loopback's"
+            );
+        }
+        // Another player behind the same tunnel still gets in; a shared address has no limit.
+        let mut other = lan.shared.count(ip("127.0.0.1")).unwrap();
+        assert!(other.recount(ip("198.51.100.2")));
+        assert!(places[0].recount(ip("10.0.0.5")));
+        assert!(
+            places[1].recount(ip("203.0.113.7")),
+            "its own address again is a no-op"
+        );
+        drop((places, other));
+        assert!(lan.shared.by_address.lock().unwrap().is_empty());
+        assert_eq!(lan.shared.connections.load(Ordering::Acquire), 0);
     }
 
     /// One public address takes at most [`PER_ADDRESS`] places, its own coming back as they end;
