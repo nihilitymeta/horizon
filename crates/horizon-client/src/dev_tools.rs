@@ -214,17 +214,32 @@ pub fn window_event(window: Option<&Window>, event: &WindowEvent, playing: bool)
     }
 }
 
+/// Whether a window of the tools was open last frame, for [`frame`].
+static HAD_WINDOWS: AtomicBool = AtomicBool::new(false);
+
 /// Once a frame on the window thread: egui's input for the frame (events,
 /// time, the screen rectangle, the window's scale), kept for the render
-/// thread. A frame the render thread skipped keeps its events.
-pub fn frame(window: Option<&Window>) {
+/// thread. A frame the render thread skipped keeps its events. True when
+/// the tools just let the pointer go because their last window closed: the
+/// game grabs it back.
+pub fn frame(window: Option<&Window>) -> bool {
     if !enabled() {
-        return;
+        return false;
     }
     let Some(window) = window else {
-        return;
+        return false;
     };
     zoom_for(window);
+    let windows = observe::watching() || console::OPEN.load(Ordering::Relaxed);
+    let had = HAD_WINDOWS.swap(windows, Ordering::Relaxed);
+    let mut grab_back = false;
+    if holds_pointer() && had && !windows {
+        HOLDS_POINTER.store(false, Ordering::Relaxed);
+        with_winit(window, |s| {
+            s.egui_input_mut().events.push(egui::Event::PointerGone);
+        });
+        grab_back = true;
+    }
     let mut input = with_winit(window, |s| s.take_egui_input(window));
     let mut slot = INPUT.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(previous) = slot.take() {
@@ -233,6 +248,7 @@ pub fn frame(window: Option<&Window>) {
         input.events = events;
     }
     *slot = Some(input);
+    grab_back
 }
 
 /// The egui wgpu renderer, made on the first frame for the frame's colour format.

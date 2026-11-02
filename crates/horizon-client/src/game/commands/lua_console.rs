@@ -414,6 +414,31 @@ impl Game<'_> {
         }
     }
 
+    /// Once a frame on the window's game: the completions the console asked
+    /// for. Inside `mc.cmd("…")` they are the chat box's own, from the
+    /// tree the server sent; elsewhere the `mc` names.
+    pub(in crate::game) fn dev_console_complete(&mut self) {
+        let Some((text, cursor)) = console::take_completion_request() else {
+            return;
+        };
+        let completions = match console::command_context(&text, cursor) {
+            Some((start, command)) => {
+                let tree = crate::game::chat::chat_tree(&self.remote);
+                let parse = tree.parse(&command, &self.ui.registries);
+                let (range, list) =
+                    tree.client_suggestions(&parse, command.len(), &self.ui.registries);
+                console::Completions {
+                    text: text.clone(),
+                    cursor,
+                    range: (start + range.0, start + range.1),
+                    items: list.into_iter().map(|s| (s.text, s.tooltip)).collect(),
+                }
+            }
+            None => console::lua_completions(&text, cursor),
+        };
+        console::set_completions(completions);
+    }
+
     /// `/lua`: the console window; `/lua <code>` runs a line in it.
     pub(super) fn cmd_lua(&mut self, code: Option<String>) -> super::R<i32> {
         match code {

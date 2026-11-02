@@ -23,7 +23,8 @@ mouselook and gives it back. While it is free the mouse is the tools': the panel
 and clicked, the window's own title bar and edges work, a click beside a panel does nothing, and the camera does not
 turn. The keyboard stays the game's (walking with the pointer free works) except while a text field of the tools
 has focus. `Game::capture` refuses to grab the pointer while the tools hold it, so a screen opened and closed
-meanwhile (chat, the pause menu) leaves it free; the key takes it back from anywhere. `HORIZON_DEV_TOOLS_SCALE` is
+meanwhile (chat, the pause menu) leaves it free; the key takes it back from anywhere, and so does closing the
+tools' last window (`dev_tools::frame` tells `extras_frame` to grab). `HORIZON_DEV_TOOLS_SCALE` is
 egui's zoom over the window's own scale; unset, it follows the window's height (1.0 below 1200 px, 1.5 up to 2000,
 2.0 above).
 
@@ -46,7 +47,10 @@ An entity that stops updating (gone, unloaded, the game paused) keeps its last d
 **The Lua console.** `/lua` opens it (`/lua <code>` runs a line in it): a Luau state on the server thread
 (`game/commands/lua_console.rs`, mlua, built from source) that runs what the window queues
 (`dev_tools/console.rs`) once a server tick, after the levels ticked. The window lists the `.lua` files of
-`dev-tools/scripts/` under the game folder with a run button each, shows the output, and takes a line. The `mc`
+`dev-tools/scripts/` under the game folder with a run button each, shows the output, and takes a line. The line
+completes like the chat box: `Tab` takes the completion, `Up` and `Down` pick one. Inside an `mc.cmd("…")` string the
+completions are the chat box's own, from the tree the server sent (`Dispatcher::client_suggestions` on the window's
+game, asked once a frame through `dev_tools::console`); elsewhere they are the `mc` names and Lua's keywords. The `mc`
 table is bound to the game for the chunk's duration (`Lua::scope`), so a script cannot keep the game past its run;
 `mc` is bound afresh each run and each tick. An entity argument is a selector string (`"@e[type=pig,limit=1]"`) or
 an id a selector found before (`mc.select` returns them); players have no id here, so reach them by selector in a
