@@ -1,0 +1,8 @@
+{
+  "id": "fps_counter",
+  "title": "Performance Telemetry HUD 1.0",
+  "description": "Frame time graph, FPS counter and GPU latency on the HUD.",
+  "kind": "hook",
+  "default_on": false,
+  "setting": { "file": "extras", "key": "fps", "on": "true", "off": "false" }
+}
