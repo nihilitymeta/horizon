@@ -77,6 +77,8 @@ ureq = { version = "2", default-features = false, features = ["tls"] }
 unicode-bidi = "0.3.18"
 # `LevelStorageAccess.estimateDiskSpace`: usable disk space, without unsafe code on Windows.
 fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
+# Lua scripts as mods (docs/lua-bindings.md): Luau, built from source, one state per mod shared across threads.
+mlua = { version = "0.12", features = ["luau", "vendored", "send"] }
 
 [target.'cfg(unix)'.dependencies]
 # The server thread's CPU time per tick (`HORIZON_SPIKES`, spans.rs).

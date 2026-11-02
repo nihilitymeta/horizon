@@ -3,7 +3,7 @@ use crate::{crash, game, logging};
 
 /// Start the game. The executable supplies the allocator and retains the mod API marker.
 pub fn main() {
-    main_with(Default::default());
+    main_with(crate::lua_mods::discover(std::env::args().skip(1)));
 }
 
 /// Start the game with trait mods in dispatch order.
