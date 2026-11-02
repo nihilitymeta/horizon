@@ -226,6 +226,25 @@ impl MeshShaderPipeline {
         source: &str,
     ) -> Option<Self> {
         let limits = device.limits();
+        // `fs_tile_box` forces the depth test before it runs, so a hidden box
+        // marks nothing seen. Metal offers no early depth test through wgpu
+        // (naga's MSL writer has none): there every box's fragments run and the
+        // test sees every tile a nearer one hides, until it compares the depth
+        // itself as `gfx/cull.rs`'s `DepthTest::InShader` does.
+        let stripped;
+        let source = if device
+            .features()
+            .contains(wgpu::Features::SHADER_EARLY_DEPTH_TEST)
+        {
+            source
+        } else {
+            stripped = source.replace("@early_depth_test(force)\n", "");
+            log::info!(
+                "Horizon: mesh shaders: no early depth test on this device: the tile box test \
+                 shades every fragment"
+            );
+            &stripped
+        };
         let big = source.contains("array<TerrainOut, 256>");
         let meshlets_per_task = source
             .split_once("const MESHLETS_PER_TASK: u32 = ")

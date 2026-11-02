@@ -159,7 +159,25 @@ static GPU_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// Byte offset of `filtering` in terrain.wgsl's `Globals`.
 const FILTERING_OFFSET: u64 = 2144;
 
+/// The crate's warnings on stderr: a GPU test that skips or fails says why.
+struct StderrLog;
+impl log::Log for StderrLog {
+    fn enabled(&self, m: &log::Metadata) -> bool {
+        m.level() <= log::Level::Info
+    }
+    fn log(&self, r: &log::Record) {
+        if self.enabled(r.metadata()) {
+            eprintln!("[{}] {}", r.level(), r.args());
+        }
+    }
+    fn flush(&self) {}
+}
+
 fn mesh_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+    static LOG: StderrLog = StderrLog;
+    if log::set_logger(&LOG).is_ok() {
+        log::set_max_level(log::LevelFilter::Info);
+    }
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let adapter = pollster::block_on(instance.request_adapter(&Default::default())).ok()?;
     if !adapter
@@ -481,7 +499,7 @@ fn drawn_halves(pixels: &[[u8; 4]]) -> (usize, usize) {
 }
 
 #[test]
-#[ignore = "requires a Vulkan mesh-shader GPU"]
+#[ignore = "requires a mesh-shader GPU"]
 fn mesh_pipeline_draws_a_tiles_quad_as_the_vertex_path_would() {
     let _guard = GPU_LOCK.lock().unwrap();
     let Some((device, queue)) = mesh_device() else {
@@ -602,7 +620,7 @@ fn mesh_pipeline_draws_a_tiles_quad_as_the_vertex_path_would() {
 /// pending: wgpu fails the submission ("Buffer ... is still mapped"), which the
 /// game treats as fatal.
 #[test]
-#[ignore = "requires a Vulkan mesh-shader GPU"]
+#[ignore = "requires a mesh-shader GPU"]
 fn counts_readbacks_skip_frames_until_their_maps_land() {
     let _guard = GPU_LOCK.lock().unwrap();
     let Some((device, queue)) = mesh_device() else {
@@ -694,7 +712,7 @@ fn counts_readbacks_skip_frames_until_their_maps_land() {
 }
 
 #[test]
-#[ignore = "requires a Vulkan mesh-shader GPU"]
+#[ignore = "requires a mesh-shader GPU"]
 fn tile_slots_are_recycled() {
     // The records alone: 200 rounds of 20 tiles coming and going keep the
     // slots to about the tiles alive at once.
