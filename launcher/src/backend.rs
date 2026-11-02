@@ -3495,6 +3495,10 @@ pub struct Settings {
     /// Off by default, so the opening animation shows unless the player turns it off.
     #[serde(default)]
     pub skip_opening: bool,
+    /// Keeps this launcher as it is when a newer release is out: a local build (`Local · <branch>`)
+    /// would otherwise be replaced by the release's launcher at the next check.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub skip_launcher_updates: bool,
     /// Linux: whether the launcher keeps its entry in the applications menu (`desktop`). Unset
     /// means yes; removing the entry stores `false`, so it doesn't come back on the next start.
     #[serde(default, skip_serializing_if = "Option::is_none")]

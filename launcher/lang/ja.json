@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "コスメをまだ持っていません。",
   "Claim for free": "無料で受け取る",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "ショップの決済サービスはお住まいの国に対応していないため、ファウンダーセットをここで無料で受け取れます。",
-  "The Founder Set is yours.": "ファウンダーセットはあなたのものです。"
+  "The Founder Set is yours.": "ファウンダーセットはあなたのものです。",
+  "Update the launcher automatically": "ランチャーを自動的に更新する",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "新しいランチャーのリリースが見つかるとインストールします。オフにするとローカルビルドはそのまま残ります。"
 }
