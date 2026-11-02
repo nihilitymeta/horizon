@@ -3628,6 +3628,7 @@ pub(crate) mod tests {
                 living_jump: |_, _| {},
                 ingredient: |_, _, _| {},
                 ingredient_test: |_, _, _, _| {},
+                mob_ai_register: |_| {},
             });
         assert!(installed.is_ok());
         let kind = Kind::Mod(Box::leak(Box::new(crate::containers::ModMenuType {

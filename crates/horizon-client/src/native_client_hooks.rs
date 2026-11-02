@@ -1,5 +1,6 @@
 //! Callbacks into the executable for native trait mods' client-library hooks.
 use crate::items::ItemStack;
+use crate::mobs::Mob;
 use serde_json::{Map, Value};
 use std::sync::OnceLock;
 
@@ -14,6 +15,7 @@ pub struct NativeClientHooks {
     pub living_jump: fn(u32, &str),
     pub ingredient: fn(&str, &Map<String, Value>, &mut Vec<String>),
     pub ingredient_test: fn(&str, &Map<String, Value>, &ItemStack, &mut bool),
+    pub mob_ai_register: fn(&mut Mob),
 }
 
 static HOOKS: OnceLock<NativeClientHooks> = OnceLock::new();
@@ -94,6 +96,12 @@ pub(crate) fn living_fall(
 ) {
     if let Some(hooks) = HOOKS.get() {
         (hooks.living_fall)(entity, kind, distance, multiplier, cancel);
+    }
+}
+
+pub(crate) fn mob_ai_register(mob: &mut Mob) {
+    if let Some(hooks) = HOOKS.get() {
+        (hooks.mob_ai_register)(mob);
     }
 }
 
