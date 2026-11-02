@@ -319,6 +319,10 @@ impl MeshShaderPipeline {
                     entry_point: Some("ts_lod"),
                     compilation_options: wgpu::PipelineCompilationOptions {
                         constants,
+                        // `out_mesh` and the payload are written before they are read
+                        // (`vertex_count` bounds the write-out), so no zero fill: Metal's
+                        // would clear the workgroup's 14 KiB with one thread per meshlet.
+                        zero_initialize_workgroup_memory: false,
                         ..Default::default()
                     },
                 }),
@@ -327,6 +331,10 @@ impl MeshShaderPipeline {
                     entry_point: Some("ms_lod"),
                     compilation_options: wgpu::PipelineCompilationOptions {
                         constants,
+                        // `out_mesh` and the payload are written before they are read
+                        // (`vertex_count` bounds the write-out), so no zero fill: Metal's
+                        // would clear the workgroup's 14 KiB with one thread per meshlet.
+                        zero_initialize_workgroup_memory: false,
                         ..Default::default()
                     },
                 },
