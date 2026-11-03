@@ -68,7 +68,9 @@ model under `assets/`), and **natural spawning** is a NeoForge biome modifier
 (`registry.data("neoforge/biome_modifier/crawlers", { type = "neoforge:add_spawns", biomes = "#minecraft:is_overworld",
 spawners = { { type = registry.id .. ":crawler", weight = 20, min_count = 1, max_count = 3 } } })`), which puts the
 mob in the natural spawns of those biomes in its kind's category (a mod mob's: its template's; say `category` to
-choose). Both are read when the game builds its content, so they need a restart, not a `/reload`.
+choose). Both are read when the game builds its content, so they need a restart, not a `/reload`. A mob's own look is
+data too: `model` (`registry.asset("models/entity/<name>", { texture_size, parts })`, cubes by part as a vanilla
+layer is written), `animation` (a set by name) and `sounds` on its entity type ([mob-ai-hooks.md](mob-ai-hooks.md)).
 
 ```lua
 -- scripts/registry.lua
