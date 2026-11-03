@@ -187,10 +187,6 @@ const LUA_HELPERS: &[(&str, &str)] = &[
         "`horizon.set_block_property(key, value[, flags])`",
     ),
     (
-        "set_item_entity",
-        "`horizon.drop_item(x, y, z, id[, count])`",
-    ),
-    (
         "set_mob_health",
         "`horizon.set_mob_health(dimension, id, health)`",
     ),
@@ -209,7 +205,7 @@ const LUA_HELPERS: &[(&str, &str)] = &[
     ),
     (
         "summon",
-        "`horizon.summon(dimension, kind, x, y, z)`, `horizon.drop_item`",
+        "`horizon.summon(dimension, kind, x, y, z)`, `horizon.drop_item(x, y, z, id[, count])`",
     ),
     (
         "surface_heights",

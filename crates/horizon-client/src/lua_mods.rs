@@ -80,9 +80,11 @@ impl Budget {
     /// Runs `f`, a call into Lua, with `limit` as its budget.
     pub(crate) fn run<R>(&self, limit: Duration, f: impl FnOnce() -> R) -> R {
         let deadline = (epoch().elapsed() + limit).as_nanos() as u64;
-        self.0.store(deadline.max(1), Ordering::Relaxed);
+        // A call nested in another (a hook fired by a summon answered at
+        // once) gives the outer call its deadline back.
+        let outer = self.0.swap(deadline.max(1), Ordering::Relaxed);
         let r = f();
-        self.0.store(0, Ordering::Relaxed);
+        self.0.store(outer, Ordering::Relaxed);
         r
     }
 }
@@ -110,6 +112,11 @@ const RUNNER: &str = "horizon_runner";
 const RUNNER_CODE: &str = r#"
 return function(slot)
   return function(handlers, queue, host, full, ...)
+    -- A hook fired from inside a handler (a summon answered at once tells of
+    -- the spawn) runs nested: the outer call's host and queued actions are
+    -- kept for it, and the inner takes only what it queued itself.
+    local outer_host, outer_full = slot[1], slot[2]
+    local start = #queue
     slot[1] = host
     slot[2] = full
     local failed
@@ -117,13 +124,13 @@ return function(slot)
       local ok, e = pcall(f, ...)
       if not ok then failed = e break end
     end
-    slot[1] = nil
-    slot[2] = nil
+    slot[1] = outer_host
+    slot[2] = outer_full
     local n = #queue
     local out
-    if n > 0 then
+    if n > start then
       out = {}
-      for i = 1, n do out[i] = queue[i]; queue[i] = nil end
+      for i = start + 1, n do out[i - start] = queue[i]; queue[i] = nil end
     end
     if failed ~= nil then error(failed, 0) end
     return out
@@ -840,15 +847,23 @@ type Scripts = Arc<Mutex<HashMap<String, String>>>;
 /// whose scripts fail to load is left out with the error in the log.
 pub fn discover(args: impl Iterator<Item = String>) -> Mods {
     let mut dev: Vec<PathBuf> = Vec::new();
+    let mut game_dir: Option<PathBuf> = None;
     let mut args = args.peekable();
     while let Some(arg) = args.next() {
-        let folder = match arg.strip_prefix("--dev-mod=") {
-            Some(path) => path.to_owned(),
-            None if arg == "--dev-mod" => match args.next() {
-                Some(path) => path,
-                None => break,
-            },
-            None => continue,
+        let value = |flag: &str, args: &mut std::iter::Peekable<_>| -> Option<String> {
+            match arg.strip_prefix(flag) {
+                Some(rest) => rest.strip_prefix('=').map(str::to_owned),
+                None => None,
+            }
+            .or_else(|| (arg == flag).then(|| args.next()).flatten())
+        };
+        if let Some(folder) = value("--game-dir", &mut args) {
+            let dir = PathBuf::from(folder);
+            game_dir = Some(std::path::absolute(&dir).unwrap_or(dir));
+            continue;
+        }
+        let Some(folder) = value("--dev-mod", &mut args) else {
+            continue;
         };
         let dir = PathBuf::from(folder);
         dev.push(std::path::absolute(&dir).unwrap_or(dir));
@@ -904,8 +919,9 @@ pub fn discover(args: impl Iterator<Item = String>) -> Mods {
                     .map(|o| (o.id.clone(), o.path.clone()))
             })
             .collect();
-        // The game folder's `config/`, as the host's `config_dir` names it.
-        let config_dir = here.join("config");
+        // The game folder's `config/`, as the host's `config_dir` names it
+        // (the game moves there once its options are read: `--game-dir`).
+        let config_dir = game_dir.as_deref().unwrap_or(&here).join("config");
         match LuaMod::load_with(&c.path, &libraries, Some(&config_dir)) {
             Ok(lua) => {
                 log::info!(
@@ -2176,23 +2192,21 @@ impl LuaMod {
                     args.get(4)?,
                     args.get(5)?,
                 );
+                // As `/summon minecraft:item ~ ~ ~ {Item: {id, count}}`: an item
+                // entity made with no stack is gone at once.
+                use horizon_world::nbt::Tag;
+                let mut item = Compound::default();
+                item.insert("id".into(), Tag::String(qualify(&id).as_str().into()));
+                item.insert("count".into(), Tag::Int(count.unwrap_or(1).max(1) as i32));
+                let mut nbt = Compound::default();
+                nbt.insert("Item".into(), Tag::Compound(item));
                 let dimension = host.dimension().to_owned();
-                let Some(entity) =
-                    host.summon(&dimension, "minecraft:item", [x, y, z], Default::default())
-                else {
+                if host
+                    .summon(&dimension, "minecraft:item", [x, y, z], nbt)
+                    .is_none()
+                {
                     log::debug!("[lua:{}] drop_item: no item entity made", self.id);
-                    return Ok(());
-                };
-                host.set_item_entity(
-                    &dimension,
-                    entity,
-                    ItemStack {
-                        item: qualify(&id).as_str().into(),
-                        count: count.unwrap_or(1).max(1),
-                        damage: 0,
-                        extra: None,
-                    },
-                );
+                }
             }
             "effect" => {
                 let (target, name, ticks, amplifier): (Value, String, i32, Option<i32>) =
@@ -3708,19 +3722,26 @@ experimental = ["scripts"]
             ));
             true
         }
-        fn summon(&mut self, _: &str, kind: &str, pos: [f64; 3], _: Compound) -> Option<u32> {
-            self.lines
-                .lock()
-                .unwrap()
-                .push(format!("summon {kind} at {},{},{}", pos[0], pos[1], pos[2]));
+        fn summon(&mut self, _: &str, kind: &str, pos: [f64; 3], nbt: Compound) -> Option<u32> {
+            use horizon_world::nbt::{JavaString, Tag};
+            let text = |t: Option<&Tag>| match t {
+                Some(Tag::String(s)) => s.to_string_lossy(),
+                Some(Tag::Int(n)) => n.to_string(),
+                _ => "?".to_owned(),
+            };
+            let item = match nbt.get(&JavaString::from("Item")) {
+                Some(Tag::Compound(item)) => format!(
+                    " of {} x{}",
+                    text(item.get(&JavaString::from("id"))),
+                    text(item.get(&JavaString::from("count")))
+                ),
+                _ => String::new(),
+            };
+            self.lines.lock().unwrap().push(format!(
+                "summon {kind} at {},{},{}{item}",
+                pos[0], pos[1], pos[2]
+            ));
             Some(42)
-        }
-        fn set_item_entity(&mut self, _: &str, id: u32, stack: ItemStack) -> bool {
-            self.lines
-                .lock()
-                .unwrap()
-                .push(format!("item {id} = {} {}", stack.count, stack.item));
-            true
         }
         fn set_nickname(&mut self, _: u128, nickname: Option<&str>) -> bool {
             self.lines
@@ -4437,10 +4458,118 @@ experimental = ["scripts"]
                 "set_block 1,3,3 state 2 flags 2",
                 "edit minecraft:stone 6 runs y 64 h 2",
                 "falling state 1 at 1.5,70,3.5 v 0,0.5,0",
-                "summon minecraft:item at 1.5,65,3.5",
-                "item 42 = 4 minecraft:bone",
+                "summon minecraft:item at 1.5,65,3.5 of minecraft:bone x4",
             ]
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A host whose summon tells the mod of the spawn at once, as the game
+    /// does: the hook runs nested inside the handler that summoned.
+    struct ReentrantHost {
+        lines: Mutex<Vec<String>>,
+        m: Option<Arc<LuaMod>>,
+    }
+    impl Host for ReentrantHost {
+        fn dimension(&self) -> &'static str {
+            "minecraft:overworld"
+        }
+        fn attachments(
+            &mut self,
+            _: Holder,
+        ) -> crate::mod_api::AttachmentResult<&mut crate::mod_api::Attachments> {
+            Err(crate::mod_api::AttachmentError::MissingHolder)
+        }
+        fn acting_player(&self) -> Option<crate::mod_api::NativeServerPlayer> {
+            Some(crate::mod_api::NativeServerPlayer {
+                uuid: 7,
+                name: "steve".into(),
+                permission: 0,
+                dimension: "minecraft:overworld".into(),
+                position: [1.0, 64.0, 1.0],
+                game_mode: 0,
+                health: 20.0,
+                yaw: 0.0,
+                pitch: 0.0,
+            })
+        }
+        fn held(&self) -> Option<(String, u32, bool)> {
+            None
+        }
+        fn level_players(&self) -> Vec<crate::mod_api::NativeServerPlayer> {
+            self.acting_player().into_iter().collect()
+        }
+        fn block(&self, pos: [i32; 3]) -> String {
+            if pos == [1, 2, 3] {
+                "minecraft:stone".into()
+            } else {
+                "minecraft:air".into()
+            }
+        }
+        fn broadcast(&self, text: crate::mod_api::Text) {
+            self.lines.lock().unwrap().push(text.plain());
+        }
+        fn summon(&mut self, _: &str, kind: &str, pos: [f64; 3], _: Compound) -> Option<u32> {
+            let m = self.m.clone().unwrap();
+            m.mob_spawned(
+                self,
+                &mut MobSpawnedEvent {
+                    dimension: "minecraft:overworld",
+                    kind,
+                    pos,
+                    natural: false,
+                },
+            );
+            Some(42)
+        }
+    }
+
+    #[test]
+    fn a_hook_fired_inside_a_handler_keeps_the_outer_calls_host_and_actions() {
+        let (dir, path) = hmod(
+            "reentrant",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.on("mob_spawned", function(dimension, kind, x, y, z, natural)
+                  horizon.broadcast("spawned " .. kind .. " at " .. x)
+                  SPAWN_READ = horizon.block(1, 2, 3)
+                end)
+                horizon.command("nest", 0, function(player, args)
+                  horizon.broadcast("before")
+                  local id = horizon.summon(player.dimension, "ruby:crawler", 5, 64, 5)
+                  horizon.broadcast("after " .. tostring(id))
+                  AFTER_READ = horizon.block(1, 2, 3)
+                end)
+                "#,
+            )],
+        );
+        let m = Arc::new(LuaMod::load(&path, &[]).unwrap());
+        let mut host = ReentrantHost {
+            lines: Mutex::new(Vec::new()),
+            m: Some(m.clone()),
+        };
+        let steve = host.acting_player().unwrap();
+        assert_eq!(
+            m.perform_command(
+                &mut host,
+                &mut PerformCommandEvent {
+                    player: &steve,
+                    command: "nest",
+                },
+            ),
+            Flow::Cancel
+        );
+        // The inner hook applied only what it queued, inside the summon; the
+        // outer handler's lines came after it, and its reads still worked.
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            ["spawned ruby:crawler at 5", "before", "after 42"]
+        );
+        let g = m.lua.globals();
+        assert_eq!(g.get::<String>("SPAWN_READ").unwrap(), "minecraft:stone");
+        assert_eq!(g.get::<String>("AFTER_READ").unwrap(), "minecraft:stone");
+        host.m = None;
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
