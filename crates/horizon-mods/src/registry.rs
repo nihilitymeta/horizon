@@ -42,7 +42,15 @@ const KINDS: [&str; 6] = [
     "menu",
 ];
 
-type Files = Arc<Mutex<BTreeMap<String, Vec<u8>>>>;
+/// What the script registered so far: the files by path and their bytes in
+/// all, checked against the content caps as each is added (the Lua memory
+/// cap does not cover this side).
+#[derive(Default)]
+struct Registered {
+    files: BTreeMap<String, Vec<u8>>,
+    total: u64,
+}
+type Files = Arc<Mutex<Registered>>;
 
 /// Runs `code` as the registry script of the mod `id` owning `namespaces`
 /// (its id among them): the files it registered, by path.
@@ -81,7 +89,11 @@ pub fn run_within(
         .exec()
         .map_err(at)?;
     lua.remove_interrupt();
-    let out = files.lock().map_err(|_| "registry".to_owned())?.clone();
+    let out = files
+        .lock()
+        .map_err(|_| "registry".to_owned())?
+        .files
+        .clone();
     Ok(out)
 }
 
@@ -166,13 +178,42 @@ fn split<'a>(name: &'a str, id: &'a str) -> (&'a str, &'a str) {
     }
 }
 
+/// Keeps a registered file: a plain content path under `assets/` or `data/`
+/// (a `scripts/` path would shadow one of the mod's own scripts: the
+/// registry declares content, not code), not registered before, and within
+/// the content caps, checked here so a script cannot fill memory before
+/// `Content::read` would refuse the result.
 fn add(files: &Files, path: String, bytes: Vec<u8>) -> mlua::Result<()> {
+    use crate::content::{MAX_FILE, MAX_FILES, MAX_TOTAL};
     crate::content::check_path(&path).map_err(mlua::Error::runtime)?;
+    if path.starts_with("scripts/") {
+        return Err(mlua::Error::runtime(format!(
+            "{path}: the registry declares content under assets/ and data/; scripts/ holds the mod's own files"
+        )));
+    }
+    if bytes.len() as u64 > MAX_FILE {
+        return Err(mlua::Error::runtime(format!(
+            "{path}: over {} MiB",
+            MAX_FILE >> 20
+        )));
+    }
     let mut files = files.lock().map_err(|_| mlua::Error::runtime("registry"))?;
-    if files.contains_key(&path) {
+    if files.files.contains_key(&path) {
         return Err(mlua::Error::runtime(format!("{path}: registered twice")));
     }
-    files.insert(path, bytes);
+    if files.files.len() >= MAX_FILES {
+        return Err(mlua::Error::runtime(format!(
+            "{path}: more than {MAX_FILES} content files"
+        )));
+    }
+    if files.total + bytes.len() as u64 > MAX_TOTAL {
+        return Err(mlua::Error::runtime(format!(
+            "{path}: the content is over {} MiB",
+            MAX_TOTAL >> 20
+        )));
+    }
+    files.total += bytes.len() as u64;
+    files.files.insert(path, bytes);
     Ok(())
 }
 
@@ -342,6 +383,38 @@ mod tests {
     }
 
     #[test]
+    fn the_content_caps_stop_a_script_as_it_registers() {
+        // One file past the count is refused where it is added, not once a
+        // million are in memory; the total of their bytes the same.
+        let e = run_within(
+            &format!(
+                "for i = 1, {} do registry.file('data/ruby/' .. i .. '.json', 'x') end",
+                crate::content::MAX_FILES + 1
+            ),
+            "ruby",
+            &["ruby".to_owned()],
+            Duration::from_secs(30),
+        )
+        .unwrap_err();
+        assert!(
+            e.contains("more than") && e.contains("content files"),
+            "{e}"
+        );
+        let e = run_within(
+            &format!(
+                "local big = string.rep('x', {}) for i = 1, {} do registry.file('data/ruby/' .. i .. '.txt', big) end",
+                crate::content::MAX_FILE,
+                crate::content::MAX_TOTAL / crate::content::MAX_FILE + 1
+            ),
+            "ruby",
+            &["ruby".to_owned()],
+            Duration::from_secs(30),
+        )
+        .unwrap_err();
+        assert!(e.contains("over") && e.contains("MiB"), "{e}");
+    }
+
+    #[test]
     fn a_bad_script_is_an_error_naming_it() {
         let e = run_ruby("registry.block('a', { template = 'x' })\nerror('boom')").unwrap_err();
         assert!(
@@ -361,6 +434,12 @@ mod tests {
         assert!(run_ruby("io.open('x')").is_err());
         // The state reaches no file and no other code: mlua's own `require`
         // (which reads .lua files from disk) and `loadstring` are gone.
+        // A scripts/ path would shadow a script of the mod's own.
+        let e = run_ruby("registry.file('scripts/init.lua', 'x')").unwrap_err();
+        assert!(
+            e.contains("scripts/init.lua") && e.contains("scripts/"),
+            "{e}"
+        );
         let e = run_ruby("require('../../x')").unwrap_err();
         assert!(e.contains("require") && e.contains("no other code"), "{e}");
         let e = run_ruby("loadstring('registry.block(\"a\", {})')()").unwrap_err();
