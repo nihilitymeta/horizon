@@ -1116,6 +1116,37 @@ impl Game<'_> {
     pub(super) fn native_give_levels(&mut self, uuid: u128, levels: i32) -> bool {
         self.native_as_player(uuid, |game| game.give_levels(levels))
     }
+    /// Gives the player `uuid` the effect `effect` (`minecraft:regeneration`)
+    /// for `ticks` ticks (-1: forever) at `amplifier`, as `/effect give`
+    /// does: a stronger one replaces what they have, an equal one extends it.
+    /// False, and nothing given, for an effect the game doesn't have, a
+    /// player who isn't here or is dead, and for another player inside a
+    /// player's hook, as for `native_give_experience`. API 367.
+    pub(super) fn native_player_effect(
+        &mut self,
+        uuid: u128,
+        effect: &str,
+        ticks: i32,
+        amplifier: i32,
+    ) -> bool {
+        let Some(def) = horizon_client::brewing::effect(effect) else {
+            return false;
+        };
+        let instance = horizon_client::effects::EffectInstance::new(def.id, ticks, amplifier);
+        self.native_as_player(uuid, |game| {
+            game.add_player_effect(instance);
+        })
+    }
+    /// Takes up to `count` plain `item` from the player `uuid`'s inventory,
+    /// their main hand first, as `native_take_items` takes from the acting
+    /// player: what it took. 0 for a player who isn't here or is dead, and
+    /// for another player inside a player's hook, as for
+    /// `native_give_stack`. API 368.
+    pub(super) fn native_take_from(&mut self, uuid: u128, item: &str, count: u32) -> u32 {
+        let mut taken = 0;
+        self.native_as_player(uuid, |game| taken = game.native_take_items(item, count));
+        taken
+    }
     /// Runs `f` with the player `uuid`'s state in place: theirs already when
     /// they are the acting player (the host, or a guest swapped in), else a
     /// guest's through `as_guest`, only where no other player is swapped in.

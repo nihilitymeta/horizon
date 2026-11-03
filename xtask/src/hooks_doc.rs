@@ -104,6 +104,141 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ("perform_command", "`fn(player, args)` of `horizon.command`"),
 ];
 
+/// The host helpers the Lua runtime calls, and the `horizon.*` function or
+/// hook argument each stands behind (`docs/lua-bindings.md`).
+const LUA_HELPERS: &[(&str, &str)] = &[
+    (
+        "acting_player",
+        "`player` in the hooks of a player's action",
+    ),
+    (
+        "attachments",
+        "`data` on a mob, `horizon.world_data()`, `horizon.player_data(player)`",
+    ),
+    ("block", "`horizon.block(x, y, z)`"),
+    ("block_property", "`horizon.block_property(x, y, z, key)`"),
+    ("broadcast", "`horizon.broadcast(text)`"),
+    (
+        "carried_stack",
+        "`horizon.inventory(player)` for the acting player, `horizon.set_count(n)` in `item_tick`",
+    ),
+    (
+        "config_dir",
+        "`horizon.config()`, `horizon.save_config(t)` (`config/<id>.json`, read by the runtime itself)",
+    ),
+    ("data", "`horizon.data(path)`"),
+    ("day_time", "`horizon.time().day_time`"),
+    (
+        "dimension",
+        "`dimension` in the hooks, `horizon.time().dimension`",
+    ),
+    (
+        "edit_blocks",
+        "`horizon.fill(x1, y1, z1, x2, y2, z2, id[, props])`",
+    ),
+    ("feedback", "`horizon.feedback(text)`"),
+    (
+        "give_experience",
+        "`horizon.give_experience(player, points)`",
+    ),
+    ("give_items", "`horizon.give_items(id, count)`"),
+    ("give_levels", "`horizon.give_levels(player, levels)`"),
+    ("give_stack", "`horizon.give_items(player, id, count)`"),
+    ("held", "`held` in the hooks, `player.held`"),
+    ("kill_mob", "`horizon.kill_mob(dimension, id)`"),
+    (
+        "level_players",
+        "`horizon.players()`, `horizon.player(who)`, and a player named to any helper",
+    ),
+    ("light", "`horizon.light(x, y, z)`"),
+    (
+        "mob_effect",
+        "`horizon.effect(id, name, ticks[, amplifier])`",
+    ),
+    ("mob_view", "`horizon.mob(id)`, `mob` in the mob hooks"),
+    ("mob_views", "`horizon.mobs()`"),
+    ("mod_block_entity_data", "`data` in the block hooks"),
+    (
+        "particles",
+        "`horizon.particles(name, x, y, z[, count, spread, speed])`",
+    ),
+    (
+        "play_sound",
+        "`horizon.sound(name, x, y, z[, volume, pitch])`",
+    ),
+    (
+        "player_effect",
+        "`horizon.effect(player, name, ticks[, amplifier])`",
+    ),
+    ("player_raycast", "`horizon.raycast(player, distance)`"),
+    (
+        "player_stacks",
+        "`horizon.inventory(player)`, `horizon.count_items(player, id)`, `horizon.carried_items(player)`",
+    ),
+    ("push_mob", "`horizon.push_mob(dimension, id, x, y, z)`"),
+    ("remove_mob", "`horizon.remove_mob(dimension, id)`"),
+    ("run_command", "`horizon.run_command(line)`"),
+    (
+        "set_block",
+        "`horizon.set_block(x, y, z, id[, props][, flags])`",
+    ),
+    (
+        "set_block_property",
+        "`horizon.set_block_property(key, value[, flags])`",
+    ),
+    (
+        "set_item_entity",
+        "`horizon.drop_item(x, y, z, id[, count])`",
+    ),
+    (
+        "set_mob_health",
+        "`horizon.set_mob_health(dimension, id, health)`",
+    ),
+    (
+        "set_mod_block_entity_data",
+        "`data` written back after a block hook",
+    ),
+    ("set_nickname", "`horizon.set_nickname(player[, name])`"),
+    (
+        "spawn_falling_block",
+        "`horizon.falling_block(x, y, z, id[, vx, vy, vz])`",
+    ),
+    (
+        "state_named",
+        "the block id and properties of `horizon.set_block` and `horizon.falling_block`",
+    ),
+    (
+        "summon",
+        "`horizon.summon(dimension, kind, x, y, z)`, `horizon.drop_item`",
+    ),
+    (
+        "surface_heights",
+        "`horizon.surface_height(x, z[, heightmap])`",
+    ),
+    ("take_from", "`horizon.take_items(player, id, count)`"),
+    ("take_items", "`horizon.take_items(id, count)`"),
+    (
+        "teleport_mob",
+        "`horizon.teleport_mob(dimension, id, x, y, z)`",
+    ),
+    ("tell", "`horizon.tell(player, text)`"),
+    (
+        "title",
+        "`horizon.title(player, text)`, `horizon.subtitle`, `horizon.action_bar`",
+    ),
+    (
+        "title_times",
+        "`horizon.title_times(player, fade_in, stay, fade_out)`",
+    ),
+    ("weather", "`horizon.time().rain` and `.thunder`"),
+];
+
+/// The helpers `LUA_HELPERS` names that the runtime reaches without a call
+/// on the host: the attachments through the attachment types, the config
+/// folder computed as the host does.
+#[cfg(test)]
+const LUA_HELPERS_INDIRECT: &[&str] = &["attachments", "config_dir"];
+
 pub fn run(check: bool) -> Result<(), String> {
     generate(&Path::new(env!("CARGO_MANIFEST_DIR")).join(".."), check)
 }
@@ -230,6 +365,7 @@ fn generate(root: &Path, check: bool) -> Result<(), String> {
         prose(&f.attrs, native)
     };
     let lua: BTreeMap<&str, &str> = LUA_HOOKS.iter().copied().collect();
+    let lua_helpers: BTreeMap<&str, &str> = LUA_HELPERS.iter().copied().collect();
     let mut out = String::new();
     out.push_str("<!-- Generated by `cargo run -p xtask -- hooks-doc` from native-hooks.json and the native_* functions' docs: edit those, then regenerate. -->\n");
     out.push_str("# Hook points and host helpers\n\n");
@@ -255,7 +391,7 @@ The full doc of each is on its `native_<name>` function.\n\n");
         ));
         count += 1;
     }
-    out.push_str("\n## Host helpers\n\n| Helper | API | What |\n|---|---|---|\n");
+    out.push_str("\n## Host helpers\n\n| Helper | API | Lua | What |\n|---|---|---|---|\n");
     let mut helpers = catalog["helpers"]
         .as_array()
         .ok_or("catalog helpers must be an array")?
@@ -266,19 +402,31 @@ The full doc of each is on its `native_<name>` function.\n\n");
         let target = helper["target"].as_str().ok_or("helper target missing")?;
         let text = docs_of(target, &format!("native_{name}"), &mut parsed)?;
         let api = api_of(&text).map_or("—".to_owned(), |n| n.to_string());
-        out.push_str(&format!("| `{name}` | {api} | {} |\n", cell(&text)));
+        let lua = lua_helpers.get(name).copied().unwrap_or("");
+        out.push_str(&format!("| `{name}` | {api} | {lua} | {} |\n", cell(&text)));
     }
     out.push_str(&format!(
-        "\n{count} hook points, {} helpers, {} of the hooks reaching Lua.\n",
+        "\n{count} hook points, {} helpers; {} of the hooks and {} of the helpers reaching Lua.\n",
         helpers.len(),
         hooks
             .iter()
             .filter(|h| h["name"].as_str().is_some_and(|n| lua.contains_key(n)))
+            .count(),
+        helpers
+            .iter()
+            .filter(|h| h["name"]
+                .as_str()
+                .is_some_and(|n| lua_helpers.contains_key(n)))
             .count()
     ));
     for (name, _) in LUA_HOOKS {
         if !hooks.iter().any(|h| h["name"].as_str() == Some(name)) {
             return Err(format!("LUA_HOOKS names {name}, which is not a hook point"));
+        }
+    }
+    for (name, _) in LUA_HELPERS {
+        if !helpers.iter().any(|h| h["name"].as_str() == Some(name)) {
+            return Err(format!("LUA_HELPERS names {name}, which is not a helper"));
         }
     }
     let path = root.join("docs/api/hook-points.md");
@@ -324,6 +472,54 @@ mod tests {
             .map(|(n, _)| n.to_string())
             .collect();
         assert_eq!(answered, named);
+    }
+
+    /// The host helpers the Lua runtime calls (`host.name(...)` or
+    /// `h.name(...)` in `lua_mods.rs`, outside its tests) are the ones the
+    /// reference says stand behind a `horizon.*` function, no more and no
+    /// fewer (beside the two reached without a call).
+    #[test]
+    fn the_helpers_the_runtime_calls_are_the_ones_the_reference_names() {
+        use syn::visit::Visit;
+        struct Calls(std::collections::BTreeSet<String>);
+        impl<'ast> Visit<'ast> for Calls {
+            fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
+                if let syn::Expr::Path(p) = &*call.receiver
+                    && p.path.is_ident("host") | p.path.is_ident("h")
+                {
+                    self.0.insert(call.method.to_string());
+                }
+                syn::visit::visit_expr_method_call(self, call);
+            }
+            fn visit_item_mod(&mut self, m: &'ast syn::ItemMod) {
+                if m.ident != "tests" {
+                    syn::visit::visit_item_mod(self, m);
+                }
+            }
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let src =
+            std::fs::read_to_string(root.join("crates/horizon-client/src/lua_mods.rs")).unwrap();
+        let file = syn::parse_file(&src).unwrap();
+        let mut calls = Calls(Default::default());
+        calls.visit_file(&file);
+        let catalog: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(root.join("native-hooks.json")).unwrap())
+                .unwrap();
+        let helpers: std::collections::BTreeSet<String> = catalog["helpers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h["name"].as_str().unwrap().to_owned())
+            .collect();
+        let mut called: std::collections::BTreeSet<String> =
+            calls.0.intersection(&helpers).cloned().collect();
+        called.extend(super::LUA_HELPERS_INDIRECT.iter().map(|s| s.to_string()));
+        let named: std::collections::BTreeSet<String> = super::LUA_HELPERS
+            .iter()
+            .map(|(n, _)| n.to_string())
+            .collect();
+        assert_eq!(called, named);
     }
 
     #[test]

@@ -713,6 +713,22 @@
     {
       "name": "title_times",
       "target": "horizon_client::game::native_server::Game<'_>::native_title_times"
+    },
+    {
+      "name": "state_named",
+      "target": "horizon_client::game::native_world_edit::Game<'_>::native_state_named"
+    },
+    {
+      "name": "mob_effect",
+      "target": "horizon_client::game::native_mobs::Game<'_>::native_mob_effect"
+    },
+    {
+      "name": "player_effect",
+      "target": "horizon_client::game::native_server::Game<'_>::native_player_effect"
+    },
+    {
+      "name": "take_from",
+      "target": "horizon_client::game::native_server::Game<'_>::native_take_from"
     }
   ],
   "hooks": [

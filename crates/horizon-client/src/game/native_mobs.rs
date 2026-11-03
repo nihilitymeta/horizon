@@ -312,6 +312,40 @@ impl Game<'_> {
         m.needs_sync = true;
         true
     }
+    /// Gives the living mob `id` the effect `effect` (`minecraft:speed`) for
+    /// `ticks` ticks (-1: forever) at `amplifier`, as `/effect give` does on
+    /// a mob (`LivingEntity.addEffect`): a stronger one replaces what it
+    /// has, an equal one extends it, a weaker one is kept hidden. False for
+    /// no such living mob, another dimension, or an effect the game doesn't
+    /// have. API 366.
+    pub(super) fn native_mob_effect(
+        &mut self,
+        dimension: &str,
+        id: u32,
+        effect: &str,
+        ticks: i32,
+        amplifier: i32,
+    ) -> bool {
+        if !self.native_mob_level(dimension) {
+            return false;
+        }
+        let Some(def) = horizon_client::brewing::effect(effect) else {
+            return false;
+        };
+        let name = horizon_client::brewing::namespaced(def.id);
+        let Some(m) = self
+            .mobs
+            .iter_mut()
+            .find(|m| m.id == id && !m.removed && m.alive())
+        else {
+            return false;
+        };
+        let new = !m.has_effect(name);
+        m.add_effect_with(name, ticks, amplifier, false, true);
+        m.needs_sync = true;
+        self.mod_effect_added(name, Some(id as i32), amplifier, new);
+        true
+    }
     /// Kills mob `id` as `/kill` does: it falls and drops its loot. False for
     /// no such living mob or another dimension. API 37.
     pub(super) fn native_kill_mob(&mut self, dimension: &str, id: u32) -> bool {

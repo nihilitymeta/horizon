@@ -36,6 +36,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 pub mod goals;
+pub mod json;
 pub mod nbt;
 
 /// Wall-clock time one handler or one goal function may take before Luau's
@@ -108,14 +109,16 @@ const QUEUE: &str = "horizon_queue";
 const RUNNER: &str = "horizon_runner";
 const RUNNER_CODE: &str = r#"
 return function(slot)
-  return function(handlers, queue, host, ...)
+  return function(handlers, queue, host, full, ...)
     slot[1] = host
+    slot[2] = full
     local failed
     for _, f in ipairs(handlers) do
       local ok, e = pcall(f, ...)
       if not ok then failed = e break end
     end
     slot[1] = nil
+    slot[2] = nil
     local n = #queue
     local out
     if n > 0 then
@@ -156,6 +159,19 @@ return function(slot, horizon)
   horizon.raycast = function(who, distance) return read("raycast", who, distance) end
   horizon.world_data = function() return read("world_data") end
   horizon.player_data = function(who) return read("player_data", who) end
+  horizon.light = function(x, y, z) return read("light", x, y, z) end
+  horizon.surface_height = function(x, z, heightmap) return read("surface_height", x, z, heightmap) end
+  horizon.inventory = function(who) return read("inventory", who) end
+  horizon.count_items = function(who, item) return read("count_items", who, item) end
+  horizon.carried_items = function(who) return read("carried_items", who) end
+  horizon.data = function(path) return read("data", path) end
+  -- A summon with a host at hand is made at once and answers the mob's id;
+  -- in a level hook it waits for the level's pass (the queued action).
+  local queued_summon = horizon.summon
+  horizon.summon = function(...)
+    if slot[1] ~= nil and slot[2] == true then return read("summon", ...) end
+    return queued_summon(...)
+  end
 end
 "#;
 /// `horizon.after(ticks, fn)` and `horizon.every(ticks, fn)`: timers run from
@@ -233,6 +249,68 @@ fn player_table_of(lua: &Lua, p: &crate::mod_api::NativeServerPlayer) -> mlua::R
     t.set("game_mode", p.game_mode)?;
     t.set("health", p.health)?;
     Ok(t)
+}
+
+/// The player a script named: a `player` table (its `uuid`), a UUID or a
+/// name of a player of the world.
+fn uuid_of(h: &dyn Host, who: &Value) -> Option<u128> {
+    let text = match who {
+        Value::Table(t) => t.get::<Option<String>>("uuid").ok().flatten()?,
+        Value::String(s) => s.to_str().ok()?.to_owned(),
+        _ => return None,
+    };
+    uuid_parse(&text).or_else(|| {
+        h.level_players()
+            .into_iter()
+            .find(|p| p.name == text)
+            .map(|p| p.uuid)
+    })
+}
+
+/// A block state as a command names it: `id[key=value,...]` from a block id
+/// (`minecraft:` when it has no namespace) and a table of properties.
+fn state_name(id: &str, props: Option<&Table>) -> mlua::Result<String> {
+    let mut name = qualify(id);
+    if let Some(props) = props {
+        let mut pairs = Vec::new();
+        for pair in props.pairs::<String, Value>() {
+            let (k, v) = pair?;
+            let v = match v {
+                Value::String(s) => s.to_str()?.to_owned(),
+                Value::Integer(i) => i.to_string(),
+                Value::Boolean(b) => b.to_string(),
+                other => {
+                    return Err(mlua::Error::runtime(format!(
+                        "{k}: a property is a string, a number or a boolean, not a {}",
+                        other.type_name()
+                    )));
+                }
+            };
+            pairs.push(format!("{k}={v}"));
+        }
+        if !pairs.is_empty() {
+            pairs.sort();
+            name.push('[');
+            name.push_str(&pairs.join(","));
+            name.push(']');
+        }
+    }
+    Ok(name)
+}
+
+/// Every plain item in `stacks` with how many, by id, as `carried_items`.
+fn carried_in(stacks: &[Option<ItemStack>]) -> Vec<(String, u32)> {
+    let mut out: Vec<(String, u32)> = Vec::new();
+    for s in stacks.iter().flatten() {
+        if s.damage != 0 || s.extra.is_some() {
+            continue;
+        }
+        match out.iter_mut().find(|(i, _)| *i == *s.item) {
+            Some((_, n)) => *n += s.count,
+            None => out.push((s.item.to_string(), s.count)),
+        }
+    }
+    out
 }
 
 /// An item stack as a table: `id`, `count`, `damage`, `plain` (no
@@ -379,6 +457,114 @@ impl LuaMod {
                         t.set("rain", rain)?;
                         t.set("thunder", thunder)?;
                         Value::Table(t)
+                    }
+                    "light" => {
+                        let (x, y, z): (i32, i32, i32) = FromLuaMulti::from_lua_multi(rest, lua)?;
+                        let (block, sky) = h.light([x, y, z]);
+                        let t = lua.create_table()?;
+                        t.set("block", block)?;
+                        t.set("sky", sky)?;
+                        Value::Table(t)
+                    }
+                    "surface_height" => {
+                        use crate::mod_api::NativeHeightmap;
+                        let (x, z, heightmap): (i32, i32, Option<String>) =
+                            FromLuaMulti::from_lua_multi(rest, lua)?;
+                        let heightmap = match heightmap.as_deref() {
+                            None | Some("world_surface") => NativeHeightmap::WorldSurface,
+                            Some("motion_blocking") => NativeHeightmap::MotionBlocking,
+                            Some("motion_blocking_no_leaves") => {
+                                NativeHeightmap::MotionBlockingNoLeaves
+                            }
+                            Some("ocean_floor") => NativeHeightmap::OceanFloor,
+                            Some(other) => {
+                                return Err(mlua::Error::runtime(format!(
+                                    "horizon.surface_height: no heightmap {other:?} (world_surface, motion_blocking, motion_blocking_no_leaves, ocean_floor)"
+                                )));
+                            }
+                        };
+                        match h.surface_heights(h.dimension(), &[(x, z)], heightmap) {
+                            Ok(heights) => match heights.first().copied().flatten() {
+                                Some(y) => Value::Integer(i64::from(y)),
+                                None => Value::Nil,
+                            },
+                            Err(e) => {
+                                log::debug!("[lua:{}] surface_height: {e}", self.id);
+                                Value::Nil
+                            }
+                        }
+                    }
+                    "inventory" | "count_items" | "carried_items" => {
+                        let (who, item): (Value, Option<String>) =
+                            FromLuaMulti::from_lua_multi(rest, lua)?;
+                        let Some(uuid) = uuid_of(h, &who) else {
+                            return Ok(Value::Nil);
+                        };
+                        // The acting player's stacks are in place (the host's
+                        // own slots); another player's are read from the server's
+                        // records.
+                        let acting = h.acting_player().is_some_and(|p| p.uuid == uuid);
+                        let Reader::Host(h) = reader else {
+                            unreachable!()
+                        };
+                        let stacks: Vec<Option<ItemStack>> = if acting {
+                            (0..36).map(|slot| h.carried_stack(slot).cloned()).collect()
+                        } else {
+                            match h.player_stacks(uuid) {
+                                Some(stacks) => stacks,
+                                None => return Ok(Value::Nil),
+                            }
+                        };
+                        match what {
+                            "inventory" => {
+                                let out = lua.create_table()?;
+                                for (i, s) in stacks.iter().enumerate() {
+                                    if let Some(s) = s {
+                                        out.set(i + 1, item_table_of(lua, s)?)?;
+                                    }
+                                }
+                                Value::Table(out)
+                            }
+                            "count_items" => {
+                                let item = qualify(&item.unwrap_or_default());
+                                let n: u32 = carried_in(&stacks)
+                                    .into_iter()
+                                    .filter(|(i, _)| *i == item)
+                                    .map(|(_, n)| n)
+                                    .sum();
+                                Value::Integer(i64::from(n))
+                            }
+                            _ => {
+                                let out = lua.create_table()?;
+                                for (id, n) in carried_in(&stacks) {
+                                    out.set(id, n)?;
+                                }
+                                Value::Table(out)
+                            }
+                        }
+                    }
+                    "data" => {
+                        let path: String = FromLuaMulti::from_lua_multi(rest, lua)?;
+                        match h.data(&path) {
+                            Some(bytes) => {
+                                match serde_json::from_slice::<serde_json::Value>(&bytes) {
+                                    Ok(json) => json::json_to_lua(lua, &json)?,
+                                    Err(_) => Value::String(lua.create_string(bytes)?),
+                                }
+                            }
+                            None => Value::Nil,
+                        }
+                    }
+                    "summon" => {
+                        let (dimension, kind, x, y, z): (String, String, f64, f64, f64) =
+                            FromLuaMulti::from_lua_multi(rest, lua)?;
+                        let Reader::Host(h) = reader else {
+                            unreachable!()
+                        };
+                        match h.summon(&dimension, &qualify(&kind), [x, y, z], Default::default()) {
+                            Some(id) => Value::Integer(i64::from(id)),
+                            None => Value::Nil,
+                        }
                     }
                     "raycast" => {
                         let (who, distance): (String, Option<f32>) =
@@ -570,6 +756,9 @@ pub struct LuaMod {
     /// host has no record of at the moment (one dying, whose state is out of
     /// reach then).
     names: Mutex<HashMap<u128, String>>,
+    /// The mod's settings file (`horizon.config`): `config/<id>.json` of
+    /// the game folder; none when the folder is not known (a test).
+    config_path: Option<PathBuf>,
 }
 
 /// A mod's goal definitions, shared with the `horizon.goal` function.
@@ -715,7 +904,9 @@ pub fn discover(args: impl Iterator<Item = String>) -> Mods {
                     .map(|o| (o.id.clone(), o.path.clone()))
             })
             .collect();
-        match LuaMod::load(&c.path, &libraries) {
+        // The game folder's `config/`, as the host's `config_dir` names it.
+        let config_dir = here.join("config");
+        match LuaMod::load_with(&c.path, &libraries, Some(&config_dir)) {
             Ok(lua) => {
                 log::info!(
                     "Horizon: Lua mod {} loaded from {}",
@@ -812,6 +1003,17 @@ impl LuaMod {
     /// Load the mod at `path` (a `.hmod` or a mod folder): its id from
     /// `horizon-mod.toml`, its scripts read once, `scripts/init.lua` run.
     pub fn load(path: &Path, libraries: &[(String, PathBuf)]) -> Result<Self, String> {
+        Self::load_with(path, libraries, None)
+    }
+
+    /// `load`, with `config_dir` the folder of the mods' settings files
+    /// (`config/` of the game folder: `horizon.config` reads `<id>.json`
+    /// there, at load too).
+    pub fn load_with(
+        path: &Path,
+        libraries: &[(String, PathBuf)],
+        config_dir: Option<&Path>,
+    ) -> Result<Self, String> {
         let (id, scripts) = Self::read_scripts(path)?;
         let library_scripts = Self::read_libraries(libraries)?;
         let lua = Lua::new();
@@ -821,6 +1023,7 @@ impl LuaMod {
         let attachment = mod_attachment(&id);
         let world_attachment = mod_attachment_named(&id, "world");
         let player_attachment = mod_attachment_named(&id, "player");
+        let config_path = config_dir.map(|d| d.join(format!("{id}.json")));
         let m = LuaMod {
             id,
             source: path.to_owned(),
@@ -838,6 +1041,7 @@ impl LuaMod {
             attachment,
             world_attachment,
             player_attachment,
+            config_path,
         };
         m.install_api().map_err(|e| e.to_string())?;
         m.run(ENTRY).map_err(|e| e.to_string())?;
@@ -1054,8 +1258,6 @@ impl LuaMod {
             })?,
         )?;
         api.set("distance", lua.create_function(goals::distance)?)?;
-        install_reads(lua, &api)?;
-        install_timers(lua, &api)?;
         // Actions on the game, run after the handler with the hook's host
         // (or, in `mob_ai_register`, on the mob).
         for action in [
@@ -1087,6 +1289,15 @@ impl LuaMod {
             "schedule_tick",
             "handled",
             "cancel",
+            "set_block",
+            "fill",
+            "run_command",
+            "give_experience",
+            "give_levels",
+            "falling_block",
+            "drop_item",
+            "set_nickname",
+            "effect",
         ] {
             api.set(
                 action,
@@ -1100,6 +1311,62 @@ impl LuaMod {
                 })?,
             )?;
         }
+        // The reads and the timers over the actions: a summon with a host at
+        // hand is a read (it answers the id).
+        install_reads(lua, &api)?;
+        install_timers(lua, &api)?;
+        // `horizon.config()`: the mod's own settings, `config/<id>.json` of
+        // the game folder as a table (empty when there is none);
+        // `horizon.save_config(t)` writes it. No host needed: at load too.
+        let config_path = self.config_path.clone();
+        let id = self.id.clone();
+        api.set(
+            "config",
+            lua.create_function(move |lua, ()| {
+                let Some(path) = &config_path else {
+                    return Err(mlua::Error::runtime("horizon.config: no config folder"));
+                };
+                let text = match std::fs::read_to_string(path) {
+                    Ok(text) => text,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        return Ok(Value::Table(lua.create_table()?));
+                    }
+                    Err(e) => {
+                        return Err(mlua::Error::runtime(format!("{}: {e}", path.display())));
+                    }
+                };
+                let json: serde_json::Value = serde_json::from_str(&text)
+                    .map_err(|e| mlua::Error::runtime(format!("{}: {e}", path.display())))?;
+                match json::json_to_lua(lua, &json)? {
+                    Value::Table(t) => Ok(Value::Table(t)),
+                    _ => Err(mlua::Error::runtime(format!(
+                        "{}: not a JSON object",
+                        path.display()
+                    ))),
+                }
+            })?,
+        )?;
+        let config_path = self.config_path.clone();
+        api.set(
+            "save_config",
+            lua.create_function(move |_, t: Table| {
+                let Some(path) = &config_path else {
+                    return Err(mlua::Error::runtime(
+                        "horizon.save_config: no config folder",
+                    ));
+                };
+                let json = json::lua_to_json(&Value::Table(t))?;
+                let text = serde_json::to_string_pretty(&json).map_err(mlua::Error::runtime)?;
+                if let Some(dir) = path.parent() {
+                    std::fs::create_dir_all(dir)
+                        .map_err(|e| mlua::Error::runtime(format!("{}: {e}", dir.display())))?;
+                }
+                std::fs::write(path, text + "\n")
+                    .map_err(|e| mlua::Error::runtime(format!("{}: {e}", path.display())))?;
+                log::debug!("[lua:{id}] config saved to {}", path.display());
+                Ok(())
+            })?,
+        )?;
         // `require("name")`: `scripts/name.lua` of this mod, run once.
         api.set(
             "require",
@@ -1211,7 +1478,11 @@ impl LuaMod {
     fn player_table(&self, host: &dyn Host) -> mlua::Result<Value> {
         let lua = &self.lua;
         Ok(match host.acting_player() {
-            Some(p) => Value::Table(player_table_of(lua, &p)?),
+            Some(p) => {
+                let t = player_table_of(lua, &p)?;
+                t.set("held", self.held_table(host)?)?;
+                Value::Table(t)
+            }
             None => Value::Nil,
         })
     }
@@ -1600,7 +1871,9 @@ impl LuaMod {
                     },
                 )?),
             };
+            let full = matches!(&*reader.borrow(), Reader::Host(_));
             let mut args = args.into_lua_multi(lua)?;
+            args.push_front(Value::Boolean(full));
             args.push_front(read);
             args.push_front(Value::Table(queue));
             args.push_front(Value::Table(handlers));
@@ -1730,11 +2003,216 @@ impl LuaMod {
                 host.set_mob_health(&dimension, id, health);
             }
             "take_items" | "give_items" => {
+                if args.raw_len() >= 3 {
+                    // To a named player: `give_items(player, item, count)`.
+                    let (who, item, count): (Value, String, u32) =
+                        (args.get(1)?, args.get(2)?, args.get(3)?);
+                    let item = qualify(&item);
+                    let Some(uuid) = uuid_of(host, &who) else {
+                        log::debug!("[lua:{}] {action}: no such player", self.id);
+                        return Ok(());
+                    };
+                    if action == "take_items" {
+                        host.take_from(uuid, &item, count);
+                    } else if let Some(left) = host.give_stack(
+                        uuid,
+                        ItemStack {
+                            item: item.as_str().into(),
+                            count,
+                            damage: 0,
+                            extra: None,
+                        },
+                    ) {
+                        log::debug!(
+                            "[lua:{}] give_items: {} of {item} did not fit",
+                            self.id,
+                            left.count
+                        );
+                    }
+                    return Ok(());
+                }
                 let (item, count): (String, u32) = (args.get(1)?, args.get(2)?);
                 if action == "take_items" {
                     host.take_items(&item, count);
                 } else {
                     host.give_items(&item, count);
+                }
+            }
+            "give_experience" | "give_levels" => {
+                let (who, amount): (Value, i64) = (args.get(1)?, args.get(2)?);
+                let Some(uuid) = uuid_of(host, &who) else {
+                    return Ok(());
+                };
+                if action == "give_experience" {
+                    host.give_experience(uuid, amount.clamp(0, i64::from(u32::MAX)) as u32);
+                } else {
+                    host.give_levels(
+                        uuid,
+                        amount.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32,
+                    );
+                }
+            }
+            "set_nickname" => {
+                let (who, name): (Value, Option<String>) = (args.get(1)?, args.get(2)?);
+                if let Some(uuid) = uuid_of(host, &who) {
+                    host.set_nickname(uuid, name.as_deref());
+                }
+            }
+            "run_command" => {
+                let line: String = args.get(1)?;
+                let line = line.trim_start_matches('/');
+                if !host.run_command(line) {
+                    log::debug!("[lua:{}] run_command {line:?}: not run", self.id);
+                }
+            }
+            "set_block" => {
+                let (x, y, z, id, props, flags): (
+                    i32,
+                    i32,
+                    i32,
+                    String,
+                    Option<Table>,
+                    Option<i32>,
+                ) = (
+                    args.get(1)?,
+                    args.get(2)?,
+                    args.get(3)?,
+                    args.get(4)?,
+                    args.get(5)?,
+                    args.get(6)?,
+                );
+                let name = state_name(&id, props.as_ref())?;
+                let Some(state) = host.state_named(&name) else {
+                    return Err(mlua::Error::runtime(format!(
+                        "set_block: no block state {name:?}"
+                    )));
+                };
+                let dimension = host.dimension().to_owned();
+                host.set_block(&dimension, [x, y, z], state, flags.unwrap_or(UPDATE_ALL));
+            }
+            "fill" => {
+                use crate::mod_api::{NativeBlockEdit, NativeBlockRun};
+                let (x1, y1, z1, x2, y2, z2, id, props): (
+                    i32,
+                    i32,
+                    i32,
+                    i32,
+                    i32,
+                    i32,
+                    String,
+                    Option<Table>,
+                ) = (
+                    args.get(1)?,
+                    args.get(2)?,
+                    args.get(3)?,
+                    args.get(4)?,
+                    args.get(5)?,
+                    args.get(6)?,
+                    args.get(7)?,
+                    args.get(8)?,
+                );
+                let name = state_name(&id, props.as_ref())?;
+                let (x1, x2) = (x1.min(x2), x1.max(x2));
+                let (y1, y2) = (y1.min(y2), y1.max(y2));
+                let (z1, z2) = (z1.min(z2), z1.max(z2));
+                let columns = (i64::from(x2 - x1) + 1) * (i64::from(z2 - z1) + 1);
+                if columns > FILL_COLUMNS {
+                    return Err(mlua::Error::runtime(format!(
+                        "fill: {columns} columns, at most {FILL_COLUMNS}"
+                    )));
+                }
+                let mut runs = Vec::with_capacity(columns as usize);
+                for x in x1..=x2 {
+                    for z in z1..=z2 {
+                        runs.push(NativeBlockRun {
+                            x,
+                            z,
+                            y: y1,
+                            height: (y2 - y1 + 1) as u32,
+                            surface: None,
+                            block: 0,
+                            only: None,
+                        });
+                    }
+                }
+                let edit = NativeBlockEdit {
+                    palette: vec![name],
+                    filters: Vec::new(),
+                    runs,
+                };
+                let dimension = host.dimension().to_owned();
+                if let Err(e) = host.edit_blocks(&dimension, &edit) {
+                    return Err(mlua::Error::runtime(format!("fill: {e}")));
+                }
+            }
+            "falling_block" => {
+                let (x, y, z, id): (f64, f64, f64, String) =
+                    (args.get(1)?, args.get(2)?, args.get(3)?, args.get(4)?);
+                let velocity = [
+                    args.get::<Option<f64>>(5)?.unwrap_or(0.0),
+                    args.get::<Option<f64>>(6)?.unwrap_or(0.0),
+                    args.get::<Option<f64>>(7)?.unwrap_or(0.0),
+                ];
+                let name = state_name(&id, None)?;
+                let Some(state) = host.state_named(&name) else {
+                    return Err(mlua::Error::runtime(format!(
+                        "falling_block: no block state {name:?}"
+                    )));
+                };
+                let dimension = host.dimension().to_owned();
+                host.spawn_falling_block(
+                    &dimension,
+                    state,
+                    [x, y, z],
+                    velocity,
+                    Default::default(),
+                );
+            }
+            "drop_item" => {
+                let (x, y, z, id, count): (f64, f64, f64, String, Option<u32>) = (
+                    args.get(1)?,
+                    args.get(2)?,
+                    args.get(3)?,
+                    args.get(4)?,
+                    args.get(5)?,
+                );
+                let dimension = host.dimension().to_owned();
+                let Some(entity) =
+                    host.summon(&dimension, "minecraft:item", [x, y, z], Default::default())
+                else {
+                    log::debug!("[lua:{}] drop_item: no item entity made", self.id);
+                    return Ok(());
+                };
+                host.set_item_entity(
+                    &dimension,
+                    entity,
+                    ItemStack {
+                        item: qualify(&id).as_str().into(),
+                        count: count.unwrap_or(1).max(1),
+                        damage: 0,
+                        extra: None,
+                    },
+                );
+            }
+            "effect" => {
+                let (target, name, ticks, amplifier): (Value, String, i32, Option<i32>) =
+                    (args.get(1)?, args.get(2)?, args.get(3)?, args.get(4)?);
+                let name = qualify(&name);
+                let amplifier = amplifier.unwrap_or(0);
+                match target {
+                    Value::Integer(id) => {
+                        let dimension = host.dimension().to_owned();
+                        host.mob_effect(&dimension, id as u32, &name, ticks, amplifier);
+                    }
+                    Value::Number(id) => {
+                        let dimension = host.dimension().to_owned();
+                        host.mob_effect(&dimension, id as u32, &name, ticks, amplifier);
+                    }
+                    who => {
+                        if let Some(uuid) = uuid_of(host, &who) {
+                            host.player_effect(uuid, &name, ticks, amplifier);
+                        }
+                    }
                 }
             }
             "push_mob" | "teleport_mob" => {
@@ -1758,6 +2236,10 @@ impl LuaMod {
 
 /// `Level.setBlock`'s flag a crop grows with: clients see it, no neighbour update.
 const UPDATE_CLIENTS: i32 = 2;
+/// `Level.setBlock`'s flags a placed block gets: neighbours told, clients see it.
+const UPDATE_ALL: i32 = 3;
+/// The most columns one `horizon.fill` makes: 256 by 256 blocks.
+const FILL_COLUMNS: i64 = 65536;
 
 fn dimension_id(dimension: LevelDimension) -> &'static str {
     match dimension {
@@ -2425,6 +2907,7 @@ impl Hooks for LuaMod {
         let r = (|| -> mlua::Result<()> {
             let lua = &self.lua;
             let player = player_table_of(lua, event.player)?;
+            player.set("held", self.held_table(host)?)?;
             let args = lua.create_table()?;
             args.set("raw", line)?;
             if let Some(refusal) = command_args(lua, &usage, line, &args)? {
@@ -3119,6 +3602,175 @@ experimental = ["scripts"]
         fn broadcast(&self, text: crate::mod_api::Text) {
             self.lines.lock().unwrap().push(text.plain());
         }
+        fn state_named(&self, name: &str) -> Option<BlockStateId> {
+            match name {
+                "minecraft:stone" => Some(BlockStateId(1)),
+                "ruby:hive[stage=mature]" => Some(BlockStateId(2)),
+                _ => None,
+            }
+        }
+        fn set_block(&mut self, _: &str, pos: [i32; 3], state: BlockStateId, flags: i32) -> bool {
+            self.lines.lock().unwrap().push(format!(
+                "set_block {},{},{} state {} flags {flags}",
+                pos[0], pos[1], pos[2], state.0
+            ));
+            true
+        }
+        fn edit_blocks(
+            &mut self,
+            _: &str,
+            edit: &crate::mod_api::NativeBlockEdit,
+        ) -> Result<u64, String> {
+            let run = edit.runs[0];
+            self.lines.lock().unwrap().push(format!(
+                "edit {} {} runs y {} h {}",
+                edit.palette[0],
+                edit.runs.len(),
+                run.y,
+                run.height
+            ));
+            Ok(edit.runs.len() as u64 * u64::from(run.height))
+        }
+        fn run_command(&mut self, line: &str) -> bool {
+            self.lines.lock().unwrap().push(format!("run {line}"));
+            true
+        }
+        fn give_stack(&mut self, uuid: u128, stack: ItemStack) -> Option<ItemStack> {
+            self.lines.lock().unwrap().push(format!(
+                "give_stack {} {} {}",
+                if uuid == 0x123e4567_e89b_12d3_a456_426614174000 {
+                    "steve"
+                } else {
+                    "?"
+                },
+                stack.count,
+                stack.item
+            ));
+            None
+        }
+        fn take_from(&mut self, uuid: u128, item: &str, count: u32) -> u32 {
+            self.lines.lock().unwrap().push(format!(
+                "take_from {} {count} {item}",
+                if uuid == 0x123e4567_e89b_12d3_a456_426614174000 {
+                    "steve"
+                } else {
+                    "?"
+                }
+            ));
+            count
+        }
+        fn player_stacks(&self, uuid: u128) -> Option<Vec<Option<ItemStack>>> {
+            (uuid == 2).then(|| {
+                vec![
+                    None,
+                    Some(ItemStack {
+                        item: "minecraft:bone".into(),
+                        count: 5,
+                        damage: 0,
+                        extra: None,
+                    }),
+                ]
+            })
+        }
+        fn light(&self, pos: [i32; 3]) -> (u8, u8) {
+            if pos == [1, 2, 3] { (7, 15) } else { (0, 0) }
+        }
+        fn surface_heights(
+            &self,
+            _: &str,
+            columns: &[(i32, i32)],
+            heightmap: crate::mod_api::NativeHeightmap,
+        ) -> Result<Vec<Option<i32>>, String> {
+            Ok(columns
+                .iter()
+                .map(|c| {
+                    (*c == (1, 3)).then(|| {
+                        if heightmap == crate::mod_api::NativeHeightmap::OceanFloor {
+                            70
+                        } else {
+                            64
+                        }
+                    })
+                })
+                .collect())
+        }
+        fn spawn_falling_block(
+            &mut self,
+            _: &str,
+            state: BlockStateId,
+            pos: [f64; 3],
+            velocity: [f64; 3],
+            _: crate::mod_api::NativeFalling,
+        ) -> bool {
+            self.lines.lock().unwrap().push(format!(
+                "falling state {} at {},{},{} v {},{},{}",
+                state.0, pos[0], pos[1], pos[2], velocity[0], velocity[1], velocity[2]
+            ));
+            true
+        }
+        fn summon(&mut self, _: &str, kind: &str, pos: [f64; 3], _: Compound) -> Option<u32> {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("summon {kind} at {},{},{}", pos[0], pos[1], pos[2]));
+            Some(42)
+        }
+        fn set_item_entity(&mut self, _: &str, id: u32, stack: ItemStack) -> bool {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("item {id} = {} {}", stack.count, stack.item));
+            true
+        }
+        fn set_nickname(&mut self, _: u128, nickname: Option<&str>) -> bool {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("nickname steve {}", nickname.unwrap_or("none")));
+            true
+        }
+        fn give_experience(&mut self, _: u128, points: u32) -> bool {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("give_experience steve {points}"));
+            true
+        }
+        fn give_levels(&mut self, _: u128, levels: i32) -> bool {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("give_levels steve {levels}"));
+            true
+        }
+        fn data(&self, path: &str) -> Option<Vec<u8>> {
+            match path {
+                "data/ruby/x.json" => Some(br#"{"a": 1, "list": [2, 3]}"#.to_vec()),
+                "data/ruby/t.txt" => Some(b"hi".to_vec()),
+                _ => None,
+            }
+        }
+        fn mob_effect(
+            &mut self,
+            _: &str,
+            id: u32,
+            effect: &str,
+            ticks: i32,
+            amplifier: i32,
+        ) -> bool {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("mob_effect {id} {effect} {ticks} x{amplifier}"));
+            true
+        }
+        fn player_effect(&mut self, _: u128, effect: &str, ticks: i32, amplifier: i32) -> bool {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("player_effect steve {effect} {ticks} x{amplifier}"));
+            true
+        }
     }
 
     fn wand() -> ItemStack {
@@ -3624,6 +4276,169 @@ experimental = ["scripts"]
                 "feedback total = 2.5",
                 "feedback a needs an integer, not \"x\"",
                 "feedback usage: /probeadd <a:integer> <b:number> [label:word]",
+            ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_world_player_and_config_helpers_reach_the_host() {
+        let (dir, path) = hmod(
+            "helpers",
+            &[(
+                "scripts/init.lua",
+                br#"
+                -- The settings file, at load: empty the first time, then what was saved.
+                local c = horizon.config()
+                CONFIG_LIMIT = c.limit
+                c.limit = (c.limit or 8) * 2
+                c.kinds = { "a", "b" }
+                horizon.save_config(c)
+                horizon.command("helpers", 0, function(player, args)
+                  local id = horizon.summon(player.dimension, "ruby:crawler", 1, 2, 3)
+                  SUMMONED = id
+                  horizon.effect(id, "speed", 100, 1)
+                  horizon.effect(player, "minecraft:regeneration", 60)
+                  horizon.give_items(player, "bone", 3)
+                  horizon.take_items("steve", "minecraft:bone", 2)
+                  horizon.give_items("minecraft:bone", 1)
+                  horizon.give_experience(player, 10)
+                  horizon.give_levels(player.uuid, -2)
+                  horizon.set_nickname(player, "Steve the Bold")
+                  horizon.set_nickname(player)
+                  horizon.run_command("/weather clear")
+                  horizon.set_block(1, 2, 3, "stone")
+                  horizon.set_block(1, 3, 3, "ruby:hive", { stage = "mature" }, 2)
+                  horizon.fill(2, 65, 1, 0, 64, 0, "stone")
+                  horizon.falling_block(1.5, 70, 3.5, "minecraft:stone", 0, 0.5, 0)
+                  horizon.drop_item(1.5, 65, 3.5, "bone", 4)
+                  INV = horizon.inventory(player)
+                  COUNT = horizon.count_items(player, "ruby:wand")
+                  CARRIED = horizon.carried_items(player)
+                  OTHER = horizon.count_items("00000000-0000-0000-0000-000000000002", "minecraft:bone")
+                  NOBODY = horizon.inventory("nobody")
+                  LIGHT = horizon.light(1, 2, 3)
+                  HEIGHT = horizon.surface_height(1, 3)
+                  FLOOR = horizon.surface_height(1, 3, "ocean_floor")
+                  NOWHERE = horizon.surface_height(9, 9)
+                  DATA = horizon.data("data/ruby/x.json")
+                  TEXT = horizon.data("data/ruby/t.txt")
+                  NONE = horizon.data("data/ruby/none.json")
+                  HELD = player.held
+                end)
+                horizon.command("badblock", 0, function(player, args)
+                  horizon.set_block(0, 0, 0, "ruby:nothing")
+                end)
+                "#,
+            )],
+        );
+        let config = dir.join("config");
+        let m = LuaMod::load_with(&path, &[], Some(&config)).unwrap();
+        // Saved as JSON a person can edit, and read back at the next load.
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(config.join("ruby.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            saved,
+            serde_json::json!({ "limit": 16, "kinds": ["a", "b"] })
+        );
+        assert!(
+            m.lua
+                .globals()
+                .get::<Value>("CONFIG_LIMIT")
+                .unwrap()
+                .is_nil()
+        );
+        m.reload().unwrap();
+        assert_eq!(m.lua.globals().get::<i64>("CONFIG_LIMIT").unwrap(), 16);
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(config.join("ruby.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved["limit"], 32);
+
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let steve = host.acting_player().unwrap();
+        let mut run = |line: &str| {
+            m.perform_command(
+                &mut host,
+                &mut PerformCommandEvent {
+                    player: &steve,
+                    command: line,
+                },
+            )
+        };
+        assert_eq!(run("helpers"), Flow::Cancel);
+        assert_eq!(run("badblock"), Flow::Cancel);
+        let g = m.lua.globals();
+        // The summon answered at once, with the id the actions then used.
+        assert_eq!(g.get::<i64>("SUMMONED").unwrap(), 42);
+        let inv: Table = g.get("INV").unwrap();
+        assert_eq!(
+            inv.get::<Table>(4).unwrap().get::<String>("id").unwrap(),
+            "ruby:wand"
+        );
+        assert!(inv.get::<Value>(1).unwrap().is_nil());
+        assert_eq!(g.get::<i64>("COUNT").unwrap(), 3);
+        assert_eq!(
+            g.get::<Table>("CARRIED")
+                .unwrap()
+                .get::<i64>("ruby:wand")
+                .unwrap(),
+            3
+        );
+        assert_eq!(g.get::<i64>("OTHER").unwrap(), 5);
+        assert!(g.get::<Value>("NOBODY").unwrap().is_nil());
+        let light: Table = g.get("LIGHT").unwrap();
+        assert_eq!(
+            (
+                light.get::<i64>("block").unwrap(),
+                light.get::<i64>("sky").unwrap()
+            ),
+            (7, 15)
+        );
+        assert_eq!(g.get::<i64>("HEIGHT").unwrap(), 64);
+        assert_eq!(g.get::<i64>("FLOOR").unwrap(), 70);
+        assert!(g.get::<Value>("NOWHERE").unwrap().is_nil());
+        let data: Table = g.get("DATA").unwrap();
+        assert_eq!(data.get::<i64>("a").unwrap(), 1);
+        assert_eq!(data.get::<Vec<i64>>("list").unwrap(), [2, 3]);
+        assert_eq!(g.get::<String>("TEXT").unwrap(), "hi");
+        assert!(g.get::<Value>("NONE").unwrap().is_nil());
+        assert_eq!(
+            g.get::<Table>("HELD")
+                .unwrap()
+                .get::<String>("item")
+                .unwrap(),
+            "ruby:wand"
+        );
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            [
+                "summon ruby:crawler at 1,2,3",
+                "mob_effect 42 minecraft:speed 100 x1",
+                "player_effect steve minecraft:regeneration 60 x0",
+                "give_stack steve 3 minecraft:bone",
+                "take_from steve 2 minecraft:bone",
+                "gave 1 minecraft:bone",
+                "give_experience steve 10",
+                "give_levels steve -2",
+                "nickname steve Steve the Bold",
+                "nickname steve none",
+                "run weather clear",
+                "set_block 1,2,3 state 1 flags 3",
+                "set_block 1,3,3 state 2 flags 2",
+                "edit minecraft:stone 6 runs y 64 h 2",
+                "falling state 1 at 1.5,70,3.5 v 0,0.5,0",
+                "summon minecraft:item at 1.5,65,3.5",
+                "item 42 = 4 minecraft:bone",
             ]
         );
         std::fs::remove_dir_all(&dir).unwrap();

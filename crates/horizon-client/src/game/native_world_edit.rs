@@ -1,6 +1,7 @@
 //! Bulk block edits for server mods: a helper on the level being ticked, as `native_set_block` is, that makes many
 //! runs of blocks up columns at once, straight into the chunks.
 use super::Game;
+use horizon_world::registry::BlockStateId;
 
 /// Which of a column's heights (`Heightmap.Types`) a run's `y` counts from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,6 +62,21 @@ impl Game<'_> {
         Ok(changed)
     }
     /// Whether `dimension` is the authoritative level being ticked: where a server mod's world helpers act.
+    /// The block state `name` names, as a command reads one
+    /// (`minecraft:oak_log[axis=x]`; the properties left out are the
+    /// block's defaults): what `native_set_block` and
+    /// `native_spawn_falling_block` take. None for a block the game doesn't
+    /// have, a property it hasn't, or block NBT (`{...}`, not read here).
+    /// API 365.
+    pub(super) fn native_state_named(&self, name: &str) -> Option<BlockStateId> {
+        use horizon_client::command::{Reader, block};
+        let mut reader = Reader::new(name);
+        let b = block::parse(&mut reader, &self.ui.registries, false).ok()?;
+        if reader.can_read() || b.nbt.is_some() {
+            return None;
+        }
+        self.block_state(&b).ok()
+    }
     pub(super) fn native_level_open(&self, dimension: &str) -> bool {
         (self.serving.is_some() || self.options.dedicated.is_some()) && dimension == self.dim.id()
     }
