@@ -260,11 +260,13 @@ impl Game<'_> {
         players
     }
     /// The owner of a single-player world, by the uuid the hooks name them
-    /// with: the integrated server's owner (the hub's guest for them), else,
-    /// before it starts, the one `ensure_player_uuid` makes (the saved uuid,
-    /// else the offline one of "Player").
+    /// with: the integrated server's owner (the hub's guest for them; read
+    /// from the serving state, as the hub is out of reach while a guest's
+    /// action is handled), else, before it starts, the one
+    /// `ensure_player_uuid` makes (the saved uuid, else the offline one of
+    /// "Player").
     fn owner_uuid(&self) -> u128 {
-        if let Some(owner) = self.lan.as_ref().and_then(|h| h.hub.singleplayer_owner) {
+        if let Some(owner) = self.serving.as_ref().map(|s| s.owner) {
             return owner;
         }
         self.level
