@@ -465,8 +465,11 @@ fn command_words(usage: &str) -> String {
 /// Fills `args` from `line` by `usage` (`pay <who:player> <amount:integer>
 /// [note:text]`): the words after the usage's leading words go to its
 /// arguments in order, `integer` and `number` as numbers, `boolean` as one,
-/// `text` as the rest of the line, the other kinds as the word.
-fn command_args(lua: &Lua, usage: &str, line: &str, args: &Table) -> mlua::Result<()> {
+/// `text` as the rest of the line, the other kinds as the word. A required
+/// argument (`<...>`) missing, or an integer or number that is not one,
+/// refuses the line: the message for the player, and the handler is not
+/// called.
+fn command_args(lua: &Lua, usage: &str, line: &str, args: &Table) -> mlua::Result<Option<String>> {
     let params: Vec<(&str, &str)> = usage
         .split_whitespace()
         .filter_map(|p| {
@@ -481,34 +484,43 @@ fn command_args(lua: &Lua, usage: &str, line: &str, args: &Table) -> mlua::Resul
         .split_whitespace()
         .take_while(|p| !p.starts_with('<') && !p.starts_with('['))
         .count();
+    let required: Vec<&str> = usage
+        .split_whitespace()
+        .filter_map(|p| p.strip_prefix('<').and_then(|p| p.strip_suffix('>')))
+        .map(|inner| inner.split_once(':').map_or(inner, |(n, _)| n))
+        .collect();
     let mut words = line.split_whitespace().skip(literals);
-    for (i, (name, kind)) in params.iter().enumerate() {
+    for (name, kind) in &params {
         if *kind == "text" {
             let rest: Vec<&str> = words.by_ref().collect();
             if !rest.is_empty() {
                 args.set(*name, rest.join(" "))?;
+            } else if required.contains(name) {
+                return Ok(Some(format!("usage: /{usage}")));
             }
             break;
         }
         let Some(word) = words.next() else {
+            if required.contains(name) {
+                return Ok(Some(format!("usage: /{usage}")));
+            }
             break;
         };
-        let _ = i;
         match *kind {
             "integer" => match word.parse::<i64>() {
                 Ok(n) => args.set(*name, n)?,
-                Err(_) => args.set(*name, word)?,
+                Err(_) => return Ok(Some(format!("{name} needs an integer, not {word:?}"))),
             },
             "number" => match word.parse::<f64>() {
                 Ok(n) => args.set(*name, n)?,
-                Err(_) => args.set(*name, word)?,
+                Err(_) => return Ok(Some(format!("{name} needs a number, not {word:?}"))),
             },
             "boolean" => args.set(*name, word == "true")?,
             _ => args.set(*name, word)?,
         }
     }
     let _ = lua;
-    Ok(())
+    Ok(None)
 }
 
 fn install_timers(lua: &Lua, api: &Table) -> mlua::Result<()> {
@@ -2415,7 +2427,10 @@ impl Hooks for LuaMod {
             let player = player_table_of(lua, event.player)?;
             let args = lua.create_table()?;
             args.set("raw", line)?;
-            command_args(lua, &usage, line, &args)?;
+            if let Some(refusal) = command_args(lua, &usage, line, &args)? {
+                host.feedback(crate::mod_api::Text::literal(refusal));
+                return Ok(());
+            }
             self.call_kind(
                 hook,
                 Some(&name),
@@ -3529,6 +3544,9 @@ experimental = ["scripts"]
                 end)
                 horizon.command("say <what:text>", 0, function(player, args) horizon.feedback(args.what) end)
                 horizon.command("parasite hives", 2, function(player, args) horizon.feedback("hives") end)
+                horizon.command("probeadd <a:integer> <b:number> [label:word]", 0, function(player, args)
+                  horizon.feedback((args.label or "sum") .. " = " .. tostring(args.a + args.b))
+                end)
                 "#,
             )],
         );
@@ -3557,7 +3575,8 @@ experimental = ["scripts"]
             [
                 ("parasite count [kind:word] [n:integer]", 2),
                 ("say <what:text>", 0),
-                ("parasite hives", 2)
+                ("parasite hives", 2),
+                ("probeadd <a:integer> <b:number> [label:word]", 0)
             ]
         );
         let steve = host.acting_player().unwrap();
@@ -3574,6 +3593,11 @@ experimental = ["scripts"]
         assert_eq!(run(&m, &mut host, "parasite count"), Flow::Cancel);
         assert_eq!(run(&m, &mut host, "say hello there  world"), Flow::Cancel);
         assert_eq!(run(&m, &mut host, "parasite hives"), Flow::Cancel);
+        // Arguments of three kinds; a bad integer and a missing required
+        // argument are refused with a message, and the handler is not called.
+        assert_eq!(run(&m, &mut host, "probeadd 2 0.5 total"), Flow::Cancel);
+        assert_eq!(run(&m, &mut host, "probeadd x 1"), Flow::Cancel);
+        assert_eq!(run(&m, &mut host, "probeadd 2"), Flow::Cancel);
         assert_eq!(run(&m, &mut host, "parasite"), Flow::Continue);
         assert_eq!(run(&m, &mut host, "other thing"), Flow::Continue);
         assert_eq!(
@@ -3597,6 +3621,9 @@ experimental = ["scripts"]
                 "tell steve: hello",
                 "feedback hello there world",
                 "feedback hives",
+                "feedback total = 2.5",
+                "feedback a needs an integer, not \"x\"",
+                "feedback usage: /probeadd <a:integer> <b:number> [label:word]",
             ]
         );
         std::fs::remove_dir_all(&dir).unwrap();
