@@ -318,7 +318,7 @@ pub fn view_table(lua: &Lua, v: &MobView) -> mlua::Result<Table> {
     for (i, n) in v.nearby.iter().enumerate() {
         let row = lua.create_table()?;
         row.set("id", n.id)?;
-        row.set("kind", n.kind.as_str())?;
+        row.set("kind", n.kind.id.as_str())?;
         row.set("position", vec3(lua, n.position)?)?;
         row.set("distance", n.distance)?;
         row.set("health", n.health)?;
