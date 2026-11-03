@@ -62,6 +62,14 @@ file would have been refused for. Textures stay files. The mod needs capability 
 A table whose keys are 1..n is a JSON array, any other an object (`{}` is an empty object); a whole number is an
 integer. The launcher's Mods page, built without Lua, lists the mod's files only.
 
+Two things a mob needs that are data, not script: a **spawn egg** is an item whose id ends in `_spawn_egg` and names
+the kind (`registry.item("crawler_spawn_egg", { template = "minecraft:zombie_spawn_egg" })` with its own texture and
+model under `assets/`), and **natural spawning** is a NeoForge biome modifier
+(`registry.data("neoforge/biome_modifier/crawlers", { type = "neoforge:add_spawns", biomes = "#minecraft:is_overworld",
+spawners = { { type = registry.id .. ":crawler", weight = 20, min_count = 1, max_count = 3 } } })`), which puts the
+mob in the natural spawns of those biomes in its kind's category (a mod mob's: its template's; say `category` to
+choose). Both are read when the game builds its content, so they need a restart, not a `/reload`.
+
 ```lua
 -- scripts/registry.lua
 registry.entity_type("crawler", {
