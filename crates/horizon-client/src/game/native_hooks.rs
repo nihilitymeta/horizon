@@ -8788,7 +8788,11 @@ impl Game<'_> {
     /// data slots are not in it: `native_with_mod_block_entity` changes
     /// those); false for no mod block entity there. Clients get the change
     /// with `native_block_entity_sync`. API 360.
-    pub(super) fn native_set_mod_block_entity_data(&mut self, pos: [i32; 3], data: Compound) -> bool {
+    pub(super) fn native_set_mod_block_entity_data(
+        &mut self,
+        pos: [i32; 3],
+        data: Compound,
+    ) -> bool {
         let key = (pos[0], pos[1], pos[2]);
         let Some(BlockEntity::Mod(m)) = self.world.block_entities.get_mut(&key) else {
             return false;
