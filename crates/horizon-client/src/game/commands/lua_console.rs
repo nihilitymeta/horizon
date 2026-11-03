@@ -497,15 +497,8 @@ impl Game<'_> {
     /// `/lua`: the console window; `/lua <code>` runs a line in it.
     pub(super) fn cmd_lua(&mut self, code: Option<String>) -> super::R<i32> {
         // The console runs with the owner's powers and shows on the owner's
-        // screen: a guest's /lua is refused (the owner's own commands act
-        // through the hub too, as the owner).
-        let owner = self.serving.as_ref().map(|s| s.owner);
-        if self.lan_acting_uuid.is_some() && self.lan_acting_uuid != owner {
-            return Err(super::CommandError::new(horizon_client::text::Text::literal(
-                "The Lua console is the host's own",
-            )));
-        }
-        let note = self.tools_note();
+        // screen: a guest's /lua is refused, as every tool's command is.
+        self.dev_tools_owner_only()?;
         match code {
             None => {
                 let open = !console::OPEN.load(Ordering::Relaxed);
@@ -514,10 +507,16 @@ impl Game<'_> {
                 } else {
                     console::OPEN.store(false, Ordering::Relaxed);
                 }
-                self.feedback(horizon_client::text::Text::literal(format!(
-                    "Lua console {}{note}",
-                    if open { "open" } else { "closed" }
-                )));
+                let line = horizon_client::text::Text::tr(
+                    if open {
+                        "horizon.dev_tools.lua.open"
+                    } else {
+                        "horizon.dev_tools.lua.closed"
+                    },
+                    &[],
+                );
+                let line = self.with_tools_note(line);
+                self.feedback(line);
                 Ok(1)
             }
             Some(code) => {

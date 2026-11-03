@@ -7,12 +7,18 @@ Status: the overlay, pointer input with a release key, the read-only entity wind
 `lua-bindings` (which sits on `mob-ai-hooks`): the console shows and reloads the scripted mods
 ([lua-bindings.md](lua-bindings.md)). For people working on mods and engine features, never on in a player's game.
 
-**Only with the tools.** The commands exist only in a game started with the tools (`--dev-tools` or
+**Only with the tools, and only the owner's.** The commands exist only in a game started with the tools (`--dev-tools` or
 `HORIZON_DEV_TOOLS=1` call `vanilla::set_dev_tools_commands`; `tree_extra::register_dev_tools`), as `/pregen` exists
 only with `--pregen`: they run Lua and the owner's commands, so no LAN world or dedicated server has them unless its
-owner asked. The chat tree lists them under the same switch. `/lua` refuses a guest (it runs as the host and shows on
-the host's screen), `mc.run` takes a file name in the scripts folder and no path, and a chunk that runs over two
-seconds is stopped by Luau's interrupt, so a typo's endless loop does not freeze the server thread.
+owner asked. The chat tree lists them under the same switch. The flag works in every build, release builds included:
+there is no `cfg(debug_assertions)` or Cargo feature around the tools (a design call, not an oversight; the switch is
+the flag, which only the person starting the game can give). Every command of theirs, `/inspect`, `/goals`, `/senses`,
+`/nav`, `/watch`, `/mobai log` and `/lua` alike, is the owner's own (`Game::dev_tools_owner_only`, the acting
+player against `Serving::owner`): a LAN guest of any permission level is refused with `horizon.dev_tools.owner_only`,
+because the windows open on the host's screen, `/mobai log` writes on the host's disk and the console runs as the
+host. The owner's own commands act through the hub as the owner and pass; a dedicated server has no owner, so its
+console passes and every player is refused. `mc.run` takes a file name in the scripts folder and no path, and a chunk
+that runs over two seconds is stopped by Luau's interrupt, so a typo's endless loop does not freeze the server thread.
 
 ## Why egui, not Dear ImGui
 
@@ -102,7 +108,10 @@ served at the start of the next server tick). A mod's `horizon.log` and `print` 
 console's output beside the console's own, tagged `[mod_id]`. In `/goals`, a Lua goal is named `mod_id:name`.
 
 The chat box completes and colours these like vanilla's commands: the tree a player gets is vanilla's commands
-report plus `lan/commands.rs`'s `horizon_commands`, where Horizon's own commands must be listed.
+report plus `lan/commands.rs`'s `horizon_commands`, where Horizon's own commands must be listed. A guest sees them in
+the tree (they are level 2 there, as `/data` is) but the server refuses the command itself, as above. Their chat
+feedback is translated (`horizon.dev_tools.*` in `assets/horizon/lang/en_us.json`); the egui panels' own labels are
+developer text and are not.
 
 **How it is wired.** A built-in trait mod: `dev_tools::mods()` gives `entry::main` a `Hooks` object when the
 variable is set, and its `RenderHooks::world_drawn` draws egui
@@ -123,7 +132,7 @@ HUD overlaps them; egui's cursor icons and clipboard are not wired (no resize cu
 | 2 | ~~Pointer input and a toggle key~~ built (above); left: egui's platform output (cursor icons, clipboard) | Clickable tools |
 | 3 | ~~`/goals`, `/senses`, `/nav`, `/watch`, `/mobai log`~~ built (above); left: the F3 numbers as live plots, a mod list with each mod's hooks and the time spent in them,  brain species (villagers, piglins and wardens run `*_brain.rs`, not goals), block entities and storage as `/data` reads them | What a mod developer needs while the game runs |
 | 4 | ~~`--dev-tools` launch option~~ built; a registry entry (`registry/dev_tools.json`, kind `engine`) so the launcher's Mods page switches it | No environment variables for people |
-| 5 | Build feature `dev-tools`, off in release profiles (~~the commands registered only with the tools~~ built) | A player's binary carries no egui |
+| 5 | Build feature `dev-tools` so a player's binary carries no egui (~~the commands registered only with the tools~~ built). Decided for now: no gate, the flag works in every build (above) | A smaller binary, not a safety switch: the flag already is one |
 | 6 | Brains over the network: the server sends snapshots on a mod channel (`net_send_to_player`) so a remote server's mobs show too | Multiplayer |
 
 Step 1 is an engine hook point: small, upstreamable, and useful to any mod that draws. Step 3 is where the tools

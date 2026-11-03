@@ -77,11 +77,30 @@ fn forget_unwatched() {
         .retain(|t| id_of(*t).is_some_and(|id| watched.contains(&id) || logged.contains(&id)));
 }
 
-fn plural(n: usize, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
+/// `key` with `args`, or `key.one` when `n` is one: the two forms of a
+/// counted line, as the language file gives them.
+fn counted(key: &str, n: usize, args: &[&dyn std::fmt::Display]) -> Text {
+    if n == 1 {
+        Text::tr(&format!("{key}.one"), args)
+    } else {
+        Text::tr(key, args)
+    }
 }
 
 impl Game<'_> {
+    /// The tools act on the host: their windows open on the host's screen,
+    /// `/mobai log` writes on the host's disk and the console runs as the
+    /// owner. So every command of theirs is the owner's own: a guest's is
+    /// refused (the owner's commands act through the hub too, as the owner;
+    /// a server console has no player and passes).
+    pub(super) fn dev_tools_owner_only(&self) -> R<()> {
+        let owner = self.serving.as_ref().map(|s| s.owner);
+        if self.lan_acting_uuid.is_some() && self.lan_acting_uuid != owner {
+            return Err(err("horizon.dev_tools.owner_only", &[]));
+        }
+        Ok(())
+    }
+
     /// The targets of the command with their ids, players left out.
     fn watchable(&mut self, ctx: &Context) -> R<(Vec<Target>, Vec<u32>, usize)> {
         let targets = self.entities(ctx, "targets", false)?;
@@ -98,17 +117,30 @@ impl Game<'_> {
         Ok((watched, ids, skipped))
     }
 
-    pub(super) fn tools_note(&self) -> &'static str {
-        if crate::dev_tools::enabled() {
-            ""
-        } else {
-            " (the windows need --dev-tools or HORIZON_DEV_TOOLS=1 on the window's game)"
+    /// `line`, and a note that this game shows no window when the tools
+    /// are off on it (a server's, or one started without them).
+    pub(super) fn with_tools_note(&self, mut line: Text) -> Text {
+        if !crate::dev_tools::enabled() {
+            line.push(" ");
+            line.push(Text::tr("horizon.dev_tools.no_window", &[]));
         }
+        line
+    }
+
+    /// The count of entities opened, with the players left out when some were.
+    fn opened_line(&self, key: &str, what: &str, n: usize, skipped: usize) -> Text {
+        let mut line = counted(key, n, &[&what, &n]);
+        if skipped > 0 {
+            line.push(" ");
+            line.push(counted("horizon.dev_tools.players_left_out", skipped, &[&skipped]));
+        }
+        self.with_tools_note(line)
     }
 
     /// `/inspect|goals|senses|nav <targets>`: open that window for them;
     /// `… clear` closes it everywhere.
     pub(super) fn cmd_view(&mut self, ctx: &Context, view: View, clear: bool) -> R<i32> {
+        self.dev_tools_owner_only()?;
         let name = match view {
             View::Data => "inspect",
             View::Goals => "goals",
@@ -118,41 +150,33 @@ impl Game<'_> {
         if clear {
             observe::clear(Some(view));
             forget_unwatched();
-            self.feedback(Text::literal(format!("Closed every /{name} window")));
+            self.feedback(Text::tr("horizon.dev_tools.closed", &[&name]));
             return Ok(0);
         }
         let (targets, ids, skipped) = self.watchable(ctx)?;
         remember(&targets);
         observe::add(&ids, view);
         self.dev_inspect_tick();
-        let mut line = format!("/{name}: {}", plural(ids.len(), "entity", "entities"));
-        if skipped > 0 {
-            line.push_str(&format!(" ({skipped} player(s) left out)"));
-        }
-        line.push_str(self.tools_note());
-        self.feedback(Text::literal(line));
+        let line = self.opened_line("horizon.dev_tools.opened", name, ids.len(), skipped);
+        self.feedback(line);
         Ok(ids.len() as i32)
     }
 
     /// `/inspect` alone: what is watched, and how to use the tools.
     pub(super) fn cmd_inspect_list(&mut self) -> R<i32> {
+        self.dev_tools_owner_only()?;
         let watched = observe::snapshots();
         if watched.is_empty() {
-            self.feedback(Text::literal(
-                "Watching nothing. /inspect <targets> opens a dev tools window per entity \
-                 with its /data (also /goals, /senses, /nav, /watch <targets> <path>, \
-                 /mobai log <targets>), e.g. /inspect @e[type=zombie,sort=nearest,limit=1]; \
-                 /inspect clear closes them.",
-            ));
+            self.feedback(Text::tr("horizon.dev_tools.watching_nothing", &[]));
             return Ok(0);
         }
         let names: Vec<String> = watched
             .iter()
             .map(|w| {
-                let name = w
-                    .data
-                    .as_ref()
-                    .map_or_else(|| "entity".to_string(), |d| d.name.clone());
+                let name = w.data.as_ref().map_or_else(
+                    || horizon_client::lang::get("horizon.dev_tools.entity"),
+                    |d| d.name.clone(),
+                );
                 let views: Vec<&str> = w
                     .views
                     .iter()
@@ -167,16 +191,17 @@ impl Game<'_> {
                 format!("{name} #{} [{}]", w.id, views.join(", "))
             })
             .collect();
-        self.feedback(Text::literal(format!("Watching {}", names.join("; "))));
+        self.feedback(Text::tr("horizon.dev_tools.watching", &[&names.join("; ")]));
         Ok(watched.len() as i32)
     }
 
     /// `/watch <targets> <path>`: a numeric NBT path over time; `/watch clear`.
     pub(super) fn cmd_watch(&mut self, ctx: &Context, clear: bool) -> R<i32> {
+        self.dev_tools_owner_only()?;
         if clear {
             observe::clear_paths();
             forget_unwatched();
-            self.feedback(Text::literal("Closed every /watch window"));
+            self.feedback(Text::tr("horizon.dev_tools.closed", &[&"watch"]));
             return Ok(0);
         }
         let Some(Arg::Str(path)) = ctx.get("path").cloned() else {
@@ -187,23 +212,20 @@ impl Game<'_> {
         remember(&targets);
         observe::add_path(&ids, &path);
         self.dev_inspect_tick();
-        let mut line = format!("/watch {path}: {}", plural(ids.len(), "entity", "entities"));
-        if skipped > 0 {
-            line.push_str(&format!(" ({skipped} player(s) left out)"));
-        }
-        line.push_str(self.tools_note());
-        self.feedback(Text::literal(line));
+        let line = self.opened_line("horizon.dev_tools.watch", &path, ids.len(), skipped);
+        self.feedback(line);
         Ok(ids.len() as i32)
     }
 
     /// `/mobai log <targets>`: each tick, the mob's AI snapshot as a JSON
     /// line in `dev-tools/logs/`; `/mobai log stop` closes the files.
     pub(super) fn cmd_mobai_log(&mut self, ctx: &Context, stop: bool) -> R<i32> {
+        self.dev_tools_owner_only()?;
         if stop {
             let n = LOGS.lock().unwrap_or_else(|e| e.into_inner()).drain(..).count();
             observe::clear_logs();
             forget_unwatched();
-            self.feedback(Text::literal(format!("Closed {}", plural(n, "AI log", "AI logs"))));
+            self.feedback(counted("horizon.dev_tools.logs_closed", n, &[&n]));
             return Ok(n as i32);
         }
         let targets = self.entities(ctx, "targets", false)?;
@@ -254,11 +276,11 @@ impl Game<'_> {
         // store lists: a log is a watch without a window.
         let ids: Vec<u32> = mobs.iter().map(|(_, id)| *id).collect();
         observe::add_log(&ids);
-        self.feedback(Text::literal(if opened.is_empty() {
-            "Already logging those".to_string()
+        self.feedback(if opened.is_empty() {
+            Text::tr("horizon.dev_tools.already_logging", &[])
         } else {
-            format!("Logging to {}", opened.join(", "))
-        }));
+            Text::tr("horizon.dev_tools.logging_to", &[&opened.join(", ")])
+        });
         Ok(opened.len() as i32)
     }
 
