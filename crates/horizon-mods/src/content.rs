@@ -5,8 +5,10 @@
 //!
 //! Content is data, not code: nothing here runs in the sandbox (a scripted
 //! mod's `scripts/registry.lua`, feature `lua`, runs in a state of its own
-//! with no reach beyond the files it registers: [`crate::registry`]). What
-//! a mod may add is fenced instead. Its own namespaces (its id and the ones its
+//! with no reach beyond the files it registers: [`crate::registry`]; the
+//! game and the launcher, built with the feature, run it when they read
+//! the content, the registry server and its CI never do). What a mod may
+//! add is fenced instead. Its own namespaces (its id and the ones its
 //! manifest lists), plus additions to vanilla tags and to the convention
 //! tags (`c`, which NeoForge and Fabric mods share). Paths are plain, files
 //! and totals are capped, vanilla ids cannot be redefined, and no two mods

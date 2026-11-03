@@ -1,11 +1,14 @@
 //! `scripts/registry.lua`: a scripted mod's declarations written in Lua
 //! instead of JSON files (feature `lua`). The script runs once, when the
 //! mod's content is read, in a Luau state of its own with nothing but the
-//! `registry` table: no files, no network, a memory cap and a time budget.
-//! What it registers becomes content files in memory, checked and read like
-//! the ones in `data/` and `assets/`; a path both in the mod and registered
-//! is an error. The launcher's index, built without the feature, lists the
-//! mod's files only.
+//! `registry` table: no files (mlua's filesystem `require` and `loadstring`
+//! are replaced by stubs that refuse), no network, a memory cap and a time
+//! budget. What it registers becomes content files in memory, checked and
+//! read like the ones in `data/` and `assets/`; a path both in the mod and
+//! registered is an error. The game runs it when it loads the mod, and so
+//! does the launcher (built with the feature) when it inspects a mod it
+//! installs; the registry server and its CI (feature `index` alone) list
+//! the mod's files only, so an error in the script is first seen there.
 //!
 //! ```lua
 //! -- scripts/registry.lua: `registry.id` is the mod's id
@@ -139,6 +142,19 @@ fn install(lua: &Lua, id: &str, namespaces: &[String], files: &Files) -> mlua::R
         )?;
     }
     lua.globals().set("registry", registry)?;
+    // mlua's Luau state comes with a `require` that reads `.lua` files from
+    // disk, relative to the working directory, and a `loadstring`: the
+    // script declares content and reaches no file and no other code.
+    for name in ["require", "loadstring"] {
+        lua.globals().set(
+            name,
+            lua.create_function(move |_, _: mlua::MultiValue| -> mlua::Result<()> {
+                Err(mlua::Error::runtime(format!(
+                    "{name}: {REGISTRY_SCRIPT} declares content and loads no other code"
+                )))
+            })?,
+        )?;
+    }
     Ok(())
 }
 
@@ -343,5 +359,14 @@ mod tests {
         let e = run_ruby("local t = {} t.t = t registry.data('x', t)").unwrap_err();
         assert!(e.contains("nested deeper"), "{e}");
         assert!(run_ruby("io.open('x')").is_err());
+        // The state reaches no file and no other code: mlua's own `require`
+        // (which reads .lua files from disk) and `loadstring` are gone.
+        let e = run_ruby("require('../../x')").unwrap_err();
+        assert!(e.contains("require") && e.contains("no other code"), "{e}");
+        let e = run_ruby("loadstring('registry.block(\"a\", {})')()").unwrap_err();
+        assert!(
+            e.contains("loadstring") && e.contains("no other code"),
+            "{e}"
+        );
     }
 }

@@ -25,7 +25,7 @@ mlua = { version = "0.12", features = ["luau", "vendored"], optional = true }
 [features]
 # The mod registry's index (docs/api/mod-index.md): the launcher, the registry server and its CI.
 index = ["dep:sha2", "dep:minisign-verify", "dep:horizon-shader-api", "dep:wasmparser"]
-# A mod's `scripts/registry.lua` runs when its content is read (src/registry.rs): the game; the launcher lists files only.
+# A mod's `scripts/registry.lua` runs when its content is read (src/registry.rs): the game and the launcher (it inspects a mod it installs); the registry server and its CI list files only.
 lua = ["dep:mlua"]
 
 [lints]

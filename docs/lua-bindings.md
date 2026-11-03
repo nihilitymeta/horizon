@@ -46,7 +46,10 @@ with lifecycle callbacks, the API a mod developer writes against, over this file
 A scripted mod may declare its entity types, blocks, items, mob effects, creative tabs and menu types, and write
 any other data or asset JSON (loot tables, recipes, tags, lang, models), in `scripts/registry.lua` instead of
 files. The script runs once, when the game reads the mod's content (at start: `/reload` does not run it again),
-in a Luau state of its own with nothing but the `registry` table, a 5 s budget and 64 MiB. What it registers
+in a Luau state of its own with nothing but the `registry` table, a 5 s budget and 64 MiB: no `require` (there is no
+other script to reach), no `loadstring`, no files. The launcher runs it the same way when it inspects a mod it installs,
+so a declaration error shows there first; the registry server and its CI, built without the `lua` feature, list the
+mod's files only and do not run it. What it registers
 becomes content files in memory, checked and read exactly like the files in `data/` and `assets/`, so the rest
 of the game never knows the difference; a path both in the mod and registered is an error, as is anything the
 file would have been refused for. Textures stay files. The mod needs capability `registries` as well as `scripts`.
