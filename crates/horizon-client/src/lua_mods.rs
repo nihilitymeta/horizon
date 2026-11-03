@@ -1355,12 +1355,14 @@ impl LuaMod {
         pos: BlockPos,
         state: BlockStateId,
     ) -> Flow {
-        if !self.has_handlers(hook) {
-            return Flow::Continue;
-        }
         let Some(block) = level.state_block(state) else {
             return Flow::Continue;
         };
+        // Handlers for every block hear every random tick of the level
+        // (hundreds a tick): a mod's own blocks register by block id.
+        if !self.watches(hook, &block) {
+            return Flow::Continue;
+        }
         let at = [pos.x, pos.y, pos.z];
         let props = match self.lua.create_table() {
             Ok(t) => t,
@@ -1384,6 +1386,7 @@ impl LuaMod {
         let mut handled = false;
         let r = self.call_level(
             hook,
+            Some(&block),
             level,
             (
                 dimension_id(dimension),
@@ -1539,11 +1542,12 @@ impl LuaMod {
     fn call_level(
         &self,
         hook: &str,
+        kind: Option<&str>,
         level: &mut dyn LevelWriteHost,
         args: impl mlua::IntoLuaMulti,
         apply: &mut dyn FnMut(&mut dyn LevelWriteHost, &str, &Table) -> mlua::Result<()>,
     ) -> mlua::Result<()> {
-        let actions = self.run_handlers(hook, None, Reader::Level(&*level), args)?;
+        let actions = self.run_handlers(hook, kind, Reader::Level(&*level), args)?;
         for (action, args) in actions {
             apply(level, &action, &args)?;
         }
@@ -1875,10 +1879,10 @@ impl Hooks for LuaMod {
     /// `data` is the saved compound as a table, written back after the call.
     fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
         let hook = "block_entity_tick";
-        if !self.has_handlers(hook) {
+        let id = event.entity.id.clone();
+        if !self.watches(hook, &id) {
             return;
         }
-        let id = event.entity.id.clone();
         if !self
             .block_entities
             .lock()
@@ -1900,7 +1904,7 @@ impl Hooks for LuaMod {
         let dimension = host.dimension();
         let r = self.call_kind(
             hook,
-            None,
+            Some(&id),
             host,
             (dimension, id.as_str(), x, y, z, data.clone()),
             &mut |host, action, args| {
@@ -2833,6 +2837,8 @@ experimental = ["scripts"]
             &[(
                 "scripts/init.lua",
                 br#"
+                LAMPS = 0
+                horizon.on("random_tick", function() LAMPS = LAMPS + 1 end, "ruby:lamp")
                 horizon.on("random_tick", function(dimension, block, x, y, z, props)
                   if block ~= "ruby:hive" then return end
                   if props.stage == "dormant" then
@@ -2869,6 +2875,8 @@ experimental = ["scripts"]
             [([1, 64, -3], "stage".to_owned(), "growing".to_owned(), 2)]
         );
         assert_eq!(level.ticks, [([1, 64, -3], "ruby:hive".to_owned(), 40)]);
+        // The handler registered for the lamp never heard the hive's tick.
+        assert_eq!(m.lua.globals().get::<i32>("LAMPS").unwrap(), 0);
 
         // A mature hive summons (queued on the level, made after the pass)
         // and keeps its tick; another block: nothing happens.
