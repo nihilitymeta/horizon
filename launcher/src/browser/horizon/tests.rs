@@ -138,6 +138,20 @@ fn searches_by_kind_and_words() {
 }
 
 #[test]
+fn a_content_mod_with_scripts_is_content_not_code_to_port() {
+    use horizon_mods::Capability;
+    let index = sample();
+    let mut v = index.project("coords_hud").unwrap().versions[0].clone();
+    assert!(needs_port(&v));
+    v.capabilities = vec![Capability::Registries, Capability::Scripts];
+    assert!(!needs_port(&v));
+    v.capabilities = vec![Capability::Registries];
+    assert!(!needs_port(&v));
+    v.capabilities = vec![Capability::Scripts, Capability::Chat];
+    assert!(needs_port(&v));
+}
+
+#[test]
 fn installs_checked_turns_on_and_removes() {
     let index = sample();
     let home = scratch("install");
