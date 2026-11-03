@@ -274,6 +274,25 @@ impl Game<'_> {
             .map(horizon_client::lan::playerdata::ints_uuid)
             .unwrap_or_else(|| horizon_protocol::crypto::offline_uuid("Player"))
     }
+    /// The mods hear the window's own player's command before it runs, as a
+    /// guest's (`native_player_command`): true when one stopped it. The
+    /// replies go to the chat as command feedback does.
+    pub(super) fn owner_command_stopped(&mut self, command: &str) -> bool {
+        let mut canceled = false;
+        let mut replies = Vec::new();
+        let (uuid, name) = (self.owner_uuid(), self.options.player_name());
+        self.native_player_command(
+            uuid,
+            &name,
+            command.trim_start_matches('/'),
+            &mut canceled,
+            &mut replies,
+        );
+        for line in replies {
+            self.feedback(line);
+        }
+        canceled
+    }
     /// Plays the sound event `sound` (`minecraft:entity.zombie.ambient`, or a
     /// mod's own) at `pos` in the level in place, `dimension`, for every
     /// player within range (16 blocks, times `volume` past 1), as

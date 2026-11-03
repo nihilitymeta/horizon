@@ -999,8 +999,8 @@ impl Game<'_> {
             return;
         }
         if let Some(command) = message.strip_prefix('/') {
-            // A native mod's command first.
-            if !self.client_mod_command(command) {
+            // A native mod's command first; then the mods hear it and may stop it.
+            if !self.client_mod_command(command) && !self.owner_command_stopped(command) {
                 self.run_command(command);
             }
         } else {
@@ -1202,7 +1202,7 @@ impl Game<'_> {
         }
         if self.remote.is_some() {
             self.send_unattended_command(command);
-        } else {
+        } else if !self.owner_command_stopped(command) {
             self.run_command(command);
         }
     }

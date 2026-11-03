@@ -14907,7 +14907,12 @@ impl Game<'_> {
                 true,
             );
         }
-        if let (Some(player), Some(name)) = (self.lan_acting_uuid, self.lan_acting_name.clone()) {
+        // The mods hear it, for a guest and for the window's own player.
+        {
+            let (player, name) = match (self.lan_acting_uuid, self.lan_acting_name.clone()) {
+                (Some(player), Some(name)) => (player, name),
+                _ => (self.native_acting_id(), self.options.player_name()),
+            };
             let mut cancel = false;
             self.native_player_bed_enter(player, &name, head, &mut cancel);
             if cancel {
