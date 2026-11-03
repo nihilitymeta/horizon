@@ -9352,7 +9352,8 @@ impl Game<'_> {
 
 /// A mob's kind as the hook points name it (`minecraft:zombie`).
 pub(super) fn mob_kind(mob: &horizon_client::mobs::Mob) -> String {
-    ["minecraft:", mob.kind.id.trim_start_matches("minecraft:")].concat()
+    // A content mod's mob keeps its own namespace.
+    horizon_client::command::args::normalize(&mob.kind.id)
 }
 
 /// Where the game calls the hook points.
