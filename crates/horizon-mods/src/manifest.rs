@@ -286,22 +286,16 @@ impl Manifest {
                  add experimental = [\"{c}\"] to use it"
             ));
         }
-        for (i, dep) in m.depends.iter().enumerate() {
-            let dep_ok = (1..=64).contains(&dep.len())
-                && dep
-                    .bytes()
-                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
-            if !dep_ok {
-                return Err(format!(
-                    "{MANIFEST}: depends {dep:?} is not a mod id, [a-z0-9_]{{1,64}}"
-                ));
-            }
-            if *dep == m.id {
+        let mut seen: Vec<String> = Vec::new();
+        for dep in &m.depends {
+            let (id, _) = parse_dependency(dep).map_err(|e| format!("{MANIFEST}: {e}"))?;
+            if id == m.id {
                 return Err(format!("{MANIFEST}: a mod does not depend on itself"));
             }
-            if m.depends[..i].contains(dep) {
-                return Err(format!("{MANIFEST}: depends lists {dep:?} twice"));
+            if seen.contains(&id) {
+                return Err(format!("{MANIFEST}: depends lists {id:?} twice"));
             }
+            seen.push(id);
         }
         if !m.namespaces.is_empty() && !m.capabilities.contains(&Capability::Registries) {
             return Err(format!(
@@ -580,5 +574,82 @@ capabilities = ["game-read", "hud"]
             "{base}capabilities = [\"hud\"]\nexperimental = [\"hud\"]\n"
         ))
         .unwrap();
+    }
+}
+
+/// A `depends` entry: a mod id (`horizon_modkit`), or an id with the least
+/// version that will do (`horizon_modkit >= 0.6`, `>= 0.6.2`), as the game
+/// checks it at load. The id and the minimum, when there is one.
+pub fn parse_dependency(spec: &str) -> Result<(String, Option<[u32; 3]>), String> {
+    let (id, min) = match spec.split_once(">=") {
+        Some((id, min)) => (id.trim(), Some(min.trim())),
+        None => (spec.trim(), None),
+    };
+    let id_ok = (1..=64).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+    if !id_ok {
+        return Err(format!(
+            "depends {spec:?} is not a mod id, [a-z0-9_]{{1,64}}, with at most \">= <version>\" after it"
+        ));
+    }
+    let min = match min {
+        Some(min) => Some(parse_version(min).ok_or_else(|| {
+            format!("depends {spec:?}: the version after >= is numbers with dots, as 0.6 or 0.6.2")
+        })?),
+        None => None,
+    };
+    Ok((id.to_owned(), min))
+}
+
+/// The numbers of a version (`0.6.2` is `[0, 6, 2]`, `0.6` is `[0, 6, 0]`,
+/// `1.2.3-beta` is `[1, 2, 3]`): none when it does not start with one.
+pub fn parse_version(version: &str) -> Option<[u32; 3]> {
+    let core = version.split(['-', '+']).next()?;
+    let mut out = [0u32; 3];
+    let mut parts = core.split('.');
+    for n in &mut out {
+        match parts.next() {
+            Some(p) => *n = p.parse().ok()?,
+            None => break,
+        }
+    }
+    if parts.next().is_some() || core.is_empty() {
+        return None;
+    }
+    Some(out)
+}
+
+/// Whether `version` is at least `min`, as the game decides a dependency's version does.
+pub fn version_at_least(version: &str, min: [u32; 3]) -> bool {
+    parse_version(version).is_some_and(|v| v >= min)
+}
+
+#[cfg(test)]
+mod dependency_tests {
+    use super::*;
+
+    #[test]
+    fn a_dependency_names_a_mod_and_may_name_the_least_version() {
+        assert_eq!(
+            parse_dependency("horizon_modkit").unwrap(),
+            ("horizon_modkit".into(), None)
+        );
+        assert_eq!(
+            parse_dependency("horizon_modkit >= 0.6").unwrap(),
+            ("horizon_modkit".into(), Some([0, 6, 0]))
+        );
+        assert_eq!(
+            parse_dependency("horizon_modkit>=1.2.3").unwrap(),
+            ("horizon_modkit".into(), Some([1, 2, 3]))
+        );
+        assert!(parse_dependency("Horizon-Modkit").is_err());
+        assert!(parse_dependency("horizon_modkit >= soon").is_err());
+        assert!(parse_dependency("horizon_modkit > 0.6").is_err());
+        assert!(version_at_least("0.6.0", [0, 6, 0]));
+        assert!(version_at_least("0.7.1-beta", [0, 6, 2]));
+        assert!(!version_at_least("0.5.9", [0, 6, 0]));
+        assert!(!version_at_least("dev", [0, 1, 0]));
     }
 }

@@ -433,7 +433,7 @@ mod tests {
         let manifest =
             Manifest::parse(&std::fs::read_to_string(path.join(MANIFEST)).unwrap()).unwrap();
         assert_eq!(manifest.id, "my_wand");
-        assert_eq!(manifest.depends, ["horizon_modkit"]);
+        assert_eq!(manifest.depends, ["horizon_modkit >= 0.7"]);
         assert!(
             manifest
                 .capabilities

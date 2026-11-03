@@ -242,6 +242,8 @@ const HOOKS: &[(&str, &str)] = &[
 /// the actions of `lua_mods.rs`). `on` is written out of `HOOKS`.
 const FUNCTIONS: &[(&str, &str)] = &[
     ("mod_id", "string"),
+    ("mod_version", "string"),
+    ("libraries", "{ [string]: string }"),
     ("log", "(msg: string) -> ()"),
     (
         "command",

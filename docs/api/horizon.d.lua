@@ -84,6 +84,8 @@ export type HorizonOn =
 declare horizon: {
     on: HorizonOn,
     mod_id: string,
+    mod_version: string,
+    libraries: { [string]: string },
     log: (msg: string) -> (),
     command: (usage: string, level: number, fn: (player: Player, args: CommandArgs) -> ()) -> (),
     goal: (name: string, def: GoalDef) -> (),

@@ -798,6 +798,10 @@ const LOADED: &str = "horizon_loaded";
 /// One scripted mod: its folder and its Lua state.
 pub struct LuaMod {
     id: String,
+    /// The mod's version, from its manifest (`horizon.mod_version`).
+    version: String,
+    /// The versions of the mods it depends on, by id (`horizon.libraries`).
+    library_versions: Vec<(String, String)>,
     /// The `.hmod` or folder the scripts came from.
     source: PathBuf,
     lua: Lua,
@@ -963,6 +967,7 @@ pub fn discover(args: impl Iterator<Item = String>) -> Mods {
         }
         on.push(Candidate {
             id: m.id,
+            version: m.version,
             path: path.clone(),
             scripted,
             depends: m.depends,
@@ -973,7 +978,7 @@ pub fn discover(args: impl Iterator<Item = String>) -> Mods {
         let c = &on[step.index];
         if let Some(missing) = step.missing {
             log::error!(
-                "Horizon: Lua mod {} not loaded: it needs mod {missing}, which is not installed or not on",
+                "Horizon: Lua mod {} not loaded: it needs {missing}, which is not installed, not on, or not that version",
                 c.id
             );
             continue;
@@ -985,8 +990,9 @@ pub fn discover(args: impl Iterator<Item = String>) -> Mods {
             .depends
             .iter()
             .filter_map(|d| {
+                let id = horizon_mods::manifest::parse_dependency(d).ok()?.0;
                 on.iter()
-                    .find(|o| o.id == *d)
+                    .find(|o| o.id == id)
                     .map(|o| (o.id.clone(), o.path.clone()))
             })
             .collect();
@@ -1028,11 +1034,25 @@ pub fn check_mod(path: &Path, dev: &[PathBuf]) -> Result<Vec<String>, String> {
     Content::read(path, &manifest).map_err(at)?;
     let mut libraries = Vec::new();
     for dep in &manifest.depends {
-        let found = dev
-            .iter()
-            .find(|d| Package::read(d).is_ok_and(|p| p.manifest.id == *dep));
+        let (id, min) = horizon_mods::manifest::parse_dependency(dep).map_err(at)?;
+        let found = dev.iter().find_map(|d| {
+            Package::read(d)
+                .ok()
+                .filter(|p| p.manifest.id == id)
+                .map(|p| (d, p))
+        });
         match found {
-            Some(d) => libraries.push((dep.clone(), d.clone())),
+            Some((d, p)) => {
+                if let Some(min) = min
+                    && !horizon_mods::manifest::version_at_least(&p.manifest.version, min)
+                {
+                    return Err(at(format!(
+                        "depends on {dep}, found {id} {} among the --dev-mod folders",
+                        p.manifest.version
+                    )));
+                }
+                libraries.push((id, d.clone()));
+            }
             None => {
                 return Err(at(format!(
                     "depends on {dep}, not among the --dev-mod folders given"
@@ -1064,6 +1084,7 @@ pub fn check_mod(path: &Path, dev: &[PathBuf]) -> Result<Vec<String>, String> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Candidate {
     id: String,
+    version: String,
     path: PathBuf,
     scripted: bool,
     depends: Vec<String>,
@@ -1090,10 +1111,24 @@ fn load_order(on: &[Candidate]) -> Vec<Step> {
             if done[i] {
                 continue;
             }
-            let missing = c.depends.iter().find(|d| {
-                on.iter()
-                    .position(|o| o.id == **d)
-                    .is_none_or(|j| failed[j])
+            // A dependency is missing when no mod of its id is on, that mod
+            // failed, or its version is below the least one asked for.
+            let missing = c.depends.iter().find_map(|d| {
+                let Ok((id, min)) = horizon_mods::manifest::parse_dependency(d) else {
+                    return Some(format!("{d} (not a dependency)"));
+                };
+                match on.iter().position(|o| o.id == id) {
+                    None => Some(id),
+                    Some(j) if failed[j] => Some(id),
+                    Some(j) => match min {
+                        Some(min)
+                            if !horizon_mods::manifest::version_at_least(&on[j].version, min) =>
+                        {
+                            Some(format!("{d} (found {})", on[j].version))
+                        }
+                        _ => None,
+                    },
+                }
             });
             if let Some(missing) = missing {
                 done[i] = true;
@@ -1101,14 +1136,16 @@ fn load_order(on: &[Candidate]) -> Vec<Step> {
                 progressed = true;
                 steps.push(Step {
                     index: i,
-                    missing: Some(missing.clone()),
+                    missing: Some(missing),
                 });
                 continue;
             }
-            let ready = c
-                .depends
-                .iter()
-                .all(|d| on.iter().position(|o| o.id == *d).is_some_and(|j| done[j]));
+            let ready = c.depends.iter().all(|d| {
+                let id = horizon_mods::manifest::parse_dependency(d)
+                    .map(|(id, _)| id)
+                    .unwrap_or_default();
+                on.iter().position(|o| o.id == id).is_some_and(|j| done[j])
+            });
             if ready {
                 done[i] = true;
                 progressed = true;
@@ -1153,8 +1190,8 @@ impl LuaMod {
         libraries: &[(String, PathBuf)],
         config_dir: Option<&Path>,
     ) -> Result<Self, String> {
-        let (id, scripts) = Self::read_scripts(path)?;
-        let library_scripts = Self::read_libraries(libraries)?;
+        let (id, version, scripts) = Self::read_scripts(path)?;
+        let (library_scripts, library_versions) = Self::read_libraries(libraries)?;
         let lua = Lua::new();
         lua.set_memory_limit(MEMORY).map_err(|e| e.to_string())?;
         let budget = Budget::default();
@@ -1165,6 +1202,8 @@ impl LuaMod {
         let config_path = config_dir.map(|d| d.join(format!("{id}.json")));
         let m = LuaMod {
             id,
+            version,
+            library_versions,
             source: path.to_owned(),
             lua,
             scripts: Arc::new(Mutex::new(scripts)),
@@ -1187,8 +1226,8 @@ impl LuaMod {
         Ok(m)
     }
 
-    /// The mod's id and scripts, read from its `.hmod` or folder.
-    fn read_scripts(path: &Path) -> Result<(String, HashMap<String, String>), String> {
+    /// The mod's id, version and scripts, read from its `.hmod` or folder.
+    fn read_scripts(path: &Path) -> Result<(String, String, HashMap<String, String>), String> {
         let at = |e: String| format!("{}: {e}", path.display());
         let package = Package::read(path).map_err(at)?;
         let manifest = package.manifest;
@@ -1203,25 +1242,32 @@ impl LuaMod {
             let code = String::from_utf8(bytes).map_err(|_| at(format!("{name}: not UTF-8")))?;
             scripts.insert(name.clone(), code);
         }
-        Ok((manifest.id, scripts))
+        Ok((manifest.id, manifest.version, scripts))
     }
 
     /// The libraries' scripts, the first library's winning a shared name.
     /// A library without scripts (content only) contributes none.
-    fn read_libraries(libraries: &[(String, PathBuf)]) -> Result<HashMap<String, String>, String> {
+    /// The libraries' scripts, the first library's winning a shared name, and
+    /// each library's version by id. A library without scripts (content only)
+    /// contributes none.
+    fn read_libraries(
+        libraries: &[(String, PathBuf)],
+    ) -> Result<(HashMap<String, String>, Vec<(String, String)>), String> {
         let mut out: HashMap<String, String> = HashMap::new();
+        let mut versions = Vec::new();
         for (id, path) in libraries {
             let package = Package::read(path).map_err(|e| format!("library {id}: {e}"))?;
+            versions.push((id.clone(), package.manifest.version.clone()));
             if !package.manifest.capabilities.contains(&Capability::Scripts) {
                 continue;
             }
-            let (_, scripts) =
+            let (_, _, scripts) =
                 Self::read_scripts(path).map_err(|e| format!("library {id}: {e}"))?;
             for (name, code) in scripts {
                 out.entry(name).or_insert(code);
             }
         }
-        Ok(out)
+        Ok((out, versions))
     }
 
     /// Reads the scripts again and runs `scripts/init.lua` afresh: the
@@ -1229,8 +1275,8 @@ impl LuaMod {
     /// the Lua state and its globals stay. On an error the mod keeps running
     /// as it was, with its old handlers.
     pub fn reload(&self) -> Result<(), String> {
-        let (_, scripts) = Self::read_scripts(&self.source)?;
-        let library_scripts = Self::read_libraries(&self.libraries)?;
+        let (_, _, scripts) = Self::read_scripts(&self.source)?;
+        let (library_scripts, _) = Self::read_libraries(&self.libraries)?;
         let lua = &self.lua;
         let reset = || -> mlua::Result<()> {
             lua.set_named_registry_value(HANDLERS, lua.create_table()?)?;
@@ -1286,6 +1332,14 @@ impl LuaMod {
         let api = lua.create_table()?;
         let id = self.id.clone();
         api.set("mod_id", id.as_str())?;
+        // The manifest's version, and the versions of the mods this one
+        // depends on: a library reads its own from `horizon.libraries`.
+        api.set("mod_version", self.version.as_str())?;
+        let libraries = lua.create_table()?;
+        for (lib, version) in &self.library_versions {
+            libraries.set(lib.as_str(), version.as_str())?;
+        }
+        api.set("libraries", libraries)?;
         api.set(
             "log",
             lua.create_function(move |_, msg: String| {
@@ -6247,17 +6301,19 @@ experimental = ["scripts"]
     fn mods_load_after_what_they_depend_on_and_without_it_not_at_all() {
         let c = |id: &str, depends: &[&str]| Candidate {
             id: id.into(),
+            version: "0.6.0".into(),
             path: PathBuf::from(id),
             scripted: true,
             depends: depends.iter().map(|d| d.to_string()).collect(),
         };
         let on = [
-            c("parasite", &["modkit"]),
+            c("parasite", &["modkit >= 0.6"]),
             c("modkit", &[]),
             c("lost", &["nowhere"]),
             c("a", &["b"]),
             c("b", &["a"]),
             c("leaf", &["lost"]),
+            c("newer", &["modkit >= 0.7"]),
         ];
         let steps = load_order(&on);
         let order: Vec<(&str, Option<&str>)> = steps
@@ -6273,6 +6329,8 @@ experimental = ["scripts"]
         assert!(order.contains(&("lost", Some("nowhere"))));
         assert!(order.contains(&("leaf", Some("lost"))));
         assert!(order.contains(&("a", Some("b"))) || order.contains(&("a", Some("a"))));
+        // A least version not met: told with what was found.
+        assert!(order.contains(&("newer", Some("modkit >= 0.7 (found 0.6.0)"))));
         assert_eq!(steps.len(), on.len());
     }
 
@@ -6480,6 +6538,51 @@ experimental = ["scripts"]
                 "  scripts/init.lua"
             ]
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A mod names the least version of a library it needs: the headless
+    /// check refuses an older one and says what it found, and takes a newer
+    /// one, whose version the mod reads from `horizon.libraries`.
+    #[test]
+    fn a_dependency_s_least_version_is_checked_and_the_versions_are_read() {
+        let dir = std::env::temp_dir().join(format!("horizon-lua-versions-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let manifest = |id: &str, version: &str, depends: &str| {
+            format!(
+                "id = \"{id}\"\nname = \"{id}\"\nversion = \"{version}\"\napi = \"0.2\"\nside = \"both\"\ncapabilities = [\"scripts\"]\nexperimental = [\"scripts\"]\ndepends = [{depends}]\n"
+            )
+        };
+        let write = |name: &str, manifest: String, init: &[u8]| {
+            let path = dir.join(name);
+            std::fs::write(
+                &path,
+                Package::write_files(&manifest, None, &[("scripts/init.lua", init)]).unwrap(),
+            )
+            .unwrap();
+            path
+        };
+        let old = write("lib-old.hmod", manifest("lib", "1.0.0", ""), b"");
+        let new = write("lib-new.hmod", manifest("lib", "2.1.0", ""), b"");
+        let user = write(
+            "user.hmod",
+            manifest("user", "0.3.0", "\"lib >= 2.0\""),
+            b"MINE = horizon.mod_version\nLIB = horizon.libraries.lib\n",
+        );
+        let e = check_mod(&user, &[old.clone()]).unwrap_err();
+        assert!(
+            e.contains("lib >= 2.0") && e.contains("found lib 1.0.0"),
+            "{e}"
+        );
+        let lines = check_mod(&user, &[new.clone()]).unwrap();
+        assert!(
+            lines.iter().any(|l| l.contains("with lib from")),
+            "{lines:?}"
+        );
+        let m = LuaMod::load(&user, &[("lib".into(), new)]).unwrap();
+        assert_eq!(m.lua.globals().get::<String>("MINE").unwrap(), "0.3.0");
+        assert_eq!(m.lua.globals().get::<String>("LIB").unwrap(), "2.1.0");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
