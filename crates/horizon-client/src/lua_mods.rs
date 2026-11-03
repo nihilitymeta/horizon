@@ -29,9 +29,10 @@ use crate::mod_api::{
 use crate::mod_api::{
     EntityJoinLevelEvent, ExplosionDetonateEvent, HearsProjectileImpactsEvent, HurtEnemyEvent,
     ItemCraftedEvent, ItemDroppedEvent, LivingEntityUseItemStartEvent, LivingEquipmentChangeEvent,
-    LivingFallEvent, LivingHealEvent, LivingKnockbackEvent, LootDropsEvent, PlayerBedEnterEvent,
-    PlayerChangedDimensionEvent, PlayerCommandEvent, PlayerContainerOpenEvent,
-    PlayerExpChangeEvent, PlayerTickEvent, ProjectileImpactEvent, ProjectileLaunchEvent,
+    LivingEquipmentListenedEvent, LivingFallEvent, LivingHealEvent, LivingKnockbackEvent,
+    LootDropsEvent, PlayerBedEnterEvent, PlayerChangedDimensionEvent, PlayerCommandEvent,
+    PlayerContainerOpenEvent, PlayerExpChangeEvent, PlayerTickEvent, ProjectileImpactEvent,
+    ProjectileLaunchEvent,
 };
 use crate::mod_api::{NativeCommand, PerformCommandEvent, RegisterCommandsEvent};
 use horizon_mods::{Capability, Content, Package};
@@ -3478,6 +3479,20 @@ impl Hooks for LuaMod {
             self.hook_error(hook, e);
         }
     }
+    /// Equipment changes are watched while a script watches `mob_equipped`.
+    fn living_equipment_listened(
+        &self,
+        _host: &mut dyn Host,
+        event: &mut LivingEquipmentListenedEvent,
+    ) {
+        if self
+            .kinds
+            .lock()
+            .is_ok_and(|k| k.get("mob_equipped").is_some_and(|s| !s.is_empty()))
+        {
+            event.listened = true;
+        }
+    }
     /// A mob's equipment slot changed: `mob_equipped(mob, slot, from, to)`
     /// by kind, `mob` its view, `from` and `to` item tables or nil.
     fn living_equipment_change(
@@ -5587,6 +5602,9 @@ experimental = ["scripts"]
         let mut hears = HearsProjectileImpactsEvent { hears: false };
         m.hears_projectile_impacts(&host, &mut hears);
         assert!(hears.hears);
+        let mut listened = LivingEquipmentListenedEvent { listened: false };
+        m.living_equipment_listened(&mut host, &mut listened);
+        assert!(listened.listened);
         let mut impact = ProjectileImpactEvent {
             dimension: "minecraft:overworld",
             projectile: 30,

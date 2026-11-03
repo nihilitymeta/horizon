@@ -152,6 +152,10 @@ const LUA_HOOKS: &[(&str, &str)] = &[
         "`player_container_open(player, menu, pos)`",
     ),
     (
+        "living_equipment_listened",
+        "true while a script watches `mob_equipped`",
+    ),
+    (
         "living_equipment_change",
         "`mob_equipped(mob, slot, from, to)`, by kind",
     ),
