@@ -681,6 +681,10 @@
     {
       "name": "set_mod_block_entity_data",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_set_mod_block_entity_data"
+    },
+    {
+      "name": "mob_view",
+      "target": "horizon_client::game::native_mobs::Game<'_>::native_mob_view"
     }
   ],
   "hooks": [

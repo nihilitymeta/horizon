@@ -46,11 +46,12 @@ with lifecycle callbacks, the API a mod developer writes against, over this file
 | | |
 |---|---|
 | Entry | `scripts/init.lua` of a mod with capability `scripts` (and `experimental = ["scripts"]`), installed in `horizon-mods/` and on, or a `--dev-mod` folder; the mod's id from its `horizon-mod.toml` |
-| `horizon.on(name, fn)` | Register a handler: `server_tick(phase, world_running)`, `mob_spawned(dimension, kind, x, y, z, natural)`, `world_lifecycle(phase)` |
+| `horizon.on(name, fn[, kind])` | Register a handler: `server_tick(phase, world_running)`, `mob_spawned(dimension, kind, x, y, z, natural)`, `world_lifecycle(phase)`, the block hooks and the mob hooks below. With `kind` (`"minecraft:zombie"`, `"zombie"`, or a mod's own id), a mob hook's handler runs only for mobs of that kind, after the handlers for every kind; a kind no handler watches costs nothing |
 | `horizon.log(msg)` | The game log, tagged `[lua:<id>]` |
 | `horizon.broadcast(text)` | A chat line to every player |
 | `horizon.summon(dimension, kind, x, y, z)` | `/summon`; in a level hook (`random_tick`, `tick_block`) the mob is made right after the level's pass, in that level |
 | `horizon.kill_mob(dimension, id)` | `/kill` a mob |
+| `horizon.remove_mob(dimension, id)`, `horizon.set_mob_health(dimension, id, health)`, `horizon.push_mob(dimension, id, x, y, z)`, `horizon.teleport_mob(dimension, id, x, y, z)` | Host actions on a mob by id, from any hook with a host: take it out with no death or loot, set its health (cut to its maximum), add to its velocity, move it as `/tp` does |
 | `require("name")` | `scripts/name.lua` of the same mod, once |
 | `horizon.goal(name, def)` | Define a mob goal: `def.flags` (`{"move", "look", "jump", "target"}`), `def.every_tick`, `def.interruptable`, and `can_use(mob, state, out)` (required), `can_continue`, `start`, `tick`, `stop`. `mob` is the mob's view, `state` a table of the goal's own that lives with the mob, `out` the actions |
 | `mob_ai_register(mob)` | A hook: as a mob's goals are set up. Handlers call `horizon.add_goal(priority, name)`, `horizon.add_target_goal(priority, name)`, `horizon.clear_goals()`, `horizon.clear_target_goals()` |
@@ -63,6 +64,12 @@ with lifecycle callbacks, the API a mod developer writes against, over this file
 | `right_click_block(x, y, z, block, face, player, held, data)` | A player right-clicks a block, before the block and the item act; `face` and `player.position` are `{x, y, z}`, `player` has `name`, `dimension`, `game_mode`, `held` has `item`, `count`, `plain`. Handlers may queue `horizon.set_block_property(key, value)`, `horizon.cancel()` (nothing acts, no swing) and the host actions; `data` as above |
 | `horizon.block_entity(block, { ticks = true, data = {...} })` | Gives the mod's block a block entity, made with `data` (a table: numbers, strings, booleans, nested tables and sequences) when the block is placed and saved with the chunk; `ticks` makes it tick. Declared at load (`init.lua`), as goals are |
 | `block_entity_tick(dimension, block, x, y, z, data)` | Every server tick of a block entity declared with `ticks`: `data` is its saved table, written back after the call (a number keeps its NBT type, a key set to nil is gone); actions: the host's (`summon`, `broadcast`...) and `set_block_property(key, value)` on the block |
+| `mob_hurt(mob, damage_type, causing, direct, amount)` | A mob is about to take damage (`living_incoming_damage`): `mob` is `{id, kind}` only (the game is mid-hit: no host, so no view and no data); `damage_type` such as `minecraft:mob_attack`, `minecraft:on_fire`; `causing` and `direct` the entities behind it (-1: none). Handlers may queue `horizon.set_amount(n)` and `horizon.cancel()` (the hit is refused). The game is mid-hit: the host actions are dropped |
+| `mob_killed(dimension, mob, killer, data)` | A player's melee blow killed a mob (other deaths are not told yet): `mob` is `{id, kind}` (it is dead), `killer` the player's table, `data` the mod's data on the mob |
+| `mob_interact(dimension, mob, player, held, data)` | A player right-clicks a mob, before the mob and the item act: `mob` is its view (as in a goal, without `nearby` and `target_position`), `held` is the stack of the hand asked (main, then off); `horizon.cancel()` takes the click; the host actions; `data` written back |
+| `mob_tick(dimension, mob, data)` | A mob ticked (`entity_tick_post`): `mob` is its view without the fields that need the world (`nearby` is empty, `target_position` nil), `data` the mod's data, written back; the host actions. Register it with a `kind`: a handler for every kind hears every mob of the level each tick |
+| `player` (in the hooks) | `uuid`, `name`, `dimension`, `position` (`{x, y, z}`), `game_mode` (0 survival, 1 creative, 2 adventure, 3 spectator), `health` |
+| `data` (on a mob) | The mod's own saved table on the mob, empty at first; kept with the mob as the engine's attachment under the mod's id (`horizon:attachments` in its NBT), so it survives a save and a restart, and other mods' data stays apart. Written back after the call as a block entity's is (types kept, nil removes); nil when the host has no such mob |
 | The `.hmod` | `cargo horizon-mod build` packs `scripts/` beside `assets/` and `data/`; `horizon_mods::Content` lists them (`scripts`), checks the paths and that `scripts/init.lua` is there; the Mods page says "May run its own scripts in your worlds" |
 
 ```lua
@@ -109,8 +116,8 @@ the Mods page takes effect at the next start.
 
 | Step | What | Why |
 |---|---|---|
-| 2 | Hook coverage by generation: `xtask mod-api` emits the Lua adapter for every `listen` hook from the catalog, as it emits the trait | Every hook point reaches Lua without hand-written glue |
-| 3 | Host reads: `horizon.block(dimension, x, y, z)`, `horizon.mobs(dimension)`, `horizon.mob(dimension, id)`, returned synchronously (reads borrow the host for the call) | Scripts need to look before they act |
+| 4 | Hook coverage by generation: `xtask mod-api` emits the Lua adapter for every `listen` hook from the catalog, as it emits the trait | Every hook point reaches Lua without hand-written glue |
+| 5 | Host reads: `horizon.block(dimension, x, y, z)`, `horizon.mobs(dimension)`, `horizon.mob(dimension, id)`, returned synchronously (reads borrow the host for the call) | Scripts need to look before they act |
 
 The block hooks needed one addition to the mod API: `LevelHost::state_block`
 and `state_properties`, so a hook that gets a state can name its block without a world lookup (trait mods get them too). Everything

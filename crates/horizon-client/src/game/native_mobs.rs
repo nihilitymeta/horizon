@@ -6,6 +6,7 @@
 //! mobs they are out of the level: a mob a hook spawns then joins it after the
 //! tick, and the others read as gone.
 use super::{Game, commands::Target};
+use horizon_client::mod_api::MobView;
 use horizon_core::geometry::Vec3;
 
 /// The `EquipmentSlot` names of `Mob::equipment_stacks`, in its order.
@@ -217,6 +218,17 @@ impl Game<'_> {
         }
         let mob = self.mobs.iter().find(|m| m.id == id && !m.removed)?;
         mob.alive().then(|| self.native_mob_of(mob))
+    }
+    /// The living mob `id`'s view as its goals see it (`MobView`), in the
+    /// level in place, `dimension`: none for no such mob or a client's copy.
+    /// The fields that need the world (`target_position`, `nearby`) are
+    /// empty. API 361.
+    pub(super) fn native_mob_view(&self, dimension: &str, id: u32) -> Option<MobView> {
+        if !self.native_mob_level(dimension) {
+            return None;
+        }
+        let mob = self.mobs.iter().find(|m| m.id == id && !m.removed)?;
+        mob.alive().then(|| MobView::of(mob, None))
     }
     /// The living mobs in the level in place, `dimension`; none on a client's
     /// copy. API 37.

@@ -14,14 +14,15 @@
 //! Scripts travel inside the `.hmod` under capability `scripts`, or load from
 //! `--dev-mod` folders. Mob behaviour is written as goals ([`goals`]).
 use crate::mod_api::{
-    BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent, BlockPos, BlockStateId,
-    Compound, DataPackFilesEvent, Flow, Hooks, Host, LevelDimension, LevelWriteHost,
-    MobAiRegisterEvent, MobSpawnedEvent, MobView, Mods, RandomTickEvent, RightClickBlockEvent,
-    ServerTickEvent, ServerTickPhase, TickBlockEvent, WorldLifecycleEvent,
+    AttachmentCodec, AttachmentType, BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
+    BlockPos, BlockStateId, Compound, DataPackFilesEvent, EntityTickPostEvent, Flow, Holder, Hooks,
+    Host, InteractEntityEvent, LevelDimension, LevelWriteHost, LivingIncomingDamageEvent,
+    MobAiRegisterEvent, MobKilledEvent, MobSpawnedEvent, MobView, Mods, RandomTickEvent,
+    RightClickBlockEvent, ServerTickEvent, ServerTickPhase, TickBlockEvent, WorldLifecycleEvent,
 };
 use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -87,6 +88,9 @@ const MANIFEST: &str = "horizon-mod.toml";
 const GLOBAL: &str = "horizon";
 /// The registry key of the handlers table: `name -> { fn, fn, ... }`.
 const HANDLERS: &str = "horizon_handlers";
+/// The registry key of the handlers that watch one kind of mob
+/// (`horizon.on(name, fn, kind)`): `name -> kind -> { fn, fn, ... }`.
+const KIND_HANDLERS: &str = "horizon_kind_handlers";
 /// The registry key of the queue of actions a handler asked for.
 const QUEUE: &str = "horizon_queue";
 /// The registry key of the modules `require` ran: `name -> value`.
@@ -113,10 +117,57 @@ pub struct LuaMod {
     loads: AtomicU32,
     /// The running chunk's deadline, for the state's interrupt.
     budget: Budget,
+    /// The kinds of mob the scripts watch, by hook (`horizon.on(name, fn,
+    /// kind)`), so a mob hook of any other kind costs nothing.
+    kinds: Kinds,
+    /// The mod's saved data on a mob (`data` in the mob hooks): the engine's
+    /// attachment under the mod's id, saved with the mob.
+    attachment: AttachmentType<Compound>,
 }
 
 /// A mod's goal definitions, shared with the `horizon.goal` function.
 type Goals = Arc<Mutex<HashMap<String, goals::GoalDef>>>;
+/// The kinds watched by hook, shared with the `horizon.on` function.
+type Kinds = Arc<Mutex<HashMap<String, HashSet<String>>>>;
+
+/// A mob kind as the mob hooks name it: `minecraft:zombie`, or a content
+/// mod's own id as it is.
+fn qualify(kind: &str) -> String {
+    if kind.contains(':') {
+        kind.to_owned()
+    } else {
+        ["minecraft:", kind].concat()
+    }
+}
+
+/// The mod's attachment on mobs: its saved data, a compound under the mod's
+/// id in the engine's `horizon:attachments`, kept on disk as it is.
+fn mod_attachment(id: &str) -> AttachmentType<Compound> {
+    AttachmentType {
+        namespace: crate::mobs::native_goal::intern(id),
+        name: "data",
+        default: Compound::default,
+        codec: Some(AttachmentCodec {
+            encode: |c| Ok(c.clone()),
+            decode: |c| Ok(c.clone()),
+        }),
+        copy_on_death: false,
+        sync: false,
+    }
+}
+
+/// `text` as a UUID is written: `8-4-4-4-12` hex digits.
+fn uuid_text(uuid: u128) -> String {
+    let hex = format!("{uuid:032x}");
+    [
+        &hex[..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..],
+    ]
+    .join("-")
+}
 
 /// What a script asked for a block's block entity: whether it ticks, and
 /// the saved compound a new one starts with.
@@ -206,11 +257,19 @@ pub fn discover(args: impl Iterator<Item = String>) -> Mods {
         let libraries: Vec<(String, PathBuf)> = c
             .depends
             .iter()
-            .filter_map(|d| on.iter().find(|o| o.id == *d).map(|o| (o.id.clone(), o.path.clone())))
+            .filter_map(|d| {
+                on.iter()
+                    .find(|o| o.id == *d)
+                    .map(|o| (o.id.clone(), o.path.clone()))
+            })
             .collect();
         match LuaMod::load(&c.path, &libraries) {
             Ok(lua) => {
-                log::info!("Horizon: Lua mod {} loaded from {}", lua.id, c.path.display());
+                log::info!(
+                    "Horizon: Lua mod {} loaded from {}",
+                    lua.id,
+                    c.path.display()
+                );
                 mods.push(Box::new(lua));
             }
             Err(e) => log::error!("Horizon: Lua mod in {} not loaded: {e}", c.path.display()),
@@ -249,10 +308,11 @@ fn load_order(on: &[Candidate]) -> Vec<Step> {
             if done[i] {
                 continue;
             }
-            let missing = c
-                .depends
-                .iter()
-                .find(|d| on.iter().position(|o| o.id == **d).is_none_or(|j| failed[j]));
+            let missing = c.depends.iter().find(|d| {
+                on.iter()
+                    .position(|o| o.id == **d)
+                    .is_none_or(|j| failed[j])
+            });
             if let Some(missing) = missing {
                 done[i] = true;
                 failed[i] = true;
@@ -306,6 +366,7 @@ impl LuaMod {
         lua.set_memory_limit(MEMORY).map_err(|e| e.to_string())?;
         let budget = Budget::default();
         budget.install(&lua);
+        let attachment = mod_attachment(&id);
         let m = LuaMod {
             id,
             source: path.to_owned(),
@@ -317,6 +378,8 @@ impl LuaMod {
             block_entities: BlockEntities::default(),
             loads: AtomicU32::new(0),
             budget,
+            kinds: Kinds::default(),
+            attachment,
         };
         m.install_api().map_err(|e| e.to_string())?;
         m.run(ENTRY).map_err(|e| e.to_string())?;
@@ -351,7 +414,8 @@ impl LuaMod {
             if !package.manifest.capabilities.contains(&Capability::Scripts) {
                 continue;
             }
-            let (_, scripts) = Self::read_scripts(path).map_err(|e| format!("library {id}: {e}"))?;
+            let (_, scripts) =
+                Self::read_scripts(path).map_err(|e| format!("library {id}: {e}"))?;
             for (name, code) in scripts {
                 out.entry(name).or_insert(code);
             }
@@ -369,6 +433,7 @@ impl LuaMod {
         let lua = &self.lua;
         let reset = || -> mlua::Result<()> {
             lua.set_named_registry_value(HANDLERS, lua.create_table()?)?;
+            lua.set_named_registry_value(KIND_HANDLERS, lua.create_table()?)?;
             lua.set_named_registry_value(QUEUE, lua.create_table()?)?;
             lua.set_named_registry_value(LOADED, lua.create_table()?)?;
             Ok(())
@@ -376,6 +441,9 @@ impl LuaMod {
         reset().map_err(|e| e.to_string())?;
         if let Ok(mut goals) = self.goals.lock() {
             goals.clear();
+        }
+        if let Ok(mut kinds) = self.kinds.lock() {
+            kinds.clear();
         }
         if let Ok(mut declared) = self.block_entities.lock() {
             declared.clear();
@@ -399,6 +467,7 @@ impl LuaMod {
         let scripts = self.scripts.clone();
         let library_scripts = self.library_scripts.clone();
         lua.set_named_registry_value(HANDLERS, lua.create_table()?)?;
+        lua.set_named_registry_value(KIND_HANDLERS, lua.create_table()?)?;
         lua.set_named_registry_value(QUEUE, lua.create_table()?)?;
         lua.set_named_registry_value(LOADED, lua.create_table()?)?;
         let api = lua.create_table()?;
@@ -411,21 +480,36 @@ impl LuaMod {
                 Ok(())
             })?,
         )?;
+        // `horizon.on(name, fn[, kind])`: a handler of the hook `name`; with
+        // `kind`, only for mobs of that kind (the mob hooks), which keeps a
+        // hook that fires for every mob free for the others.
+        let kinds = self.kinds.clone();
         api.set(
             "on",
-            lua.create_function(|lua, (name, f): (String, Function)| {
-                let handlers: Table = lua.named_registry_value(HANDLERS)?;
-                let list: Table = match handlers.get::<Option<Table>>(name.as_str())? {
-                    Some(list) => list,
-                    None => {
-                        let list = lua.create_table()?;
-                        handlers.set(name.as_str(), &list)?;
-                        list
-                    }
-                };
-                list.push(f)?;
-                Ok(())
-            })?,
+            lua.create_function(
+                move |lua, (name, f, kind): (String, Function, Option<String>)| {
+                    let list = match kind {
+                        None => {
+                            let handlers: Table = lua.named_registry_value(HANDLERS)?;
+                            table_in(lua, &handlers, &name)?
+                        }
+                        Some(kind) => {
+                            let kind = qualify(&kind);
+                            let all: Table = lua.named_registry_value(KIND_HANDLERS)?;
+                            let by_kind = table_in(lua, &all, &name)?;
+                            kinds
+                                .lock()
+                                .map_err(|_| mlua::Error::runtime("kinds"))?
+                                .entry(name.clone())
+                                .or_default()
+                                .insert(kind.clone());
+                            table_in(lua, &by_kind, &kind)?
+                        }
+                    };
+                    list.push(f)?;
+                    Ok(())
+                },
+            )?,
         )?;
         // Goals: `horizon.goal(name, def)` defines one for `horizon.add_goal`.
         let goals = self.goals.clone();
@@ -471,6 +555,11 @@ impl LuaMod {
             "broadcast",
             "summon",
             "kill_mob",
+            "remove_mob",
+            "set_mob_health",
+            "push_mob",
+            "teleport_mob",
+            "set_amount",
             "add_goal",
             "add_target_goal",
             "clear_goals",
@@ -514,18 +603,23 @@ impl LuaMod {
                     return Ok(v);
                 }
                 let path = name.replace('.', "/");
-                let keys = [format!("scripts/{path}.lua"), format!("scripts/{path}/init.lua")];
+                let keys = [
+                    format!("scripts/{path}.lua"),
+                    format!("scripts/{path}/init.lua"),
+                ];
                 let find = |map: &Scripts| -> Option<(String, String)> {
                     let map = map.lock().ok()?;
                     keys.iter()
                         .find_map(|k| map.get(k).map(|code| (k.clone(), code.clone())))
                 };
-                let (key, code) = find(&scripts).or_else(|| find(&library_scripts)).ok_or_else(|| {
-                    mlua::Error::runtime(format!(
-                        "require({name:?}): no {} in the mod or the mods it depends on",
-                        keys[0]
-                    ))
-                })?;
+                let (key, code) = find(&scripts)
+                    .or_else(|| find(&library_scripts))
+                    .ok_or_else(|| {
+                        mlua::Error::runtime(format!(
+                            "require({name:?}): no {} in the mod or the mods it depends on",
+                            keys[0]
+                        ))
+                    })?;
                 let v: Value = lua.load(code.as_str()).set_name(&key).eval()?;
                 let v = if v.is_nil() { Value::Boolean(true) } else { v };
                 loaded.set(name.as_str(), &v)?;
@@ -546,8 +640,9 @@ impl LuaMod {
             .ok()
             .and_then(|s| s.get(name).cloned())
             .ok_or_else(|| mlua::Error::runtime(format!("{name}: not in the mod")))?;
-        self.budget
-            .run(LOAD_BUDGET, || self.lua.load(code.as_str()).set_name(name).exec())
+        self.budget.run(LOAD_BUDGET, || {
+            self.lua.load(code.as_str()).set_name(name).exec()
+        })
     }
 
     /// Whether any handler is registered for `hook`: the hooks that fire
@@ -555,6 +650,134 @@ impl LuaMod {
     fn has_handlers(&self, hook: &str) -> bool {
         let handlers: mlua::Result<Table> = self.lua.named_registry_value(HANDLERS);
         handlers.is_ok_and(|h| h.get::<Option<Table>>(hook).ok().flatten().is_some())
+    }
+
+    /// Whether `hook` has a handler for every kind or one watching `kind`:
+    /// the mob hooks fire for every mob, and build their arguments only then.
+    fn watches(&self, hook: &str, kind: &str) -> bool {
+        self.has_handlers(hook)
+            || self
+                .kinds
+                .lock()
+                .ok()
+                .is_some_and(|k| k.get(hook).is_some_and(|set| set.contains(kind)))
+    }
+
+    /// The handlers of `hook`, in registration order: those for every kind,
+    /// then those watching `kind`.
+    fn handlers(&self, hook: &str, kind: Option<&str>) -> mlua::Result<Vec<Function>> {
+        let lua = &self.lua;
+        let mut out = Vec::new();
+        let handlers: Table = lua.named_registry_value(HANDLERS)?;
+        if let Some(list) = handlers.get::<Option<Table>>(hook)? {
+            for f in list.sequence_values::<Function>() {
+                out.push(f?);
+            }
+        }
+        if let Some(kind) = kind {
+            let all: Table = lua.named_registry_value(KIND_HANDLERS)?;
+            if let Some(by_kind) = all.get::<Option<Table>>(hook)?
+                && let Some(list) = by_kind.get::<Option<Table>>(kind)?
+            {
+                for f in list.sequence_values::<Function>() {
+                    out.push(f?);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// The acting player as a table (`uuid`, `name`, `dimension`, `position`,
+    /// `game_mode`, `health`), or nil when no player acts.
+    fn player_table(&self, host: &dyn Host) -> mlua::Result<Value> {
+        let lua = &self.lua;
+        Ok(match host.acting_player() {
+            Some(p) => {
+                let t = lua.create_table()?;
+                t.set("uuid", uuid_text(p.uuid))?;
+                t.set("name", p.name.as_str())?;
+                t.set("dimension", p.dimension.as_str())?;
+                t.set("position", goals::vec3(lua, p.position)?)?;
+                t.set("game_mode", p.game_mode)?;
+                t.set("health", p.health)?;
+                Value::Table(t)
+            }
+            None => Value::Nil,
+        })
+    }
+
+    /// The acting player's held item as a table (`item`, `count`, `plain`),
+    /// or nil for an empty hand.
+    fn held_table(&self, host: &dyn Host) -> mlua::Result<Value> {
+        let lua = &self.lua;
+        Ok(match host.held() {
+            Some((item, count, plain)) => {
+                let t = lua.create_table()?;
+                t.set("item", item)?;
+                t.set("count", count)?;
+                t.set("plain", plain)?;
+                Value::Table(t)
+            }
+            None => Value::Nil,
+        })
+    }
+
+    /// Mob `id` of `kind` as a table for a handler: its view (`goals::view_table`)
+    /// while the host has it alive, else just `id` and `kind` (a mob that has
+    /// died, or a host without the level).
+    fn mob_table(
+        &self,
+        host: &dyn Host,
+        dimension: &str,
+        id: u32,
+        kind: &str,
+    ) -> mlua::Result<Table> {
+        match host.mob_view(dimension, id) {
+            Some(view) => goals::view_table(&self.lua, &view),
+            None => {
+                let t = self.lua.create_table()?;
+                t.set("id", id)?;
+                t.set("kind", kind)?;
+                Ok(t)
+            }
+        }
+    }
+
+    /// The mod's saved data on mob `id`, as the compound it is and as a table
+    /// for a handler (an empty one for a mob without any yet); none when the
+    /// host has no such mob (a client's copy, a mob already gone).
+    fn mob_data(&self, host: &mut dyn Host, id: u32) -> mlua::Result<Option<(Compound, Table)>> {
+        let before = match self.attachment.get_existing(host, Holder::Entity(id)) {
+            Ok(Some(c)) => c,
+            Ok(None) => Compound::default(),
+            Err(_) => return Ok(None),
+        };
+        let table = nbt::compound_to_table(&self.lua, &before)?;
+        Ok(Some((before, table)))
+    }
+
+    /// Stores what a handler changed in a mob's data (`mob_data`).
+    fn store_mob_data(
+        &self,
+        host: &mut dyn Host,
+        hook: &str,
+        id: u32,
+        data: Option<(Compound, Table)>,
+    ) {
+        let Some((before, table)) = data else {
+            return;
+        };
+        match nbt::table_to_compound(&table, Some(&before)) {
+            Ok(after) if after != before => {
+                if let Err(e) = self.attachment.set(host, Holder::Entity(id), after) {
+                    log::debug!("[lua:{}] {hook}: mob {id}'s data not kept: {e:?}", self.id);
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                self.hook_error(hook, e);
+            }
+        }
     }
 
     /// A block hook on a level (`random_tick`, `tick_block`): handlers get
@@ -623,7 +846,11 @@ impl LuaMod {
                     // argument is accepted and ignored.
                     "summon" => {
                         let kind: String = args.get(2)?;
-                        let pos = [args.get::<f64>(3)?, args.get::<f64>(4)?, args.get::<f64>(5)?];
+                        let pos = [
+                            args.get::<f64>(3)?,
+                            args.get::<f64>(4)?,
+                            args.get::<f64>(5)?,
+                        ];
                         if !level.summon(&kind, pos, Default::default()) {
                             log::warn!("[lua:{}] {hook}: summon {kind}: not here", self.id);
                         }
@@ -684,11 +911,23 @@ impl LuaMod {
     /// Call the handlers of `hook` with `args`, then run what they queued
     /// with the hook's host (none: the actions are dropped with a warning).
     fn call(&self, host: Option<&mut dyn Host>, hook: &str, args: impl mlua::IntoLuaMulti) {
+        self.call_for(host, hook, None, args);
+    }
+
+    /// `call` for a hook about a mob of `kind`: its handlers are those for
+    /// every kind and those watching `kind`.
+    fn call_for(
+        &self,
+        host: Option<&mut dyn Host>,
+        hook: &str,
+        kind: Option<&str>,
+        args: impl mlua::IntoLuaMulti,
+    ) {
         let r = match host {
-            Some(host) => self.call_with(hook, args, &mut |action, a| {
+            Some(host) => self.call_kind(hook, kind, args, &mut |action, a| {
                 self.run_action(host, action, a)
             }),
-            None => self.call_with(hook, args, &mut |action, _| {
+            None => self.call_kind(hook, kind, args, &mut |action, _| {
                 log::warn!("[lua:{}] {hook}: {action} needs a host; dropped", self.id);
                 Ok(())
             }),
@@ -706,14 +945,24 @@ impl LuaMod {
         args: impl mlua::IntoLuaMulti,
         apply: &mut dyn FnMut(&str, &Table) -> mlua::Result<()>,
     ) -> mlua::Result<()> {
+        self.call_kind(hook, None, args, apply)
+    }
+
+    /// `call_with` for a hook about a mob of `kind` (`handlers`).
+    fn call_kind(
+        &self,
+        hook: &str,
+        kind: Option<&str>,
+        args: impl mlua::IntoLuaMulti,
+        apply: &mut dyn FnMut(&str, &Table) -> mlua::Result<()>,
+    ) -> mlua::Result<()> {
         let lua = &self.lua;
-        let handlers: Table = lua.named_registry_value(HANDLERS)?;
-        let Some(list) = handlers.get::<Option<Table>>(hook)? else {
+        let list = self.handlers(hook, kind)?;
+        if list.is_empty() {
             return Ok(());
-        };
+        }
         let args = args.into_lua_multi(lua)?;
-        for f in list.sequence_values::<Function>() {
-            let f = f?;
+        for f in list {
             self.budget
                 .run(HANDLER_BUDGET, || f.call::<()>(args.clone()))?;
         }
@@ -751,6 +1000,29 @@ impl LuaMod {
                 let dimension: String = args.get(1)?;
                 let id: u32 = args.get(2)?;
                 host.kill_mob(&dimension, id);
+            }
+            "remove_mob" => {
+                let dimension: String = args.get(1)?;
+                let id: u32 = args.get(2)?;
+                host.remove_mob(&dimension, id);
+            }
+            "set_mob_health" => {
+                let (dimension, id, health): (String, u32, f32) =
+                    (args.get(1)?, args.get(2)?, args.get(3)?);
+                host.set_mob_health(&dimension, id, health);
+            }
+            "push_mob" | "teleport_mob" => {
+                let (dimension, id): (String, u32) = (args.get(1)?, args.get(2)?);
+                let v = [
+                    args.get::<f64>(3)?,
+                    args.get::<f64>(4)?,
+                    args.get::<f64>(5)?,
+                ];
+                if action == "push_mob" {
+                    host.push_mob(&dimension, id, v);
+                } else {
+                    host.teleport_mob(&dimension, id, v);
+                }
             }
             other => log::warn!("[lua:{}] unknown action {other}", self.id),
         }
@@ -828,27 +1100,8 @@ impl Hooks for LuaMod {
                     event.face[2] as f64,
                 ],
             )?;
-            let player = match host.acting_player() {
-                Some(p) => {
-                    let t = lua.create_table()?;
-                    t.set("name", p.name.as_str())?;
-                    t.set("dimension", p.dimension.as_str())?;
-                    t.set("position", goals::vec3(lua, p.position)?)?;
-                    t.set("game_mode", p.game_mode)?;
-                    Value::Table(t)
-                }
-                None => Value::Nil,
-            };
-            let held = match host.held() {
-                Some((item, count, plain)) => {
-                    let t = lua.create_table()?;
-                    t.set("item", item)?;
-                    t.set("count", count)?;
-                    t.set("plain", plain)?;
-                    Value::Table(t)
-                }
-                None => Value::Nil,
-            };
+            let player = self.player_table(host)?;
+            let held = self.held_table(host)?;
             Ok((face, player, held))
         })();
         let (face, player, held) = match tables {
@@ -980,7 +1233,8 @@ impl Hooks for LuaMod {
             Ok(view) => view,
             Err(e) => return log::error!("[lua:{}] mob_ai_register: {e}", self.id),
         };
-        let r = self.call_with("mob_ai_register", view, &mut |action, args| {
+        let kind = qualify(&mob.kind.id);
+        let r = self.call_kind("mob_ai_register", Some(&kind), view, &mut |action, args| {
             match action {
                 "add_goal" | "add_target_goal" => {
                     let (priority, name): (i32, String) = (args.get(1)?, args.get(2)?);
@@ -1022,11 +1276,195 @@ impl Hooks for LuaMod {
             natural,
             ..
         } = *event;
-        self.call(
+        let kind = qualify(kind);
+        self.call_for(
             Some(host),
             "mob_spawned",
-            (dimension, kind, pos[0], pos[1], pos[2], natural),
+            Some(&kind),
+            (dimension, kind.as_str(), pos[0], pos[1], pos[2], natural),
         );
+    }
+    /// A mob is about to take damage: `mob_hurt(mob, damage_type, causing,
+    /// direct, amount)`, `mob` just `{id, kind}` (the game is mid-hit: no
+    /// host, so no view, no data, and the host actions are dropped),
+    /// `causing` and `direct` entity ids (-1: none). Handlers may queue
+    /// `horizon.set_amount(n)` and `horizon.cancel()` (the hit is refused).
+    fn living_incoming_damage(&self, event: &mut LivingIncomingDamageEvent<'_>) -> Flow {
+        let hook = "mob_hurt";
+        let kind = qualify(event.kind);
+        if !self.watches(hook, &kind) {
+            return Flow::Continue;
+        }
+        let mut cancel = false;
+        let mut amount = event.amount;
+        let mob = match self.lua.create_table().and_then(|t| {
+            t.set("id", event.entity)?;
+            t.set("kind", kind.as_str())?;
+            Ok(t)
+        }) {
+            Ok(t) => t,
+            Err(e) => return self.hook_error(hook, e),
+        };
+        let r = self.call_kind(
+            hook,
+            Some(&kind),
+            (
+                mob,
+                event.damage_type,
+                event.causing,
+                event.direct,
+                event.amount,
+            ),
+            &mut |action, args| {
+                match action {
+                    "set_amount" => amount = args.get::<f32>(1)?,
+                    "cancel" => cancel = true,
+                    other => {
+                        log::warn!("[lua:{}] {hook}: {other} needs a host; dropped", self.id)
+                    }
+                }
+                Ok(())
+            },
+        );
+        if let Err(e) = r {
+            return self.hook_error(hook, e);
+        }
+        if amount.is_finite() {
+            event.amount = amount.max(0.0);
+        }
+        if cancel { Flow::Cancel } else { Flow::Continue }
+    }
+    /// A player's blow killed a mob: `mob_killed(dimension, mob, killer,
+    /// data)`, `mob` its `{id, kind}` (it is dead: no view), `killer` the
+    /// player's table, `data` the mod's saved data on the mob (written back,
+    /// though the mob is going).
+    fn mob_killed(&self, host: &mut dyn Host, event: &mut MobKilledEvent<'_>) {
+        let hook = "mob_killed";
+        let kind = qualify(event.kind);
+        if !self.watches(hook, &kind) {
+            return;
+        }
+        let id = event.entity;
+        let r = (|| -> mlua::Result<()> {
+            let killer = self.player_table(host)?;
+            let dimension = host.dimension().to_owned();
+            let mob = self.mob_table(host, &dimension, id, &kind)?;
+            let data = self.mob_data(host, id)?;
+            self.call_kind(
+                hook,
+                Some(&kind),
+                (
+                    dimension,
+                    mob,
+                    killer,
+                    data.as_ref().map(|(_, t)| t.clone()),
+                ),
+                &mut |action, args| self.run_action(host, action, args),
+            )?;
+            self.store_mob_data(host, hook, id, data);
+            Ok(())
+        })();
+        if let Err(e) = r {
+            self.hook_error(hook, e);
+        }
+    }
+    /// A player right-clicks a mob: `mob_interact(dimension, mob, player,
+    /// held, data)`, before the mob and the item act; `mob` is its view.
+    /// `horizon.cancel()` takes the click (the hand swings, nothing else
+    /// happens); `data` is written back.
+    fn interact_entity(&self, host: &mut dyn Host, event: &mut InteractEntityEvent<'_>) -> Flow {
+        let hook = "mob_interact";
+        let kind = qualify(event.kind);
+        if !self.watches(hook, &kind) {
+            return Flow::Continue;
+        }
+        let Ok(id) = u32::try_from(event.entity) else {
+            return Flow::Continue;
+        };
+        let mut cancel = false;
+        let r = (|| -> mlua::Result<()> {
+            let player = self.player_table(host)?;
+            let held = match event.stack {
+                Some(stack) => {
+                    let t = self.lua.create_table()?;
+                    t.set("item", &*stack.item)?;
+                    t.set("count", stack.count)?;
+                    t.set("plain", stack.extra.is_none())?;
+                    Value::Table(t)
+                }
+                None => Value::Nil,
+            };
+            let dimension = host.dimension().to_owned();
+            let mob = self.mob_table(host, &dimension, id, &kind)?;
+            let data = self.mob_data(host, id)?;
+            self.call_kind(
+                hook,
+                Some(&kind),
+                (
+                    dimension,
+                    mob,
+                    player,
+                    held,
+                    data.as_ref().map(|(_, t)| t.clone()),
+                ),
+                &mut |action, args| {
+                    match action {
+                        "cancel" => cancel = true,
+                        other => self.run_action(host, other, args)?,
+                    }
+                    Ok(())
+                },
+            )?;
+            self.store_mob_data(host, hook, id, data);
+            Ok(())
+        })();
+        if let Err(e) = r {
+            return self.hook_error(hook, e);
+        }
+        if cancel { Flow::Cancel } else { Flow::Continue }
+    }
+    /// A mob ticked: `mob_tick(dimension, mob, data)` for the
+    /// handlers watching `kind` (`horizon.on("mob_tick", fn, kind)`; one for
+    /// every kind hears every mob, so register by kind). `mob` is the mob's
+    /// view without the fields that need the world (`nearby`,
+    /// `target_position`), `data` the mod's saved data on it, written back.
+    fn entity_tick_post(&self, host: &mut dyn Host, event: &mut EntityTickPostEvent<'_>) {
+        let hook = "mob_tick";
+        let kind = qualify(event.kind);
+        if !self.watches(hook, &kind) {
+            return;
+        }
+        let (dimension, id) = (event.dimension, event.entity);
+        let Some(view) = host.mob_view(dimension, id) else {
+            return;
+        };
+        let r = (|| -> mlua::Result<()> {
+            let view = goals::view_table(&self.lua, &view)?;
+            let data = self.mob_data(host, id)?;
+            self.call_kind(
+                hook,
+                Some(&kind),
+                (dimension, view, data.as_ref().map(|(_, t)| t.clone())),
+                &mut |action, args| self.run_action(host, action, args),
+            )?;
+            self.store_mob_data(host, hook, id, data);
+            Ok(())
+        })();
+        if let Err(e) = r {
+            self.hook_error(hook, e);
+        }
+    }
+}
+
+/// The table at `key` in `table`, made when there is none.
+fn table_in(lua: &Lua, table: &Table, key: &str) -> mlua::Result<Table> {
+    match table.get::<Option<Table>>(key)? {
+        Some(t) => Ok(t),
+        None => {
+            let t = lua.create_table()?;
+            table.set(key, &t)?;
+            Ok(t)
+        }
     }
 }
 
@@ -1268,7 +1706,10 @@ experimental = ["scripts"]
             m.random_tick(&mut level, &mut event),
             Flow::Continue
         ));
-        assert_eq!(level.summons, [("ruby:crawler".to_owned(), [1.5, 65.0, -2.5])]);
+        assert_eq!(
+            level.summons,
+            [("ruby:crawler".to_owned(), [1.5, 65.0, -2.5])]
+        );
         level.block = "minecraft:grass_block";
         assert!(matches!(
             m.tick_block(
@@ -1291,6 +1732,238 @@ experimental = ["scripts"]
         fn dimension(&self) -> &'static str {
             "minecraft:overworld"
         }
+        fn attachments(
+            &mut self,
+            _: Holder,
+        ) -> crate::mod_api::AttachmentResult<&mut crate::mod_api::Attachments> {
+            Err(crate::mod_api::AttachmentError::MissingHolder)
+        }
+        fn acting_player(&self) -> Option<crate::mod_api::NativeServerPlayer> {
+            None
+        }
+        fn held(&self) -> Option<(String, u32, bool)> {
+            None
+        }
+        fn mob_view(&self, _: &str, _: u32) -> Option<MobView> {
+            None
+        }
+    }
+
+    /// A host of one living cow, number 7, that keeps its attachments and
+    /// records what the mob hooks ask of it.
+    struct MobHost {
+        attachments: crate::mod_api::Attachments,
+        health: Vec<(u32, f32)>,
+        lines: Mutex<Vec<String>>,
+        pushes: Vec<[f64; 3]>,
+    }
+    impl Host for MobHost {
+        fn dimension(&self) -> &'static str {
+            "minecraft:overworld"
+        }
+        fn attachments(
+            &mut self,
+            holder: Holder,
+        ) -> crate::mod_api::AttachmentResult<&mut crate::mod_api::Attachments> {
+            match holder {
+                Holder::Entity(7) => Ok(&mut self.attachments),
+                _ => Err(crate::mod_api::AttachmentError::MissingHolder),
+            }
+        }
+        fn acting_player(&self) -> Option<crate::mod_api::NativeServerPlayer> {
+            Some(crate::mod_api::NativeServerPlayer {
+                uuid: 0x123e4567_e89b_12d3_a456_426614174000,
+                name: "steve".into(),
+                permission: 0,
+                dimension: "minecraft:overworld".into(),
+                position: [1.0, 64.0, 1.0],
+                game_mode: 0,
+                health: 20.0,
+                yaw: 0.0,
+                pitch: 0.0,
+            })
+        }
+        fn held(&self) -> Option<(String, u32, bool)> {
+            None
+        }
+        fn mob_view(&self, dimension: &str, id: u32) -> Option<MobView> {
+            use horizon_core::geometry::Vec3;
+            (dimension == "minecraft:overworld" && id == 7).then(|| {
+                let kind = crate::mobs::MobType::cow_for_tests();
+                MobView::of(
+                    &crate::mobs::Mob::new(7, kind, Vec3::new(2.0, 64.0, 3.0), 0.0),
+                    None,
+                )
+            })
+        }
+        fn set_mob_health(&mut self, _: &str, id: u32, health: f32) -> bool {
+            self.health.push((id, health));
+            true
+        }
+        fn push_mob(&mut self, _: &str, _: u32, velocity: [f64; 3]) -> bool {
+            self.pushes.push(velocity);
+            true
+        }
+        fn broadcast(&self, text: crate::mod_api::Text) {
+            self.lines.lock().unwrap().push(text.plain());
+        }
+    }
+
+    #[test]
+    fn the_mob_hooks_reach_the_handlers_of_their_kind_with_the_mobs_saved_data() {
+        use horizon_world::nbt::Tag;
+        let (dir, path) = hmod(
+            "mob-hooks",
+            &[(
+                "scripts/init.lua",
+                br#"
+                HURT = {}
+                horizon.on("mob_hurt", function(mob, damage_type, causing, direct, amount)
+                  HURT[#HURT + 1] = mob.kind .. ":" .. damage_type
+                  if damage_type == "minecraft:on_fire" then horizon.cancel() end
+                  horizon.set_amount(amount * 2)
+                end, "cow")
+                horizon.on("mob_tick", function(dimension, mob, data)
+                  data.ticks = (data.ticks or 0) + 1
+                  if data.ticks == 2 then horizon.set_mob_health(dimension, mob.id, mob.max_health - 1) end
+                  if mob.position.x ~= 2 then error("view") end
+                end, "minecraft:cow")
+                horizon.on("mob_killed", function(dimension, mob, killer, data)
+                  horizon.broadcast(killer.name .. " killed " .. mob.kind .. " " .. mob.id .. " after " .. data.ticks .. " ticks")
+                end, "minecraft:cow")
+                horizon.on("mob_interact", function(dimension, mob, player, held, data)
+                  data.pets = (data.pets or 0) + 1
+                  if mob.health ~= 10 then error("view") end
+                  if held and held.item == "minecraft:wheat" then horizon.cancel() end
+                end, "minecraft:cow")
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let key = |k: &str| horizon_world::nbt::JavaString::from(k);
+        // A hurt zombie is nobody's business; the cow's hit is doubled, fire refused.
+        let mut hit = LivingIncomingDamageEvent {
+            entity: 9,
+            kind: "zombie",
+            damage_type: "minecraft:mob_attack",
+            causing: 1,
+            direct: 1,
+            amount: 3.0,
+        };
+        assert_eq!(m.living_incoming_damage(&mut hit), Flow::Continue);
+        assert_eq!(hit.amount, 3.0);
+        hit.kind = "cow";
+        assert_eq!(m.living_incoming_damage(&mut hit), Flow::Continue);
+        assert_eq!(hit.amount, 6.0);
+        hit.damage_type = "minecraft:on_fire";
+        assert_eq!(m.living_incoming_damage(&mut hit), Flow::Cancel);
+        let hurt: Vec<String> = m
+            .lua
+            .globals()
+            .get::<Table>("HURT")
+            .unwrap()
+            .sequence_values()
+            .map(|v| v.unwrap())
+            .collect();
+        assert_eq!(
+            hurt,
+            [
+                "minecraft:cow:minecraft:mob_attack",
+                "minecraft:cow:minecraft:on_fire"
+            ]
+        );
+        // Ticks count in the mob's saved data; the second one sets its health.
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+        };
+        for _ in 0..3 {
+            m.entity_tick_post(
+                &mut host,
+                &mut EntityTickPostEvent {
+                    dimension: "minecraft:overworld",
+                    entity: 7,
+                    kind: "cow",
+                },
+            );
+            m.entity_tick_post(
+                &mut host,
+                &mut EntityTickPostEvent {
+                    dimension: "minecraft:overworld",
+                    entity: 8,
+                    kind: "cow",
+                },
+            );
+        }
+        assert_eq!(host.health, [(7, 9.0)]);
+        let saved = m
+            .attachment
+            .get_existing(&mut host as &mut dyn Host, Holder::Entity(7))
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.get(&key("ticks")), Some(&Tag::Int(3)));
+        // A click keeps count too, and wheat is taken.
+        assert_eq!(
+            m.interact_entity(
+                &mut host,
+                &mut InteractEntityEvent {
+                    entity: 7,
+                    kind: "cow",
+                    stack: None
+                }
+            ),
+            Flow::Continue
+        );
+        let wheat = crate::mod_api::ItemStack {
+            item: "minecraft:wheat".into(),
+            count: 1,
+            damage: 0,
+            extra: None,
+        };
+        assert_eq!(
+            m.interact_entity(
+                &mut host,
+                &mut InteractEntityEvent {
+                    entity: 7,
+                    kind: "cow",
+                    stack: Some(&wheat)
+                }
+            ),
+            Flow::Cancel
+        );
+        let saved = m
+            .attachment
+            .get_existing(&mut host as &mut dyn Host, Holder::Entity(7))
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.get(&key("pets")), Some(&Tag::Int(2)));
+        assert_eq!(saved.get(&key("ticks")), Some(&Tag::Int(3)));
+        // The kill hears the player and the data.
+        m.mob_killed(
+            &mut host,
+            &mut MobKilledEvent {
+                player: 1,
+                entity: 7,
+                kind: "minecraft:cow",
+            },
+        );
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            ["steve killed minecraft:cow 7 after 3 ticks"]
+        );
+        // Without a host that knows the mob there is no data, and nothing breaks.
+        m.mob_killed(
+            &mut NoHost,
+            &mut MobKilledEvent {
+                player: 1,
+                entity: 7,
+                kind: "minecraft:cow",
+            },
+        );
+        assert_eq!(host.lines.lock().unwrap().len(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -1363,7 +2036,11 @@ experimental = ["scripts"]
             .unwrap_err()
             .to_string();
         assert!(e.contains("ran over"), "{e}");
-        assert!(started.elapsed() < HANDLER_BUDGET * 4, "{:?}", started.elapsed());
+        assert!(
+            started.elapsed() < HANDLER_BUDGET * 4,
+            "{:?}",
+            started.elapsed()
+        );
         // The state is fine afterwards, and the next chunk has a budget of its own.
         m.call_with("world_lifecycle", ("start", "x"), &mut |_, _| Ok(()))
             .unwrap();
@@ -1379,7 +2056,14 @@ experimental = ["scripts"]
             scripted: true,
             depends: depends.iter().map(|d| d.to_string()).collect(),
         };
-        let on = [c("parasite", &["modkit"]), c("modkit", &[]), c("lost", &["nowhere"]), c("a", &["b"]), c("b", &["a"]), c("leaf", &["lost"])];
+        let on = [
+            c("parasite", &["modkit"]),
+            c("modkit", &[]),
+            c("lost", &["nowhere"]),
+            c("a", &["b"]),
+            c("b", &["a"]),
+            c("leaf", &["lost"]),
+        ];
         let steps = load_order(&on);
         let order: Vec<(&str, Option<&str>)> = steps
             .iter()
@@ -1403,8 +2087,14 @@ experimental = ["scripts"]
             "lib",
             &[
                 ("scripts/init.lua", b"LIB_RAN = true"),
-                ("scripts/modkit.lua", b"local m = { VERSION = '1', entity = require('modkit.entity') }\nreturn m"),
-                ("scripts/modkit/entity/init.lua", b"return { kind = 'entity' }"),
+                (
+                    "scripts/modkit.lua",
+                    b"local m = { VERSION = '1', entity = require('modkit.entity') }\nreturn m",
+                ),
+                (
+                    "scripts/modkit/entity/init.lua",
+                    b"return { kind = 'entity' }",
+                ),
             ],
         );
         let (dir, path) = hmod(
@@ -1420,13 +2110,26 @@ experimental = ["scripts"]
         assert_eq!(m.lua.globals().get::<String>("V").unwrap(), "1own entity");
         assert_eq!(m.lua.globals().get::<String>("MINE").unwrap(), "own");
         // A library's init.lua runs in the library's own state, not here.
-        assert!(m.lua.globals().get::<Option<bool>>("LIB_RAN").unwrap().is_none());
+        assert!(
+            m.lua
+                .globals()
+                .get::<Option<bool>>("LIB_RAN")
+                .unwrap()
+                .is_none()
+        );
         // Without the library, the first require fails and names the search.
         let e = LuaMod::load(&path, &[]).unwrap_err();
-        assert!(e.contains("scripts/modkit.lua") && e.contains("depends on"), "{e}");
+        assert!(
+            e.contains("scripts/modkit.lua") && e.contains("depends on"),
+            "{e}"
+        );
         // A bad name is refused before any lookup.
         let (bad_dir, bad) = hmod("badname", &[("scripts/init.lua", b"require('../x')")]);
-        assert!(LuaMod::load(&bad, &[]).unwrap_err().contains("dots for folders"));
+        assert!(
+            LuaMod::load(&bad, &[])
+                .unwrap_err()
+                .contains("dots for folders")
+        );
         for d in [lib_dir, dir, bad_dir] {
             std::fs::remove_dir_all(&d).unwrap();
         }
@@ -1467,14 +2170,26 @@ experimental = ["scripts"]
             .block_entity(&mut host, &mut BlockEntityEvent { block: "ruby:lamp" })
             .unwrap();
         assert!(lamp.is_empty());
-        assert!(m
-            .block_entity(&mut host, &mut BlockEntityEvent { block: "ruby:other" })
-            .is_none());
+        assert!(
+            m.block_entity(
+                &mut host,
+                &mut BlockEntityEvent {
+                    block: "ruby:other"
+                }
+            )
+            .is_none()
+        );
         // Only the hive ticks.
-        let mut ticks = BlockEntityTicksEvent { block: "ruby:hive", ticks: false };
+        let mut ticks = BlockEntityTicksEvent {
+            block: "ruby:hive",
+            ticks: false,
+        };
         m.block_entity_ticks(&host, &mut ticks);
         assert!(ticks.ticks);
-        let mut ticks = BlockEntityTicksEvent { block: "ruby:lamp", ticks: false };
+        let mut ticks = BlockEntityTicksEvent {
+            block: "ruby:lamp",
+            ticks: false,
+        };
         m.block_entity_ticks(&host, &mut ticks);
         assert!(!ticks.ticks);
         // The tick handler changes the data, which is written back: the int
@@ -1482,10 +2197,25 @@ experimental = ["scripts"]
         let mut entity = crate::mod_api::ModBlockEntity::default();
         entity.id = "ruby:hive".into();
         entity.nbt = data;
-        m.block_entity_tick(&mut host, &mut BlockEntityTickEvent { pos: [1, 2, 3], entity: &mut entity });
-        m.block_entity_tick(&mut host, &mut BlockEntityTickEvent { pos: [1, 2, 3], entity: &mut entity });
+        m.block_entity_tick(
+            &mut host,
+            &mut BlockEntityTickEvent {
+                pos: [1, 2, 3],
+                entity: &mut entity,
+            },
+        );
+        m.block_entity_tick(
+            &mut host,
+            &mut BlockEntityTickEvent {
+                pos: [1, 2, 3],
+                entity: &mut entity,
+            },
+        );
         assert_eq!(entity.nbt.get(&key("charge")), Some(&Tag::Int(2)));
-        assert_eq!(entity.nbt.get(&key("seen")), Some(&Tag::String("minecraft:overworld:1".into())));
+        assert_eq!(
+            entity.nbt.get(&key("seen")),
+            Some(&Tag::String("minecraft:overworld:1".into()))
+        );
         assert!(!entity.nbt.contains_key(&key("name")));
         // A level hook sees the block entity's data and its changes are stored.
         let mut level = FakeLevel {
@@ -1504,7 +2234,10 @@ experimental = ["scripts"]
                 state: BlockStateId(7),
             },
         );
-        assert_eq!(level.data[&[1, 64, -3]].get(&key("charge")), Some(&Tag::Int(20)));
+        assert_eq!(
+            level.data[&[1, 64, -3]].get(&key("charge")),
+            Some(&Tag::Int(20))
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

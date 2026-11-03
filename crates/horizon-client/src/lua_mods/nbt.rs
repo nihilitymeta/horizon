@@ -17,7 +17,9 @@ pub fn tag_to_lua(lua: &Lua, tag: &Tag) -> mlua::Result<Value> {
         Tag::Float(bits) => Value::Number(f64::from(f32::from_bits(*bits))),
         Tag::Double(bits) => Value::Number(f64::from_bits(*bits)),
         Tag::String(s) => Value::String(lua.create_string(s.to_string_lossy())?),
-        Tag::ByteArray(v) => Value::Table(lua.create_sequence_from(v.iter().map(|b| i64::from(*b as i8)))?),
+        Tag::ByteArray(v) => {
+            Value::Table(lua.create_sequence_from(v.iter().map(|b| i64::from(*b as i8)))?)
+        }
         Tag::IntArray(v) => Value::Table(lua.create_sequence_from(v.iter().copied())?),
         Tag::LongArray(v) => Value::Table(lua.create_sequence_from(v.iter().copied())?),
         Tag::List(items) => {
@@ -77,7 +79,11 @@ pub fn lua_to_tag(v: &Value, like: Option<&Tag>) -> mlua::Result<Tag> {
         Value::String(s) => Tag::String(JavaString::from(s.to_string_lossy().as_ref())),
         Value::Table(t) => {
             let len = t.raw_len();
-            let sequence = len > 0 || matches!(like, Some(Tag::List(_) | Tag::IntArray(_) | Tag::LongArray(_) | Tag::ByteArray(_)));
+            let sequence = len > 0
+                || matches!(
+                    like,
+                    Some(Tag::List(_) | Tag::IntArray(_) | Tag::LongArray(_) | Tag::ByteArray(_))
+                );
             if sequence {
                 match like {
                     Some(Tag::IntArray(_)) => {
@@ -186,20 +192,34 @@ mod tests {
         .unwrap();
         let back = table_to_compound(&t, Some(&c)).unwrap();
         assert_eq!(back.get(&"charge".into()), Some(&Tag::Int(4)));
-        assert_eq!(back.get(&"heat".into()), Some(&Tag::Float(3.0f32.to_bits())));
+        assert_eq!(
+            back.get(&"heat".into()),
+            Some(&Tag::Float(3.0f32.to_bits()))
+        );
         assert_eq!(back.get(&"flag".into()), Some(&Tag::Byte(0)));
         assert_eq!(back.get(&"ids".into()), Some(&Tag::IntArray(vec![1, 2, 9])));
-        assert_eq!(back.get(&"list".into()), Some(&Tag::List(vec![Tag::Short(7), Tag::Short(6)])));
+        assert_eq!(
+            back.get(&"list".into()),
+            Some(&Tag::List(vec![Tag::Short(7), Tag::Short(6)]))
+        );
         assert_eq!(back.get(&"name".into()), Some(&Tag::String("hive".into())));
-        let Some(Tag::Compound(inner)) = back.get(&"inner".into()) else { panic!() };
+        let Some(Tag::Compound(inner)) = back.get(&"inner".into()) else {
+            panic!()
+        };
         assert_eq!(inner.get(&"x".into()), Some(&Tag::Long((1 << 40) + 1)));
         // New keys get the natural types; a key set to nil is gone.
-        assert_eq!(back.get(&"new".into()), Some(&Tag::Double(2.5f64.to_bits())));
+        assert_eq!(
+            back.get(&"new".into()),
+            Some(&Tag::Double(2.5f64.to_bits()))
+        );
         assert_eq!(back.get(&"count".into()), Some(&Tag::Int(4)));
         assert_eq!(back.get(&"big".into()), Some(&Tag::Long(5_000_000_000)));
         assert_eq!(
             back.get(&"tags".into()),
-            Some(&Tag::List(vec![Tag::String("a".into()), Tag::String("b".into())]))
+            Some(&Tag::List(vec![
+                Tag::String("a".into()),
+                Tag::String("b".into())
+            ]))
         );
         assert!(matches!(back.get(&"sub".into()), Some(Tag::Compound(_))));
         assert!(!back.contains_key(&"gone".into()));
