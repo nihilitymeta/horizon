@@ -17,7 +17,7 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 
 /// The methods of a call's `out` table, each queuing `{name, args...}`.
-const ACTIONS: [&str; 10] = [
+const ACTIONS: [&str; 16] = [
     "navigate_to",
     "navigate_to_target",
     "stop_navigation",
@@ -28,6 +28,12 @@ const ACTIONS: [&str; 10] = [
     "jump",
     "attack",
     "swing",
+    "hurt",
+    "convert",
+    "summon",
+    "despawn",
+    "heal",
+    "effect",
 ];
 
 /// A goal a script defined with `horizon.goal(name, def)`.
@@ -298,6 +304,22 @@ pub fn view_table(lua: &Lua, v: &MobView) -> mlua::Result<Table> {
         home.set("radius", r)?;
         t.set("home", home)?;
     }
+    // The mobs around, nearest first: `mob.nearby[1].kind`, `.distance`...
+    let nearby = lua.create_table()?;
+    for (i, n) in v.nearby.iter().enumerate() {
+        let row = lua.create_table()?;
+        row.set("id", n.id)?;
+        row.set("kind", n.kind.as_str())?;
+        row.set("position", vec3(lua, n.position)?)?;
+        row.set("distance", n.distance)?;
+        row.set("health", n.health)?;
+        row.set("alive", n.alive)?;
+        row.set("hostile", n.hostile)?;
+        row.set("baby", n.baby)?;
+        row.set("target", who_to_lua(lua, n.target)?)?;
+        nearby.set(i + 1, row)?;
+    }
+    t.set("nearby", nearby)?;
     Ok(t)
 }
 
@@ -353,6 +375,27 @@ pub fn drain_actions(queue: &Table, out: &mut Actions) -> mlua::Result<()> {
                 }
             },
             "swing" => GoalAction::Swing,
+            "hurt" => match who_from_lua(row.get(2)?)? {
+                Some(who) => GoalAction::Hurt {
+                    who,
+                    amount: num(3)? as f32,
+                },
+                None => {
+                    return Err(mlua::Error::runtime("hurt(who, amount): who is required"));
+                }
+            },
+            "convert" => GoalAction::Convert { kind: row.get(2)? },
+            "summon" => GoalAction::Summon {
+                kind: row.get(2)?,
+                at: at(3)?,
+            },
+            "despawn" => GoalAction::Despawn,
+            "heal" => GoalAction::Heal(num(2)? as f32),
+            "effect" => GoalAction::Effect {
+                effect: row.get(2)?,
+                ticks: row.get::<Option<i32>>(3)?.unwrap_or(200),
+                amplifier: row.get::<Option<i32>>(4)?.unwrap_or(0),
+            },
             other => {
                 return Err(mlua::Error::runtime(format!("unknown action {other}")));
             }
