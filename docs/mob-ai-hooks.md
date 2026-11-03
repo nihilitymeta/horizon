@@ -46,8 +46,10 @@ shape that borrows nothing of the mob.
   cannot apply is dropped with a warning in the log and the mob is left as it was: a position, speed or amount that is
   not finite, an effect no definition exists for, a kind (`convert`, `summon`; a bare name is vanilla's) the level has
   no mob type of (`GoalAction::refused`).
-- `MobView::nearby`: the other mobs within the follow range, nearest first (`NearbyView`: id, kind, position,
-  distance, health, alive, hostile, baby, target), so an infection can look for hosts or a brood for its mother.
+- `MobView::nearby`: the other mobs within the follow range, nearest first and at most 32 (`NearbyView`: id, kind
+  (the type, `kind.id` its name), position, distance, health, alive, hostile, baby, target), so an infection can look
+  for hosts or a brood for its mother. Read through the tick's spatial grid, so its cost is the mobs around, not the
+  level's.
 - `NativeBehaviour`: the decisions (`can_use`, `can_continue`, `start`, `tick`, `stop`) over a `MobView` and an
   `Actions`. One value is shared by every mob the goal is on; the per-mob part is its `State` (`Default` when added).
 - `NativeGoal::new(name, flags, behaviour)`: the `Goal` to add, with `GOAL_MOVE | GOAL_LOOK | GOAL_JUMP | GOAL_TARGET`

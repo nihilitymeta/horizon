@@ -5,7 +5,8 @@
 //! goal keeps working while the mob's internals move. A mod that wants the
 //! internals implements [`Goal`](super::goals::Goal) directly instead.
 use super::goals::{Cx, Goal};
-use super::{Mob, MobWorld, Who};
+use super::{Mob, MobWorld, Seen, Who};
+use horizon_core::geometry::{Aabb, Vec3};
 use std::fmt;
 use std::sync::Arc;
 
@@ -48,13 +49,15 @@ pub struct MobView {
 /// How many nearby mobs a view lists.
 pub const NEARBY_LIMIT: usize = 32;
 
-/// Another mob near the viewed one, as the world saw it this tick.
-#[derive(Clone, Debug, PartialEq)]
+/// Another mob near the viewed one, as the world saw it this tick. Two are
+/// equal when every field is, the type by its id.
+#[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct NearbyView {
     pub id: u32,
-    /// `minecraft:zombie`, or a content mod's own id.
-    pub kind: String,
+    /// Its type (`kind.id` is `minecraft:zombie`, or a content mod's own
+    /// id), shared with the tick's snapshot rather than copied.
+    pub kind: Arc<super::MobType>,
     pub position: [f64; 3],
     /// Straight-line distance from the viewed mob.
     pub distance: f64,
@@ -63,6 +66,20 @@ pub struct NearbyView {
     pub hostile: bool,
     pub baby: bool,
     pub target: Option<Who>,
+}
+
+impl PartialEq for NearbyView {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.kind.id == other.kind.id
+            && self.position == other.position
+            && self.distance == other.distance
+            && self.health == other.health
+            && self.alive == other.alive
+            && self.hostile == other.hostile
+            && self.baby == other.baby
+            && self.target == other.target
+    }
 }
 
 impl MobView {
@@ -104,36 +121,53 @@ impl MobView {
     }
 }
 
-/// The mobs within `m`'s follow range as the world saw them, nearest first.
+/// The mobs within `m`'s follow range as the world saw them, nearest first:
+/// read through the world's grid when it keeps one (the mob ticks do), so
+/// the cost is the mobs around, not the level's.
 fn nearby(m: &Mob, w: &MobWorld) -> Vec<NearbyView> {
     let range = m.kind.follow_range.max(1.0);
-    let mut out: Vec<NearbyView> = w
-        .others
-        .iter()
+    nearby_of(m, range, w.others_near(follow_area(m.position, range)))
+}
+
+/// The box every mob whose position is within `range` of `at` has its own
+/// box in: one block wider, as the grid's box test is strict.
+fn follow_area(at: Vec3, range: f64) -> Aabb {
+    let r = range + 1.0;
+    Aabb::new(
+        Vec3::new(at.x - r, at.y - r, at.z - r),
+        Vec3::new(at.x + r, at.y + r, at.z + r),
+    )
+}
+
+/// Those of `candidates` within `range` of `m` (not `m` itself), nearest
+/// first, at most [`NEARBY_LIMIT`].
+fn nearby_of<'s>(
+    m: &Mob,
+    range: f64,
+    candidates: impl Iterator<Item = &'s Seen>,
+) -> Vec<NearbyView> {
+    let mut near: Vec<(f64, &Seen)> = candidates
         .filter(|s| s.id != m.id)
         .filter_map(|s| {
-            let (dx, dy, dz) = (
-                s.position.x - m.position.x,
-                s.position.y - m.position.y,
-                s.position.z - m.position.z,
-            );
-            let distance = (dx * dx + dy * dy + dz * dz).sqrt();
-            (distance <= range).then(|| NearbyView {
-                id: s.id,
-                kind: s.kind.id.clone(),
-                position: [s.position.x, s.position.y, s.position.z],
-                distance,
-                health: s.health,
-                alive: s.alive,
-                hostile: s.hostile,
-                baby: s.baby,
-                target: s.target,
-            })
+            let d2 = m.position.distance_squared(s.position);
+            (d2 <= range * range).then_some((d2, s))
         })
         .collect();
-    out.sort_by(|a, b| a.distance.total_cmp(&b.distance));
-    out.truncate(NEARBY_LIMIT);
-    out
+    near.sort_by(|a, b| a.0.total_cmp(&b.0));
+    near.truncate(NEARBY_LIMIT);
+    near.into_iter()
+        .map(|(d2, s)| NearbyView {
+            id: s.id,
+            kind: s.kind.clone(),
+            position: [s.position.x, s.position.y, s.position.z],
+            distance: d2.sqrt(),
+            health: s.health,
+            alive: s.alive,
+            hostile: s.hostile,
+            baby: s.baby,
+            target: s.target,
+        })
+        .collect()
 }
 
 /// A kind or effect name as the game's events carry it: one static string
@@ -600,6 +634,66 @@ mod tests {
         // No path was made and no swing started: those need the world.
         assert!(m.ai.nav.is_done());
         assert!(!m.ai.swinging);
+    }
+
+    /// `others` for a herd of `n` cows on a square of `side` blocks, as the
+    /// tick's snapshot and grid hold them.
+    fn herd(n: u32, side: f64) -> (Vec<Seen>, crate::mobs::seen_grid::SeenGrid) {
+        let mut seed = 0x9E37_79B9_7F4A_7C15_u64;
+        let mut next = || {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let seen: Vec<Seen> = (1..=n)
+            .map(|id| {
+                let at = Vec3::new(next() * side, 64.0 + next() * 8.0, next() * side);
+                Mob::new(100 + id, kind(), at, 0.0).seen(None)
+            })
+            .collect();
+        let grid = crate::mobs::seen_grid::SeenGrid::new(seen.iter().map(|s| s.bounds));
+        (seen, grid)
+    }
+
+    #[test]
+    fn nearby_lists_the_mobs_within_range_nearest_first_up_to_the_cap() {
+        let m = mob();
+        // Cows one block apart east of the mob, nearest id 101.
+        let seen: Vec<Seen> = (1..=40)
+            .map(|i| Mob::new(100 + i, kind(), Vec3::new(0.5 + f64::from(i), 64.0, 0.5), 0.0))
+            .map(|c| c.seen(None))
+            .chain([m.seen(None)])
+            .collect();
+        let near = nearby_of(&m, 16.0, seen.iter());
+        assert_eq!(near.len(), 16);
+        assert_eq!(near.iter().map(|n| n.id).collect::<Vec<_>>(), (101..=116).collect::<Vec<_>>());
+        assert_eq!((near[0].distance, near[15].distance), (1.0, 16.0));
+        assert!(near.iter().all(|n| n.id != m.id));
+        // The type is the snapshot's own, not a copy of its name.
+        assert!(Arc::ptr_eq(&near[0].kind, &seen[0].kind));
+        assert_eq!(near[0].kind.id, "minecraft:cow");
+        assert_eq!(nearby_of(&m, 100.0, seen.iter()).len(), NEARBY_LIMIT);
+    }
+
+    #[test]
+    fn nearby_through_the_grid_is_nearby_by_a_full_scan() {
+        let (seen, grid) = herd(600, 160.0);
+        let mut near = Vec::new();
+        let mut asked = 0;
+        for who in [0, 7, 42, 199, 333, 599] {
+            let s = &seen[who];
+            let m = Mob::new(s.id, s.kind.clone(), s.position, 0.0);
+            let range = m.kind.follow_range.max(1.0);
+            let by_scan = nearby_of(&m, range, seen.iter());
+            if grid.candidates(follow_area(m.position, range), &mut near) {
+                asked += 1;
+                let by_grid = nearby_of(&m, range, near.iter().map(|&i| &seen[i as usize]));
+                assert_eq!(by_grid, by_scan);
+                assert!(!by_scan.is_empty(), "a herd of 600 has a neighbour");
+            }
+        }
+        assert!(asked > 0, "the grid answered none");
     }
 
     #[test]
