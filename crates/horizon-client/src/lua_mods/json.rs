@@ -1,8 +1,10 @@
 //! JSON as Lua values and back, for a mod's configuration file
 //! (`horizon.config`, `horizon.save_config`) and the data files it reads
 //! (`horizon.data`): an object is a table, an array a sequence, numbers are
-//! numbers (an integer stays one), strings strings, `null` is nil (so a key
-//! set to null is gone from the table).
+//! numbers (a whole number up to 2^53 is written back as an integer; a Luau
+//! number is a double, so an integer past 2^53 reads and writes rounded),
+//! strings strings, `null` is nil (so a key set to null is gone from the
+//! table).
 use mlua::{Lua, Table, Value};
 use serde_json::{Map, Number, Value as Json};
 
@@ -99,6 +101,11 @@ impl Walk {
             Value::Nil => Json::Null,
             Value::Boolean(b) => Json::Bool(*b),
             Value::Integer(i) => Json::Number((*i).into()),
+            // A whole number a double holds exactly is an integer in the
+            // file, as it was read (Luau has no integers of its own).
+            Value::Number(n) if n.fract() == 0.0 && n.abs() <= super::nbt::EXACT => {
+                Json::Number((*n as i64).into())
+            }
             Value::Number(n) => match Number::from_f64(*n) {
                 Some(n) => Json::Number(n),
                 None => {
@@ -200,6 +207,14 @@ mod tests {
         assert_eq!(back["empty"], serde_json::json!({}));
         let f = lua.create_function(|_, ()| Ok(())).unwrap();
         assert!(lua_to_json(&Value::Function(f)).is_err());
+        // A whole number past Luau's 32-bit integers is still an integer in
+        // the file; one past 2^53 comes back rounded, as an integer too.
+        let json: Json =
+            serde_json::from_str(r#"{"wide": 5000000000, "huge": 9007199254740993}"#).unwrap();
+        let back = lua_to_json(&json_to_lua(&lua, &json).unwrap()).unwrap();
+        assert_eq!(back["wide"], serde_json::json!(5000000000i64));
+        assert!(back["huge"].is_i64(), "{back}");
+        assert_eq!(back["huge"], serde_json::json!(9007199254740992i64));
     }
 
     #[test]

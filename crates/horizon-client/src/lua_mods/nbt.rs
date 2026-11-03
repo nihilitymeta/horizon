@@ -2,7 +2,9 @@
 //! a block entity's saved compound, an entity's data. A compound is a
 //! table, a list a sequence, numbers are numbers (a Lua number has no
 //! NBT type, so writing back keeps the type the old value had: a float
-//! stays a float, a byte a byte), strings are strings.
+//! stays a float, a byte a byte), strings are strings. A Luau number is a
+//! double: a long past 2^53 reads rounded; one the script leaves as it read
+//! it is written back exactly, a changed one rounded, with a warning.
 use horizon_world::nbt::{Compound, JavaString, Tag};
 use mlua::{Lua, Table, Value};
 
@@ -45,6 +47,8 @@ pub fn compound_to_table(lua: &Lua, c: &Compound) -> mlua::Result<Table> {
 /// How deep a saved table may nest: a table in a table in a table... stops
 /// here (NBT's own readers stop at 512), with the path to it in the error.
 pub const MAX_DEPTH: usize = 128;
+/// The largest whole number a Lua number (a double) holds exactly: 2^53.
+pub const EXACT: f64 = 9_007_199_254_740_992.0;
 
 /// The walk down a table being saved: the keys from the root to the value
 /// in hand (an error names them) and the tables on that path, so a table
@@ -114,7 +118,19 @@ impl Walk {
                 Some(Tag::Byte(_)) => Tag::Byte(n as i8),
                 Some(Tag::Short(_)) => Tag::Short(n as i16),
                 Some(Tag::Int(_)) => Tag::Int(n as i32),
-                Some(Tag::Long(_)) => Tag::Long(n as i64),
+                // The number the script got for the old long is the old
+                // long rounded to a double: the same number back means the
+                // script left it alone, and the exact value is kept.
+                Some(Tag::Long(old)) if *old as f64 == n => Tag::Long(*old),
+                Some(Tag::Long(_)) => {
+                    if n.abs() > EXACT {
+                        log::warn!(
+                            "[lua] {}: {n} is past 2^53, the largest whole number a Lua number holds exactly: saved rounded",
+                            self.at()
+                        );
+                    }
+                    Tag::Long(n as i64)
+                }
                 Some(Tag::Float(_)) => Tag::Float((n as f32).to_bits()),
                 Some(Tag::Double(_)) => Tag::Double(n.to_bits()),
                 _ if n.fract() == 0.0 && n.abs() < 2f64.powi(31) => Tag::Int(n as i32),
@@ -132,7 +148,9 @@ impl Walk {
                 Some(Tag::Float(_)) | Some(Tag::Double(_)) => number(*i as f64),
                 Some(Tag::Byte(_)) => Tag::Byte(*i as i8),
                 Some(Tag::Short(_)) => Tag::Short(*i as i16),
-                Some(Tag::Long(_)) => Tag::Long(*i),
+                // A whole double comes back as an integer: the same number as
+                // the old long rounded means the script left it alone.
+                Some(Tag::Long(_)) => number(*i as f64),
                 Some(Tag::Int(_)) => Tag::Int(*i as i32),
                 _ if i32::try_from(*i).is_ok() => Tag::Int(*i as i32),
                 _ => Tag::Long(*i),
@@ -360,6 +378,28 @@ mod tests {
             panic!("{c:?}");
         };
         assert_eq!(c.get(&"a".into()), b.first());
+    }
+
+    #[test]
+    fn a_long_past_2_53_survives_a_round_trip_when_left_alone() {
+        let lua = Lua::new();
+        let big = (1i64 << 60) + 1;
+        let mut c = Compound::new();
+        c.insert("big".into(), Tag::Long(big));
+        c.insert("other".into(), Tag::Long(big));
+        c.insert("changed".into(), Tag::Long(big));
+        let t = compound_to_table(&lua, &c).unwrap();
+        lua.globals().set("d", &t).unwrap();
+        // `other` is set to the same (rounded) number: unchanged as far as a
+        // double can tell, so the exact long stays; `changed` is a new value
+        // a double holds exactly.
+        lua.load("d.other = d.other + 0; d.changed = 3 * 2^53")
+            .exec()
+            .unwrap();
+        let back = table_to_compound(&t, Some(&c)).unwrap();
+        assert_eq!(back.get(&"big".into()), Some(&Tag::Long(big)));
+        assert_eq!(back.get(&"other".into()), Some(&Tag::Long(big)));
+        assert_eq!(back.get(&"changed".into()), Some(&Tag::Long(3 << 53)));
     }
 
     #[test]
