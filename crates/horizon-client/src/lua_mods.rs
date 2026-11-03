@@ -256,9 +256,11 @@ end
 "#;
 /// `horizon.after(ticks, fn)` and `horizon.every(ticks, fn)`: timers run from
 /// the server's tick (the end of a tick while the world runs), as a handler
-/// of their own; a timer that fails is logged and, if repeating, kept.
+/// of their own; a timer that fails is reported to the log (`report`) and,
+/// if repeating, kept, and the timers after it run: the handler itself does
+/// not fail, so what the other timers asked for and saved stands.
 const TIMERS_CODE: &str = r#"
-return function(horizon)
+return function(horizon, report)
   local timers, tick = {}, 0
   horizon.after = function(ticks, fn)
     timers[#timers + 1] = { due = tick + math.max(1, math.floor(ticks)), fn = fn }
@@ -271,19 +273,17 @@ return function(horizon)
   local function run_timers(phase, running)
     if phase ~= "end" or not running then return end
     tick = tick + 1
-    local failed
     local i = 1
     while i <= #timers do
       local t = timers[i]
       if t.due <= tick then
         if t.every then t.due = tick + t.every; i = i + 1 else table.remove(timers, i) end
         local ok, e = pcall(t.fn)
-        if not ok and failed == nil then failed = e end
+        if not ok then report(tostring(e)) end
       else
         i = i + 1
       end
     end
-    if failed ~= nil then error("timer: " .. tostring(failed), 0) end
   end
   horizon.on("server_tick", run_timers)
   return run_timers
@@ -789,9 +789,14 @@ fn command_args(lua: &Lua, usage: &str, line: &str, args: &Table) -> mlua::Resul
     Ok(None)
 }
 
-fn install_timers(lua: &Lua, api: &Table) -> mlua::Result<()> {
+fn install_timers(lua: &Lua, api: &Table, id: &str) -> mlua::Result<()> {
     let install: Function = lua.load(TIMERS_CODE).set_name("horizon").eval()?;
-    let handler: Function = install.call(api)?;
+    let id = id.to_owned();
+    let report = lua.create_function(move |_, message: String| {
+        log::error!("[lua:{id}] server_tick: timer: {message}");
+        Ok(())
+    })?;
+    let handler: Function = install.call((api, report))?;
     lua.set_named_registry_value(TIMERS_HANDLER, handler)
 }
 /// The registry key of the modules `require` ran: `name -> value`.
@@ -1307,7 +1312,7 @@ impl LuaMod {
             lua.set_named_registry_value(LOADED, lua.create_table()?)?;
             // The timers' handler is the first `server_tick` handler: a new
             // one, over an empty list, for the new script.
-            install_timers(lua, &api)?;
+            install_timers(lua, &api, &self.id)?;
             Ok((registry, timers))
         };
         let (registry, timers) = stage().map_err(|e| e.to_string())?;
@@ -1563,7 +1568,7 @@ impl LuaMod {
         // The reads and the timers over the actions: a summon with a host at
         // hand is a read (it answers the id).
         install_reads(lua, &api)?;
-        install_timers(lua, &api)?;
+        install_timers(lua, &api, &self.id)?;
         // `horizon.config()`: the mod's own settings, `config/<id>.json` of
         // the game folder as a table (empty when there is none);
         // `horizon.save_config(t)` writes it. No host needed: at load too.
@@ -2171,7 +2176,12 @@ impl LuaMod {
                 out.push((entry.get::<String>("action")?, entry.get::<Table>("args")?));
             }
         }
-        if let Reader::Host(host) = &mut *reader.borrow_mut() {
+        // The saved tables the handlers were handed are written back when
+        // they all ran, as the actions are taken then: a handler's error
+        // drops both, so a cancel and the edit it went with are not split.
+        if result.is_ok()
+            && let Reader::Host(host) = &mut *reader.borrow_mut()
+        {
             for f in fetched.borrow().iter() {
                 self.store_fetched(*host, hook, f);
             }
@@ -6537,6 +6547,79 @@ experimental = ["scripts"]
         );
         let e = LuaMod::load(&path, &[]).unwrap_err();
         assert!(e.contains("horizon.broadcast"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_later_handlers_error_drops_the_actions_and_the_data_edits_alike() {
+        let (dir, path) = hmod(
+            "half",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.on("mob_spawned", function()
+                  local w = horizon.world_data()
+                  w.spawns = (w.spawns or 0) + 1
+                  horizon.broadcast("spawned")
+                end)
+                horizon.on("mob_spawned", function(dimension, kind) if kind == "minecraft:zombie" then error("boom") end end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let spawns = |host: &mut MobHost| -> Option<i64> {
+            let host: &mut dyn Host = host;
+            let c = m
+                .world_attachment
+                .get_existing(host, Holder::Level)
+                .unwrap()?;
+            match c.get(&"spawns".into()) {
+                Some(horizon_world::nbt::Tag::Int(n)) => Some(i64::from(*n)),
+                other => panic!("{other:?}"),
+            }
+        };
+        let seen = std::cell::RefCell::new(Vec::new());
+        let mut apply = |host: &mut dyn Host, action: &str, args: &Table| {
+            seen.borrow_mut().push(action.to_owned());
+            m.run_action(host, action, args)
+        };
+        // The second handler fails: neither the first's broadcast nor its
+        // count reaches the world.
+        let e = m
+            .call_kind(
+                "mob_spawned",
+                None,
+                &mut host,
+                ("d", "minecraft:zombie"),
+                &mut apply,
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("boom"), "{e}");
+        assert!(seen.borrow().is_empty());
+        assert_eq!(spawns(&mut host), None);
+        assert!(host.lines.lock().unwrap().is_empty());
+        // When every handler runs, both do.
+        m.call_kind(
+            "mob_spawned",
+            None,
+            &mut host,
+            ("d", "minecraft:cow"),
+            &mut apply,
+        )
+        .unwrap();
+        assert_eq!(*seen.borrow(), ["broadcast"]);
+        assert_eq!(spawns(&mut host), Some(1));
+        assert_eq!(*host.lines.lock().unwrap(), ["spawned"]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
