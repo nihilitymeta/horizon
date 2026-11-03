@@ -1273,44 +1273,77 @@ impl LuaMod {
     }
 
     /// Reads the scripts again and runs `scripts/init.lua` afresh: the
-    /// handlers, the goals and the modules `require` ran are forgotten first;
-    /// the Lua state and its globals stay. On an error the mod keeps running
-    /// as it was, with its old handlers.
+    /// handlers, the goals, the commands, the block entities and the modules
+    /// `require` ran are forgotten; the Lua state and its globals stay. The
+    /// new script registers into fresh tables and maps, and on an error
+    /// (a script that does not read, or fails anywhere in `init.lua`) the
+    /// old ones come back whole: the mod keeps running as it was, with its
+    /// old handlers, timers, commands and goals. A goal already on a live
+    /// mob keeps the definition it was made with either way, until the
+    /// mob's AI is set up again.
     pub fn reload(&self) -> Result<(), String> {
         let (_, _, scripts) = Self::read_scripts(&self.source)?;
         let (library_scripts, _) = Self::read_libraries(&self.libraries)?;
         let lua = &self.lua;
-        let reset = || -> mlua::Result<()> {
+        // What the running mod registered, kept aside while the new script
+        // runs: the registry tables, the timers (their handler and the
+        // `horizon.after`/`every`/`ticks` closures over their list) and the
+        // maps the `horizon` functions fill.
+        let api: Table = lua
+            .globals()
+            .get::<Table>(GLOBAL)
+            .map_err(|e| e.to_string())?;
+        let stage = || -> mlua::Result<(Vec<(&str, Value)>, Vec<(&str, Value)>)> {
+            let mut registry = Vec::new();
+            for key in [HANDLERS, KIND_HANDLERS, LOADED, TIMERS_HANDLER] {
+                registry.push((key, lua.named_registry_value::<Value>(key)?));
+            }
+            let mut timers = Vec::new();
+            for name in ["after", "every", "ticks"] {
+                timers.push((name, api.get::<Value>(name)?));
+            }
             lua.set_named_registry_value(HANDLERS, lua.create_table()?)?;
             lua.set_named_registry_value(KIND_HANDLERS, lua.create_table()?)?;
-            lua.set_named_registry_value(QUEUE, lua.create_table()?)?;
             lua.set_named_registry_value(LOADED, lua.create_table()?)?;
-            lua.named_registry_value::<Table>(HOST_SLOT)?
-                .set(1, Value::Nil)?;
-            // The timers' handler was forgotten with the rest: back, empty.
-            install_timers(lua, &lua.globals().get::<Table>(GLOBAL)?)?;
+            // The timers' handler is the first `server_tick` handler: a new
+            // one, over an empty list, for the new script.
+            install_timers(lua, &api)?;
+            Ok((registry, timers))
+        };
+        let (registry, timers) = stage().map_err(|e| e.to_string())?;
+        fn swap<T>(m: &Mutex<T>, new: T) -> Result<T, String> {
+            let mut guard = m.lock().map_err(|_| "a mod's registrations".to_owned())?;
+            Ok(std::mem::replace(&mut *guard, new))
+        }
+        let old_commands = swap(&self.commands, Vec::new())?;
+        let old_goals = swap(&self.goals, HashMap::new())?;
+        let old_kinds = swap(&self.kinds, HashMap::new())?;
+        let old_declared = swap(&self.block_entities, HashMap::new())?;
+        let old_scripts = swap(&self.scripts, scripts)?;
+        let old_library_scripts = swap(&self.library_scripts, library_scripts)?;
+        let Err(e) = self.run(ENTRY) else {
+            return Ok(());
+        };
+        // Back as it was: whatever the failed script registered is dropped
+        // with the fresh tables.
+        let restore = || -> mlua::Result<()> {
+            for (key, value) in registry {
+                lua.set_named_registry_value(key, value)?;
+            }
+            for (name, value) in timers {
+                api.set(name, value)?;
+            }
             Ok(())
         };
-        reset().map_err(|e| e.to_string())?;
-        if let Ok(mut commands) = self.commands.lock() {
-            commands.clear();
-        }
-        if let Ok(mut goals) = self.goals.lock() {
-            goals.clear();
-        }
-        if let Ok(mut kinds) = self.kinds.lock() {
-            kinds.clear();
-        }
-        if let Ok(mut declared) = self.block_entities.lock() {
-            declared.clear();
-        }
-        if let Ok(mut current) = self.scripts.lock() {
-            *current = scripts;
-        }
-        if let Ok(mut current) = self.library_scripts.lock() {
-            *current = library_scripts;
-        }
-        self.run(ENTRY).map_err(|e| e.to_string())
+        let restored = restore();
+        swap(&self.commands, old_commands)?;
+        swap(&self.goals, old_goals)?;
+        swap(&self.kinds, old_kinds)?;
+        swap(&self.block_entities, old_declared)?;
+        swap(&self.scripts, old_scripts)?;
+        swap(&self.library_scripts, old_library_scripts)?;
+        restored.map_err(|e| e.to_string())?;
+        Err(e.to_string())
     }
 
     /// The mod's id, as its manifest says.
@@ -6263,25 +6296,31 @@ experimental = ["scripts"]
                 .unwrap()
                 .map_or(0, |l| l.len().unwrap())
         };
+        let rewrite = |files: &[(&str, &[u8])]| {
+            std::fs::write(
+                &path,
+                Package::write_files(MANIFEST_TEXT, None, files).unwrap(),
+            )
+            .unwrap();
+        };
         // Two of the script's, after the timers' own.
         assert_eq!(handlers(&m), 3);
-        // The mod's file changes under it: one handler, a new module value.
-        std::fs::write(
-            &path,
-            Package::write_files(
-                MANIFEST_TEXT,
-                None,
-                &[
-                    (
-                        "scripts/init.lua",
-                        b"VERSION = require('v')\nhorizon.on('server_tick', function() end)",
-                    ),
-                    ("scripts/v.lua", b"return 2"),
-                ],
-            )
-            .unwrap(),
-        )
-        .unwrap();
+        // The mod's file changes under it: one handler that counts the
+        // ticks, a timer, a command, a goal, a new module value.
+        rewrite(&[
+            (
+                "scripts/init.lua",
+                br#"
+                VERSION = require('v')
+                TICKS = 0
+                horizon.on('server_tick', function() TICKS = TICKS + 1 end)
+                horizon.every(1, function() TIMED = (TIMED or 0) + 1 end)
+                horizon.command("ruby", 0, function() end)
+                horizon.goal("sit", { can_use = function() return false end })
+                "#,
+            ),
+            ("scripts/v.lua", b"return 2"),
+        ]);
         // The first data load is the one the scripts were loaded for; the next reloads.
         let mut files = Vec::new();
         m.data_pack_files(&NoHost, &mut DataPackFilesEvent { files: &mut files });
@@ -6289,14 +6328,60 @@ experimental = ["scripts"]
         m.data_pack_files(&NoHost, &mut DataPackFilesEvent { files: &mut files });
         assert_eq!(handlers(&m), 2);
         assert_eq!(m.lua.globals().get::<i64>("VERSION").unwrap(), 2);
-        // A broken edit leaves the running handlers alone.
-        std::fs::write(
-            &path,
-            Package::write_files(MANIFEST_TEXT, None, &[("scripts/init.lua", b"error('x')")])
-                .unwrap(),
-        )
-        .unwrap();
-        assert!(m.reload().is_err());
+        let tick = |m: &LuaMod| {
+            m.call_bare("server_tick", None, ("end", true), &mut |_, _| Ok(()))
+                .unwrap();
+        };
+        tick(&m);
+        let counts = |m: &LuaMod| -> (i64, i64) {
+            let g = m.lua.globals();
+            (g.get("TICKS").unwrap(), g.get("TIMED").unwrap())
+        };
+        assert_eq!(counts(&m), (1, 1));
+        // A broken edit leaves the running handlers, timers, commands and
+        // goals alone, whether the script fails before or after registering
+        // anything: the half-registered handler is not kept either.
+        rewrite(&[("scripts/init.lua", b"error('x')")]);
+        let e = m.reload().unwrap_err();
+        assert!(e.contains("x"), "{e}");
+        rewrite(&[(
+            "scripts/init.lua",
+            b"horizon.on('server_tick', function() HALF = true end)\nhorizon.command('half', 0, function() end)\nrequire('missing')",
+        )]);
+        let e = m.reload().unwrap_err();
+        assert!(e.contains("missing"), "{e}");
+        assert_eq!(handlers(&m), 2);
+        tick(&m);
+        assert_eq!(counts(&m), (2, 2));
+        assert!(m.lua.globals().get::<Value>("HALF").unwrap().is_nil());
+        assert_eq!(
+            m.commands
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|c| c.usage.clone())
+                .collect::<Vec<_>>(),
+            ["ruby"]
+        );
+        assert!(m.goals.lock().unwrap().contains_key("sit"));
+        // The timers registered by the old script keep running from the old
+        // list, and a timer the old handlers add later joins that list.
+        m.lua
+            .load("horizon.after(1, function() LATER = true end)")
+            .exec()
+            .unwrap();
+        tick(&m);
+        assert_eq!(counts(&m), (3, 3));
+        assert!(m.lua.globals().get::<bool>("LATER").unwrap());
+        // The next good edit is live again.
+        rewrite(&[(
+            "scripts/init.lua",
+            b"horizon.on('server_tick', function() end)",
+        )]);
+        m.reload().unwrap();
+        assert_eq!(handlers(&m), 2);
+        tick(&m);
+        assert_eq!(counts(&m), (3, 3));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
