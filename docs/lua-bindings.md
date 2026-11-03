@@ -86,6 +86,13 @@ registry.data("loot_table/entities/crawler", {
 })
 ```
 
+## Every hook point, and which reach Lua
+
+[docs/api/hook-points.md](api/hook-points.md) lists every hook point and host helper of the engine with its API
+level and, for each hook a scripted mod hears, the Lua handler it reaches. It is generated
+(`cargo run -p xtask -- hooks-doc`) from `native-hooks.json` and the hook functions' own docs, and a test keeps it
+current, so it is the place to look for what the hooks below are built on.
+
 ## What is built
 
 | | |

@@ -9,7 +9,7 @@ use std::{
 };
 use syn::{FnArg, ImplItem, Item, Pat, Type, visit::Visit, visit_mut::VisitMut};
 
-fn impl_functions(item: syn::ItemImpl) -> impl Iterator<Item = syn::ItemFn> {
+pub fn impl_functions(item: syn::ItemImpl) -> impl Iterator<Item = syn::ItemFn> {
     item.items.into_iter().filter_map(|item| match item {
         ImplItem::Fn(method) => Some(syn::ItemFn {
             attrs: method.attrs,
@@ -55,7 +55,7 @@ fn game_methods(
     Ok(())
 }
 
-fn doc_comments(
+pub fn doc_comments(
     attrs: &[syn::Attribute],
     name: &str,
     preserve_empty: bool,
@@ -414,7 +414,7 @@ fn has_call(block: &syn::Block, expected: &str) -> bool {
     calls.found
 }
 
-fn one_function<'a>(
+pub fn one_function<'a>(
     items: impl Iterator<Item = &'a syn::ItemFn>,
     name: &str,
 ) -> Result<&'a syn::ItemFn, String> {
@@ -530,7 +530,7 @@ fn host_for(is_level: bool, mutable: Option<bool>, ticks: bool) -> Option<(&'sta
     })
 }
 
-fn catalog_hooks(
+pub fn catalog_hooks(
     root: &Path,
     catalog: &serde_json::Value,
 ) -> Result<Vec<serde_json::Value>, String> {
@@ -572,7 +572,7 @@ fn catalog_hooks(
 /// outside `Game`. `horizon-client-lib` builds from `horizon-client/src`
 /// (`client_lib.rs`); `menu` and `breathing` are also accepted under their
 /// older `horizon_client::` names.
-fn free_function_source(target: &str) -> Option<(&'static str, String)> {
+pub fn free_function_source(target: &str) -> Option<(&'static str, String)> {
     let prefixes = [
         ("horizon_world::", "horizon-world"),
         ("horizon_client_render::", "horizon-client-render"),
