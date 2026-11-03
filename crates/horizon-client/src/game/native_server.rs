@@ -236,11 +236,13 @@ impl Game<'_> {
             return players;
         };
         let name = self.options.player_name();
+        // As `ensure_player_uuid` makes it: the owner's saved uuid, else the
+        // offline one of "Player" (the name is not part of it).
         let uuid = self
             .level
             .player_uuid
             .map(horizon_client::lan::playerdata::ints_uuid)
-            .unwrap_or_else(|| horizon_protocol::crypto::offline_uuid(&name));
+            .unwrap_or_else(|| horizon_protocol::crypto::offline_uuid("Player"));
         if players.iter().any(|g| g.uuid == uuid) {
             return players;
         }
