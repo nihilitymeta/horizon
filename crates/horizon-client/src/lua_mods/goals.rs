@@ -87,15 +87,15 @@ impl GoalDef {
             def: Arc::new(lua.create_registry_value(def)?),
         })
     }
-    /// The goal to add to a mob, running in `lua`.
-    pub fn goal(
+    /// The goal's decisions, running in `lua`: what [`GoalDef::goal`] wraps.
+    pub fn behaviour(
         &self,
         lua: Lua,
         mod_id: &str,
         budget: super::Budget,
-    ) -> mlua::Result<NativeGoal<LuaBehaviour>> {
+    ) -> mlua::Result<LuaBehaviour> {
         let (api, queue) = actions_table(&lua)?;
-        let behaviour = LuaBehaviour {
+        Ok(LuaBehaviour {
             api: lua.create_registry_value(api)?,
             queue: lua.create_registry_value(queue)?,
             lua,
@@ -103,7 +103,16 @@ impl GoalDef {
             budget,
             def: self.clone(),
             reported: Mutex::new(HashSet::new()),
-        };
+        })
+    }
+    /// The goal to add to a mob, running in `lua`.
+    pub fn goal(
+        &self,
+        lua: Lua,
+        mod_id: &str,
+        budget: super::Budget,
+    ) -> mlua::Result<NativeGoal<LuaBehaviour>> {
+        let behaviour = self.behaviour(lua, mod_id, budget)?;
         let mut goal = NativeGoal::new(self.name, self.flags, behaviour);
         if self.every_tick {
             goal = goal.updated_every_tick();

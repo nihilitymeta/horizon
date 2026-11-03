@@ -217,7 +217,10 @@ code catches that error, and the next loop iteration or call raises it again, so
 its deadline (the timers' own `pcall` included), and the actions it queued are dropped. `init.lua` with the
 modules it requires has 5 s at load and reload; a state may take 64 MiB. Luau has no `io`, `loadfile` or `dofile`,
 its `os` is `clock`, `date`, `difftime` and `time`, and `require` is the game's own over the mod's `scripts/`, so a
-script reads nothing but its mod (`lua_mods::Budget`).
+script reads nothing but its mod (`lua_mods::Budget`). An action (`horizon.summon`, `horizon.tell`...) called where no
+hook's handlers are running (a goal function, which acts through its `out` table; `init.lua`'s top level, which
+registers handlers) is an error where it is called: nothing would run it, and it would otherwise sit in the queue for the
+state's life.
 
 Start one: `cargo horizon-mod new my-mod --template lua` writes a scripted mod that depends on the modkit (a
 manifest, `scripts/registry.lua` with one item, `scripts/init.lua` with its `on_use`, a `.luaurc` for an editor,

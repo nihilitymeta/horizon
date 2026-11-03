@@ -1329,7 +1329,7 @@ impl LuaMod {
         let slot = lua.create_table()?;
         lua.set_named_registry_value(HOST_SLOT, &slot)?;
         let make_runner: Function = lua.load(RUNNER_CODE).set_name("horizon").eval()?;
-        let runner: Function = make_runner.call(slot)?;
+        let runner: Function = make_runner.call(&slot)?;
         lua.set_named_registry_value(RUNNER, runner)?;
         let api = lua.create_table()?;
         let id = self.id.clone();
@@ -1505,9 +1505,19 @@ impl LuaMod {
             "set_duration",
             "reply",
         ] {
+            let slot = slot.clone();
             api.set(
                 action,
                 lua.create_function(move |lua, args: MultiValue| {
+                    // Outside a hook's handlers nothing would take the
+                    // action: it would sit in the queue for the state's life.
+                    if slot.raw_get::<Option<i64>>(3)?.unwrap_or(0) == 0 {
+                        return Err(mlua::Error::runtime(format!(
+                            "horizon.{action}: actions work inside a hook's handler (or a \
+                             timer), which the game runs them after; a goal function acts \
+                             through its `out` table, and init.lua registers handlers"
+                        )));
+                    }
                     let queue: Table = lua.named_registry_value(QUEUE)?;
                     let entry = lua.create_table()?;
                     entry.set("action", action)?;
@@ -6369,6 +6379,72 @@ experimental = ["scripts"]
         m.call_bare("world_lifecycle", None, ("start", "x"), &mut |_, _| Ok(()))
             .unwrap();
         assert_eq!(m.lua.globals().get::<i64>("N").unwrap(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn an_action_outside_a_hooks_handlers_is_an_error_and_leaves_nothing_queued() {
+        use crate::mod_api::NativeBehaviour;
+        // From a goal function: no runner takes the action, so it is refused
+        // where it is called, not left in the queue for the state's life.
+        let (dir, path) = hmod(
+            "goal-action",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.goal("summoner", {
+                  can_use = function(mob, state, out)
+                    local ok, e = pcall(horizon.summon, "minecraft:overworld", "minecraft:cow", 0, 0, 0)
+                    SUMMON = tostring(e)
+                    return ok
+                  end,
+                })
+                -- Inside a handler the same call is taken.
+                horizon.on("mob_spawned", function() horizon.summon("minecraft:overworld", "minecraft:cow", 0, 0, 0) end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let def = m.goals.lock().unwrap().get("summoner").cloned().unwrap();
+        let behaviour = def
+            .behaviour(m.lua.clone(), m.id(), m.budget.clone())
+            .unwrap();
+        let view = MobView::of(
+            &crate::mobs::Mob::new(
+                7,
+                crate::mobs::MobType::cow_for_tests(),
+                horizon_core::geometry::Vec3::new(0.0, 64.0, 0.0),
+                0.0,
+            ),
+            None,
+        );
+        let mut state = goals::LuaGoalState::default();
+        let mut out = crate::mod_api::Actions::default();
+        assert!(!behaviour.can_use(&mut state, &view, &mut out));
+        let e: String = m.lua.globals().get("SUMMON").unwrap();
+        assert!(e.contains("horizon.summon") && e.contains("handler"), "{e}");
+        let queue: Table = m.lua.named_registry_value(QUEUE).unwrap();
+        assert_eq!(queue.raw_len(), 0);
+        let mut seen = Vec::new();
+        m.call_bare(
+            "mob_spawned",
+            None,
+            ("d", "minecraft:cow"),
+            &mut |action, _| {
+                seen.push(action.to_owned());
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(seen, ["summon"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+        // At init.lua's top level the same: the load fails, naming the call.
+        let (dir, path) = hmod(
+            "load-action",
+            &[("scripts/init.lua", b"horizon.broadcast('hello')")],
+        );
+        let e = LuaMod::load(&path, &[]).unwrap_err();
+        assert!(e.contains("horizon.broadcast"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
