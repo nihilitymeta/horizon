@@ -497,8 +497,10 @@ impl Game<'_> {
     /// `/lua`: the console window; `/lua <code>` runs a line in it.
     pub(super) fn cmd_lua(&mut self, code: Option<String>) -> super::R<i32> {
         // The console runs with the owner's powers and shows on the owner's
-        // screen: a guest's /lua is refused.
-        if self.lan_acting.is_some() {
+        // screen: a guest's /lua is refused (the owner's own commands act
+        // through the hub too, as the owner).
+        let owner = self.serving.as_ref().map(|s| s.owner);
+        if self.lan_acting_uuid.is_some() && self.lan_acting_uuid != owner {
             return Err(super::CommandError::new(horizon_client::text::Text::literal(
                 "The Lua console is the host's own",
             )));
