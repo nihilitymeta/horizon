@@ -220,8 +220,10 @@ the Mods page takes effect at the next start.
 
 ## Not yet: the shapes to come
 
-What a gameplay mod asks for next, with the API it will get, so a mod can be written toward it; none of it is
-built, and the engine's own helpers are the limit of what a script can reach today.
+What a gameplay mod asks for next, with the API it will get, so a mod can be written toward it. None of it is
+built or tested: the names below are the design, not a promise of their final spelling, and the engine's own
+helpers (hook-points.md) are the limit of what a script can reach today. A row leaves this table when its step
+lands, with the tests and the game check that show it.
 
 | | |
 |---|---|
