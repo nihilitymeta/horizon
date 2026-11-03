@@ -170,6 +170,25 @@ impl Walk {
             };
             return Ok(Tag::Compound(self.compound(t, old)?));
         }
+        // A list has no names: a key beside the sequence would be lost, so
+        // it is an error naming the key instead.
+        for pair in t.clone().pairs::<Value, Value>() {
+            let (k, _) = pair?;
+            let in_sequence = matches!(k, Value::Integer(i) if i >= 1 && i as usize <= len);
+            if !in_sequence {
+                let key = match &k {
+                    Value::String(s) => s.to_string_lossy(),
+                    Value::Integer(i) => i.to_string(),
+                    Value::Number(n) => n.to_string(),
+                    other => other.type_name().to_owned(),
+                };
+                return Err(mlua::Error::runtime(format!(
+                    "{}: a table with the items 1..{len} is saved as a list, which has no room for \
+                     the key {key}; keep the named values in a table of their own",
+                    self.at()
+                )));
+            }
+        }
         Ok(match like {
             Some(Tag::IntArray(_)) => {
                 let mut out = Vec::with_capacity(len);
@@ -341,5 +360,34 @@ mod tests {
             panic!("{c:?}");
         };
         assert_eq!(c.get(&"a".into()), b.first());
+    }
+
+    #[test]
+    fn a_sequence_with_a_named_key_beside_it_is_refused_not_cut() {
+        let lua = Lua::new();
+        let t: Table = lua
+            .load("local d = { items = { 'a' } } d.items.count = 1 return d")
+            .eval()
+            .unwrap();
+        let e = table_to_compound(&t, None).unwrap_err().to_string();
+        assert!(
+            e.contains("items") && e.contains("count") && e.contains("list"),
+            "{e}"
+        );
+        // The same when the old value was a list and the new table is empty
+        // but for its names.
+        let mut c = Compound::new();
+        c.insert("items".into(), Tag::List(vec![Tag::String("a".into())]));
+        let t: Table = lua.load("return { items = { count = 1 } }").eval().unwrap();
+        let e = table_to_compound(&t, Some(&c)).unwrap_err().to_string();
+        assert!(e.contains("count"), "{e}");
+        // A plain sequence, or a plain compound, is as before.
+        let t: Table = lua
+            .load("return { items = { 'a', 'b' }, named = { count = 1 } }")
+            .eval()
+            .unwrap();
+        let c = table_to_compound(&t, None).unwrap();
+        assert!(matches!(c.get(&"items".into()), Some(Tag::List(l)) if l.len() == 2));
+        assert!(matches!(c.get(&"named".into()), Some(Tag::Compound(_))));
     }
 }
