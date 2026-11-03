@@ -6570,12 +6570,12 @@ experimental = ["scripts"]
             manifest("user", "0.3.0", "\"lib >= 2.0\""),
             b"MINE = horizon.mod_version\nLIB = horizon.libraries.lib\n",
         );
-        let e = check_mod(&user, &[old.clone()]).unwrap_err();
+        let e = check_mod(&user, std::slice::from_ref(&old)).unwrap_err();
         assert!(
             e.contains("lib >= 2.0") && e.contains("found lib 1.0.0"),
             "{e}"
         );
-        let lines = check_mod(&user, &[new.clone()]).unwrap();
+        let lines = check_mod(&user, std::slice::from_ref(&new)).unwrap();
         assert!(
             lines.iter().any(|l| l.contains("with lib from")),
             "{lines:?}"
