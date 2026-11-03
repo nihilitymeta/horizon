@@ -7,6 +7,8 @@ export type Item = { id: string, count: number, damage: number, plain: boolean }
 export type Held = { item: string, count: number, plain: boolean }
 export type Player = { uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number, held: Held? }
 export type Named = { uuid: string, name: string }
+export type PlayerRef = Player | { uuid: string, name: string? }
+export type HitItem = { id: string, count: number, plain: boolean }
 export type IdKind = { id: number, kind: string }
 export type Target = { id: number, kind: string, position: Vec3 }
 export type Block = { x: number, y: number, z: number, id: string }
@@ -15,14 +17,14 @@ export type Nearby = { id: number, kind: string, position: Vec3, distance: numbe
 export type Home = { x: number, y: number, z: number, radius: number }
 export type MobView = { id: number, kind: string, position: Vec3, velocity: Vec3, yaw: number, head_pitch: number, health: number, max_health: number, age: number, on_ground: boolean, in_water: boolean, in_lava: boolean, hurt_time: number, last_hurt_by: number?, target: any, target_position: Vec3?, target_in_melee_range: boolean, navigation_done: boolean, nearest_player: Vec3?, home: Home?, nearby: { Nearby } }
 export type Who = string | number | nil
-export type GoalOut = { navigate_to: (x: number, y: number, z: number, speed: number) -> (), navigate_to_target: (speed: number) -> (), stop_navigation: () -> (), move_toward: (x: number, y: number, z: number, speed: number) -> (), look_at: (x: number, y: number, z: number) -> (), look_at_target: () -> (), set_target: (who: Who) -> (), jump: () -> (), attack: (who: Who) -> (), swing: () -> (), hurt: (who: Who, amount: number) -> (), convert: (kind: string) -> (), summon: (kind: string, x: number, y: number, z: number) -> (), despawn: () -> (), heal: (amount: number) -> (), effect: (name: string, ticks: number, amplifier: number) -> () }
+export type GoalOut = { navigate_to: (x: number, y: number, z: number, speed: number?) -> (), navigate_to_target: (speed: number?) -> (), stop_navigation: () -> (), move_toward: (x: number, y: number, z: number, speed: number?) -> (), look_at: (x: number, y: number, z: number) -> (), look_at_target: () -> (), set_target: (who: Who) -> (), jump: () -> (), attack: (who: Who) -> (), swing: () -> (), hurt: (who: Who, amount: number) -> (), convert: (kind: string) -> (), summon: (kind: string, x: number, y: number, z: number) -> (), despawn: () -> (), heal: (amount: number) -> (), effect: (name: string, ticks: number?, amplifier: number?) -> () }
 export type GoalState = { [string]: any }
 export type GoalDef = { flags: { string }?, every_tick: boolean?, interruptable: boolean?, can_use: (mob: MobView, state: GoalState, out: GoalOut) -> boolean, can_continue: ((mob: MobView, state: GoalState, out: GoalOut) -> boolean)?, start: ((mob: MobView, state: GoalState, out: GoalOut) -> ())?, tick: ((mob: MobView, state: GoalState, out: GoalOut) -> ())?, stop: ((mob: MobView, state: GoalState, out: GoalOut) -> ())? }
 export type Data = { [string]: any }
 export type Props = { [string]: string }
-export type DeathCause = { damage_type: string, causing: number, player: Player? }
+export type DeathCause = { damage_type: string, causing: number, player: PlayerRef? }
 export type Hit = { x: number, y: number, z: number, entity: number?, entity_kind: string?, block: Block?, face: Vec3? }
-export type LootSource = { table: string, dimension: string, origin: Vec3, block: LootBlock?, mob: IdKind?, player: Player?, tool: Item?, explosion: number? }
+export type LootSource = { table: string, dimension: string, origin: Vec3, block: LootBlock?, mob: IdKind?, player: PlayerRef?, tool: Item?, explosion: number? }
 export type Time = { dimension: string, day_time: number, day: number, time_of_day: number, rain: number, thunder: number }
 export type Raycast = { id: string, x: number, y: number, z: number, block: Vec3 }
 export type Light = { block: number, sky: number }
@@ -51,35 +53,35 @@ export type HorizonOn =
     ((name: "mob_heal", fn: (mob: { id: number }, amount: number) -> (), kind: string?) -> ()) &
     ((name: "mob_knockback", fn: (mob: IdKind, damage_type: string, causing: number, direct: number, strength: number, x: number, z: number) -> (), kind: string?) -> ()) &
     ((name: "player_knockback", fn: (player: IdKind, damage_type: string, causing: number, direct: number, strength: number, x: number, z: number) -> (), kind: string?) -> ()) &
-    ((name: "mob_equipped", fn: (mob: MobView, slot: string, from: Item?, to: Item?) -> (), kind: string?) -> ()) &
+    ((name: "mob_equipped", fn: (mob: MobView | IdKind, slot: string, from: Item?, to: Item?) -> (), kind: string?) -> ()) &
     ((name: "entity_joined", fn: (dimension: string, id: number, kind: string, x: number, y: number, z: number, loaded: boolean) -> (), kind: string?) -> ()) &
     ((name: "item_use", fn: (item: Item, player: Player) -> (), kind: string?) -> ()) &
     ((name: "item_use_on", fn: (item: Item, player: Player, block: Block, face: Vec3) -> (), kind: string?) -> ()) &
-    ((name: "item_hit", fn: (item: Item, player: Player, target: Target) -> (), kind: string?) -> ()) &
+    ((name: "item_hit", fn: (item: HitItem, player: Player, target: Target) -> (), kind: string?) -> ()) &
     ((name: "item_hurt_enemy", fn: (item: Item, player: Player, target: IdKind) -> (), kind: string?) -> ()) &
     ((name: "item_use_start", fn: (item: Item, player: Player, hand: string, duration: number) -> (), kind: string?) -> ()) &
     ((name: "item_finished", fn: (item: Item, player: Player) -> (), kind: string?) -> ()) &
     ((name: "item_tick", fn: (item: Item, player: Player, slot: number, selected: boolean) -> (), kind: string?) -> ()) &
-    ((name: "item_picked_up", fn: (player: Player, item: string, count: number) -> (), kind: string?) -> ()) &
-    ((name: "item_crafted", fn: (player: Player, recipe: string, item: Item) -> (), kind: string?) -> ()) &
-    ((name: "item_dropped", fn: (player: Player, item: string, count: number) -> (), kind: string?) -> ()) &
+    ((name: "item_picked_up", fn: (player: PlayerRef, item: string, count: number) -> (), kind: string?) -> ()) &
+    ((name: "item_crafted", fn: (player: PlayerRef, recipe: string, item: Item) -> (), kind: string?) -> ()) &
+    ((name: "item_dropped", fn: (player: PlayerRef, item: string, count: number) -> (), kind: string?) -> ()) &
     ((name: "loot_drops", fn: (source: LootSource, drops: { Item }) -> (), kind: string?) -> ()) &
     ((name: "projectile_impact", fn: (projectile: number, kind: string, owner: number, hit: Hit) -> (), kind: string?) -> ()) &
-    ((name: "projectile_launched", fn: (projectile: number, kind: string, player: Player?) -> (), kind: string?) -> ()) &
+    ((name: "projectile_launched", fn: (projectile: number, kind: string, player: PlayerRef?) -> (), kind: string?) -> ()) &
     ((name: "explosion", fn: (dimension: string, center: Vec3, blocks: { Vec3 }) -> (), kind: string?) -> ()) &
-    ((name: "player_joined", fn: (player: Player) -> (), kind: string?) -> ()) &
-    ((name: "player_left", fn: (player: Player) -> (), kind: string?) -> ()) &
-    ((name: "player_respawned", fn: (player: Player) -> (), kind: string?) -> ()) &
-    ((name: "player_died", fn: (player: Player, cause: string?) -> (), kind: string?) -> ()) &
+    ((name: "player_joined", fn: (player: PlayerRef) -> (), kind: string?) -> ()) &
+    ((name: "player_left", fn: (player: PlayerRef) -> (), kind: string?) -> ()) &
+    ((name: "player_respawned", fn: (player: PlayerRef) -> (), kind: string?) -> ()) &
+    ((name: "player_died", fn: (player: PlayerRef, cause: string?) -> (), kind: string?) -> ()) &
     ((name: "player_tick", fn: (player: Player) -> (), kind: string?) -> ()) &
     ((name: "player_chat", fn: (player: Named, line: string) -> (), kind: string?) -> ()) &
-    ((name: "player_command", fn: (player: Player, line: string) -> (), kind: string?) -> ()) &
-    ((name: "player_changed_dimension", fn: (player: Player, from: string, to: string) -> (), kind: string?) -> ()) &
-    ((name: "player_bed_enter", fn: (player: Player, x: number, y: number, z: number) -> (), kind: string?) -> ()) &
-    ((name: "player_exp_change", fn: (player: Player, amount: number) -> (), kind: string?) -> ()) &
-    ((name: "player_container_open", fn: (player: Player, menu: string, pos: Vec3?) -> (), kind: string?) -> ()) &
+    ((name: "player_command", fn: (player: PlayerRef, line: string) -> (), kind: string?) -> ()) &
+    ((name: "player_changed_dimension", fn: (player: PlayerRef, from: string, to: string) -> (), kind: string?) -> ()) &
+    ((name: "player_bed_enter", fn: (player: PlayerRef, x: number, y: number, z: number) -> (), kind: string?) -> ()) &
+    ((name: "player_exp_change", fn: (player: PlayerRef, amount: number) -> (), kind: string?) -> ()) &
+    ((name: "player_container_open", fn: (player: PlayerRef, menu: string, pos: Vec3?) -> (), kind: string?) -> ()) &
     ((name: "block_broken", fn: (x: number, y: number, z: number, block: string, player: Player) -> (), kind: string?) -> ()) &
-    ((name: "block_placed", fn: (x: number, y: number, z: number, block: string, player: Player, item: string) -> (), kind: string?) -> ())
+    ((name: "block_placed", fn: (x: number, y: number, z: number, block: string, player: Player, item: Item) -> (), kind: string?) -> ())
 
 declare horizon: {
     on: HorizonOn,
@@ -87,7 +89,7 @@ declare horizon: {
     mod_version: string,
     libraries: { [string]: string },
     log: (msg: string) -> (),
-    command: (usage: string, level: number, fn: (player: Player, args: CommandArgs) -> ()) -> (),
+    command: (usage: string, level: number?, fn: (player: Player, args: CommandArgs) -> ()) -> (),
     goal: (name: string, def: GoalDef) -> (),
     block_entity: (block: string, def: { ticks: boolean?, data: Data? }?) -> (),
     config: () -> Data,

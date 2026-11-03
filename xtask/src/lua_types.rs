@@ -22,6 +22,12 @@ const TYPES: &[(&str, &str)] = &[
         "{ uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number, held: Held? }",
     ),
     ("Named", "{ uuid: string, name: string }"),
+    // A player named by uuid in a hook: the world's record while they are
+    // on, else just the uuid and the name a hook told before, if any
+    // (`player_left` always; a player whose state is out of reach otherwise).
+    ("PlayerRef", "Player | { uuid: string, name: string? }"),
+    // `item_hit`'s item: the held stack as the host tells it, without `damage`.
+    ("HitItem", "{ id: string, count: number, plain: boolean }"),
     ("IdKind", "{ id: number, kind: string }"),
     ("Target", "{ id: number, kind: string, position: Vec3 }"),
     ("Block", "{ x: number, y: number, z: number, id: string }"),
@@ -44,7 +50,7 @@ const TYPES: &[(&str, &str)] = &[
     ("Who", "string | number | nil"),
     (
         "GoalOut",
-        "{ navigate_to: (x: number, y: number, z: number, speed: number) -> (), navigate_to_target: (speed: number) -> (), stop_navigation: () -> (), move_toward: (x: number, y: number, z: number, speed: number) -> (), look_at: (x: number, y: number, z: number) -> (), look_at_target: () -> (), set_target: (who: Who) -> (), jump: () -> (), attack: (who: Who) -> (), swing: () -> (), hurt: (who: Who, amount: number) -> (), convert: (kind: string) -> (), summon: (kind: string, x: number, y: number, z: number) -> (), despawn: () -> (), heal: (amount: number) -> (), effect: (name: string, ticks: number, amplifier: number) -> () }",
+        "{ navigate_to: (x: number, y: number, z: number, speed: number?) -> (), navigate_to_target: (speed: number?) -> (), stop_navigation: () -> (), move_toward: (x: number, y: number, z: number, speed: number?) -> (), look_at: (x: number, y: number, z: number) -> (), look_at_target: () -> (), set_target: (who: Who) -> (), jump: () -> (), attack: (who: Who) -> (), swing: () -> (), hurt: (who: Who, amount: number) -> (), convert: (kind: string) -> (), summon: (kind: string, x: number, y: number, z: number) -> (), despawn: () -> (), heal: (amount: number) -> (), effect: (name: string, ticks: number?, amplifier: number?) -> () }",
     ),
     ("GoalState", "{ [string]: any }"),
     (
@@ -55,7 +61,7 @@ const TYPES: &[(&str, &str)] = &[
     ("Props", "{ [string]: string }"),
     (
         "DeathCause",
-        "{ damage_type: string, causing: number, player: Player? }",
+        "{ damage_type: string, causing: number, player: PlayerRef? }",
     ),
     (
         "Hit",
@@ -63,7 +69,7 @@ const TYPES: &[(&str, &str)] = &[
     ),
     (
         "LootSource",
-        "{ table: string, dimension: string, origin: Vec3, block: LootBlock?, mob: IdKind?, player: Player?, tool: Item?, explosion: number? }",
+        "{ table: string, dimension: string, origin: Vec3, block: LootBlock?, mob: IdKind?, player: PlayerRef?, tool: Item?, explosion: number? }",
     ),
     (
         "Time",
@@ -151,7 +157,7 @@ const HOOKS: &[(&str, &str)] = &[
     ),
     (
         "mob_equipped",
-        "(mob: MobView, slot: string, from: Item?, to: Item?) -> ()",
+        "(mob: MobView | IdKind, slot: string, from: Item?, to: Item?) -> ()",
     ),
     (
         "entity_joined",
@@ -164,7 +170,7 @@ const HOOKS: &[(&str, &str)] = &[
     ),
     (
         "item_hit",
-        "(item: Item, player: Player, target: Target) -> ()",
+        "(item: HitItem, player: Player, target: Target) -> ()",
     ),
     (
         "item_hurt_enemy",
@@ -181,15 +187,15 @@ const HOOKS: &[(&str, &str)] = &[
     ),
     (
         "item_picked_up",
-        "(player: Player, item: string, count: number) -> ()",
+        "(player: PlayerRef, item: string, count: number) -> ()",
     ),
     (
         "item_crafted",
-        "(player: Player, recipe: string, item: Item) -> ()",
+        "(player: PlayerRef, recipe: string, item: Item) -> ()",
     ),
     (
         "item_dropped",
-        "(player: Player, item: string, count: number) -> ()",
+        "(player: PlayerRef, item: string, count: number) -> ()",
     ),
     ("loot_drops", "(source: LootSource, drops: { Item }) -> ()"),
     (
@@ -198,34 +204,34 @@ const HOOKS: &[(&str, &str)] = &[
     ),
     (
         "projectile_launched",
-        "(projectile: number, kind: string, player: Player?) -> ()",
+        "(projectile: number, kind: string, player: PlayerRef?) -> ()",
     ),
     (
         "explosion",
         "(dimension: string, center: Vec3, blocks: { Vec3 }) -> ()",
     ),
-    ("player_joined", "(player: Player) -> ()"),
-    ("player_left", "(player: Player) -> ()"),
-    ("player_respawned", "(player: Player) -> ()"),
-    ("player_died", "(player: Player, cause: string?) -> ()"),
+    ("player_joined", "(player: PlayerRef) -> ()"),
+    ("player_left", "(player: PlayerRef) -> ()"),
+    ("player_respawned", "(player: PlayerRef) -> ()"),
+    ("player_died", "(player: PlayerRef, cause: string?) -> ()"),
     ("player_tick", "(player: Player) -> ()"),
     ("player_chat", "(player: Named, line: string) -> ()"),
-    ("player_command", "(player: Player, line: string) -> ()"),
+    ("player_command", "(player: PlayerRef, line: string) -> ()"),
     (
         "player_changed_dimension",
-        "(player: Player, from: string, to: string) -> ()",
+        "(player: PlayerRef, from: string, to: string) -> ()",
     ),
     (
         "player_bed_enter",
-        "(player: Player, x: number, y: number, z: number) -> ()",
+        "(player: PlayerRef, x: number, y: number, z: number) -> ()",
     ),
     (
         "player_exp_change",
-        "(player: Player, amount: number) -> ()",
+        "(player: PlayerRef, amount: number) -> ()",
     ),
     (
         "player_container_open",
-        "(player: Player, menu: string, pos: Vec3?) -> ()",
+        "(player: PlayerRef, menu: string, pos: Vec3?) -> ()",
     ),
     (
         "block_broken",
@@ -233,7 +239,7 @@ const HOOKS: &[(&str, &str)] = &[
     ),
     (
         "block_placed",
-        "(x: number, y: number, z: number, block: string, player: Player, item: string) -> ()",
+        "(x: number, y: number, z: number, block: string, player: Player, item: Item) -> ()",
     ),
 ];
 
@@ -247,7 +253,7 @@ const FUNCTIONS: &[(&str, &str)] = &[
     ("log", "(msg: string) -> ()"),
     (
         "command",
-        "(usage: string, level: number, fn: (player: Player, args: CommandArgs) -> ()) -> ()",
+        "(usage: string, level: number?, fn: (player: Player, args: CommandArgs) -> ()) -> ()",
     ),
     ("goal", "(name: string, def: GoalDef) -> ()"),
     (

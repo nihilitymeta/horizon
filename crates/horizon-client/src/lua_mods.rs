@@ -1887,9 +1887,11 @@ impl LuaMod {
     }
 
     /// A block hook on a level (`random_tick`, `tick_block`): handlers get
-    /// `(dimension, block, x, y, z, props)` and may queue
-    /// `set_block_property(key, value[, flags])`, `schedule_tick(delay)` and
-    /// `handled()`, which skips the block's own tick.
+    /// `(dimension, block, x, y, z, props, data)`, `data` the block entity's
+    /// saved table when the block has one (nil without), written back after
+    /// the call, and may queue `set_block_property(key, value[, flags])`,
+    /// `schedule_tick(delay)`, `summon(...)` and `handled()`, which skips the
+    /// block's own tick.
     fn level_hook(
         &self,
         hook: &str,
@@ -2200,14 +2202,8 @@ impl LuaMod {
                 host.kill_mob(&dimension, id);
             }
             "tell" | "action_bar" | "title" | "subtitle" => {
-                let (who, text): (String, String) = (args.get(1)?, args.get(2)?);
-                let uuid = uuid_parse(&who).or_else(|| {
-                    host.level_players()
-                        .into_iter()
-                        .find(|p| p.name == who)
-                        .map(|p| p.uuid)
-                });
-                if let Some(uuid) = uuid {
+                let (who, text): (Value, String) = (args.get(1)?, args.get(2)?);
+                if let Some(uuid) = uuid_of(host, &who) {
                     match action {
                         "tell" => {
                             host.tell(uuid, crate::mod_api::Text::literal(text));
@@ -2222,15 +2218,9 @@ impl LuaMod {
                 }
             }
             "title_times" => {
-                let (who, fade_in, stay, fade_out): (String, i32, i32, i32) =
+                let (who, fade_in, stay, fade_out): (Value, i32, i32, i32) =
                     (args.get(1)?, args.get(2)?, args.get(3)?, args.get(4)?);
-                let uuid = uuid_parse(&who).or_else(|| {
-                    host.level_players()
-                        .into_iter()
-                        .find(|p| p.name == who)
-                        .map(|p| p.uuid)
-                });
-                if let Some(uuid) = uuid {
+                if let Some(uuid) = uuid_of(host, &who) {
                     host.title_times(uuid, fade_in, stay, fade_out);
                 }
             }
@@ -2551,7 +2541,9 @@ impl Hooks for LuaMod {
             ),
         }
     }
-    /// A block that ticks randomly does: `random_tick(dimension, block, x, y, z, props)`.
+    /// A block that ticks randomly does: `random_tick(dimension, block, x, y,
+    /// z, props, data)`, `data` the block entity's saved table when the block
+    /// has one, written back after the call.
     fn random_tick(&self, level: &mut dyn LevelWriteHost, event: &mut RandomTickEvent) -> Flow {
         self.level_hook(
             "random_tick",
@@ -2561,7 +2553,8 @@ impl Hooks for LuaMod {
             event.state,
         )
     }
-    /// A scheduled block tick is due: `tick_block(dimension, block, x, y, z, props)`.
+    /// A scheduled block tick is due: `tick_block(dimension, block, x, y, z,
+    /// props, data)`, `data` as in `random_tick`.
     fn tick_block(&self, level: &mut dyn LevelWriteHost, event: &mut TickBlockEvent) -> Flow {
         self.level_hook("tick_block", level, event.dimension, event.pos, event.state)
     }
@@ -5256,9 +5249,9 @@ experimental = ["scripts"]
                   horizon.feedback("count " .. (args.kind or "all") .. " " .. tostring(args.n) .. " by " .. player.name)
                   horizon.sound("minecraft:entity.zombie.ambient", 1, 2, 3, 0.5)
                   horizon.particles("minecraft:flame", 1, 2, 3, 5, 0.5, 0.1)
-                  horizon.title(player.name, "Parasites")
+                  horizon.title(player, "Parasites")
                   horizon.subtitle(player.uuid, "everywhere")
-                  horizon.title_times(player.name, 5, 40, 5)
+                  horizon.title_times(player, 5, 40, 5)
                   horizon.action_bar(player.name, "bar")
                   horizon.tell("steve", "hello")
                   horizon.tell("alex", "nobody")
