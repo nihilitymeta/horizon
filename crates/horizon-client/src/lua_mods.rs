@@ -21,6 +21,10 @@ use crate::mod_api::{
     MobView, Mods, RandomTickEvent, RightClickBlockEvent, ServerTickEvent, ServerTickPhase,
     TickBlockEvent, WorldLifecycleEvent,
 };
+use crate::mod_api::{
+    AttackEntityEvent, InventoryTickEvent, ItemStack, LivingEntityUseItemFinishEvent, UseItemEvent,
+    UseItemOnEvent,
+};
 use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
 use std::collections::{HashMap, HashSet};
@@ -223,7 +227,7 @@ fn read_dispatch(
         "players" => {
             let h = host()?;
             let out = lua.create_table()?;
-            for p in h.server_players() {
+            for p in h.level_players() {
                 out.push(player_table_of(lua, &p)?)?;
             }
             Value::Table(out)
@@ -233,7 +237,7 @@ fn read_dispatch(
             let h = host()?;
             let uuid = uuid_parse(&who);
             match h
-                .server_players()
+                .level_players()
                 .into_iter()
                 .find(|p| p.name == who || Some(p.uuid) == uuid)
             {
@@ -258,7 +262,7 @@ fn read_dispatch(
             let (who, distance): (String, Option<f32>) = FromLuaMulti::from_lua_multi(rest, lua)?;
             let h = host()?;
             let uuid = uuid_parse(&who).or_else(|| {
-                h.server_players()
+                h.level_players()
                     .into_iter()
                     .find(|p| p.name == who)
                     .map(|p| p.uuid)
@@ -309,6 +313,17 @@ fn player_table_of(lua: &Lua, p: &crate::mod_api::NativeServerPlayer) -> mlua::R
     t.set("pitch", p.pitch)?;
     t.set("game_mode", p.game_mode)?;
     t.set("health", p.health)?;
+    Ok(t)
+}
+
+/// An item stack as a table: `id`, `count`, `damage`, `plain` (no
+/// components beyond count and damage).
+fn item_table_of(lua: &Lua, stack: &ItemStack) -> mlua::Result<Table> {
+    let t = lua.create_table()?;
+    t.set("id", &*stack.item)?;
+    t.set("count", stack.count)?;
+    t.set("damage", stack.damage)?;
+    t.set("plain", stack.extra.is_none())?;
     Ok(t)
 }
 
@@ -793,6 +808,10 @@ impl LuaMod {
             "push_mob",
             "teleport_mob",
             "set_amount",
+            "take_items",
+            "give_items",
+            "set_result",
+            "set_count",
             "add_goal",
             "add_target_goal",
             "clear_goals",
@@ -1291,6 +1310,14 @@ impl LuaMod {
                     (args.get(1)?, args.get(2)?, args.get(3)?);
                 host.set_mob_health(&dimension, id, health);
             }
+            "take_items" | "give_items" => {
+                let (item, count): (String, u32) = (args.get(1)?, args.get(2)?);
+                if action == "take_items" {
+                    host.take_items(&item, count);
+                } else {
+                    host.give_items(&item, count);
+                }
+            }
             "push_mob" | "teleport_mob" => {
                 let (dimension, id): (String, u32) = (args.get(1)?, args.get(2)?);
                 let v = [
@@ -1567,6 +1594,232 @@ impl Hooks for LuaMod {
             Some(&kind),
             (dimension, kind.as_str(), pos[0], pos[1], pos[2], natural),
         );
+    }
+    /// A player right-clicks with an item, in the air or on a block the block
+    /// let through: `item_use(item, player)`, `item` `{id, count, damage,
+    /// plain}`; `horizon.cancel()` takes the use (the hand swings, the item's
+    /// own use does not run). Register by item id to hear one item.
+    fn use_item(&self, host: &mut dyn Host, event: &mut UseItemEvent<'_>) -> Flow {
+        let hook = "item_use";
+        let id = qualify(&event.stack.item);
+        if !self.watches(hook, &id) {
+            return Flow::Continue;
+        }
+        let mut cancel = false;
+        let r = (|| -> mlua::Result<()> {
+            let item = item_table_of(&self.lua, event.stack)?;
+            let player = self.player_table(host)?;
+            self.call_kind(
+                hook,
+                Some(&id),
+                host,
+                (item, player),
+                &mut |host, action, args| {
+                    match action {
+                        "cancel" => cancel = true,
+                        other => self.run_action(host, other, args)?,
+                    }
+                    Ok(())
+                },
+            )
+        })();
+        if let Err(e) = r {
+            return self.hook_error(hook, e);
+        }
+        if cancel { Flow::Cancel } else { Flow::Continue }
+    }
+    /// A player right-clicks a block with an item, once the block let the
+    /// click through: `item_use_on(item, player, block, face)`, `block`
+    /// `{x, y, z, id}`, `face` `{x, y, z}` (`{0, 1, 0}` the top);
+    /// `horizon.cancel()` takes the use.
+    fn use_item_on(&self, host: &mut dyn Host, event: &mut UseItemOnEvent<'_>) -> Flow {
+        let hook = "item_use_on";
+        let id = qualify(&event.stack.item);
+        if !self.watches(hook, &id) {
+            return Flow::Continue;
+        }
+        let mut cancel = false;
+        let r = (|| -> mlua::Result<()> {
+            let lua = &self.lua;
+            let item = item_table_of(lua, event.stack)?;
+            let player = self.player_table(host)?;
+            let block = lua.create_table()?;
+            block.set("x", event.pos[0])?;
+            block.set("y", event.pos[1])?;
+            block.set("z", event.pos[2])?;
+            block.set("id", host.block(event.pos))?;
+            let face = goals::vec3(
+                lua,
+                [
+                    event.face[0] as f64,
+                    event.face[1] as f64,
+                    event.face[2] as f64,
+                ],
+            )?;
+            self.call_kind(
+                hook,
+                Some(&id),
+                host,
+                (item, player, block, face),
+                &mut |host, action, args| {
+                    match action {
+                        "cancel" => cancel = true,
+                        other => self.run_action(host, other, args)?,
+                    }
+                    Ok(())
+                },
+            )
+        })();
+        if let Err(e) = r {
+            return self.hook_error(hook, e);
+        }
+        if cancel { Flow::Cancel } else { Flow::Continue }
+    }
+    /// A player attacks an entity with what they hold: `item_hit(item,
+    /// player, target)`, `target` `{id, kind, position}`; `horizon.cancel()`
+    /// and the blow does nothing. Register by the held item's id (an empty
+    /// hand is `minecraft:air`).
+    fn attack_entity(&self, host: &mut dyn Host, event: &mut AttackEntityEvent<'_>) -> Flow {
+        let hook = "item_hit";
+        let held = host.held();
+        let id = match &held {
+            Some((item, _, _)) => qualify(item),
+            None => "minecraft:air".to_owned(),
+        };
+        if !self.watches(hook, &id) {
+            return Flow::Continue;
+        }
+        let mut cancel = false;
+        let r = (|| -> mlua::Result<()> {
+            let lua = &self.lua;
+            let item = lua.create_table()?;
+            match &held {
+                Some((item_id, count, plain)) => {
+                    item.set("id", item_id.as_str())?;
+                    item.set("count", *count)?;
+                    item.set("plain", *plain)?;
+                }
+                None => {
+                    item.set("id", "minecraft:air")?;
+                    item.set("count", 0)?;
+                    item.set("plain", true)?;
+                }
+            }
+            let player = self.player_table(host)?;
+            let target = lua.create_table()?;
+            target.set("id", event.entity)?;
+            target.set("kind", qualify(event.kind))?;
+            target.set("position", goals::vec3(lua, event.pos)?)?;
+            self.call_kind(
+                hook,
+                Some(&id),
+                host,
+                (item, player, target),
+                &mut |host, action, args| {
+                    match action {
+                        "cancel" => cancel = true,
+                        other => self.run_action(host, other, args)?,
+                    }
+                    Ok(())
+                },
+            )
+        })();
+        if let Err(e) = r {
+            return self.hook_error(hook, e);
+        }
+        if cancel { Flow::Cancel } else { Flow::Continue }
+    }
+    /// A player finished using an item over time (ate it, drank it, used a
+    /// mod item for its duration): `item_finished(item, player)`. Handlers
+    /// may queue `horizon.set_result(id, count)` for what stays in the hand
+    /// (`set_result()` for nothing) and the host actions.
+    fn living_entity_use_item_finish(
+        &self,
+        host: &mut dyn Host,
+        event: &mut LivingEntityUseItemFinishEvent<'_>,
+    ) {
+        let hook = "item_finished";
+        let id = qualify(&event.stack.item);
+        if !self.watches(hook, &id) {
+            return;
+        }
+        let mut result: Option<Option<ItemStack>> = None;
+        let r = (|| -> mlua::Result<()> {
+            let item = item_table_of(&self.lua, event.stack)?;
+            let player = self.player_table(host)?;
+            self.call_kind(
+                hook,
+                Some(&id),
+                host,
+                (item, player),
+                &mut |host, action, args| {
+                    match action {
+                        "set_result" => {
+                            result = Some(match args.get::<Option<String>>(1)? {
+                                Some(item) => Some(ItemStack {
+                                    item: qualify(&item).into(),
+                                    count: args.get::<Option<u32>>(2)?.unwrap_or(1),
+                                    damage: 0,
+                                    extra: None,
+                                }),
+                                None => None,
+                            });
+                        }
+                        other => self.run_action(host, other, args)?,
+                    }
+                    Ok(())
+                },
+            )
+        })();
+        if let Err(e) = r {
+            self.hook_error(hook, e);
+            return;
+        }
+        if let Some(result) = result {
+            *event.result = result;
+        }
+    }
+    /// A server tick of a stack a player carries: `item_tick(item, player,
+    /// slot, selected)`, `slot` as the inventory saves it (0 to 35, 100 to
+    /// 103 armour, -106 the off hand), `selected` when it is the held one.
+    /// Handlers may queue `horizon.set_count(n)` on that stack (0 empties the
+    /// slot) and the host actions. It runs for every stack of every player
+    /// each tick: register by item id.
+    fn inventory_tick(&self, host: &mut dyn Host, event: &mut InventoryTickEvent) {
+        let hook = "item_tick";
+        let Some(stack) = host.carried_stack(event.slot).map(|s| s.clone()) else {
+            return;
+        };
+        let id = qualify(&stack.item);
+        if !self.watches(hook, &id) {
+            return;
+        }
+        let slot = event.slot;
+        let r = (|| -> mlua::Result<()> {
+            let item = item_table_of(&self.lua, &stack)?;
+            let player = self.player_table(host)?;
+            self.call_kind(
+                hook,
+                Some(&id),
+                host,
+                (item, player, slot, event.selected),
+                &mut |host, action, args| {
+                    match action {
+                        "set_count" => {
+                            let count: u32 = args.get(1)?;
+                            if let Some(s) = host.carried_stack(slot) {
+                                s.count = count;
+                            }
+                        }
+                        other => self.run_action(host, other, args)?,
+                    }
+                    Ok(())
+                },
+            )
+        })();
+        if let Err(e) = r {
+            self.hook_error(hook, e);
+        }
     }
     /// A mob is about to take damage: `mob_hurt(mob, damage_type, causing,
     /// direct, amount)`, `mob` just `{id, kind}` (the game is mid-hit: no
@@ -2056,6 +2309,7 @@ experimental = ["scripts"]
         health: Vec<(u32, f32)>,
         lines: Mutex<Vec<String>>,
         pushes: Vec<[f64; 3]>,
+        carried: ItemStack,
     }
     impl Host for MobHost {
         fn dimension(&self) -> &'static str {
@@ -2083,9 +2337,6 @@ experimental = ["scripts"]
                 pitch: 0.0,
             })
         }
-        fn held(&self) -> Option<(String, u32, bool)> {
-            None
-        }
         fn mob_view(&self, dimension: &str, id: u32) -> Option<MobView> {
             use horizon_core::geometry::Vec3;
             (dimension == "minecraft:overworld" && id == 7).then(|| {
@@ -2104,6 +2355,26 @@ experimental = ["scripts"]
             self.pushes.push(velocity);
             true
         }
+        fn held(&self) -> Option<(String, u32, bool)> {
+            Some(("ruby:wand".into(), 1, true))
+        }
+        fn take_items(&mut self, item: &str, count: u32) -> u32 {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("took {count} {item}"));
+            count
+        }
+        fn give_items(&mut self, item: &str, count: u32) -> u32 {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("gave {count} {item}"));
+            count
+        }
+        fn carried_stack(&mut self, slot: i32) -> Option<&mut ItemStack> {
+            (slot == 3).then_some(&mut self.carried)
+        }
         fn block(&self, pos: [i32; 3]) -> String {
             if pos == [1, 2, 3] {
                 "minecraft:stone".into()
@@ -2114,7 +2385,7 @@ experimental = ["scripts"]
         fn block_property(&self, pos: [i32; 3], key: &str) -> Option<String> {
             (pos == [1, 2, 3] && key == "facing").then(|| "north".to_owned())
         }
-        fn server_players(&self) -> Vec<crate::mod_api::NativeServerPlayer> {
+        fn level_players(&self) -> Vec<crate::mod_api::NativeServerPlayer> {
             self.acting_player().into_iter().collect()
         }
         fn day_time(&self) -> i64 {
@@ -2142,6 +2413,131 @@ experimental = ["scripts"]
         fn broadcast(&self, text: crate::mod_api::Text) {
             self.lines.lock().unwrap().push(text.plain());
         }
+    }
+
+    fn wand() -> ItemStack {
+        ItemStack {
+            item: "ruby:wand".into(),
+            count: 3,
+            damage: 0,
+            extra: None,
+        }
+    }
+
+    #[test]
+    fn the_item_hooks_reach_the_handlers_of_their_item() {
+        let (dir, path) = hmod(
+            "item-hooks",
+            &[(
+                "scripts/init.lua",
+                br#"
+                LOG = {}
+                local function log(s) LOG[#LOG + 1] = s end
+                horizon.on("item_use", function(item, player)
+                  log("use " .. item.id .. " x" .. item.count .. " by " .. player.name)
+                  horizon.take_items(item.id, 1)
+                  horizon.cancel()
+                end, "ruby:wand")
+                horizon.on("item_use_on", function(item, player, block, face)
+                  log("use_on " .. block.id .. " at " .. block.x .. "," .. block.y .. "," .. block.z .. " face " .. face.y)
+                end, "wand")
+                horizon.on("item_hit", function(item, player, target)
+                  log("hit " .. target.kind .. " " .. target.id .. " with " .. item.id .. " at " .. target.position.x)
+                  horizon.cancel()
+                end, "ruby:wand")
+                horizon.on("item_finished", function(item, player)
+                  log("finished " .. item.id)
+                  horizon.set_result("minecraft:stick", 2)
+                end, "ruby:wand")
+                horizon.on("item_tick", function(item, player, slot, selected)
+                  log("tick " .. item.id .. " slot " .. slot .. " " .. tostring(selected))
+                  horizon.set_count(item.count - 1)
+                end, "ruby:wand")
+                horizon.on("item_use", function(item) error("not for apples") end, "minecraft:apple")
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+        };
+        let wand = wand();
+        // The wand's use is taken, and one is consumed; the registered name
+        // without a namespace is minecraft's, so "wand" hears nothing.
+        assert_eq!(
+            m.use_item(&mut host, &mut UseItemEvent { stack: &wand }),
+            Flow::Cancel
+        );
+        let mut stone = UseItemOnEvent {
+            stack: &wand,
+            pos: [1, 2, 3],
+            face: [0, 1, 0],
+        };
+        assert_eq!(m.use_item_on(&mut host, &mut stone), Flow::Continue);
+        assert_eq!(
+            m.attack_entity(
+                &mut host,
+                &mut AttackEntityEvent {
+                    entity: 7,
+                    kind: "cow",
+                    pos: [2.0, 64.0, 3.0]
+                }
+            ),
+            Flow::Cancel
+        );
+        let mut result = Some(wand.clone());
+        m.living_entity_use_item_finish(
+            &mut host,
+            &mut LivingEntityUseItemFinishEvent {
+                stack: &wand,
+                entity: None,
+                hand: crate::mod_api::Hand::Main,
+                duration: 0,
+                result: &mut result,
+            },
+        );
+        assert_eq!(
+            result.as_ref().map(|s| (&*s.item, s.count)),
+            Some(("minecraft:stick", 2))
+        );
+        m.inventory_tick(
+            &mut host,
+            &mut InventoryTickEvent {
+                slot: 3,
+                selected: true,
+            },
+        );
+        m.inventory_tick(
+            &mut host,
+            &mut InventoryTickEvent {
+                slot: 4,
+                selected: false,
+            },
+        );
+        assert_eq!(host.carried.count, 2);
+        let log: Vec<String> = m
+            .lua
+            .globals()
+            .get::<Table>("LOG")
+            .unwrap()
+            .sequence_values()
+            .map(|v| v.unwrap())
+            .collect();
+        assert_eq!(
+            log,
+            [
+                "use ruby:wand x3 by steve",
+                "hit minecraft:cow 7 with ruby:wand at 2",
+                "finished ruby:wand",
+                "tick ruby:wand slot 3 true",
+            ]
+        );
+        assert_eq!(*host.lines.lock().unwrap(), ["took 1 ruby:wand"]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -2229,6 +2625,7 @@ experimental = ["scripts"]
             health: Vec::new(),
             lines: Mutex::new(Vec::new()),
             pushes: Vec::new(),
+            carried: wand(),
         };
         for _ in 0..3 {
             m.entity_tick_post(

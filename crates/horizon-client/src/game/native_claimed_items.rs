@@ -144,7 +144,7 @@ impl Game<'_> {
     /// API 362.
     pub(super) fn native_player_raycast(&self, uuid: u128, distance: f32) -> Option<NativeHit> {
         let player = self
-            .native_server_players()
+            .native_level_players()
             .into_iter()
             .find(|p| p.uuid == uuid)
             .or_else(|| self.native_acting_player().filter(|p| p.uuid == uuid))?;

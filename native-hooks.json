@@ -693,6 +693,10 @@
     {
       "name": "player_raycast",
       "target": "horizon_client::game::native_claimed_items::Game<'_>::native_player_raycast"
+    },
+    {
+      "name": "level_players",
+      "target": "horizon_client::game::native_server::Game<'_>::native_level_players"
     }
   ],
   "hooks": [

@@ -224,6 +224,42 @@ impl Game<'_> {
             })
             .collect()
     }
+    /// The players of the world this game runs: `native_server_players` and,
+    /// in a single-player world, its owner, who is on no hub (a LAN world's
+    /// owner is a hub guest already). Empty on a client. API 362.
+    pub(super) fn native_level_players(&self) -> Vec<NativeServerPlayer> {
+        let mut players = self.native_server_players();
+        if self.remote.is_some() {
+            return players;
+        }
+        let Some(p) = self.player.as_ref() else {
+            return players;
+        };
+        let name = self.options.player_name();
+        let uuid = self
+            .level
+            .player_uuid
+            .map(horizon_client::lan::playerdata::ints_uuid)
+            .unwrap_or_else(|| horizon_protocol::crypto::offline_uuid(&name));
+        if players.iter().any(|g| g.uuid == uuid) {
+            return players;
+        }
+        players.insert(
+            0,
+            NativeServerPlayer {
+                uuid,
+                name,
+                permission: 4,
+                dimension: self.dim.id().to_owned(),
+                position: [p.position.x, p.position.y, p.position.z],
+                game_mode: self.mode_id(),
+                health: p.health.health(),
+                yaw: p.yaw,
+                pitch: p.pitch,
+            },
+        );
+        players
+    }
     /// A system line in that player's chat, also inside a player's hook for
     /// the acting player; false when they aren't on.
     pub(super) fn native_tell(&mut self, uuid: u128, line: Text) -> bool {
