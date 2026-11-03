@@ -8,6 +8,7 @@
 //! players (the hub's: a dedicated server's, a LAN host's, single player's
 //! server thread's), never on a client's.
 use super::{Dim, Game, commands::execute, lan::LanHost};
+use horizon_core::random::RandomSource;
 // Their old home, for mixin code that names them here.
 pub(crate) use horizon_client::mod_api::{NativeCommand, NativeServerPlayer};
 use horizon_client::{items::ItemStack, lan::data::component_nbt, text::Text};
@@ -236,13 +237,7 @@ impl Game<'_> {
             return players;
         };
         let name = self.options.player_name();
-        // As `ensure_player_uuid` makes it: the owner's saved uuid, else the
-        // offline one of "Player" (the name is not part of it).
-        let uuid = self
-            .level
-            .player_uuid
-            .map(horizon_client::lan::playerdata::ints_uuid)
-            .unwrap_or_else(|| horizon_protocol::crypto::offline_uuid("Player"));
+        let uuid = self.owner_uuid();
         if players.iter().any(|g| g.uuid == uuid) {
             return players;
         }
@@ -261,6 +256,210 @@ impl Game<'_> {
             },
         );
         players
+    }
+    /// The owner of a single-player world, as `ensure_player_uuid` makes it:
+    /// the saved uuid, else the offline one of "Player".
+    fn owner_uuid(&self) -> u128 {
+        self.level
+            .player_uuid
+            .map(horizon_client::lan::playerdata::ints_uuid)
+            .unwrap_or_else(|| horizon_protocol::crypto::offline_uuid("Player"))
+    }
+    /// Plays the sound event `sound` (`minecraft:entity.zombie.ambient`, or a
+    /// mod's own) at `pos` in the level in place, `dimension`, for every
+    /// player within range (16 blocks, times `volume` past 1), as
+    /// `/playsound` does on the master source: how many heard it. API 364.
+    pub(super) fn native_play_sound(
+        &mut self,
+        dimension: &str,
+        pos: [f64; 3],
+        sound: &str,
+        volume: f32,
+        pitch: f32,
+    ) -> u32 {
+        if self.remote.is_some() || dimension != self.dim.id() || !pos.iter().all(|v| v.is_finite())
+        {
+            return 0;
+        }
+        let (volume, pitch) = (volume.clamp(0.0, 1000.0), pitch.clamp(0.0, 2.0));
+        let range = f64::from(if volume > 1.0 { 16.0 * volume } else { 16.0 });
+        let within = |p: [f64; 3]| {
+            (p[0] - pos[0]).powi(2) + (p[1] - pos[1]).powi(2) + (p[2] - pos[2]).powi(2)
+                <= range * range
+        };
+        let seed = self.world.random.next_long();
+        let mut heard = 0;
+        // The owner: through the hub while acting as a guest, else here.
+        if let Some(p) = self.player.as_ref()
+            && within([p.position.x, p.position.y, p.position.z])
+        {
+            heard += 1;
+            match (self.lan_acting, self.lan.as_ref()) {
+                (Some(_), Some(host)) => {
+                    let packet = host.hub.sound_packet(sound, pos, volume, pitch, 0, seed);
+                    self.guest_packets.push(packet);
+                }
+                _ => self.audio.play_on(0, sound, Some(pos), volume, pitch),
+            }
+        }
+        if let Some(host) = self.lan.as_ref() {
+            let acting = self.lan_acting;
+            for g in host.hub.guests.iter() {
+                if !g.placed
+                    || Some(g.conn) == acting
+                    || g.dimension != dimension
+                    || !within(g.position)
+                {
+                    continue;
+                }
+                let packet = host.hub.sound_packet(sound, pos, volume, pitch, 0, seed);
+                host.hub.send_to(g.conn, &packet);
+                heard += 1;
+            }
+        }
+        heard
+    }
+    /// Shows `count` particles of the simple type `name` (`minecraft:flame`,
+    /// `minecraft:happy_villager`; those with data of their own, dust and
+    /// items, are not here) at `pos` in the level in place, spread by
+    /// `spread` on each axis and moving up to `speed`, to every player within
+    /// 32 blocks, as `/particle` does: how many saw them; 0 for a name the
+    /// game does not know. API 364.
+    pub(super) fn native_particles(
+        &mut self,
+        dimension: &str,
+        name: &str,
+        pos: [f64; 3],
+        count: u32,
+        spread: [f64; 3],
+        speed: f32,
+    ) -> u32 {
+        use horizon_client::particles::{ParticleOptions, ParticleType};
+        if self.remote.is_some() || dimension != self.dim.id() || !pos.iter().all(|v| v.is_finite())
+        {
+            return 0;
+        }
+        let Some(ty) = ParticleType::from_name(name.trim_start_matches("minecraft:")) else {
+            return 0;
+        };
+        let options = ParticleOptions::simple(ty);
+        let count = count.min(16384) as i32;
+        let speed = speed.clamp(0.0, 64.0);
+        let spread = spread.map(|s| s.clamp(0.0, 64.0));
+        let within = |p: [f64; 3]| {
+            let c = p.map(|v| v.floor() + 0.5);
+            (c[0] - pos[0]).powi(2) + (c[1] - pos[1]).powi(2) + (c[2] - pos[2]).powi(2)
+                < 32.0 * 32.0
+        };
+        let packet = self.network_particle(&options, None).map(|particle| {
+            C::LevelParticles(play::LevelParticles {
+                particle,
+                override_limiter: false,
+                always_show: false,
+                pos,
+                dist: spread.map(|d| d as f32),
+                max_speed: [speed; 3],
+                count,
+                randomization: 0,
+            })
+        });
+        let mut seen = 0;
+        let mut local = false;
+        if let Some(p) = self.player.as_ref()
+            && within([p.position.x, p.position.y, p.position.z])
+        {
+            seen += 1;
+            match (self.lan_acting, &packet) {
+                (Some(_), Some(packet)) => self.guest_packets.push(packet.clone()),
+                _ => local = true,
+            }
+        }
+        if let (Some(host), Some(packet)) = (self.lan.as_ref(), &packet) {
+            let acting = self.lan_acting;
+            for g in host.hub.guests.iter() {
+                if g.placed
+                    && Some(g.conn) != acting
+                    && g.dimension == dimension
+                    && within(g.position)
+                {
+                    host.hub.send_to(g.conn, packet);
+                    seen += 1;
+                }
+            }
+        }
+        if local {
+            if count <= 0 {
+                self.particles
+                    .create(&options, pos, spread.map(|d| f64::from(speed) * d));
+            } else {
+                for _ in 0..count {
+                    let r = self.particles.random();
+                    let p = [
+                        pos[0] + r.next_gaussian() * spread[0],
+                        pos[1] + r.next_gaussian() * spread[1],
+                        pos[2] + r.next_gaussian() * spread[2],
+                    ];
+                    let v = [
+                        r.next_gaussian() * f64::from(speed),
+                        r.next_gaussian() * f64::from(speed),
+                        r.next_gaussian() * f64::from(speed),
+                    ];
+                    self.particles.create(&options, p, v);
+                }
+            }
+        }
+        seen
+    }
+    /// Shows `text` to the player `uuid` as `kind` says: `title`, `subtitle`
+    /// (shown with the next title) or `actionbar` (over the hotbar), as
+    /// `/title` does; false when they are not on, or for another kind. API
+    /// 364.
+    pub(super) fn native_title(&mut self, uuid: u128, kind: &str, text: &str) -> bool {
+        let text = Text::literal(text);
+        let sent = play::Text {
+            text: component_nbt(&text.component()),
+        };
+        let packet = match kind {
+            "title" => C::SetTitleText(sent),
+            "subtitle" => C::SetSubtitleText(sent),
+            "actionbar" => C::SetActionBarText(sent),
+            _ => return false,
+        };
+        if self.native_send(uuid, packet) {
+            return true;
+        }
+        if self.remote.is_none() && self.player.is_some() && uuid == self.owner_uuid() {
+            match kind {
+                "title" => self.titles.set_title(text),
+                "subtitle" => self.titles.set_subtitle(text),
+                _ => self.titles.set_overlay(text, false),
+            }
+            return true;
+        }
+        false
+    }
+    /// Sets how the player `uuid`'s next titles fade in, stay and fade out,
+    /// in ticks, as `/title times` does; false when they are not on. API 364.
+    pub(super) fn native_title_times(
+        &mut self,
+        uuid: u128,
+        fade_in: i32,
+        stay: i32,
+        fade_out: i32,
+    ) -> bool {
+        let packet = C::SetTitlesAnimation(play::TitlesAnimation {
+            fade_in,
+            stay,
+            fade_out,
+        });
+        if self.native_send(uuid, packet) {
+            return true;
+        }
+        if self.remote.is_none() && self.player.is_some() && uuid == self.owner_uuid() {
+            self.titles.set_times(fade_in, stay, fade_out);
+            return true;
+        }
+        false
     }
     /// A system line in that player's chat, also inside a player's hook for
     /// the acting player; false when they aren't on.

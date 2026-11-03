@@ -26,6 +26,7 @@ use crate::mod_api::{
     LivingEntityUseItemFinishEvent, MobDiedEvent, PlaceBlockEvent, PlayerDiedEvent,
     PlayerLoggedInEvent, PlayerLoggedOutEvent, PlayerRespawnedEvent, UseItemEvent, UseItemOnEvent,
 };
+use crate::mod_api::{NativeCommand, PerformCommandEvent, RegisterCommandsEvent};
 use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
 use std::collections::{HashMap, HashSet};
@@ -129,6 +130,9 @@ end
 /// The registry key of the one-slot table holding the read function of the
 /// call in progress (`horizon.block` and the other reads go through it).
 const HOST_SLOT: &str = "horizon_host";
+/// The registry key of the timers' own `server_tick` handler, so a listing
+/// of the handlers can leave it out.
+pub(crate) const TIMERS_HANDLER: &str = "horizon_timers";
 /// `horizon.block`, `block_property`, `mob`, `mobs`, `players`, `player`,
 /// `time` and `raycast`: wrappers over the call's read function, which the
 /// runner keeps in the slot while the handlers run; outside a call there is
@@ -168,7 +172,7 @@ return function(horizon)
     timers[#timers + 1] = { due = tick + n, every = n, fn = fn }
   end
   horizon.ticks = function() return tick end
-  horizon.on("server_tick", function(phase, running)
+  local function run_timers(phase, running)
     if phase ~= "end" or not running then return end
     tick = tick + 1
     local failed
@@ -184,7 +188,9 @@ return function(horizon)
       end
     end
     if failed ~= nil then error("timer: " .. tostring(failed), 0) end
-  end)
+  end
+  horizon.on("server_tick", run_timers)
+  return run_timers
 end
 "#;
 
@@ -446,9 +452,59 @@ fn install_reads(lua: &Lua, api: &Table) -> mlua::Result<()> {
 
 /// Installs the timers (`TIMERS_CODE`) on the `horizon` table: their handler
 /// is the first `server_tick` handler.
+/// Fills `args` from `line` by `usage` (`pay <who:player> <amount:integer>
+/// [note:text]`): the words after the usage's leading words go to its
+/// arguments in order, `integer` and `number` as numbers, `boolean` as one,
+/// `text` as the rest of the line, the other kinds as the word.
+fn command_args(lua: &Lua, usage: &str, line: &str, args: &Table) -> mlua::Result<()> {
+    let params: Vec<(&str, &str)> = usage
+        .split_whitespace()
+        .filter_map(|p| {
+            let inner = p
+                .strip_prefix('<')
+                .and_then(|p| p.strip_suffix('>'))
+                .or_else(|| p.strip_prefix('[').and_then(|p| p.strip_suffix(']')))?;
+            Some(inner.split_once(':').unwrap_or((inner, "word")))
+        })
+        .collect();
+    let literals = usage
+        .split_whitespace()
+        .take_while(|p| !p.starts_with('<') && !p.starts_with('['))
+        .count();
+    let mut words = line.split_whitespace().skip(literals);
+    for (i, (name, kind)) in params.iter().enumerate() {
+        if *kind == "text" {
+            let rest: Vec<&str> = words.by_ref().collect();
+            if !rest.is_empty() {
+                args.set(*name, rest.join(" "))?;
+            }
+            break;
+        }
+        let Some(word) = words.next() else {
+            break;
+        };
+        let _ = i;
+        match *kind {
+            "integer" => match word.parse::<i64>() {
+                Ok(n) => args.set(*name, n)?,
+                Err(_) => args.set(*name, word)?,
+            },
+            "number" => match word.parse::<f64>() {
+                Ok(n) => args.set(*name, n)?,
+                Err(_) => args.set(*name, word)?,
+            },
+            "boolean" => args.set(*name, word == "true")?,
+            _ => args.set(*name, word)?,
+        }
+    }
+    let _ = lua;
+    Ok(())
+}
+
 fn install_timers(lua: &Lua, api: &Table) -> mlua::Result<()> {
     let install: Function = lua.load(TIMERS_CODE).set_name("horizon").eval()?;
-    install.call::<()>(api)
+    let handler: Function = install.call(api)?;
+    lua.set_named_registry_value(TIMERS_HANDLER, handler)
 }
 /// The registry key of the modules `require` ran: `name -> value`.
 const LOADED: &str = "horizon_loaded";
@@ -468,6 +524,9 @@ pub struct LuaMod {
     library_scripts: Scripts,
     /// The goals the scripts defined (`horizon.goal`), by name.
     goals: Goals,
+    /// The commands the scripts declared (`horizon.command`), for the
+    /// server's tree; their handlers are kind handlers of the `command` hook.
+    commands: Arc<Mutex<Vec<NativeCommand>>>,
     /// The blocks the scripts gave a block entity (`horizon.block_entity`), by block id.
     block_entities: BlockEntities,
     /// Data loads seen (`data_pack_files`): the scripts reload from the second on.
@@ -744,6 +803,7 @@ impl LuaMod {
             libraries: libraries.to_vec(),
             library_scripts: Arc::new(Mutex::new(library_scripts)),
             goals: Goals::default(),
+            commands: Arc::default(),
             block_entities: BlockEntities::default(),
             loads: AtomicU32::new(0),
             budget,
@@ -814,6 +874,9 @@ impl LuaMod {
             Ok(())
         };
         reset().map_err(|e| e.to_string())?;
+        if let Ok(mut commands) = self.commands.lock() {
+            commands.clear();
+        }
         if let Ok(mut goals) = self.goals.lock() {
             goals.clear();
         }
@@ -891,6 +954,44 @@ impl LuaMod {
                 },
             )?,
         )?;
+        // `horizon.command(usage, level, fn)`: a command of the mod's, in the
+        // server's tree for players of `level` and above; `fn(player, args)`
+        // runs it (the `command` hook, by the command's name).
+        let commands = self.commands.clone();
+        let kinds = self.kinds.clone();
+        api.set(
+            "command",
+            lua.create_function(
+                move |lua, (usage, level, f): (String, Option<u8>, Function)| {
+                    let name = usage
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or_default()
+                        .to_owned();
+                    if name.is_empty() || name.starts_with('<') || name.starts_with('[') {
+                        return Err(mlua::Error::runtime(format!(
+                            "horizon.command({usage:?}): a usage starts with the command's name"
+                        )));
+                    }
+                    let mut list = commands
+                        .lock()
+                        .map_err(|_| mlua::Error::runtime("commands"))?;
+                    if !list.iter().any(|c| c.usage == usage) {
+                        list.push(NativeCommand::op(&usage, level.unwrap_or(0)));
+                    }
+                    let all: Table = lua.named_registry_value(KIND_HANDLERS)?;
+                    let by_kind = table_in(lua, &all, "command")?;
+                    kinds
+                        .lock()
+                        .map_err(|_| mlua::Error::runtime("kinds"))?
+                        .entry("command".to_owned())
+                        .or_default()
+                        .insert(name.clone());
+                    table_in(lua, &by_kind, &name)?.push(f)?;
+                    Ok(())
+                },
+            )?,
+        )?;
         // Goals: `horizon.goal(name, def)` defines one for `horizon.add_goal`.
         let goals = self.goals.clone();
         api.set(
@@ -946,6 +1047,14 @@ impl LuaMod {
             "give_items",
             "set_result",
             "set_count",
+            "feedback",
+            "tell",
+            "action_bar",
+            "title",
+            "subtitle",
+            "title_times",
+            "sound",
+            "particles",
             "add_goal",
             "add_target_goal",
             "clear_goals",
@@ -1495,6 +1604,80 @@ impl LuaMod {
                 let dimension: String = args.get(1)?;
                 let id: u32 = args.get(2)?;
                 host.kill_mob(&dimension, id);
+            }
+            "tell" | "action_bar" | "title" | "subtitle" => {
+                let (who, text): (String, String) = (args.get(1)?, args.get(2)?);
+                let uuid = uuid_parse(&who).or_else(|| {
+                    host.level_players()
+                        .into_iter()
+                        .find(|p| p.name == who)
+                        .map(|p| p.uuid)
+                });
+                if let Some(uuid) = uuid {
+                    match action {
+                        "tell" => {
+                            host.tell(uuid, crate::mod_api::Text::literal(text));
+                        }
+                        "action_bar" => {
+                            host.title(uuid, "actionbar", &text);
+                        }
+                        other => {
+                            host.title(uuid, other, &text);
+                        }
+                    }
+                }
+            }
+            "title_times" => {
+                let (who, fade_in, stay, fade_out): (String, i32, i32, i32) =
+                    (args.get(1)?, args.get(2)?, args.get(3)?, args.get(4)?);
+                let uuid = uuid_parse(&who).or_else(|| {
+                    host.level_players()
+                        .into_iter()
+                        .find(|p| p.name == who)
+                        .map(|p| p.uuid)
+                });
+                if let Some(uuid) = uuid {
+                    host.title_times(uuid, fade_in, stay, fade_out);
+                }
+            }
+            "sound" => {
+                let name: String = args.get(1)?;
+                let pos = [
+                    args.get::<f64>(2)?,
+                    args.get::<f64>(3)?,
+                    args.get::<f64>(4)?,
+                ];
+                let volume: Option<f32> = args.get(5)?;
+                let pitch: Option<f32> = args.get(6)?;
+                let dimension = host.dimension().to_owned();
+                host.play_sound(
+                    &dimension,
+                    pos,
+                    &qualify(&name),
+                    volume.unwrap_or(1.0),
+                    pitch.unwrap_or(1.0),
+                );
+            }
+            "particles" => {
+                let name: String = args.get(1)?;
+                let pos = [
+                    args.get::<f64>(2)?,
+                    args.get::<f64>(3)?,
+                    args.get::<f64>(4)?,
+                ];
+                let count: Option<u32> = args.get(5)?;
+                let spread: Option<f64> = args.get(6)?;
+                let speed: Option<f32> = args.get(7)?;
+                let dimension = host.dimension().to_owned();
+                let spread = spread.unwrap_or(0.0);
+                host.particles(
+                    &dimension,
+                    &qualify(&name),
+                    pos,
+                    count.unwrap_or(1),
+                    [spread; 3],
+                    speed.unwrap_or(0.0),
+                );
             }
             "remove_mob" => {
                 let dimension: String = args.get(1)?;
@@ -2163,6 +2346,67 @@ impl Hooks for LuaMod {
         }
         if cancel { Flow::Cancel } else { Flow::Continue }
     }
+    /// The commands the scripts declared (`horizon.command`): into the
+    /// server's tree, with their levels.
+    fn register_commands(&self, _host: &mut dyn Host, event: &mut RegisterCommandsEvent<'_>) {
+        if let Ok(commands) = self.commands.lock() {
+            event.commands.extend(commands.iter().cloned());
+        }
+    }
+    /// A player runs a command of the scripts': `command(player, args)` for
+    /// the handler of that command, `args` the usage's arguments by name
+    /// (`<n:integer>` a number, `<who:player>` a name...) plus `args.raw`,
+    /// the line as typed. Handlers may queue `horizon.feedback(text)`, the
+    /// answer to the player, and the host actions.
+    fn perform_command(&self, host: &mut dyn Host, event: &mut PerformCommandEvent<'_>) -> Flow {
+        let hook = "command";
+        let line = event.command.trim();
+        let name = line
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+        if name.is_empty() || !self.watches(hook, &name) {
+            return Flow::Continue;
+        }
+        let usage = self
+            .commands
+            .lock()
+            .ok()
+            .and_then(|c| {
+                c.iter()
+                    .find(|c| c.usage.split_whitespace().next() == Some(name.as_str()))
+                    .map(|c| c.usage.clone())
+            })
+            .unwrap_or_else(|| name.clone());
+        let r = (|| -> mlua::Result<()> {
+            let lua = &self.lua;
+            let player = player_table_of(lua, event.player)?;
+            let args = lua.create_table()?;
+            args.set("raw", line)?;
+            command_args(lua, &usage, line, &args)?;
+            self.call_kind(
+                hook,
+                Some(&name),
+                host,
+                (player, args),
+                &mut |host, action, args| {
+                    match action {
+                        "feedback" => {
+                            let text: String = args.get(1)?;
+                            host.feedback(crate::mod_api::Text::literal(text));
+                        }
+                        other => self.run_action(host, other, args)?,
+                    }
+                    Ok(())
+                },
+            )
+        })();
+        if let Err(e) = r {
+            self.hook_error(hook, e);
+        }
+        Flow::Cancel
+    }
     /// A mob is about to take damage: `mob_hurt(mob, damage_type, causing,
     /// direct, amount)`, `mob` just `{id, kind}` (the game is mid-hit: no
     /// host, so no view, no data, and the host actions are dropped),
@@ -2744,6 +2988,67 @@ experimental = ["scripts"]
         fn mob_views(&self, dimension: &str) -> Vec<MobView> {
             self.mob_view(dimension, 7).into_iter().collect()
         }
+        fn play_sound(
+            &mut self,
+            _: &str,
+            pos: [f64; 3],
+            sound: &str,
+            volume: f32,
+            pitch: f32,
+        ) -> u32 {
+            self.lines.lock().unwrap().push(format!(
+                "sound {sound} at {},{},{} x{volume} p{pitch}",
+                pos[0], pos[1], pos[2]
+            ));
+            1
+        }
+        fn particles(
+            &mut self,
+            _: &str,
+            name: &str,
+            pos: [f64; 3],
+            count: u32,
+            spread: [f64; 3],
+            speed: f32,
+        ) -> u32 {
+            self.lines.lock().unwrap().push(format!(
+                "particles {name} x{count} at {},{},{} spread {} speed {speed}",
+                pos[0], pos[1], pos[2], spread[0]
+            ));
+            1
+        }
+        fn title(&mut self, uuid: u128, kind: &str, text: &str) -> bool {
+            let who = if uuid == 0x123e4567_e89b_12d3_a456_426614174000 {
+                "steve"
+            } else {
+                "?"
+            };
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("{kind} {who}: {text}"));
+            true
+        }
+        fn title_times(&mut self, _: u128, fade_in: i32, stay: i32, fade_out: i32) -> bool {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("times steve: {fade_in}/{stay}/{fade_out}"));
+            true
+        }
+        fn tell(&mut self, _: u128, line: crate::mod_api::Text) -> bool {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("tell steve: {}", line.plain()));
+            true
+        }
+        fn feedback(&mut self, line: crate::mod_api::Text) {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("feedback {}", line.plain()));
+        }
         fn player_raycast(&self, uuid: u128, distance: f32) -> Option<crate::mod_api::NativeHit> {
             (uuid == 0x123e4567_e89b_12d3_a456_426614174000 && distance == 8.0).then(|| {
                 crate::mod_api::NativeHit {
@@ -3152,6 +3457,94 @@ experimental = ["scripts"]
             .unwrap();
         assert_eq!(player.get(&key("pets")), Some(&Tag::Int(4)));
         assert!(m.lua.globals().get::<Value>("PD").unwrap().is_nil());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn commands_feedback_titles_sounds_and_particles_reach_the_host() {
+        let (dir, path) = hmod(
+            "commands",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.command("parasite count [kind:word] [n:integer]", 2, function(player, args)
+                  horizon.feedback("count " .. (args.kind or "all") .. " " .. tostring(args.n) .. " by " .. player.name)
+                  horizon.sound("minecraft:entity.zombie.ambient", 1, 2, 3, 0.5)
+                  horizon.particles("minecraft:flame", 1, 2, 3, 5, 0.5, 0.1)
+                  horizon.title(player.name, "Parasites")
+                  horizon.subtitle(player.uuid, "everywhere")
+                  horizon.title_times(player.name, 5, 40, 5)
+                  horizon.action_bar(player.name, "bar")
+                  horizon.tell("steve", "hello")
+                  horizon.tell("alex", "nobody")
+                end)
+                horizon.command("say <what:text>", 0, function(player, args) horizon.feedback(args.what) end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let mut commands = Vec::new();
+        m.register_commands(
+            &mut host,
+            &mut RegisterCommandsEvent {
+                commands: &mut commands,
+            },
+        );
+        assert_eq!(
+            commands
+                .iter()
+                .map(|c| (c.usage.as_str(), c.level))
+                .collect::<Vec<_>>(),
+            [
+                ("parasite count [kind:word] [n:integer]", 2),
+                ("say <what:text>", 0)
+            ]
+        );
+        let steve = host.acting_player().unwrap();
+        let run = |m: &LuaMod, host: &mut MobHost, line: &str| {
+            m.perform_command(
+                host,
+                &mut PerformCommandEvent {
+                    player: &steve,
+                    command: line,
+                },
+            )
+        };
+        assert_eq!(run(&m, &mut host, "parasite count zombie 3"), Flow::Cancel);
+        assert_eq!(run(&m, &mut host, "parasite count"), Flow::Cancel);
+        assert_eq!(run(&m, &mut host, "say hello there  world"), Flow::Cancel);
+        assert_eq!(run(&m, &mut host, "other thing"), Flow::Continue);
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            [
+                "feedback count zombie 3 by steve",
+                "sound minecraft:entity.zombie.ambient at 1,2,3 x0.5 p1",
+                "particles minecraft:flame x5 at 1,2,3 spread 0.5 speed 0.1",
+                "title steve: Parasites",
+                "subtitle steve: everywhere",
+                "times steve: 5/40/5",
+                "actionbar steve: bar",
+                "tell steve: hello",
+                "feedback count all nil by steve",
+                "sound minecraft:entity.zombie.ambient at 1,2,3 x0.5 p1",
+                "particles minecraft:flame x5 at 1,2,3 spread 0.5 speed 0.1",
+                "title steve: Parasites",
+                "subtitle steve: everywhere",
+                "times steve: 5/40/5",
+                "actionbar steve: bar",
+                "tell steve: hello",
+                "feedback hello there world",
+            ]
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
