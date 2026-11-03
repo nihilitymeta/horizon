@@ -39,6 +39,27 @@ fn on_off(v: bool) -> Text {
 fn track_name(id: &str) -> &str {
     id.rsplit('/').next().unwrap_or(id)
 }
+/// The Extras rows a built-in hook mod's settings page shows under its toggle: the settings a
+/// feature has beyond its switch (the switch is the page's toggle, and a key is bound on the Key
+/// Binds screen). Only a feature with such rows is named here; the Mods page itself groups the
+/// registry's features by kind, so a new `registry/<id>.json` needs no line.
+fn mod_items(id: &str) -> &'static [crate::extras::Item] {
+    use crate::extras::Item;
+    match id {
+        "zoom" => &[Item::ZoomSmooth, Item::ZoomSensitivity, Item::ZoomLevel],
+        "minimap" => &[
+            Item::MinimapCorner,
+            Item::MinimapSize,
+            Item::MinimapShape,
+            Item::MinimapZoom,
+            Item::MinimapRotate,
+        ],
+        "fps_counter" => &[Item::FpsCorner, Item::FpsLows],
+        "keystrokes" => &[Item::KeystrokesCorner, Item::KeystrokesCps],
+        "mouse_tweaks" => &[Item::MouseTweaksWheel],
+        _ => &[],
+    }
+}
 fn chat_px(caption: &str, px: f32) -> Text {
     Text::translate(
         "options.pixel_value",
@@ -2417,45 +2438,16 @@ impl OptionsUi {
         }
 
         let on = s.mods.is_on(i);
-        let toggle_label = format!("Mod Enabled: {}", if on { "On" } else { "Off" });
+        let toggle_label = Text::translate(
+            "options.generic_value",
+            &[tr("horizon.mods.enabled"), on_off(on)],
+        );
         rows.push(Row::Buttons(
-            button(
-                0.0,
-                0.0,
-                310.0,
-                Text::literal(toggle_label),
-                Act::ToggleMod(i),
-            ),
+            button(0.0, 0.0, 310.0, toggle_label, Act::ToggleMod(i)),
             None,
         ));
 
-        let items: &[crate::extras::Item] = match m.id.as_str() {
-            "zoom" => &[
-                crate::extras::Item::ZoomSmooth,
-                crate::extras::Item::ZoomSensitivity,
-                crate::extras::Item::ZoomLevel,
-            ],
-            "minimap" => &[
-                crate::extras::Item::MinimapCorner,
-                crate::extras::Item::MinimapSize,
-                crate::extras::Item::MinimapShape,
-                crate::extras::Item::MinimapZoom,
-                crate::extras::Item::MinimapRotate,
-            ],
-            "fps_counter" => &[crate::extras::Item::FpsCorner, crate::extras::Item::FpsLows],
-            "keystrokes" => &[
-                crate::extras::Item::KeystrokesCorner,
-                crate::extras::Item::KeystrokesCps,
-            ],
-            "dynamic_lights" => &[crate::extras::Item::DynamicLights],
-            "fullbright" => &[crate::extras::Item::Fullbright],
-            "inventory_sort" => &[crate::extras::Item::Sort],
-            "mouse_tweaks" => &[crate::extras::Item::MouseTweaksWheel],
-            "auto_reconnect" => &[crate::extras::Item::AutoReconnect],
-            "own_name_tag" => &[crate::extras::Item::OwnNameTag],
-            _ => &[],
-        };
-
+        let items = mod_items(&m.id);
         if !items.is_empty() {
             rows.push(Row::Header("horizon.mods.settings"));
             let extra = |item: crate::extras::Item| {
@@ -2561,72 +2553,25 @@ impl OptionsUi {
                 if s.mods.installed.is_empty() {
                     return vec![Row::Header("horizon.mods.empty")];
                 }
-                let extra = |item: crate::extras::Item| {
-                    let value = format!("{}: {}", item.caption_text(), item.value(&s.extras));
-                    let label = if item.key_name().is_some() && self.selected_key == item.key_name()
-                    {
-                        Text::literal(format!("> {value} <")).with_color(text::YELLOW)
-                    } else {
-                        Text::literal(value)
-                    };
-                    let widget = button(0.0, 0.0, 150.0, label, Act::Extra(item));
-                    if item
-                        .parent()
-                        .is_some_and(|parent| parent.switch(&s.extras) == Some(false))
-                    {
-                        inactive(widget)
-                    } else {
-                        widget
-                    }
-                };
+                // A section per kind, in the launcher's order (`ModKind::SECTIONS`), so a
+                // feature a registry/<id>.json declares lands in its kind's section with no
+                // line here. Each mod is its toggle, and a Settings button when it has a page.
                 let mut rows = Vec::new();
-                let mut section = Vec::new();
-                let flush = |rows: &mut Vec<Row>, section: &mut Vec<crate::extras::Item>| {
-                    rows.extend(
-                        section
-                            .chunks(2)
-                            .map(|c| Row::Buttons(extra(c[0]), c.get(1).map(|&b| extra(b)))),
-                    );
-                    section.clear();
-                };
-                let has_builtins = s.mods.installed.iter().any(|m| {
-                    matches!(
-                        m.id.as_str(),
-                        "zoom" | "minimap" | "fps_counter" | "keystrokes"
-                    )
-                });
-                if has_builtins {
-                    for row in crate::extras::mod_rows() {
-                        match row {
-                            Err(header) => {
-                                flush(&mut rows, &mut section);
-                                rows.push(Row::Header(header));
-                            }
-                            Ok(item) => section.push(item),
-                        }
+                for kind in crate::mod_list::ModKind::SECTIONS {
+                    let mods: Vec<_> = s
+                        .mods
+                        .installed
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, m)| m.kind == kind)
+                        .collect();
+                    if mods.is_empty() {
+                        continue;
                     }
-                    flush(&mut rows, &mut section);
-                }
-
-                let other_mods: Vec<_> = s
-                    .mods
-                    .installed
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, m)| {
-                        !matches!(
-                            m.id.as_str(),
-                            "zoom" | "minimap" | "fps_counter" | "keystrokes"
-                        )
-                    })
-                    .collect();
-                if !other_mods.is_empty() {
-                    if has_builtins {
-                        rows.push(Row::Header("horizon.mods.installed"));
-                    }
-                    for (i, m) in other_mods {
-                        let mut label = Text::literal(format!("{}: ", m.title))
-                            .append(on_off(s.mods.is_on(i)));
+                    rows.push(Row::Header(kind.header()));
+                    for (i, m) in mods {
+                        let mut label =
+                            Text::literal(format!("{}: ", m.title)).append(on_off(s.mods.is_on(i)));
                         if m.problem.as_deref() == Some(crate::mod_list::NOT_BUILT) {
                             label = label.append(tr("horizon.mods.not_built"));
                         } else if m.problem.is_some() {
@@ -2637,19 +2582,21 @@ impl OptionsUi {
                         // A content mod's set feeds the block-state tables the
                         // open world's chunks were decoded with: changing it
                         // mid-world remaps their ids (Forge/Fabric freeze the
-                        // registry before a world opens). A native mod toggles
-                        // live through `native_on`, so it stays available.
-                        let content = m.native.is_none();
+                        // registry before a world opens). A native, hook or
+                        // engine mod toggles live, so it stays available.
+                        let content = m.kind == crate::mod_list::ModKind::Content;
                         if self.in_world && content {
                             label = label.append(tr("horizon.mods.in_world"));
                         }
                         let dead = m.dev || m.id.is_empty() || self.in_world && content;
-                        // Keys live on the Key Binds screen, so only a native mod with its own
-                        // buttons has a settings page worth a second button.
+                        // Keys live on the Key Binds screen, so only a mod with settings of
+                        // its own (a native mod's buttons, a hook mod's Extras rows) has a
+                        // settings page worth a second button.
                         let has_settings = m
                             .native
                             .as_ref()
-                            .is_some_and(|page| !page.buttons.is_empty());
+                            .is_some_and(|page| !page.buttons.is_empty())
+                            || !mod_items(&m.id).is_empty();
                         let toggle = button(
                             0.0,
                             0.0,
@@ -8513,10 +8460,30 @@ mod tests {
         assert!(acts.contains(&Act::Extra(crate::extras::Item::ZoomSensitivity)));
         assert!(acts.contains(&Act::Extra(crate::extras::Item::ZoomLevel)));
 
-        // Mods page shows all mod configs directly
+        // The toggle's label is a translated line, not English in the code.
+        let toggle = rows.iter().find_map(|r| match r {
+            Row::Buttons(w, _)
+                if matches!(
+                    w.kind,
+                    WKind::Button {
+                        act: Act::ToggleMod(0),
+                        ..
+                    }
+                ) =>
+            {
+                Some(w)
+            }
+            _ => None,
+        });
+        let en = crate::lang::Language::load(&[], "en_us");
+        assert!(en.get("horizon.mods.enabled").is_some());
+
+        // The Mods page shows the hook mod as its toggle and a Settings button to this page,
+        // under the hook mods' header, with no Extras row of its own.
         ui.show(Page::Mods);
-        let mod_config_rows = ui.list_rows(&s);
-        let mod_config_acts: Vec<Act> = mod_config_rows
+        let page = ui.list_rows(&s);
+        assert!(toggle.is_some());
+        let acts: Vec<Act> = page
             .iter()
             .filter_map(|r| match r {
                 Row::Buttons(w1, w2) => {
@@ -8535,9 +8502,88 @@ mod tests {
             })
             .flatten()
             .collect();
-        assert!(mod_config_acts.contains(&Act::Extra(crate::extras::Item::Zoom)));
-        assert!(mod_config_acts.contains(&Act::Extra(crate::extras::Item::Minimap)));
-        assert!(mod_config_acts.contains(&Act::Extra(crate::extras::Item::Fps)));
-        assert!(mod_config_acts.contains(&Act::Extra(crate::extras::Item::Keystrokes)));
+        assert_eq!(acts, vec![Act::ToggleMod(0), Act::ModSettings(0)]);
+        assert!(matches!(page[0], Row::Header("horizon.mods.section.hook")));
+    }
+
+    /// The Mods page has a section per kind in the launcher's order, each named by a bundled key,
+    /// so a feature the registry declares with a kind lands in its section with no code.
+    #[test]
+    fn mods_page_groups_installed_mods_by_kind_in_the_launcher_order() {
+        use crate::mod_list::{Installed, ModKind, NativePage};
+        let mut s = Settings::default();
+        let mut add = |id: &str, kind: ModKind, buttons: Vec<String>| {
+            s.mods.installed.push(Installed {
+                kind,
+                id: id.into(),
+                title: format!("{id} 1.0"),
+                description: String::new(),
+                problem: None,
+                dev: false,
+                native: (kind != ModKind::Content).then(|| NativePage {
+                    keys: Vec::new(),
+                    buttons,
+                }),
+            });
+        };
+        // Installed in no particular order; one of each kind, plus a second hook.
+        add("pack", ModKind::Content, Vec::new());
+        add("fullbright", ModKind::Hook, Vec::new());
+        add("tool", ModKind::Native, vec!["Setting".into()]);
+        add("cas", ModKind::Engine, Vec::new());
+        add("zoom", ModKind::Hook, Vec::new());
+        let mut ui = OptionsUi::default();
+        ui.show(Page::Mods);
+        let rows = ui.list_rows(&s);
+        let order: Vec<String> = rows
+            .iter()
+            .map(|r| match r {
+                Row::Header(key) => (*key).to_owned(),
+                Row::Buttons(w, settings) => match (&w.kind, settings) {
+                    (
+                        WKind::Button {
+                            act: Act::ToggleMod(i),
+                            ..
+                        },
+                        None,
+                    ) => {
+                        format!("toggle {i}")
+                    }
+                    (
+                        WKind::Button {
+                            act: Act::ToggleMod(i),
+                            ..
+                        },
+                        Some(_),
+                    ) => {
+                        format!("toggle {i} + settings")
+                    }
+                    _ => panic!("unexpected row"),
+                },
+                _ => panic!("unexpected row"),
+            })
+            .collect();
+        assert_eq!(
+            order,
+            [
+                "horizon.mods.section.hook",
+                "toggle 1",
+                "toggle 4 + settings",
+                "horizon.mods.section.engine",
+                "toggle 3",
+                "horizon.mods.section.native",
+                "toggle 2 + settings",
+                "horizon.mods.section.content",
+                "toggle 0",
+            ]
+        );
+        let en = crate::lang::Language::load(&[], "en_us");
+        for kind in ModKind::SECTIONS {
+            assert!(
+                en.get(kind.header()).is_some(),
+                "{} has no English line",
+                kind.header()
+            );
+        }
     }
 }
