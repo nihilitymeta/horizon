@@ -407,7 +407,8 @@ impl Game<'_> {
             let Some(kind) = self.res.player_type().clone() else {
                 return;
             };
-            let mut m = Mob::new(0, kind, p.position, self.yaw);
+            // A model of the player, not a mob the game simulates.
+            let mut m = Mob::new_client(0, kind, p.position, self.yaw);
             m.head_pitch = self.pitch;
             self.player_model = Some(m);
         }

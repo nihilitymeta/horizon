@@ -2934,7 +2934,22 @@ impl<'a> Teams<'a> {
     }
 }
 impl Mob {
+    /// A mob the game simulates: its species' goals are registered and
+    /// every mod's `mob_ai_register` is told, once, here. Every server
+    /// path (a spawn, a conversion, a chunk's NBT, a raid, `summon`, a
+    /// mod's spawn) builds its mobs with this.
     pub fn new(id: u32, kind: Arc<MobType>, position: Vec3, yaw: f32) -> Self {
+        let mut mob = Self::new_client(id, kind, position, yaw);
+        ai::native_mob_ai_register(&mut mob);
+        mob
+    }
+    /// A mob this process never simulates: a server's mob as a client
+    /// sees it over the network, the first-person player model, a
+    /// spawner's display. Built as any mob is, controls and goal lists
+    /// included (its renderer and its client-side motion read them), but
+    /// no mod's `mob_ai_register` is told: that hook runs once a mob, on
+    /// the side that runs its AI.
+    pub fn new_client(id: u32, kind: Arc<MobType>, position: Vec3, yaw: f32) -> Self {
         let mut random = LegacyRandom::new(
             i64::from(id).wrapping_mul(0x5DEE_CE66D)
                 ^ (position.x.to_bits() as i64)
@@ -3057,7 +3072,6 @@ impl Mob {
             mob.ai.goals.clear();
             mob.ai.targets.clear();
         }
-        ai::native_mob_ai_register(&mut mob);
         mob
     }
     /// `Mob.canPickUpLoot`, with the overrides: an allay that holds
@@ -4279,6 +4293,26 @@ mod elytra_tests {
         for (angle, resting) in wings.angles.iter().zip(ElytraAnimation::RESTING) {
             assert!((angle - resting).abs() < 0.00001);
         }
+    }
+}
+#[cfg(test)]
+mod construction_tests {
+    use super::sensor_scan_tests::kind;
+    use super::*;
+    use horizon_core::geometry::Vec3;
+
+    /// `Mob::new` tells the mods' `mob_ai_register` once a mob; the
+    /// client's copies of a server's mobs (`Mob::new_client`) never do.
+    #[test]
+    fn a_client_built_mob_does_not_register_its_ai_with_mods() {
+        crate::native_client_hooks::test_hooks::install();
+        // Ids no other test builds a mob with.
+        let (server, client) = (0x0C11_E171, 0x0C11_E172);
+        let _ = Mob::new(server, kind(), Vec3::ZERO, 0.0);
+        let _ = Mob::new_client(client, kind(), Vec3::ZERO, 0.0);
+        let told = crate::native_client_hooks::test_hooks::ai_registered();
+        assert!(told.contains(&server), "{told:?}");
+        assert!(!told.contains(&client), "{told:?}");
     }
 }
 #[cfg(test)]

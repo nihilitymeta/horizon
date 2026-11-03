@@ -20,7 +20,9 @@ are custom blocks and custom mob behaviour.
 
 `horizon_client_lib::mobs::ai::native_mob_ai_register(mob: &mut Mob)`, a free function wired through
 `native_client_hooks` like `native_living_breathe`. It runs in `Mob::new` right after the species' own `register`, so
-the mob's vanilla goals are in `mob.ai.goals` and `mob.ai.targets` and nothing has ticked yet. A mod adds a goal
+the mob's vanilla goals are in `mob.ai.goals` and `mob.ai.targets` and nothing has ticked yet. `Mob::new_client`, the
+constructor of the mobs a client only draws (a server's mob seen over the network, the first-person player model, a
+spawner's display), registers the species' goals too but tells no mod. A mod adds a goal
 (`mob.ai.goals.add(priority, goal)`), adds a target goal, or clears a selector and rebuilds it. Trait mods get
 `MobAiRegisterEvent { mob }` and the types `Mob`, `MobType`, `Goal`, `GoalSelector` and `GoalCx` through
 `horizon_client::mod_api`. One call a mob, server side only.

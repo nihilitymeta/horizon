@@ -339,7 +339,9 @@ fn constructor_maluses(m: &mut Mob) {
 /// type (`minecraft:zombie`), `mob.id` the entity. Told for every mob the game
 /// simulates: spawned, bred, summoned, loaded with its chunk or made by a mod
 /// (`native_spawn_mob`). It runs once a mob, on the server side (a client
-/// never builds a remote mob's AI). API @API:mob_ai_register@.
+/// never builds a remote mob's AI: `Mob::new` tells it, `Mob::new_client`,
+/// which builds a remote mob's copy, the player model and a spawner's
+/// display, does not). API @API:mob_ai_register@.
 #[inline(never)]
 pub fn native_mob_ai_register(mob: &mut Mob) {
     crate::native_client_hooks::mob_ai_register(mob);
