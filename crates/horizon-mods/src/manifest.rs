@@ -292,7 +292,9 @@ impl Manifest {
                     .bytes()
                     .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
             if !dep_ok {
-                return Err(format!("{MANIFEST}: depends {dep:?} is not a mod id, [a-z0-9_]{{1,64}}"));
+                return Err(format!(
+                    "{MANIFEST}: depends {dep:?} is not a mod id, [a-z0-9_]{{1,64}}"
+                ));
             }
             if *dep == m.id {
                 return Err(format!("{MANIFEST}: a mod does not depend on itself"));

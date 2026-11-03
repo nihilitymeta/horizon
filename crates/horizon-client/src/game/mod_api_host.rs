@@ -273,7 +273,11 @@ impl horizon_client::mod_api::LevelWriteHost for LevelTicks<'_, &mut super::Game
         true
     }
 
-    fn set_mod_block_entity_data(&mut self, pos: [i32; 3], data: horizon_world::nbt::Compound) -> bool {
+    fn set_mod_block_entity_data(
+        &mut self,
+        pos: [i32; 3],
+        data: horizon_world::nbt::Compound,
+    ) -> bool {
         let key = (pos[0], pos[1], pos[2]);
         let Some(super::BlockEntity::Mod(m)) = self.level.world.block_entities.get_mut(&key) else {
             return false;
