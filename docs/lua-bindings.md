@@ -38,7 +38,7 @@ reaches Lua by one adapter method, and a hook added for Rust is available to scr
 | `horizon.on(name, fn)` | Register a handler: `server_tick(phase, world_running)`, `mob_spawned(dimension, kind, x, y, z, natural)`, `world_lifecycle(phase)` |
 | `horizon.log(msg)` | The game log, tagged `[lua:<id>]` |
 | `horizon.broadcast(text)` | A chat line to every player |
-| `horizon.summon(dimension, kind, x, y, z)` | `/summon` |
+| `horizon.summon(dimension, kind, x, y, z)` | `/summon`; in a level hook (`random_tick`, `tick_block`) the mob is made right after the level's pass, in that level |
 | `horizon.kill_mob(dimension, id)` | `/kill` a mob |
 | `require("name")` | `scripts/name.lua` of the same mod, once |
 | `horizon.goal(name, def)` | Define a mob goal: `def.flags` (`{"move", "look", "jump", "target"}`), `def.every_tick`, `def.interruptable`, and `can_use(mob, state, out)` (required), `can_continue`, `start`, `tick`, `stop`. `mob` is the mob's view, `state` a table of the goal's own that lives with the mob, `out` the actions |

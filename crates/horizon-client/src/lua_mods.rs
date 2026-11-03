@@ -426,6 +426,16 @@ impl LuaMod {
                         let delay: i32 = args.get(1)?;
                         level.schedule_block_tick(at, &block, delay);
                     }
+                    // As the host's `summon(dimension, kind, x, y, z)`: this
+                    // level's dimension is the only one here, so the first
+                    // argument is accepted and ignored.
+                    "summon" => {
+                        let kind: String = args.get(2)?;
+                        let pos = [args.get::<f64>(3)?, args.get::<f64>(4)?, args.get::<f64>(5)?];
+                        if !level.summon(&kind, pos, Default::default()) {
+                            log::warn!("[lua:{}] {hook}: summon {kind}: not here", self.id);
+                        }
+                    }
                     "handled" => handled = true,
                     other => log::warn!("[lua:{}] {hook}: {other} needs a host; dropped", self.id),
                 }
@@ -820,6 +830,7 @@ experimental = ["scripts"]
         props: Vec<(String, String)>,
         writes: Vec<([i32; 3], String, String, i32)>,
         ticks: Vec<([i32; 3], String, i32)>,
+        summons: Vec<(String, [f64; 3])>,
     }
     impl crate::mod_api::LevelHost for FakeLevel {
         fn block_state(&self, _: [i32; 3]) -> BlockStateId {
@@ -870,6 +881,10 @@ experimental = ["scripts"]
                 .push((pos, key.to_owned(), value.to_owned(), flags));
             true
         }
+        fn summon(&mut self, kind: &str, pos: [f64; 3], _: crate::mod_api::Compound) -> bool {
+            self.summons.push((kind.to_owned(), pos));
+            true
+        }
         fn play_sound(&mut self, _: &str, _: [f64; 3], _: usize, _: f32, _: f32) -> bool {
             false
         }
@@ -899,6 +914,8 @@ experimental = ["scripts"]
                     horizon.set_block_property("stage", "growing")
                     horizon.schedule_tick(40)
                     horizon.handled()
+                  elseif props.stage == "mature" then
+                    horizon.summon(dimension, "ruby:crawler", x + 0.5, y + 1, z + 0.5)
                   end
                 end)
                 "#,
@@ -910,6 +927,7 @@ experimental = ["scripts"]
             props: vec![("stage".into(), "dormant".into())],
             writes: Vec::new(),
             ticks: Vec::new(),
+            summons: Vec::new(),
         };
         let mut event = RandomTickEvent {
             dimension: LevelDimension::Nether,
@@ -926,12 +944,14 @@ experimental = ["scripts"]
         );
         assert_eq!(level.ticks, [([1, 64, -3], "ruby:hive".to_owned(), 40)]);
 
-        // A mature hive, and another block: nothing happens and the block keeps its tick.
+        // A mature hive summons (queued on the level, made after the pass)
+        // and keeps its tick; another block: nothing happens.
         level.props = vec![("stage".into(), "mature".into())];
         assert!(matches!(
             m.random_tick(&mut level, &mut event),
             Flow::Continue
         ));
+        assert_eq!(level.summons, [("ruby:crawler".to_owned(), [1.5, 65.0, -2.5])]);
         level.block = "minecraft:grass_block";
         assert!(matches!(
             m.tick_block(
