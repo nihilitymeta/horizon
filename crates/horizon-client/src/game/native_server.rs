@@ -1211,8 +1211,9 @@ fn system_chat(line: &Text) -> C {
 
 /// Where the game calls the server hook points.
 impl Game<'_> {
-    /// Asks the mods for their commands once per hub, and puts them in every
-    /// player's command tree.
+    /// Asks the mods for their commands once per hub (and again after
+    /// [`Game::refresh_native_commands`]), and puts them in every player's
+    /// command tree.
     pub(super) fn register_native_commands(&mut self, host: &mut LanHost) {
         if host.native_commands.is_some() {
             return;
@@ -1224,8 +1225,22 @@ impl Game<'_> {
         for p in problems {
             log::warn!("Horizon: a native mod's command was left out: {p}");
         }
+        // The hub sends every placed player their tree again when it changed.
         host.hub.set_mod_commands(0, tree);
         host.native_commands = Some(levels);
+    }
+
+    /// The mods' commands may have changed (`/reload` ran the scripted mods'
+    /// `init.lua` again): asks for them anew, so a command a reloaded script
+    /// declares is known and one it dropped is gone, and the players whose
+    /// tree changed get it again.
+    pub(super) fn refresh_native_commands(&mut self) {
+        let Some(mut host) = self.lan.take() else {
+            return;
+        };
+        host.native_commands = None;
+        self.register_native_commands(&mut host);
+        self.lan = Some(host);
     }
 
     /// Asks the mods what root commands each player's tree keeps

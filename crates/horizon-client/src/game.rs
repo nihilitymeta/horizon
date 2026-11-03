@@ -19997,6 +19997,9 @@ impl Game<'_> {
         }
         self.world_tables = self.build_world_tables();
         self.recipe_tables.categories = None;
+        // The load ran the scripted mods' init.lua again: their commands
+        // may have changed with it.
+        self.refresh_native_commands();
         horizon_client::structure_blocks::forget_loot_data();
         // Before the players are sent the reloaded data below.
         self.sync_recipe_content();
