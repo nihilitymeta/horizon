@@ -45,11 +45,11 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "random_tick",
-        "`random_tick(dimension, block, x, y, z, props, data)`",
+        "`random_tick(dimension, block, x, y, z, props, data)`, by block",
     ),
     (
         "tick_block",
-        "`tick_block(dimension, block, x, y, z, props, data)`",
+        "`tick_block(dimension, block, x, y, z, props, data)`, by block",
     ),
     (
         "right_click_block",
@@ -65,7 +65,7 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "block_entity_tick",
-        "`block_entity_tick(dimension, block, x, y, z, data)`",
+        "`block_entity_tick(dimension, block, x, y, z, data)`, by block",
     ),
     (
         "destroy_block",
@@ -298,6 +298,34 @@ The full doc of each is on its `native_<name>` function.\n\n");
 
 #[cfg(test)]
 mod tests {
+    /// The hooks the Lua runtime answers (`impl Hooks for LuaMod`) are the
+    /// ones the reference says reach Lua, no more and no fewer.
+    #[test]
+    fn the_hooks_the_runtime_answers_are_the_ones_the_reference_names() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let src =
+            std::fs::read_to_string(root.join("crates/horizon-client/src/lua_mods.rs")).unwrap();
+        let file = syn::parse_file(&src).unwrap();
+        let mut answered = std::collections::BTreeSet::new();
+        for item in file.items {
+            if let syn::Item::Impl(i) = item
+                && let Some((_, path, _)) = &i.trait_
+                && path.segments.last().is_some_and(|s| s.ident == "Hooks")
+            {
+                for it in i.items {
+                    if let syn::ImplItem::Fn(f) = it {
+                        answered.insert(f.sig.ident.to_string());
+                    }
+                }
+            }
+        }
+        let named: std::collections::BTreeSet<String> = super::LUA_HOOKS
+            .iter()
+            .map(|(n, _)| n.to_string())
+            .collect();
+        assert_eq!(answered, named);
+    }
+
     #[test]
     fn the_api_number_is_the_last_one_named() {
         assert_eq!(super::api_of("A thing. API 40. Later, API 57."), Some(57));
