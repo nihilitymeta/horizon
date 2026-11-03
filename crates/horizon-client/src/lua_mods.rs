@@ -733,9 +733,16 @@ fn command_words(usage: &str) -> String {
 /// arguments in order, `integer` and `number` as numbers, `boolean` as one,
 /// `text` as the rest of the line, the other kinds as the word. A required
 /// argument (`<...>`) missing, or an integer or number that is not one,
-/// refuses the line: the message for the player, and the handler is not
-/// called.
-fn command_args(lua: &Lua, usage: &str, line: &str, args: &Table) -> mlua::Result<Option<String>> {
+/// refuses the line: the message for the player (translated: the
+/// `horizon.lua.command.*` keys), and the handler is not called.
+fn command_args(
+    lua: &Lua,
+    usage: &str,
+    line: &str,
+    args: &Table,
+) -> mlua::Result<Option<crate::mod_api::Text>> {
+    use crate::mod_api::Text;
+    let usage_line = || Text::tr("horizon.lua.command.usage", &[&usage]);
     let params: Vec<(&str, &str)> = usage
         .split_whitespace()
         .filter_map(|p| {
@@ -762,24 +769,35 @@ fn command_args(lua: &Lua, usage: &str, line: &str, args: &Table) -> mlua::Resul
             if !rest.is_empty() {
                 args.set(*name, rest.join(" "))?;
             } else if required.contains(name) {
-                return Ok(Some(format!("usage: /{usage}")));
+                return Ok(Some(usage_line()));
             }
             break;
         }
         let Some(word) = words.next() else {
             if required.contains(name) {
-                return Ok(Some(format!("usage: /{usage}")));
+                return Ok(Some(usage_line()));
             }
             break;
         };
+        let quoted = format!("{word:?}");
         match *kind {
             "integer" => match word.parse::<i64>() {
                 Ok(n) => args.set(*name, n)?,
-                Err(_) => return Ok(Some(format!("{name} needs an integer, not {word:?}"))),
+                Err(_) => {
+                    return Ok(Some(Text::tr(
+                        "horizon.lua.command.needs_integer",
+                        &[name, &quoted],
+                    )));
+                }
             },
             "number" => match word.parse::<f64>() {
                 Ok(n) => args.set(*name, n)?,
-                Err(_) => return Ok(Some(format!("{name} needs a number, not {word:?}"))),
+                Err(_) => {
+                    return Ok(Some(Text::tr(
+                        "horizon.lua.command.needs_number",
+                        &[name, &quoted],
+                    )));
+                }
             },
             "boolean" => args.set(*name, word == "true")?,
             _ => args.set(*name, word)?,
@@ -3973,7 +3991,7 @@ impl Hooks for LuaMod {
             let args = lua.create_table()?;
             args.set("raw", line)?;
             if let Some(refusal) = command_args(lua, &usage, line, &args)? {
-                host.feedback(crate::mod_api::Text::literal(refusal));
+                host.feedback(refusal);
                 return Ok(());
             }
             self.call_kind(
@@ -5328,8 +5346,16 @@ experimental = ["scripts"]
         // Arguments of three kinds; a bad integer and a missing required
         // argument are refused with a message, and the handler is not called.
         assert_eq!(run(&m, &mut host, "probeadd 2 0.5 total"), Flow::Cancel);
-        assert_eq!(run(&m, &mut host, "probeadd x 1"), Flow::Cancel);
-        assert_eq!(run(&m, &mut host, "probeadd 2"), Flow::Cancel);
+        // The refusals are translated: the bundled English here.
+        let (flows, missed) =
+            crate::lang::scoped(crate::lang::Language::load(&[], "en_us"), || {
+                (
+                    run(&m, &mut host, "probeadd x 1"),
+                    run(&m, &mut host, "probeadd 2"),
+                )
+            });
+        assert_eq!(flows, (Flow::Cancel, Flow::Cancel));
+        assert_eq!(missed, Vec::<String>::new());
         assert_eq!(run(&m, &mut host, "parasite"), Flow::Continue);
         assert_eq!(run(&m, &mut host, "other thing"), Flow::Continue);
         assert_eq!(
@@ -5355,7 +5381,7 @@ experimental = ["scripts"]
                 "feedback hives",
                 "feedback total = 2.5",
                 "feedback a needs an integer, not \"x\"",
-                "feedback usage: /probeadd <a:integer> <b:number> [label:word]",
+                "feedback Usage: /probeadd <a:integer> <b:number> [label:word]",
             ]
         );
         std::fs::remove_dir_all(&dir).unwrap();

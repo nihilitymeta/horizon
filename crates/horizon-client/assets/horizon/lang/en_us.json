@@ -591,5 +591,8 @@
   "horizon.pvp.shape.x": "X",
   "horizon.pvp.shape.circle": "Circle",
   "horizon.pvp.shape.square": "Square",
-  "horizon.pvp.shape.dot": "Dot"
+  "horizon.pvp.shape.dot": "Dot",
+  "horizon.lua.command.usage": "Usage: /%s",
+  "horizon.lua.command.needs_integer": "%s needs an integer, not %s",
+  "horizon.lua.command.needs_number": "%s needs a number, not %s"
 }
