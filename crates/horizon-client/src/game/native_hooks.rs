@@ -971,6 +971,9 @@
 //! recipe viewer needs.
 //!
 //! Names, parameters and call sites are kept from release to release, and
+//! API 360 adds a mod block entity's saved data read and written from any hook
+//! with a host (`native_mod_block_entity_data`, `native_set_mod_block_entity_data`).
+//!
 //! hook points are only ever added: each addition raises [`NATIVE_HOOKS_API`].
 //! A bundle that hooks only these names the API it needs (`hooks`), and the
 //! launcher builds it on any Horizon whose API is at least that one. A change
@@ -8769,6 +8772,35 @@ impl Game<'_> {
             self.container_changed(key);
         }
         Some(out)
+    }
+    /// The saved compound of the mod block entity at `pos`
+    /// (`ModBlockEntity.nbt`, without `id`, `x`, `y`, `z` and `Items`): none
+    /// for no block entity there, a vanilla one, or the one ticking now (out
+    /// of the world: `native_block_entity_tick` has it). API 360.
+    pub(super) fn native_mod_block_entity_data(&self, pos: [i32; 3]) -> Option<Compound> {
+        match self.world.block_entities.get(&(pos[0], pos[1], pos[2]))? {
+            BlockEntity::Mod(m) if !m.id.is_empty() => Some(m.nbt.clone()),
+            _ => None,
+        }
+    }
+    /// Replaces the saved compound of the mod block entity at `pos` and marks
+    /// its chunk to save, as its `setChanged` would (the items and the menu's
+    /// data slots are not in it: `native_with_mod_block_entity` changes
+    /// those); false for no mod block entity there. Clients get the change
+    /// with `native_block_entity_sync`. API 360.
+    pub(super) fn native_set_mod_block_entity_data(&mut self, pos: [i32; 3], data: Compound) -> bool {
+        let key = (pos[0], pos[1], pos[2]);
+        let Some(BlockEntity::Mod(m)) = self.world.block_entities.get_mut(&key) else {
+            return false;
+        };
+        if m.id.is_empty() {
+            return false;
+        }
+        if m.nbt != data {
+            m.nbt = data;
+        }
+        self.world.modified.insert((key.0 >> 4, key.2 >> 4));
+        true
     }
     /// Sends clients the block at `pos` and its block entity's update tag
     /// (`native_block_entity_update_tag`) again, as `Level.sendBlockUpdated`

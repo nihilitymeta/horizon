@@ -1,0 +1,210 @@
+//! NBT as Lua values and back, for the data a script reads and writes:
+//! a block entity's saved compound, an entity's data. A compound is a
+//! table, a list a sequence, numbers are numbers (a Lua number has no
+//! NBT type, so writing back keeps the type the old value had: a float
+//! stays a float, a byte a byte), strings are strings.
+use horizon_world::nbt::{Compound, JavaString, Tag};
+use mlua::{Lua, Table, Value};
+
+/// A tag as a Lua value.
+pub fn tag_to_lua(lua: &Lua, tag: &Tag) -> mlua::Result<Value> {
+    Ok(match tag {
+        Tag::End => Value::Nil,
+        Tag::Byte(v) => Value::Integer(i64::from(*v)),
+        Tag::Short(v) => Value::Integer(i64::from(*v)),
+        Tag::Int(v) => Value::Integer(i64::from(*v)),
+        Tag::Long(v) => Value::Integer(*v),
+        Tag::Float(bits) => Value::Number(f64::from(f32::from_bits(*bits))),
+        Tag::Double(bits) => Value::Number(f64::from_bits(*bits)),
+        Tag::String(s) => Value::String(lua.create_string(s.to_string_lossy())?),
+        Tag::ByteArray(v) => Value::Table(lua.create_sequence_from(v.iter().map(|b| i64::from(*b as i8)))?),
+        Tag::IntArray(v) => Value::Table(lua.create_sequence_from(v.iter().copied())?),
+        Tag::LongArray(v) => Value::Table(lua.create_sequence_from(v.iter().copied())?),
+        Tag::List(items) => {
+            let t = lua.create_table()?;
+            for (i, item) in items.iter().enumerate() {
+                t.set(i + 1, tag_to_lua(lua, item)?)?;
+            }
+            Value::Table(t)
+        }
+        Tag::Compound(c) => Value::Table(compound_to_table(lua, c)?),
+    })
+}
+
+/// A compound as a table.
+pub fn compound_to_table(lua: &Lua, c: &Compound) -> mlua::Result<Table> {
+    let t = lua.create_table()?;
+    for (k, v) in c {
+        t.set(k.to_string_lossy(), tag_to_lua(lua, v)?)?;
+    }
+    Ok(t)
+}
+
+/// A Lua value as a tag. `like` is the tag it replaces, if any: its type is
+/// kept for a number (a float stays a float), its element type for a list.
+/// Without one, an integer is an int (a long past 32 bits), another number
+/// a double, a boolean a byte, a sequence a list and another table a compound.
+pub fn lua_to_tag(v: &Value, like: Option<&Tag>) -> mlua::Result<Tag> {
+    let number = |n: f64| -> Tag {
+        match like {
+            Some(Tag::Byte(_)) => Tag::Byte(n as i8),
+            Some(Tag::Short(_)) => Tag::Short(n as i16),
+            Some(Tag::Int(_)) => Tag::Int(n as i32),
+            Some(Tag::Long(_)) => Tag::Long(n as i64),
+            Some(Tag::Float(_)) => Tag::Float((n as f32).to_bits()),
+            Some(Tag::Double(_)) => Tag::Double(n.to_bits()),
+            _ if n.fract() == 0.0 && n.abs() < 2f64.powi(31) => Tag::Int(n as i32),
+            _ if n.fract() == 0.0 => Tag::Long(n as i64),
+            _ => Tag::Double(n.to_bits()),
+        }
+    };
+    Ok(match v {
+        Value::Nil => Tag::End,
+        Value::Boolean(b) => match like {
+            Some(Tag::Int(_)) => Tag::Int(i32::from(*b)),
+            _ => Tag::Byte(i8::from(*b)),
+        },
+        Value::Integer(i) => match like {
+            Some(Tag::Float(_)) | Some(Tag::Double(_)) => number(*i as f64),
+            Some(Tag::Byte(_)) => Tag::Byte(*i as i8),
+            Some(Tag::Short(_)) => Tag::Short(*i as i16),
+            Some(Tag::Long(_)) => Tag::Long(*i),
+            Some(Tag::Int(_)) => Tag::Int(*i as i32),
+            _ if i32::try_from(*i).is_ok() => Tag::Int(*i as i32),
+            _ => Tag::Long(*i),
+        },
+        Value::Number(n) => number(*n),
+        Value::String(s) => Tag::String(JavaString::from(s.to_string_lossy().as_ref())),
+        Value::Table(t) => {
+            let len = t.raw_len();
+            let sequence = len > 0 || matches!(like, Some(Tag::List(_) | Tag::IntArray(_) | Tag::LongArray(_) | Tag::ByteArray(_)));
+            if sequence {
+                match like {
+                    Some(Tag::IntArray(_)) => {
+                        let mut out = Vec::with_capacity(len);
+                        for i in 1..=len {
+                            out.push(t.raw_get::<i64>(i)? as i32);
+                        }
+                        Tag::IntArray(out)
+                    }
+                    Some(Tag::LongArray(_)) => {
+                        let mut out = Vec::with_capacity(len);
+                        for i in 1..=len {
+                            out.push(t.raw_get::<i64>(i)?);
+                        }
+                        Tag::LongArray(out)
+                    }
+                    Some(Tag::ByteArray(_)) => {
+                        let mut out = Vec::with_capacity(len);
+                        for i in 1..=len {
+                            out.push(t.raw_get::<i64>(i)? as i8 as u8);
+                        }
+                        Tag::ByteArray(out)
+                    }
+                    _ => {
+                        let old = match like {
+                            Some(Tag::List(items)) => items.first(),
+                            _ => None,
+                        };
+                        let mut out = Vec::with_capacity(len);
+                        for i in 1..=len {
+                            let item: Value = t.raw_get(i)?;
+                            out.push(lua_to_tag(&item, old)?);
+                        }
+                        Tag::List(out)
+                    }
+                }
+            } else {
+                let old = match like {
+                    Some(Tag::Compound(c)) => Some(c),
+                    _ => None,
+                };
+                Tag::Compound(table_to_compound(t, old)?)
+            }
+        }
+        other => {
+            return Err(mlua::Error::runtime(format!(
+                "a {} cannot be saved as NBT",
+                other.type_name()
+            )));
+        }
+    })
+}
+
+/// A table as a compound; `like` is the compound it replaces, whose value
+/// types are kept key by key. A key set to nil is gone.
+pub fn table_to_compound(t: &Table, like: Option<&Compound>) -> mlua::Result<Compound> {
+    let mut out = Compound::new();
+    for pair in t.clone().pairs::<Value, Value>() {
+        let (k, v) = pair?;
+        let key = match k {
+            Value::String(s) => s.to_string_lossy(),
+            Value::Integer(i) => i.to_string(),
+            Value::Number(n) => n.to_string(),
+            other => {
+                return Err(mlua::Error::runtime(format!(
+                    "a {} is not an NBT key",
+                    other.type_name()
+                )));
+            }
+        };
+        let key = JavaString::from(key.as_str());
+        let old = like.and_then(|c| c.get(&key));
+        let tag = lua_to_tag(&v, old)?;
+        if tag != Tag::End {
+            out.insert(key, tag);
+        }
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_compound_goes_to_lua_and_back_with_its_types_kept() {
+        let lua = Lua::new();
+        let mut c = Compound::new();
+        c.insert("charge".into(), Tag::Int(3));
+        c.insert("heat".into(), Tag::Float(1.5f32.to_bits()));
+        c.insert("name".into(), Tag::String("hive".into()));
+        c.insert("flag".into(), Tag::Byte(1));
+        c.insert("ids".into(), Tag::IntArray(vec![1, 2]));
+        c.insert("list".into(), Tag::List(vec![Tag::Short(5), Tag::Short(6)]));
+        let mut inner = Compound::new();
+        inner.insert("x".into(), Tag::Long(1 << 40));
+        c.insert("inner".into(), Tag::Compound(inner));
+        let t = compound_to_table(&lua, &c).unwrap();
+        lua.globals().set("d", &t).unwrap();
+        lua.load(
+            "d.charge = d.charge + 1; d.heat = d.heat * 2; d.flag = false; d.ids[3] = 9; \
+             d.list[1] = 7; d.inner.x = d.inner.x + 1; d.gone = nil; d.new = 2.5; d.count = 4; \
+             d.big = 5000000000; d.tags = {'a', 'b'}; d.sub = {k = 'v'}",
+        )
+        .exec()
+        .unwrap();
+        let back = table_to_compound(&t, Some(&c)).unwrap();
+        assert_eq!(back.get(&"charge".into()), Some(&Tag::Int(4)));
+        assert_eq!(back.get(&"heat".into()), Some(&Tag::Float(3.0f32.to_bits())));
+        assert_eq!(back.get(&"flag".into()), Some(&Tag::Byte(0)));
+        assert_eq!(back.get(&"ids".into()), Some(&Tag::IntArray(vec![1, 2, 9])));
+        assert_eq!(back.get(&"list".into()), Some(&Tag::List(vec![Tag::Short(7), Tag::Short(6)])));
+        assert_eq!(back.get(&"name".into()), Some(&Tag::String("hive".into())));
+        let Some(Tag::Compound(inner)) = back.get(&"inner".into()) else { panic!() };
+        assert_eq!(inner.get(&"x".into()), Some(&Tag::Long((1 << 40) + 1)));
+        // New keys get the natural types; a key set to nil is gone.
+        assert_eq!(back.get(&"new".into()), Some(&Tag::Double(2.5f64.to_bits())));
+        assert_eq!(back.get(&"count".into()), Some(&Tag::Int(4)));
+        assert_eq!(back.get(&"big".into()), Some(&Tag::Long(5_000_000_000)));
+        assert_eq!(
+            back.get(&"tags".into()),
+            Some(&Tag::List(vec![Tag::String("a".into()), Tag::String("b".into())]))
+        );
+        assert!(matches!(back.get(&"sub".into()), Some(Tag::Compound(_))));
+        assert!(!back.contains_key(&"gone".into()));
+        // Unchanged data reads back equal.
+        let same = table_to_compound(&compound_to_table(&lua, &c).unwrap(), Some(&c)).unwrap();
+        assert_eq!(same, c);
+    }
+}

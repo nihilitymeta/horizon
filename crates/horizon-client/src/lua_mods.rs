@@ -14,7 +14,8 @@
 //! Scripts travel inside the `.hmod` under capability `scripts`, or load from
 //! `--dev-mod` folders. Mob behaviour is written as goals ([`goals`]).
 use crate::mod_api::{
-    BlockPos, BlockStateId, DataPackFilesEvent, Flow, Hooks, Host, LevelDimension, LevelWriteHost,
+    BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent, BlockPos, BlockStateId,
+    Compound, DataPackFilesEvent, Flow, Hooks, Host, LevelDimension, LevelWriteHost,
     MobAiRegisterEvent, MobSpawnedEvent, MobView, Mods, RandomTickEvent, RightClickBlockEvent,
     ServerTickEvent, ServerTickPhase, TickBlockEvent, WorldLifecycleEvent,
 };
@@ -27,6 +28,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 pub mod goals;
+pub mod nbt;
 
 /// Wall-clock time one handler or one goal function may take before Luau's
 /// interrupt stops it with an error: the server thread runs them, so an
@@ -105,6 +107,8 @@ pub struct LuaMod {
     library_scripts: Scripts,
     /// The goals the scripts defined (`horizon.goal`), by name.
     goals: Goals,
+    /// The blocks the scripts gave a block entity (`horizon.block_entity`), by block id.
+    block_entities: BlockEntities,
     /// Data loads seen (`data_pack_files`): the scripts reload from the second on.
     loads: AtomicU32,
     /// The running chunk's deadline, for the state's interrupt.
@@ -113,6 +117,16 @@ pub struct LuaMod {
 
 /// A mod's goal definitions, shared with the `horizon.goal` function.
 type Goals = Arc<Mutex<HashMap<String, goals::GoalDef>>>;
+
+/// What a script asked for a block's block entity: whether it ticks, and
+/// the saved compound a new one starts with.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BlockEntityDecl {
+    pub ticks: bool,
+    pub data: Compound,
+}
+/// A mod's block entity declarations, shared with `horizon.block_entity`.
+type BlockEntities = Arc<Mutex<HashMap<String, BlockEntityDecl>>>;
 
 impl std::fmt::Debug for LuaMod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -300,6 +314,7 @@ impl LuaMod {
             libraries: libraries.to_vec(),
             library_scripts: Arc::new(Mutex::new(library_scripts)),
             goals: Goals::default(),
+            block_entities: BlockEntities::default(),
             loads: AtomicU32::new(0),
             budget,
         };
@@ -362,6 +377,9 @@ impl LuaMod {
         if let Ok(mut goals) = self.goals.lock() {
             goals.clear();
         }
+        if let Ok(mut declared) = self.block_entities.lock() {
+            declared.clear();
+        }
         if let Ok(mut current) = self.scripts.lock() {
             *current = scripts;
         }
@@ -422,6 +440,27 @@ impl LuaMod {
                 };
                 let def = goals::GoalDef::parse(lua, leaked, def)?;
                 goals.insert(name, def);
+                Ok(())
+            })?,
+        )?;
+        // Block entities: `horizon.block_entity(block, { ticks = true, data = {...} })`
+        // gives the mod's block one, made with `data` when the block is placed,
+        // ticked each server tick when `ticks` (`block_entity_tick`).
+        let declared = self.block_entities.clone();
+        api.set(
+            "block_entity",
+            lua.create_function(move |_, (block, def): (String, Option<Table>)| {
+                let mut decl = BlockEntityDecl::default();
+                if let Some(def) = def {
+                    decl.ticks = def.get::<Option<bool>>("ticks")?.unwrap_or(false);
+                    if let Some(data) = def.get::<Option<Table>>("data")? {
+                        decl.data = nbt::table_to_compound(&data, None)?;
+                    }
+                }
+                declared
+                    .lock()
+                    .map_err(|_| mlua::Error::runtime("block entities"))?
+                    .insert(block, decl);
                 Ok(())
             })?,
         )?;
@@ -546,6 +585,16 @@ impl LuaMod {
                 return self.hook_error(hook, e);
             }
         }
+        // The block entity's saved data, as a table the handler may change.
+        let before = level.mod_block_entity_data(at);
+        let data = match before
+            .as_ref()
+            .map(|c| nbt::compound_to_table(&self.lua, c))
+            .transpose()
+        {
+            Ok(t) => t,
+            Err(e) => return self.hook_error(hook, e),
+        };
         let mut handled = false;
         let r = self.call_with(
             hook,
@@ -556,6 +605,7 @@ impl LuaMod {
                 pos.y,
                 pos.z,
                 props,
+                data.clone(),
             ),
             &mut |action, args| {
                 match action {
@@ -587,10 +637,42 @@ impl LuaMod {
         if let Err(e) = r {
             return self.hook_error(hook, e);
         }
+        if let (Some(before), Some(data)) = (before, data) {
+            match nbt::table_to_compound(&data, Some(&before)) {
+                Ok(after) if after != before => {
+                    level.set_mod_block_entity_data(at, after);
+                }
+                Ok(_) => {}
+                Err(e) => return self.hook_error(hook, e),
+            }
+        }
         if handled {
             Flow::Cancel
         } else {
             Flow::Continue
+        }
+    }
+
+    /// Writes a block entity's data table back through `host` when the
+    /// handlers changed it.
+    fn store_data(
+        &self,
+        host: &mut dyn Host,
+        hook: &str,
+        pos: [i32; 3],
+        before: Option<Compound>,
+        data: Option<Table>,
+    ) {
+        if let (Some(before), Some(data)) = (before, data) {
+            match nbt::table_to_compound(&data, Some(&before)) {
+                Ok(after) if after != before => {
+                    host.set_mod_block_entity_data(pos, after);
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    self.hook_error(hook, e);
+                }
+            }
         }
     }
 
@@ -773,10 +855,19 @@ impl Hooks for LuaMod {
             Ok(t) => t,
             Err(e) => return self.hook_error(hook, e),
         };
+        let before = host.mod_block_entity_data(event.pos);
+        let data = match before
+            .as_ref()
+            .map(|c| nbt::compound_to_table(lua, c))
+            .transpose()
+        {
+            Ok(t) => t,
+            Err(e) => return self.hook_error(hook, e),
+        };
         let mut cancel = false;
         let r = self.call_with(
             hook,
-            (x, y, z, block.as_str(), face, player, held),
+            (x, y, z, block.as_str(), face, player, held, data.clone()),
             &mut |action, args| {
                 match action {
                     "set_block_property" => {
@@ -792,7 +883,81 @@ impl Hooks for LuaMod {
         if let Err(e) = r {
             return self.hook_error(hook, e);
         }
+        self.store_data(host, hook, event.pos, before, data);
         if cancel { Flow::Cancel } else { Flow::Continue }
+    }
+    /// A block the scripts gave a block entity gets one, with its starting data.
+    fn block_entity(
+        &self,
+        _host: &mut dyn Host,
+        event: &mut BlockEntityEvent<'_>,
+    ) -> Option<(String, Compound)> {
+        let declared = self.block_entities.lock().ok()?;
+        let decl = declared.get(event.block)?;
+        Some((event.block.to_owned(), decl.data.clone()))
+    }
+    fn block_entity_ticks(&self, _host: &dyn Host, event: &mut BlockEntityTicksEvent<'_>) {
+        if self
+            .block_entities
+            .lock()
+            .ok()
+            .is_some_and(|d| d.get(event.block).is_some_and(|decl| decl.ticks))
+        {
+            event.ticks = true;
+        }
+    }
+    /// A mod block entity's tick: `block_entity_tick(dimension, block, x, y, z, data)`;
+    /// `data` is the saved compound as a table, written back after the call.
+    fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
+        let hook = "block_entity_tick";
+        if !self.has_handlers(hook) {
+            return;
+        }
+        let id = event.entity.id.clone();
+        if !self
+            .block_entities
+            .lock()
+            .ok()
+            .is_some_and(|d| d.contains_key(&id))
+        {
+            return;
+        }
+        let before = event.entity.nbt.clone();
+        let data = match nbt::compound_to_table(&self.lua, &before) {
+            Ok(t) => t,
+            Err(e) => {
+                self.hook_error(hook, e);
+                return;
+            }
+        };
+        let [x, y, z] = event.pos;
+        let pos = event.pos;
+        let dimension = host.dimension();
+        let r = self.call_with(
+            hook,
+            (dimension, id.as_str(), x, y, z, data.clone()),
+            &mut |action, args| {
+                match action {
+                    "set_block_property" => {
+                        let (key, value): (String, String) = (args.get(1)?, args.get(2)?);
+                        host.set_block_property(pos, &key, &value);
+                    }
+                    other => self.run_action(host, other, args)?,
+                }
+                Ok(())
+            },
+        );
+        if let Err(e) = r {
+            self.hook_error(hook, e);
+            return;
+        }
+        match nbt::table_to_compound(&data, Some(&before)) {
+            Ok(after) if after != before => event.entity.nbt = after,
+            Ok(_) => {}
+            Err(e) => {
+                self.hook_error(hook, e);
+            }
+        }
     }
     fn world_lifecycle(&self, host: &mut dyn Host, event: &mut WorldLifecycleEvent<'_>) {
         let phase = format!("{:?}", event.phase);
@@ -973,6 +1138,8 @@ experimental = ["scripts"]
         writes: Vec<([i32; 3], String, String, i32)>,
         ticks: Vec<([i32; 3], String, i32)>,
         summons: Vec<(String, [f64; 3])>,
+        /// Mod block entities' data by position.
+        data: HashMap<[i32; 3], Compound>,
     }
     impl crate::mod_api::LevelHost for FakeLevel {
         fn block_state(&self, _: [i32; 3]) -> BlockStateId {
@@ -983,6 +1150,9 @@ experimental = ["scripts"]
         }
         fn state_with_property(&self, _: BlockStateId, _: &str, _: &str) -> Option<BlockStateId> {
             None
+        }
+        fn mod_block_entity_data(&self, pos: [i32; 3]) -> Option<Compound> {
+            self.data.get(&pos).cloned()
         }
         fn state_block(&self, state: BlockStateId) -> Option<String> {
             (state == BlockStateId(7)).then(|| self.block.to_owned())
@@ -1025,6 +1195,10 @@ experimental = ["scripts"]
         }
         fn summon(&mut self, kind: &str, pos: [f64; 3], _: crate::mod_api::Compound) -> bool {
             self.summons.push((kind.to_owned(), pos));
+            true
+        }
+        fn set_mod_block_entity_data(&mut self, pos: [i32; 3], data: Compound) -> bool {
+            self.data.insert(pos, data);
             true
         }
         fn play_sound(&mut self, _: &str, _: [f64; 3], _: usize, _: f32, _: f32) -> bool {
@@ -1070,6 +1244,7 @@ experimental = ["scripts"]
             writes: Vec::new(),
             ticks: Vec::new(),
             summons: Vec::new(),
+            data: HashMap::new(),
         };
         let mut event = RandomTickEvent {
             dimension: LevelDimension::Nether,
@@ -1112,7 +1287,11 @@ experimental = ["scripts"]
 
     /// A host nothing is asked of.
     struct NoHost;
-    impl Host for NoHost {}
+    impl Host for NoHost {
+        fn dimension(&self) -> &'static str {
+            "minecraft:overworld"
+        }
+    }
 
     #[test]
     fn reload_reads_the_scripts_again_and_forgets_the_old_handlers() {
@@ -1251,6 +1430,82 @@ experimental = ["scripts"]
         for d in [lib_dir, dir, bad_dir] {
             std::fs::remove_dir_all(&d).unwrap();
         }
+    }
+
+    #[test]
+    fn a_block_entity_declared_in_lua_is_made_ticked_and_keeps_its_data() {
+        use horizon_world::nbt::Tag;
+        let (dir, path) = hmod(
+            "block-entity",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.block_entity("ruby:hive", { ticks = true, data = { charge = 0, name = "x" } })
+                horizon.block_entity("ruby:lamp")
+                horizon.on("block_entity_tick", function(dimension, block, x, y, z, data)
+                  data.charge = data.charge + 1
+                  data.seen = dimension .. ":" .. x
+                  data.name = nil
+                end)
+                horizon.on("random_tick", function(dimension, block, x, y, z, props, data)
+                  if data then data.charge = data.charge * 10 end
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = NoHost;
+        let key = |k: &str| horizon_world::nbt::JavaString::from(k);
+        // A declared block gets a block entity with its starting data; others none.
+        let (id, data) = m
+            .block_entity(&mut host, &mut BlockEntityEvent { block: "ruby:hive" })
+            .unwrap();
+        assert_eq!(id, "ruby:hive");
+        assert_eq!(data.get(&key("charge")), Some(&Tag::Int(0)));
+        assert_eq!(data.get(&key("name")), Some(&Tag::String("x".into())));
+        let (_, lamp) = m
+            .block_entity(&mut host, &mut BlockEntityEvent { block: "ruby:lamp" })
+            .unwrap();
+        assert!(lamp.is_empty());
+        assert!(m
+            .block_entity(&mut host, &mut BlockEntityEvent { block: "ruby:other" })
+            .is_none());
+        // Only the hive ticks.
+        let mut ticks = BlockEntityTicksEvent { block: "ruby:hive", ticks: false };
+        m.block_entity_ticks(&host, &mut ticks);
+        assert!(ticks.ticks);
+        let mut ticks = BlockEntityTicksEvent { block: "ruby:lamp", ticks: false };
+        m.block_entity_ticks(&host, &mut ticks);
+        assert!(!ticks.ticks);
+        // The tick handler changes the data, which is written back: the int
+        // stays an int, the removed key is gone, the new one is there.
+        let mut entity = crate::mod_api::ModBlockEntity::default();
+        entity.id = "ruby:hive".into();
+        entity.nbt = data;
+        m.block_entity_tick(&mut host, &mut BlockEntityTickEvent { pos: [1, 2, 3], entity: &mut entity });
+        m.block_entity_tick(&mut host, &mut BlockEntityTickEvent { pos: [1, 2, 3], entity: &mut entity });
+        assert_eq!(entity.nbt.get(&key("charge")), Some(&Tag::Int(2)));
+        assert_eq!(entity.nbt.get(&key("seen")), Some(&Tag::String("minecraft:overworld:1".into())));
+        assert!(!entity.nbt.contains_key(&key("name")));
+        // A level hook sees the block entity's data and its changes are stored.
+        let mut level = FakeLevel {
+            block: "ruby:hive",
+            props: Vec::new(),
+            writes: Vec::new(),
+            ticks: Vec::new(),
+            summons: Vec::new(),
+            data: HashMap::from([([1, 64, -3], entity.nbt.clone())]),
+        };
+        m.random_tick(
+            &mut level,
+            &mut RandomTickEvent {
+                dimension: LevelDimension::Overworld,
+                pos: BlockPos::new(1, 64, -3),
+                state: BlockStateId(7),
+            },
+        );
+        assert_eq!(level.data[&[1, 64, -3]].get(&key("charge")), Some(&Tag::Int(20)));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

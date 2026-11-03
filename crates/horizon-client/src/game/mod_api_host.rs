@@ -167,6 +167,12 @@ impl horizon_client::mod_api::LevelHost for super::GameLevel<'_> {
     fn state_block(&self, state: BlockStateId) -> Option<String> {
         self.native_state_block(state).map(str::to_owned)
     }
+    fn mod_block_entity_data(&self, pos: [i32; 3]) -> Option<horizon_world::nbt::Compound> {
+        match self.world.block_entities.get(&(pos[0], pos[1], pos[2]))? {
+            super::BlockEntity::Mod(m) if !m.id.is_empty() => Some(m.nbt.clone()),
+            _ => None,
+        }
+    }
     fn state_properties(&self, state: BlockStateId) -> Vec<(String, String)> {
         self.registry
             .state(state)
@@ -225,6 +231,9 @@ impl<'a, L: std::ops::Deref<Target = super::GameLevel<'a>>> horizon_client::mod_
     fn state_properties(&self, state: BlockStateId) -> Vec<(String, String)> {
         horizon_client::mod_api::LevelHost::state_properties(&*self.level, state)
     }
+    fn mod_block_entity_data(&self, pos: [i32; 3]) -> Option<horizon_world::nbt::Compound> {
+        horizon_client::mod_api::LevelHost::mod_block_entity_data(&*self.level, pos)
+    }
 }
 
 impl horizon_client::mod_api::LevelRandomHost for LevelTicks<'_, &mut super::GameLevel<'_>> {
@@ -261,6 +270,21 @@ impl horizon_client::mod_api::LevelWriteHost for LevelTicks<'_, &mut super::Game
 
     fn summon(&mut self, kind: &str, pos: [f64; 3], nbt: horizon_world::nbt::Compound) -> bool {
         self.level.summons.push((kind.to_owned(), pos, nbt));
+        true
+    }
+
+    fn set_mod_block_entity_data(&mut self, pos: [i32; 3], data: horizon_world::nbt::Compound) -> bool {
+        let key = (pos[0], pos[1], pos[2]);
+        let Some(super::BlockEntity::Mod(m)) = self.level.world.block_entities.get_mut(&key) else {
+            return false;
+        };
+        if m.id.is_empty() {
+            return false;
+        }
+        if m.nbt != data {
+            m.nbt = data;
+        }
+        self.level.world.modified.insert((key.0 >> 4, key.2 >> 4));
         true
     }
 

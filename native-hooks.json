@@ -673,6 +673,14 @@
     {
       "name": "send_packet",
       "target": "horizon_client::game::native_net::Game<'_>::native_send_packet"
+    },
+    {
+      "name": "mod_block_entity_data",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_mod_block_entity_data"
+    },
+    {
+      "name": "set_mod_block_entity_data",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_set_mod_block_entity_data"
     }
   ],
   "hooks": [

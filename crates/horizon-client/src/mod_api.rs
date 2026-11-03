@@ -686,6 +686,13 @@ pub trait LevelHost {
     /// Every property of `state` with its value (`facing` → `north`), in the
     /// block's order; empty for a block without properties or an unknown state.
     fn state_properties(&self, state: BlockStateId) -> Vec<(String, String)>;
+    /// The saved compound of the mod block entity at `pos`
+    /// (`native_mod_block_entity_data`): none for no block entity there or a
+    /// vanilla one. A host that has no block entities answers None.
+    fn mod_block_entity_data(&self, pos: [i32; 3]) -> Option<Compound> {
+        let _ = pos;
+        None
+    }
 }
 
 /// Access vanilla's `Level.random`, so draws come in vanilla's order.
@@ -717,6 +724,13 @@ pub trait LevelWriteHost: LevelTicksHost + LevelRandomHost {
         volume: f32,
         pitch: f32,
     ) -> bool;
+    /// Replace the saved compound of the mod block entity at `pos`
+    /// (`native_set_mod_block_entity_data`): false for no mod block entity
+    /// there, or a host without block entities.
+    fn set_mod_block_entity_data(&mut self, pos: [i32; 3], data: Compound) -> bool {
+        let _ = (pos, data);
+        false
+    }
     /// Make a mob of `kind` (`minecraft:zombie`, a mod's `<id>:<name>`) at
     /// `pos` in this level, with `nbt` as `/summon` takes it, once the pass
     /// is over: a level pass cannot add entities, so the game makes it right
