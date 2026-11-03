@@ -140,7 +140,7 @@ current, so it is the place to look for what the hooks below are built on.
 | `block_broken(x, y, z, block, player)` | A player breaks a block, once the game allowed it; `horizon.cancel()` keeps it (nothing breaks or drops). Register by block id |
 | `block_placed(x, y, z, block, player, item)` | A player placed a block from `item`; it only hears (take the click in `item_use_on` to stop one). Register by block id |
 | `item_picked_up(player, item, count)` | A player is about to pick up `count` of `item` (an id) from the ground; `horizon.cancel()` leaves them there. Register by item id |
-| `player` (in the hooks) | `uuid`, `name`, `dimension`, `position` (`{x, y, z}`), `game_mode` (0 survival, 1 creative, 2 adventure, 3 spectator), `health` |
+| `player` (in the hooks) | `uuid`, `name`, `dimension`, `position` (`{x, y, z}`), `game_mode` (0 survival, 1 creative, 2 adventure, 3 spectator), `health`; a player the world has no record of at that moment (one dying) has `uuid` and the `name` a player hook told before |
 | `data` (on a mob) | The mod's own saved table on the mob, empty at first; kept with the mob as the engine's attachment under the mod's id (`horizon:attachments` in its NBT), so it survives a save and a restart, and other mods' data stays apart. Written back after the call as a block entity's is (types kept, nil removes); nil when the host has no such mob |
 | The `.hmod` | `cargo horizon-mod build` packs `scripts/` beside `assets/` and `data/`; `horizon_mods::Content` lists them (`scripts`), checks the paths and that `scripts/init.lua` is there; the Mods page says "May run its own scripts in your worlds" |
 

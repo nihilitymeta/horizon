@@ -554,6 +554,10 @@ pub struct LuaMod {
     /// the player, under the mod's id.
     world_attachment: AttachmentType<Compound>,
     player_attachment: AttachmentType<Compound>,
+    /// The names the player hooks told, by uuid: the name of a player the
+    /// host has no record of at the moment (one dying, whose state is out of
+    /// reach then).
+    names: Mutex<HashMap<u128, String>>,
 }
 
 /// A mod's goal definitions, shared with the `horizon.goal` function.
@@ -814,6 +818,7 @@ impl LuaMod {
             library_scripts: Arc::new(Mutex::new(library_scripts)),
             goals: Goals::default(),
             commands: Arc::default(),
+            names: Mutex::default(),
             block_entities: BlockEntities::default(),
             loads: AtomicU32::new(0),
             budget,
@@ -1237,19 +1242,31 @@ impl LuaMod {
     }
 
     /// The player `uuid` as a table: the world's record when they are on,
-    /// else just `uuid` and `name`.
+    /// else just `uuid` and `name` (the one given, else the one a player
+    /// hook told before).
     fn player_by_uuid(
         &self,
         host: &dyn Host,
         uuid: u128,
         name: Option<&str>,
     ) -> mlua::Result<Table> {
+        let name = name.filter(|n| !n.is_empty()).map(str::to_owned);
+        let mut names = self.names.lock().unwrap();
+        if let Some(name) = &name {
+            names.insert(uuid, name.clone());
+        }
         match host.level_players().into_iter().find(|p| p.uuid == uuid) {
-            Some(p) => player_table_of(&self.lua, &p),
+            Some(p) => {
+                names.insert(uuid, p.name.clone());
+                player_table_of(&self.lua, &p)
+            }
             None => {
                 let t = self.lua.create_table()?;
                 t.set("uuid", uuid_text(uuid))?;
-                if let Some(name) = name.filter(|n| !n.is_empty()) {
+                if let Some(name) = name
+                    .as_deref()
+                    .or_else(|| names.get(&uuid).map(String::as_str))
+                {
                     t.set("name", name)?;
                 }
                 Ok(t)
@@ -3299,6 +3316,15 @@ experimental = ["scripts"]
                 cause: Some("death.attack.lava"),
             },
         );
+        // A death names no one and the host has no record of alex any more:
+        // the name the logout told is kept.
+        m.player_died(
+            &mut host,
+            &mut PlayerDiedEvent {
+                player: 5,
+                cause: None,
+            },
+        );
         assert_eq!(
             m.destroy_block(
                 &mut host,
@@ -3366,6 +3392,7 @@ experimental = ["scripts"]
                 "left alex",
                 "respawned steve",
                 "player died steve death.attack.lava",
+                "player died alex nil",
                 "broke minecraft:stone at 1,2,3 by steve",
                 "placed minecraft:stone with ruby:wand x3",
                 "pickup ruby:wand x2 by steve",
