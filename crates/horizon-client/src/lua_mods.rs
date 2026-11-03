@@ -452,6 +452,16 @@ fn install_reads(lua: &Lua, api: &Table) -> mlua::Result<()> {
 
 /// Installs the timers (`TIMERS_CODE`) on the `horizon` table: their handler
 /// is the first `server_tick` handler.
+/// A usage's words before its arguments (`parasite count` of `parasite count
+/// [kind:word]`), joined by single spaces: the command's name.
+fn command_words(usage: &str) -> String {
+    usage
+        .split_whitespace()
+        .take_while(|p| !p.starts_with('<') && !p.starts_with('['))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Fills `args` from `line` by `usage` (`pay <who:player> <amount:integer>
 /// [note:text]`): the words after the usage's leading words go to its
 /// arguments in order, `integer` and `number` as numbers, `boolean` as one,
@@ -963,12 +973,9 @@ impl LuaMod {
             "command",
             lua.create_function(
                 move |lua, (usage, level, f): (String, Option<u8>, Function)| {
-                    let name = usage
-                        .split_whitespace()
-                        .next()
-                        .unwrap_or_default()
-                        .to_owned();
-                    if name.is_empty() || name.starts_with('<') || name.starts_with('[') {
+                    // The handler's key: the usage's words before its arguments.
+                    let name = command_words(&usage);
+                    if name.is_empty() {
                         return Err(mlua::Error::runtime(format!(
                             "horizon.command({usage:?}): a usage starts with the command's name"
                         )));
@@ -2361,24 +2368,27 @@ impl Hooks for LuaMod {
     fn perform_command(&self, host: &mut dyn Host, event: &mut PerformCommandEvent<'_>) -> Flow {
         let hook = "command";
         let line = event.command.trim();
-        let name = line
-            .split_whitespace()
-            .next()
-            .unwrap_or_default()
-            .to_owned();
-        if name.is_empty() || !self.watches(hook, &name) {
+        // The usage whose words the line starts with, the longest first:
+        // `parasite count` before `parasite`.
+        let words: Vec<&str> = line.split_whitespace().collect();
+        let Some(usage) = self.commands.lock().ok().and_then(|c| {
+            c.iter()
+                .map(|c| c.usage.clone())
+                .filter(|u| {
+                    let name = command_words(u);
+                    let n = name.split_whitespace().count();
+                    n > 0
+                        && words.len() >= n
+                        && name.split_whitespace().eq(words[..n].iter().copied())
+                })
+                .max_by_key(|u| command_words(u).split_whitespace().count())
+        }) else {
+            return Flow::Continue;
+        };
+        let name = command_words(&usage);
+        if !self.watches(hook, &name) {
             return Flow::Continue;
         }
-        let usage = self
-            .commands
-            .lock()
-            .ok()
-            .and_then(|c| {
-                c.iter()
-                    .find(|c| c.usage.split_whitespace().next() == Some(name.as_str()))
-                    .map(|c| c.usage.clone())
-            })
-            .unwrap_or_else(|| name.clone());
         let r = (|| -> mlua::Result<()> {
             let lua = &self.lua;
             let player = player_table_of(lua, event.player)?;
@@ -3479,6 +3489,7 @@ experimental = ["scripts"]
                   horizon.tell("alex", "nobody")
                 end)
                 horizon.command("say <what:text>", 0, function(player, args) horizon.feedback(args.what) end)
+                horizon.command("parasite hives", 2, function(player, args) horizon.feedback("hives") end)
                 "#,
             )],
         );
@@ -3506,7 +3517,8 @@ experimental = ["scripts"]
                 .collect::<Vec<_>>(),
             [
                 ("parasite count [kind:word] [n:integer]", 2),
-                ("say <what:text>", 0)
+                ("say <what:text>", 0),
+                ("parasite hives", 2)
             ]
         );
         let steve = host.acting_player().unwrap();
@@ -3522,6 +3534,8 @@ experimental = ["scripts"]
         assert_eq!(run(&m, &mut host, "parasite count zombie 3"), Flow::Cancel);
         assert_eq!(run(&m, &mut host, "parasite count"), Flow::Cancel);
         assert_eq!(run(&m, &mut host, "say hello there  world"), Flow::Cancel);
+        assert_eq!(run(&m, &mut host, "parasite hives"), Flow::Cancel);
+        assert_eq!(run(&m, &mut host, "parasite"), Flow::Continue);
         assert_eq!(run(&m, &mut host, "other thing"), Flow::Continue);
         assert_eq!(
             *host.lines.lock().unwrap(),
@@ -3543,6 +3557,7 @@ experimental = ["scripts"]
                 "actionbar steve: bar",
                 "tell steve: hello",
                 "feedback hello there world",
+                "feedback hives",
             ]
         );
         std::fs::remove_dir_all(&dir).unwrap();

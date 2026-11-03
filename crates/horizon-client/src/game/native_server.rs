@@ -238,7 +238,9 @@ impl Game<'_> {
         };
         let name = self.options.player_name();
         let uuid = self.owner_uuid();
-        if players.iter().any(|g| g.uuid == uuid) {
+        // On a hub the owner is a guest of its own, under the hub's uuid for
+        // them: that record is the one the hooks name.
+        if players.iter().any(|g| g.uuid == uuid || g.name == name) {
             return players;
         }
         players.insert(
