@@ -239,6 +239,11 @@ impl horizon_client::mod_api::LevelWriteHost for LevelTicks<'_, &mut super::Game
             .native_set_block_property(self.ticks, pos, key, value, flags)
     }
 
+    fn summon(&mut self, kind: &str, pos: [f64; 3], nbt: horizon_world::nbt::Compound) -> bool {
+        self.level.summons.push((kind.to_owned(), pos, nbt));
+        true
+    }
+
     fn play_sound(
         &mut self,
         sound: &str,

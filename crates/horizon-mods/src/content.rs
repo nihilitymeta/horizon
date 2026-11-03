@@ -508,7 +508,15 @@ pub struct EntityType {
     /// with empty goal selectors for scripts to fill (`"none"`).
     #[serde(default)]
     pub goals: Goals,
+    /// mob: nature flags that differ from the template's, by name
+    /// ([`MOB_FLAGS`]): `burns_in_day`, `fire_immune`, `fall_immune`,
+    /// `water_sensitive`.
+    #[serde(default)]
+    pub flags: BTreeMap<String, bool>,
 }
+
+/// the nature flags a mob entity type may set (`flags`).
+pub const MOB_FLAGS: [&str; 4] = ["burns_in_day", "fire_immune", "fall_immune", "water_sensitive"];
 
 impl EntityType {
     /// Whether the type copies a mob rather than a thrown item.
@@ -1007,9 +1015,10 @@ impl Content {
                     || file.size.is_some()
                     || file.texture.is_some()
                     || file.goals != Goals::Template
+                    || !file.flags.is_empty()
                 {
                     return Err(format!(
-                        "{name}: attributes, size, texture and goals are for a mob template"
+                        "{name}: attributes, size, texture, goals and flags are for a mob template"
                     ));
                 }
             } else {
@@ -1031,6 +1040,9 @@ impl Content {
                         && size.eye_height.is_none_or(|e| e.is_finite() && e >= 0.0))
                 {
                     return Err(format!("{name}: size has a positive width and height"));
+                }
+                if let Some(flag) = file.flags.keys().find(|f| !MOB_FLAGS.contains(&f.as_str())) {
+                    return Err(format!("{name}: flag {flag:?} is not one of {MOB_FLAGS:?}"));
                 }
                 if let Some(texture) = &file.texture {
                     let Some((ns, path)) = texture.split_once(':') else {
@@ -1717,7 +1729,8 @@ capabilities = ["registries"]
     fn a_mob_entity_type_copies_a_vanilla_mob_with_its_own_values() {
         let png: &[u8] = b"\x89PNG";
         let parasite = br#"{"template": "minecraft:zombie", "attributes": {"max_health": 30, "movement_speed": 0.3},
-            "size": {"width": 0.7, "height": 2.1}, "texture": "ruby:entity/parasite", "goals": "none"}"#;
+            "size": {"width": 0.7, "height": 2.1}, "texture": "ruby:entity/parasite", "goals": "none",
+            "flags": {"burns_in_day": false}}"#;
         let files: &[(&str, &[u8])] = &[
             ("assets/ruby/textures/entity/parasite.png", png),
             ("data/ruby/horizon/entity_type/parasite.json", parasite),
@@ -1734,6 +1747,7 @@ capabilities = ["registries"]
         assert_eq!(parasite.size.map(|s| (s.width, s.height, s.eye_height)), Some((0.7, 2.1, None)));
         assert_eq!(parasite.texture.as_deref(), Some("ruby:entity/parasite"));
         assert_eq!(parasite.goals, Goals::None);
+        assert_eq!(parasite.flags.get("burns_in_day"), Some(&false));
         assert_eq!((boar.goals, boar.texture.as_deref(), boar.item.as_deref()), (Goals::Template, None, None));
         for (case, file, why) in [
             (
@@ -1765,6 +1779,11 @@ capabilities = ["registries"]
                 "mob-goals",
                 r#"{"template": "minecraft:zombie", "goals": "mine"}"#,
                 "unknown variant",
+            ),
+            (
+                "mob-flag",
+                r#"{"template": "minecraft:zombie", "flags": {"flies": true}}"#,
+                "is not one of",
             ),
         ] {
             let files: &[(&str, &[u8])] = &[

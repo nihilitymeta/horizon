@@ -312,16 +312,18 @@ A mob type is its template with the mod's own values: `attributes` that differ f
 (`max_health`, `movement_speed`, `attack_damage`, `follow_range`, `armor`, `knockback_resistance`, `scale`…), `size`
 (`width`, `height`, and `eye_height`, else the template's at the same fraction of the height), `texture`
 (`<id>:entity/<name>`, the mod's `assets/<id>/textures/entity/<name>.png`, laid out as the template's texture; the
-template's without one), and `goals`: `"template"` (the default) gives it the species' goals, `"none"` leaves both goal
+template's without one), `goals`: `"template"` (the default) gives it the species' goals, `"none"` leaves both goal
 selectors empty for the mod's scripts to fill ([lua-bindings.md](lua-bindings.md), `mob_ai_register`;
-[mob-ai-hooks.md](mob-ai-hooks.md)):
+[mob-ai-hooks.md](mob-ai-hooks.md)), and `flags` of its nature that differ from the template's: `burns_in_day`,
+`fire_immune`, `fall_immune`, `water_sensitive`:
 
 ```json
 { "template": "minecraft:zombie",
   "attributes": { "max_health": 30, "movement_speed": 0.3, "attack_damage": 4 },
   "size": { "width": 0.6, "height": 1.95 },
   "texture": "ruby:entity/crawler",
-  "goals": "none" }
+  "goals": "none",
+  "flags": { "burns_in_day": false } }
 ```
 
 It moves, fights, sounds, animates and is drawn as its template (the model is the template's, so the texture follows

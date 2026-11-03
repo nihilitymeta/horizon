@@ -1510,7 +1510,8 @@ fn content_root_builds_a_mob_entity_type_from_its_template() {
             (
                 "data/example/horizon/entity_type/crawler.json",
                 r#"{"template": "minecraft:zombie", "attributes": {"max_health": 30, "movement_speed": 0.3},
-                    "size": {"width": 0.7, "height": 2.1}, "texture": "example:entity/crawler", "goals": "none"}"#,
+                    "size": {"width": 0.7, "height": 2.1}, "texture": "example:entity/crawler", "goals": "none",
+                    "flags": {"burns_in_day": false}}"#,
             ),
             (
                 "data/example/horizon/entity_type/boar.json",
@@ -1548,7 +1549,8 @@ fn content_root_builds_a_mob_entity_type_from_its_template() {
     assert_eq!(crawler.species, horizon_client::mobs::Species::Zombie);
     assert_eq!((crawler.max_health, crawler.speed, crawler.width, crawler.height), (30.0, 0.3, 0.7, 2.1));
     assert_eq!(crawler.texture, "example:entity/crawler");
-    assert!(crawler.flags.scripted_goals && crawler.flags.undead);
+    assert!(crawler.flags.scripted_goals && crawler.flags.undead && !crawler.flags.burns_in_day);
+    assert!(kinds.types["minecraft:zombie"].flags.burns_in_day);
     let boar = &kinds.types["example:boar"];
     assert_eq!((boar.species, boar.texture.as_str(), boar.flags.scripted_goals), (
         horizon_client::mobs::Species::Pig,

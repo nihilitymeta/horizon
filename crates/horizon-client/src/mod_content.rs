@@ -925,6 +925,7 @@ impl Plan<'_> {
                         horizon_mods::content::Goals::Template => "template",
                         horizon_mods::content::Goals::None => "none",
                     },
+                    "flags": t.flags,
                 });
                 out.extend(serde_json::to_vec(&v).map_err(|e| e.to_string())?);
             } else {

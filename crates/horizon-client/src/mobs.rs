@@ -647,6 +647,18 @@ impl MobTypes {
                     kind.texture = texture.to_owned();
                 }
                 kind.flags.scripted_goals = t["horizon"]["goals"].as_str() == Some("none");
+                if let Some(flags) = t["horizon"]["flags"].as_object() {
+                    for (name, value) in flags {
+                        let Some(value) = value.as_bool() else { continue };
+                        match name.as_str() {
+                            "burns_in_day" => kind.flags.burns_in_day = value,
+                            "fire_immune" => kind.flags.fire_immune = value,
+                            "fall_immune" => kind.flags.fall_immune = value,
+                            "water_sensitive" => kind.flags.water_sensitive = value,
+                            _ => {}
+                        }
+                    }
+                }
                 out.insert(id.clone(), kind);
             }
         }

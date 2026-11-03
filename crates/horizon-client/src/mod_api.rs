@@ -711,6 +711,15 @@ pub trait LevelWriteHost: LevelTicksHost + LevelRandomHost {
         volume: f32,
         pitch: f32,
     ) -> bool;
+    /// Make a mob of `kind` (`minecraft:zombie`, a mod's `<id>:<name>`) at
+    /// `pos` in this level, with `nbt` as `/summon` takes it, once the pass
+    /// is over: a level pass cannot add entities, so the game makes it right
+    /// after. Whether it was queued; a kind that is not a mob makes nothing
+    /// (a warning in the log). A host that cannot queue answers false.
+    fn summon(&mut self, kind: &str, pos: [f64; 3], nbt: Compound) -> bool {
+        let _ = (kind, pos, nbt);
+        false
+    }
     /// `ServerLevel.sendParticles` through `native_send_particles`.
     fn send_particles(
         &mut self,
