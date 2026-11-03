@@ -2386,12 +2386,20 @@ impl LuaMod {
                 let (x1, x2) = (x1.min(x2), x1.max(x2));
                 let (y1, y2) = (y1.min(y2), y1.max(y2));
                 let (z1, z2) = (z1.min(z2), z1.max(z2));
-                let columns = (i64::from(x2 - x1) + 1) * (i64::from(z2 - z1) + 1);
+                // Widened before the subtraction: the corners are any i32.
+                let span = |a: i32, b: i32| i64::from(b) - i64::from(a) + 1;
+                let columns = span(x1, x2) * span(z1, z2);
                 if columns > FILL_COLUMNS {
                     return Err(mlua::Error::runtime(format!(
                         "fill: {columns} columns, at most {FILL_COLUMNS}"
                     )));
                 }
+                let height = span(y1, y2);
+                let Ok(height) = u32::try_from(height) else {
+                    return Err(mlua::Error::runtime(format!(
+                        "fill: a column of {height} blocks"
+                    )));
+                };
                 let mut runs = Vec::with_capacity(columns as usize);
                 for x in x1..=x2 {
                     for z in z1..=z2 {
@@ -2399,7 +2407,7 @@ impl LuaMod {
                             x,
                             z,
                             y: y1,
-                            height: (y2 - y1 + 1) as u32,
+                            height,
                             surface: None,
                             block: 0,
                             only: None,
@@ -5391,6 +5399,11 @@ experimental = ["scripts"]
                 horizon.command("badblock", 0, function(player, args)
                   horizon.set_block(0, 0, 0, "ruby:nothing")
                 end)
+                -- The widest fill there is: refused for its columns, not an
+                -- overflow in the subtraction.
+                horizon.command("bigfill", 0, function(player, args)
+                  horizon.fill(-2147483648, 0, 0, 2147483647, 0, 0, "stone")
+                end)
                 "#,
             )],
         );
@@ -5439,6 +5452,7 @@ experimental = ["scripts"]
         };
         assert_eq!(run("helpers"), Flow::Cancel);
         assert_eq!(run("badblock"), Flow::Cancel);
+        assert_eq!(run("bigfill"), Flow::Cancel);
         let g = m.lua.globals();
         // The summon answered at once, with the id the actions then used.
         assert_eq!(g.get::<i64>("SUMMONED").unwrap(), 42);
