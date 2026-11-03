@@ -375,6 +375,17 @@ mod tests {
         assert_eq!(anim_by_name("zombie"), Some(Anim::Zombie));
         assert_eq!(anim_by_name("iron_golem"), Some(Anim::IronGolem));
         assert_eq!(anim_by_name("dragon"), None);
+    }
+
+    /// The content fence (`horizon_mods::content::MOB_ANIMATIONS`) accepts
+    /// exactly the names the game has a set for.
+    #[test]
+    fn the_fence_knows_every_animation_set_and_no_other() {
+        let game: std::collections::BTreeSet<&str> = ANIMS.iter().map(|(n, _)| *n).collect();
+        let fence: std::collections::BTreeSet<&str> =
+            horizon_mods::content::MOB_ANIMATIONS.iter().copied().collect();
+        assert_eq!(game, fence);
+        assert_eq!(game.len(), ANIMS.len(), "a name twice");
         assert!(
             parse(&json!({"parts": {"a": {"cubes": [{"origin": [0, 0], "size": [1, 1, 1]}]}}}))
                 .is_err()

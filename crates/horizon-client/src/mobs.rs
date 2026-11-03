@@ -656,21 +656,21 @@ impl MobTypes {
                 // Its own model (`assets/<ns>/models/entity/<name>.json`),
                 // animation set and sounds, when the type names them.
                 if let Some(model) = t["horizon"]["model"].as_str() {
-                    let file = match model.split_once(':') {
-                        Some((ns, path)) => format!("assets/{ns}/models/{path}.json"),
-                        None => format!("assets/minecraft/models/{model}.json"),
-                    };
-                    match fs::read(root.join(&file))
-                        .map_err(|e| e.to_string())
-                        .and_then(|b| {
-                            serde_json::from_slice::<Value>(&b).map_err(|e| e.to_string())
+                    // The same check the content fence makes: a plain
+                    // `assets/<ns>/models/entity/<name>.json`, nothing else.
+                    match horizon_mods::content::mob_model_file(model)
+                        .and_then(|(_, file)| {
+                            fs::read(root.join(&file))
+                                .map_err(|e| format!("{file}: {e}"))
+                                .and_then(|b| {
+                                    serde_json::from_slice::<Value>(&b)
+                                        .map_err(|e| format!("{file}: {e}"))
+                                })
                         })
                         .and_then(|v| content_model::parse(&v))
                     {
                         Ok(part) => kind.model = Arc::new(part),
-                        Err(e) => {
-                            log::warn!("Horizon: entity type {id}: model {model} ({file}): {e}")
-                        }
+                        Err(e) => log::warn!("Horizon: entity type {id}: model {model}: {e}"),
                     }
                 }
                 if let Some(name) = t["horizon"]["animation"].as_str() {

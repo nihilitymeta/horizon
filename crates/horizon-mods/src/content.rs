@@ -537,6 +537,91 @@ pub const MOB_FLAGS: [&str; 4] = [
     "water_sensitive",
 ];
 
+/// The animation sets a mob entity type may name (`animation`): the game's
+/// own, by name (`mobs::content_model::ANIMS` lists the same names, and a
+/// test keeps the two together).
+pub const MOB_ANIMATIONS: &[&str] = &[
+    "nautilus",
+    "happy_ghast",
+    "sniffer",
+    "breeze",
+    "warden",
+    "allay",
+    "creaking",
+    "camel",
+    "wither",
+    "vex",
+    "ravager",
+    "guardian",
+    "shulker",
+    "quadruped",
+    "sheep",
+    "chicken",
+    "zombie",
+    "drowned",
+    "zombie_villager",
+    "skeleton",
+    "creeper",
+    "spider",
+    "enderman",
+    "silverfish",
+    "slime",
+    "magma_cube",
+    "witch",
+    "villager",
+    "iron_golem",
+    "snow_golem",
+    "copper_golem",
+    "illager",
+    "piglin",
+    "zombified_piglin",
+    "hoglin",
+    "wolf",
+    "feline",
+    "fox",
+    "rabbit",
+    "horse",
+    "llama",
+    "goat",
+    "panda",
+    "polar_bear",
+    "parrot",
+    "bee",
+    "turtle",
+    "armadillo",
+    "frog",
+    "axolotl",
+    "squid",
+    "fish",
+    "pufferfish",
+    "dolphin",
+    "bat",
+    "phantom",
+    "ghast",
+    "blaze",
+    "strider",
+];
+
+/// The sound events a mob entity type may give (`sounds`), by key.
+pub const MOB_SOUNDS: [&str; 4] = ["ambient", "hurt", "death", "step"];
+
+/// The file a mob entity type's `model` names: `<namespace>:entity/<name>`
+/// is `assets/<namespace>/models/entity/<name>.json`, a plain path
+/// ([`check_path`]). The namespace comes back too, for the owner check.
+/// The game's loader reads a model through this as well, so a mob never
+/// opens a file outside that folder.
+pub fn mob_model_file(model: &str) -> Result<(&str, String), String> {
+    let shape = || format!("model {model:?} is <namespace>:entity/<name>, a file of this mod");
+    let (ns, path) = model.split_once(':').ok_or_else(shape)?;
+    let name = path.strip_prefix("entity/").ok_or_else(shape)?;
+    if ns.is_empty() || name.is_empty() || name.contains('/') {
+        return Err(shape());
+    }
+    // The name on its own passes the path check (so `..` does not).
+    check_path(&format!("assets/{ns}/models/entity/{name}")).map_err(|_| shape())?;
+    Ok((ns, format!("assets/{ns}/models/entity/{name}.json")))
+}
+
 impl EntityType {
     /// Whether the type copies a mob rather than a thrown item.
     pub fn is_mob(&self) -> bool {
@@ -1078,6 +1163,36 @@ impl Content {
                     {
                         return Err(format!(
                             "{name}: texture {texture:?} is not a file of this mod ({file_name})"
+                        ));
+                    }
+                }
+                if let Some(model) = &file.model {
+                    let (ns, file_name) =
+                        mob_model_file(model).map_err(|e| format!("{name}: {e}"))?;
+                    if !self.namespaces.iter().any(|n| n == ns) || !self.files.contains(&file_name)
+                    {
+                        return Err(format!(
+                            "{name}: model {model:?} is not a file of this mod ({file_name})"
+                        ));
+                    }
+                }
+                if let Some(animation) = &file.animation
+                    && !MOB_ANIMATIONS.contains(&animation.as_str())
+                {
+                    return Err(format!(
+                        "{name}: animation {animation:?} is not one of the game's sets ({})",
+                        MOB_ANIMATIONS.join(", ")
+                    ));
+                }
+                for (key, sound) in &file.sounds {
+                    if !MOB_SOUNDS.contains(&key.as_str()) {
+                        return Err(format!(
+                            "{name}: sounds has {key:?}; the keys are {MOB_SOUNDS:?}"
+                        ));
+                    }
+                    if !namespaced_id(sound) {
+                        return Err(format!(
+                            "{name}: sound {sound:?} is a namespaced sound event (minecraft:entity.zombie.ambient)"
                         ));
                     }
                 }
@@ -1816,6 +1931,41 @@ capabilities = ["registries"]
                 "unknown variant",
             ),
             (
+                "mob-model-missing",
+                r#"{"template": "minecraft:zombie", "model": "ruby:entity/ghost"}"#,
+                "is not a file of this mod",
+            ),
+            (
+                "mob-model-other-namespace",
+                r#"{"template": "minecraft:zombie", "model": "minecraft:entity/zombie"}"#,
+                "is not a file of this mod",
+            ),
+            (
+                "mob-model-not-entity",
+                r#"{"template": "minecraft:zombie", "model": "ruby:block/crawler"}"#,
+                "<namespace>:entity/<name>",
+            ),
+            (
+                "mob-model-escapes",
+                r#"{"template": "minecraft:zombie", "model": "ruby:entity/../../x"}"#,
+                "<namespace>:entity/<name>",
+            ),
+            (
+                "mob-animation",
+                r#"{"template": "minecraft:zombie", "animation": "Zombie"}"#,
+                "is not one of the game's sets",
+            ),
+            (
+                "mob-sound-key",
+                r#"{"template": "minecraft:zombie", "sounds": {"roar": "minecraft:entity.zombie.ambient"}}"#,
+                "the keys are",
+            ),
+            (
+                "mob-sound-id",
+                r#"{"template": "minecraft:zombie", "sounds": {"hurt": "entity.zombie.hurt"}}"#,
+                "namespaced sound event",
+            ),
+            (
                 "mob-flag",
                 r#"{"template": "minecraft:zombie", "flags": {"flies": true}}"#,
                 "is not one of",
@@ -1827,6 +1977,37 @@ capabilities = ["registries"]
             ];
             let e = hmod(case, MANIFEST_TEXT, files).unwrap_err();
             assert!(e.contains(why), "{case}: {e}");
+        }
+    }
+
+    #[test]
+    fn a_mob_entity_type_names_a_model_animation_and_sounds_of_its_own() {
+        let files: &[(&str, &[u8])] = &[
+            ("assets/ruby/models/entity/crawler.json", br#"{"parts": {}}"#),
+            (
+                "data/ruby/horizon/entity_type/crawler.json",
+                br#"{"template": "minecraft:zombie", "model": "ruby:entity/crawler", "animation": "spider",
+                    "sounds": {"ambient": "minecraft:entity.spider.ambient", "step": "ruby:crawler.step"}}"#,
+            ),
+        ];
+        let content = hmod("mob-look", MANIFEST_TEXT, files).unwrap();
+        let crawler = &content.entity_types[0];
+        assert_eq!(crawler.model.as_deref(), Some("ruby:entity/crawler"));
+        assert_eq!(crawler.animation.as_deref(), Some("spider"));
+        assert_eq!(crawler.sounds["step"], "ruby:crawler.step");
+        assert_eq!(
+            mob_model_file("ruby:entity/crawler"),
+            Ok(("ruby", "assets/ruby/models/entity/crawler.json".to_owned()))
+        );
+        for bad in [
+            "entity/crawler",
+            "ruby:crawler",
+            "ruby:entity/",
+            "ruby:entity/a/b",
+            "ruby:entity/Big",
+            "ruby:entity/..",
+        ] {
+            assert!(mob_model_file(bad).is_err(), "{bad}");
         }
     }
 

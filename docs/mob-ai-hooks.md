@@ -121,7 +121,10 @@ a tree of parts holding cubes, as a vanilla `LayerDefinition` is written and Blo
 `parts` by name with `offset`, `rotation` in degrees, `cubes` of `origin`, `size`, `uv`, `inflate`, `mirror`, and
 `children`), an `animation` set that moves the parts by their vanilla names (`zombie`, `skeleton`, `quadruped`,
 `iron_golem`, `spider`... every set the game has, in snake case), and `sounds` by `ambient`, `hurt`, `death` and
-`step`. Each falls back to the template's. The texture lays out as the model's `uv`s say.
+`step`. Each falls back to the template's. The texture lays out as the model's `uv`s say. The content check
+(`cargo horizon-mod check`, and the game as it reads a mod) refuses a `model` that is not `<id>:entity/<name>` with
+the file in the mod (`horizon_mods::content::mob_model_file`), an `animation` outside the game's sets
+(`MOB_ANIMATIONS`) and a sound under a key other than those four or without a namespace.
 
 ## The plan
 
