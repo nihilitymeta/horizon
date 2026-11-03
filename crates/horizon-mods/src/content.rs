@@ -513,10 +513,29 @@ pub struct EntityType {
     /// `water_sensitive`.
     #[serde(default)]
     pub flags: BTreeMap<String, bool>,
+    /// mob: `<namespace>:entity/<name>`, the mod's
+    /// `assets/<namespace>/models/entity/<name>.json`, a model of its own
+    /// (parts holding cubes, named as the animation set moves them);
+    /// the template's model without one.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// mob: the animation set that moves the model's parts (`zombie`,
+    /// `quadruped`, `iron_golem`...); the template's without one.
+    #[serde(default)]
+    pub animation: Option<String>,
+    /// mob: sound events of its own, by `ambient`, `hurt`, `death` and
+    /// `step`; the template's for the ones left out.
+    #[serde(default)]
+    pub sounds: BTreeMap<String, String>,
 }
 
 /// the nature flags a mob entity type may set (`flags`).
-pub const MOB_FLAGS: [&str; 4] = ["burns_in_day", "fire_immune", "fall_immune", "water_sensitive"];
+pub const MOB_FLAGS: [&str; 4] = [
+    "burns_in_day",
+    "fire_immune",
+    "fall_immune",
+    "water_sensitive",
+];
 
 impl EntityType {
     /// Whether the type copies a mob rather than a thrown item.
@@ -1003,7 +1022,11 @@ impl Content {
                         "{name}: item {item:?} is not one of this mod's items"
                     ));
                 }
-                if self.entity_types.iter().any(|t| t.item.as_ref() == Some(item)) {
+                if self
+                    .entity_types
+                    .iter()
+                    .any(|t| t.item.as_ref() == Some(item))
+                {
                     return Err(format!(
                         "{name}: item {item:?} already throws another entity type"
                     ));
@@ -1734,7 +1757,10 @@ capabilities = ["registries"]
         let files: &[(&str, &[u8])] = &[
             ("assets/ruby/textures/entity/parasite.png", png),
             ("data/ruby/horizon/entity_type/parasite.json", parasite),
-            ("data/ruby/horizon/entity_type/boar.json", br#"{"template": "minecraft:pig"}"#),
+            (
+                "data/ruby/horizon/entity_type/boar.json",
+                br#"{"template": "minecraft:pig"}"#,
+            ),
         ];
         let content = hmod("mobs", MANIFEST_TEXT, files).unwrap();
         // Types come sorted by name.
@@ -1742,13 +1768,22 @@ capabilities = ["registries"]
             panic!("{:?}", content.entity_types);
         };
         assert!(parasite.is_mob() && boar.is_mob());
-        assert_eq!((parasite.id.as_str(), parasite.template.as_str()), ("ruby:parasite", "minecraft:zombie"));
+        assert_eq!(
+            (parasite.id.as_str(), parasite.template.as_str()),
+            ("ruby:parasite", "minecraft:zombie")
+        );
         assert_eq!(parasite.attributes["max_health"], 30.0);
-        assert_eq!(parasite.size.map(|s| (s.width, s.height, s.eye_height)), Some((0.7, 2.1, None)));
+        assert_eq!(
+            parasite.size.map(|s| (s.width, s.height, s.eye_height)),
+            Some((0.7, 2.1, None))
+        );
         assert_eq!(parasite.texture.as_deref(), Some("ruby:entity/parasite"));
         assert_eq!(parasite.goals, Goals::None);
         assert_eq!(parasite.flags.get("burns_in_day"), Some(&false));
-        assert_eq!((boar.goals, boar.texture.as_deref(), boar.item.as_deref()), (Goals::Template, None, None));
+        assert_eq!(
+            (boar.goals, boar.texture.as_deref(), boar.item.as_deref()),
+            (Goals::Template, None, None)
+        );
         for (case, file, why) in [
             (
                 "mob-item",

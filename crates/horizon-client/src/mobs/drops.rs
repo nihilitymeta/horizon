@@ -620,7 +620,10 @@ pub fn death_loot_table(m: &Mob, mob_drops: bool) -> Vec<String> {
     let mut tables: Vec<String> = m.extra.death_loot_table.iter().cloned().collect();
     tables.push(format!("{ns}:entities/{path}"));
     if ns != "minecraft" {
-        tables.push(format!("minecraft:entities/{}", super::species::def(m.species()).name));
+        tables.push(format!(
+            "minecraft:entities/{}",
+            super::species::def(m.species()).name
+        ));
     }
     tables
 }

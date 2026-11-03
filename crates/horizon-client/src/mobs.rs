@@ -24,6 +24,7 @@ pub mod caravan;
 pub mod cem;
 pub mod cem_anim;
 pub mod combat;
+pub mod content_model;
 pub mod control;
 pub mod conversion;
 pub mod copper_golem;
@@ -525,7 +526,11 @@ impl MobTypes {
         let mut out = HashMap::new();
         // One kind from a species' definition and its row of the table: the
         // species' own, or a mod's copy of it (`horizon` in the row).
-        let build = |def: &species::Def, id: String, t: &Value, defaults: HashMap<String, f64>| -> Option<MobType> {
+        let build = |def: &species::Def,
+                     id: String,
+                     t: &Value,
+                     defaults: HashMap<String, f64>|
+         -> Option<MobType> {
             let model_key = format!("minecraft:{}", def.model);
             let model = models.as_ref().and_then(|models| models.get(&model_key));
             if models_needed && model.is_none() {
@@ -636,7 +641,9 @@ impl MobTypes {
                     .iter()
                     .find(|d| template.strip_prefix("minecraft:") == Some(d.name))
                 else {
-                    log::warn!("Horizon: entity type {id}: template {template} is not a mob; skipped");
+                    log::warn!(
+                        "Horizon: entity type {id}: template {template} is not a mob; skipped"
+                    );
                     continue;
                 };
                 let defaults = exact.get(id).cloned().unwrap_or_default();
@@ -646,10 +653,55 @@ impl MobTypes {
                 if let Some(texture) = t["horizon"]["texture"].as_str() {
                     kind.texture = texture.to_owned();
                 }
+                // Its own model (`assets/<ns>/models/entity/<name>.json`),
+                // animation set and sounds, when the type names them.
+                if let Some(model) = t["horizon"]["model"].as_str() {
+                    let file = match model.split_once(':') {
+                        Some((ns, path)) => format!("assets/{ns}/models/{path}.json"),
+                        None => format!("assets/minecraft/models/{model}.json"),
+                    };
+                    match fs::read(root.join(&file))
+                        .map_err(|e| e.to_string())
+                        .and_then(|b| {
+                            serde_json::from_slice::<Value>(&b).map_err(|e| e.to_string())
+                        })
+                        .and_then(|v| content_model::parse(&v))
+                    {
+                        Ok(part) => kind.model = Arc::new(part),
+                        Err(e) => {
+                            log::warn!("Horizon: entity type {id}: model {model} ({file}): {e}")
+                        }
+                    }
+                }
+                if let Some(name) = t["horizon"]["animation"].as_str() {
+                    match content_model::anim_by_name(name) {
+                        Some(anim) => kind.anim = anim,
+                        None => log::warn!("Horizon: entity type {id}: no animation set {name:?}"),
+                    }
+                }
+                if let Some(sounds) = t["horizon"]["sounds"].as_object() {
+                    let own = |key: &str| sounds.get(key).and_then(Value::as_str);
+                    let [mut ambient, mut hurt, mut death] = kind.sounds;
+                    if let Some(s) = own("ambient") {
+                        ambient = native_goal::intern(s);
+                    }
+                    if let Some(s) = own("hurt") {
+                        hurt = native_goal::intern(s);
+                    }
+                    if let Some(s) = own("death") {
+                        death = native_goal::intern(s);
+                    }
+                    kind.sounds = [ambient, hurt, death];
+                    if let Some(s) = own("step") {
+                        kind.step_sound = Some(native_goal::intern(s));
+                    }
+                }
                 kind.flags.scripted_goals = t["horizon"]["goals"].as_str() == Some("none");
                 if let Some(flags) = t["horizon"]["flags"].as_object() {
                     for (name, value) in flags {
-                        let Some(value) = value.as_bool() else { continue };
+                        let Some(value) = value.as_bool() else {
+                            continue;
+                        };
                         match name.as_str() {
                             "burns_in_day" => kind.flags.burns_in_day = value,
                             "fire_immune" => kind.flags.fire_immune = value,

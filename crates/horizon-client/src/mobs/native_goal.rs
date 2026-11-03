@@ -112,7 +112,11 @@ fn nearby(m: &Mob, w: &MobWorld) -> Vec<NearbyView> {
         .iter()
         .filter(|s| s.id != m.id)
         .filter_map(|s| {
-            let (dx, dy, dz) = (s.position.x - m.position.x, s.position.y - m.position.y, s.position.z - m.position.z);
+            let (dx, dy, dz) = (
+                s.position.x - m.position.x,
+                s.position.y - m.position.y,
+                s.position.z - m.position.z,
+            );
             let distance = (dx * dx + dy * dy + dz * dz).sqrt();
             (distance <= range).then(|| NearbyView {
                 id: s.id,
@@ -134,7 +138,7 @@ fn nearby(m: &Mob, w: &MobWorld) -> Vec<NearbyView> {
 
 /// A kind or effect name as the game's events carry it: one static string
 /// per distinct name for the process's life.
-fn intern(name: &str) -> &'static str {
+pub fn intern(name: &str) -> &'static str {
     use std::sync::{Mutex, OnceLock};
     static NAMES: OnceLock<Mutex<std::collections::HashSet<&'static str>>> = OnceLock::new();
     let mut names = NAMES
@@ -247,7 +251,10 @@ impl Actions {
         self.push(GoalAction::Convert { kind: kind.into() });
     }
     pub fn summon(&mut self, kind: impl Into<String>, at: [f64; 3]) {
-        self.push(GoalAction::Summon { kind: kind.into(), at });
+        self.push(GoalAction::Summon {
+            kind: kind.into(),
+            at,
+        });
     }
     pub fn despawn(&mut self) {
         self.push(GoalAction::Despawn);
@@ -256,7 +263,11 @@ impl Actions {
         self.push(GoalAction::Heal(amount));
     }
     pub fn effect(&mut self, effect: impl Into<String>, ticks: i32, amplifier: i32) {
-        self.push(GoalAction::Effect { effect: effect.into(), ticks, amplifier });
+        self.push(GoalAction::Effect {
+            effect: effect.into(),
+            ticks,
+            amplifier,
+        });
     }
     pub fn attack(&mut self, who: Who) {
         self.push(GoalAction::Attack(who));

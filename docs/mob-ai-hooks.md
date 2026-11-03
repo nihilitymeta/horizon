@@ -107,6 +107,15 @@ the rest are still skipped with a warning. A spawn egg is any item whose id ends
 id before it, so `<id>:crawler_spawn_egg` (template `minecraft:zombie_spawn_egg`, a texture of its own) spawns
 `<id>:crawler` as vanilla's eggs do, on a spawner too.
 
+## Models, animations and sounds (built)
+
+A content mob's `entity_type` may name a `model` of its own (`<id>:entity/<name>`: `assets/<id>/models/entity/<name>.json`,
+a tree of parts holding cubes, as a vanilla `LayerDefinition` is written and Blockbench exports: `texture_size`,
+`parts` by name with `offset`, `rotation` in degrees, `cubes` of `origin`, `size`, `uv`, `inflate`, `mirror`, and
+`children`), an `animation` set that moves the parts by their vanilla names (`zombie`, `skeleton`, `quadruped`,
+`iron_golem`, `spider`... every set the game has, in snake case), and `sounds` by `ambient`, `hurt`, `death` and
+`step`. Each falls back to the template's. The texture lays out as the model's `uv`s say.
+
 ## The plan
 
 | Step | What | Why |

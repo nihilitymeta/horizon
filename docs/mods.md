@@ -314,8 +314,11 @@ A mob type is its template with the mod's own values: `attributes` that differ f
 (`<id>:entity/<name>`, the mod's `assets/<id>/textures/entity/<name>.png`, laid out as the template's texture; the
 template's without one), `goals`: `"template"` (the default) gives it the species' goals, `"none"` leaves both goal
 selectors empty for the mod's scripts to fill ([lua-bindings.md](lua-bindings.md), `mob_ai_register`;
-[mob-ai-hooks.md](mob-ai-hooks.md)), and `flags` of its nature that differ from the template's: `burns_in_day`,
-`fire_immune`, `fall_immune`, `water_sensitive`:
+[mob-ai-hooks.md](mob-ai-hooks.md)), `flags` of its nature that differ from the template's: `burns_in_day`,
+`fire_immune`, `fall_immune`, `water_sensitive`, and a look of its own: `model` (`<id>:entity/<name>`, the mod's
+`assets/<id>/models/entity/<name>.json`, parts holding cubes as a vanilla layer is written), `animation` (the set
+that moves the parts, by name: `zombie`, `quadruped`, `iron_golem`...) and `sounds` (`ambient`, `hurt`, `death`,
+`step`), each the template's without one ([mob-ai-hooks.md](mob-ai-hooks.md)):
 
 ```json
 { "template": "minecraft:zombie",
@@ -329,8 +332,9 @@ selectors empty for the mod's scripts to fill ([lua-bindings.md](lua-bindings.md
 It moves, fights, sounds, animates and is drawn as its template (the model is the template's, so the texture follows
 the template's layout), burns, drowns, converts and breeds as the template's species does, and `/summon <id>:<name>`
 makes one. Its name is the translation `entity.<id>.<name>`. It drops its own loot table,
-`data/<id>/loot_table/entities/<name>.json`, or the template's without one. Not yet: natural spawning (a script's
-`summon`, a spawner or a command places it), a spawn egg, a model of its own.
+`data/<id>/loot_table/entities/<name>.json`, or the template's without one. It spawns on its own where a
+`neoforge:add_spawns` biome modifier puts it, and `<id>:<name>_spawn_egg`, an item of the mod's, is its spawn egg
+([mob-ai-hooks.md](mob-ai-hooks.md)).
 
 It is the entity type `<id>:<name>`, with its network id after vanilla's. Using its item throws it as a snowball is
 thrown: same speed, spread, sound and cooldown, and one item used outside creative. It flies as a snowball, breaks on
