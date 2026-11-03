@@ -42,126 +42,211 @@ pub fn compound_to_table(lua: &Lua, c: &Compound) -> mlua::Result<Table> {
     Ok(t)
 }
 
+/// How deep a saved table may nest: a table in a table in a table... stops
+/// here (NBT's own readers stop at 512), with the path to it in the error.
+pub const MAX_DEPTH: usize = 128;
+
+/// The walk down a table being saved: the keys from the root to the value
+/// in hand (an error names them) and the tables on that path, so a table
+/// that holds itself, directly or further down, is an error and not a
+/// stack that never ends.
+#[derive(Default)]
+struct Walk {
+    path: Vec<String>,
+    tables: Vec<*const std::ffi::c_void>,
+}
+impl Walk {
+    /// The value in hand, for an error: `items[2].count`, or `the table`.
+    fn at(&self) -> String {
+        if self.path.is_empty() {
+            "the table".to_owned()
+        } else {
+            self.path.concat()
+        }
+    }
+    fn enter(&mut self, t: &Table) -> mlua::Result<()> {
+        let p = t.to_pointer();
+        if self.tables.contains(&p) {
+            return Err(mlua::Error::runtime(format!(
+                "{}: a table that holds itself (a cycle) cannot be saved as NBT",
+                self.at()
+            )));
+        }
+        if self.tables.len() >= MAX_DEPTH {
+            return Err(mlua::Error::runtime(format!(
+                "{}: nested deeper than {MAX_DEPTH} tables",
+                self.at()
+            )));
+        }
+        self.tables.push(p);
+        Ok(())
+    }
+    fn leave(&mut self) {
+        self.tables.pop();
+    }
+    /// `f` with `segment` on the path.
+    fn under<R>(
+        &mut self,
+        segment: String,
+        f: impl FnOnce(&mut Self) -> mlua::Result<R>,
+    ) -> mlua::Result<R> {
+        self.path.push(segment);
+        let r = f(self);
+        self.path.pop();
+        r
+    }
+}
+
 /// A Lua value as a tag. `like` is the tag it replaces, if any: its type is
 /// kept for a number (a float stays a float), its element type for a list.
 /// Without one, an integer is an int (a long past 32 bits), another number
 /// a double, a boolean a byte, a sequence a list and another table a compound.
+/// A table nested past [`MAX_DEPTH`] or holding itself is an error naming
+/// the key path.
 pub fn lua_to_tag(v: &Value, like: Option<&Tag>) -> mlua::Result<Tag> {
-    let number = |n: f64| -> Tag {
-        match like {
-            Some(Tag::Byte(_)) => Tag::Byte(n as i8),
-            Some(Tag::Short(_)) => Tag::Short(n as i16),
-            Some(Tag::Int(_)) => Tag::Int(n as i32),
-            Some(Tag::Long(_)) => Tag::Long(n as i64),
-            Some(Tag::Float(_)) => Tag::Float((n as f32).to_bits()),
-            Some(Tag::Double(_)) => Tag::Double(n.to_bits()),
-            _ if n.fract() == 0.0 && n.abs() < 2f64.powi(31) => Tag::Int(n as i32),
-            _ if n.fract() == 0.0 => Tag::Long(n as i64),
-            _ => Tag::Double(n.to_bits()),
-        }
-    };
-    Ok(match v {
-        Value::Nil => Tag::End,
-        Value::Boolean(b) => match like {
-            Some(Tag::Int(_)) => Tag::Int(i32::from(*b)),
-            _ => Tag::Byte(i8::from(*b)),
-        },
-        Value::Integer(i) => match like {
-            Some(Tag::Float(_)) | Some(Tag::Double(_)) => number(*i as f64),
-            Some(Tag::Byte(_)) => Tag::Byte(*i as i8),
-            Some(Tag::Short(_)) => Tag::Short(*i as i16),
-            Some(Tag::Long(_)) => Tag::Long(*i),
-            Some(Tag::Int(_)) => Tag::Int(*i as i32),
-            _ if i32::try_from(*i).is_ok() => Tag::Int(*i as i32),
-            _ => Tag::Long(*i),
-        },
-        Value::Number(n) => number(*n),
-        Value::String(s) => Tag::String(JavaString::from(s.to_string_lossy().as_ref())),
-        Value::Table(t) => {
-            let len = t.raw_len();
-            let sequence = len > 0
-                || matches!(
-                    like,
-                    Some(Tag::List(_) | Tag::IntArray(_) | Tag::LongArray(_) | Tag::ByteArray(_))
-                );
-            if sequence {
-                match like {
-                    Some(Tag::IntArray(_)) => {
-                        let mut out = Vec::with_capacity(len);
-                        for i in 1..=len {
-                            out.push(t.raw_get::<i64>(i)? as i32);
-                        }
-                        Tag::IntArray(out)
-                    }
-                    Some(Tag::LongArray(_)) => {
-                        let mut out = Vec::with_capacity(len);
-                        for i in 1..=len {
-                            out.push(t.raw_get::<i64>(i)?);
-                        }
-                        Tag::LongArray(out)
-                    }
-                    Some(Tag::ByteArray(_)) => {
-                        let mut out = Vec::with_capacity(len);
-                        for i in 1..=len {
-                            out.push(t.raw_get::<i64>(i)? as i8 as u8);
-                        }
-                        Tag::ByteArray(out)
-                    }
-                    _ => {
-                        let old = match like {
-                            Some(Tag::List(items)) => items.first(),
-                            _ => None,
-                        };
-                        let mut out = Vec::with_capacity(len);
-                        for i in 1..=len {
-                            let item: Value = t.raw_get(i)?;
-                            out.push(lua_to_tag(&item, old)?);
-                        }
-                        Tag::List(out)
-                    }
-                }
-            } else {
-                let old = match like {
-                    Some(Tag::Compound(c)) => Some(c),
-                    _ => None,
-                };
-                Tag::Compound(table_to_compound(t, old)?)
-            }
-        }
-        other => {
-            return Err(mlua::Error::runtime(format!(
-                "a {} cannot be saved as NBT",
-                other.type_name()
-            )));
-        }
-    })
+    Walk::default().tag(v, like)
 }
 
-/// A table as a compound; `like` is the compound it replaces, whose value
-/// types are kept key by key. A key set to nil is gone.
-pub fn table_to_compound(t: &Table, like: Option<&Compound>) -> mlua::Result<Compound> {
-    let mut out = Compound::new();
-    for pair in t.clone().pairs::<Value, Value>() {
-        let (k, v) = pair?;
-        let key = match k {
-            Value::String(s) => s.to_string_lossy(),
-            Value::Integer(i) => i.to_string(),
-            Value::Number(n) => n.to_string(),
+impl Walk {
+    fn tag(&mut self, v: &Value, like: Option<&Tag>) -> mlua::Result<Tag> {
+        let number = |n: f64| -> Tag {
+            match like {
+                Some(Tag::Byte(_)) => Tag::Byte(n as i8),
+                Some(Tag::Short(_)) => Tag::Short(n as i16),
+                Some(Tag::Int(_)) => Tag::Int(n as i32),
+                Some(Tag::Long(_)) => Tag::Long(n as i64),
+                Some(Tag::Float(_)) => Tag::Float((n as f32).to_bits()),
+                Some(Tag::Double(_)) => Tag::Double(n.to_bits()),
+                _ if n.fract() == 0.0 && n.abs() < 2f64.powi(31) => Tag::Int(n as i32),
+                _ if n.fract() == 0.0 => Tag::Long(n as i64),
+                _ => Tag::Double(n.to_bits()),
+            }
+        };
+        Ok(match v {
+            Value::Nil => Tag::End,
+            Value::Boolean(b) => match like {
+                Some(Tag::Int(_)) => Tag::Int(i32::from(*b)),
+                _ => Tag::Byte(i8::from(*b)),
+            },
+            Value::Integer(i) => match like {
+                Some(Tag::Float(_)) | Some(Tag::Double(_)) => number(*i as f64),
+                Some(Tag::Byte(_)) => Tag::Byte(*i as i8),
+                Some(Tag::Short(_)) => Tag::Short(*i as i16),
+                Some(Tag::Long(_)) => Tag::Long(*i),
+                Some(Tag::Int(_)) => Tag::Int(*i as i32),
+                _ if i32::try_from(*i).is_ok() => Tag::Int(*i as i32),
+                _ => Tag::Long(*i),
+            },
+            Value::Number(n) => number(*n),
+            Value::String(s) => Tag::String(JavaString::from(s.to_string_lossy().as_ref())),
+            Value::Table(t) => {
+                self.enter(t)?;
+                let tag = self.table(t, like)?;
+                self.leave();
+                tag
+            }
             other => {
                 return Err(mlua::Error::runtime(format!(
-                    "a {} is not an NBT key",
+                    "{}: a {} cannot be saved as NBT",
+                    self.at(),
                     other.type_name()
                 )));
             }
-        };
-        let key = JavaString::from(key.as_str());
-        let old = like.and_then(|c| c.get(&key));
-        let tag = lua_to_tag(&v, old)?;
-        if tag != Tag::End {
-            out.insert(key, tag);
-        }
+        })
     }
-    Ok(out)
+
+    /// A table already entered as a list, an array or a compound.
+    fn table(&mut self, t: &Table, like: Option<&Tag>) -> mlua::Result<Tag> {
+        let len = t.raw_len();
+        let sequence = len > 0
+            || matches!(
+                like,
+                Some(Tag::List(_) | Tag::IntArray(_) | Tag::LongArray(_) | Tag::ByteArray(_))
+            );
+        if !sequence {
+            let old = match like {
+                Some(Tag::Compound(c)) => Some(c),
+                _ => None,
+            };
+            return Ok(Tag::Compound(self.compound(t, old)?));
+        }
+        Ok(match like {
+            Some(Tag::IntArray(_)) => {
+                let mut out = Vec::with_capacity(len);
+                for i in 1..=len {
+                    out.push(t.raw_get::<i64>(i)? as i32);
+                }
+                Tag::IntArray(out)
+            }
+            Some(Tag::LongArray(_)) => {
+                let mut out = Vec::with_capacity(len);
+                for i in 1..=len {
+                    out.push(t.raw_get::<i64>(i)?);
+                }
+                Tag::LongArray(out)
+            }
+            Some(Tag::ByteArray(_)) => {
+                let mut out = Vec::with_capacity(len);
+                for i in 1..=len {
+                    out.push(t.raw_get::<i64>(i)? as i8 as u8);
+                }
+                Tag::ByteArray(out)
+            }
+            _ => {
+                let old = match like {
+                    Some(Tag::List(items)) => items.first(),
+                    _ => None,
+                };
+                let mut out = Vec::with_capacity(len);
+                for i in 1..=len {
+                    let item: Value = t.raw_get(i)?;
+                    out.push(self.under(format!("[{i}]"), |w| w.tag(&item, old))?);
+                }
+                Tag::List(out)
+            }
+        })
+    }
+
+    /// A table already entered as a compound.
+    fn compound(&mut self, t: &Table, like: Option<&Compound>) -> mlua::Result<Compound> {
+        let mut out = Compound::new();
+        for pair in t.clone().pairs::<Value, Value>() {
+            let (k, v) = pair?;
+            let key = match k {
+                Value::String(s) => s.to_string_lossy(),
+                Value::Integer(i) => i.to_string(),
+                Value::Number(n) => n.to_string(),
+                other => {
+                    return Err(mlua::Error::runtime(format!(
+                        "{}: a {} is not an NBT key",
+                        self.at(),
+                        other.type_name()
+                    )));
+                }
+            };
+            let key = JavaString::from(key.as_str());
+            let old = like.and_then(|c| c.get(&key));
+            let segment = if self.path.is_empty() {
+                key.to_string_lossy()
+            } else {
+                format!(".{}", key.to_string_lossy())
+            };
+            let tag = self.under(segment, |w| w.tag(&v, old))?;
+            if tag != Tag::End {
+                out.insert(key, tag);
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// A table as a compound; `like` is the compound it replaces, whose value
+/// types are kept key by key. A key set to nil is gone. A table nested past
+/// [`MAX_DEPTH`] or holding itself is an error naming the key path.
+pub fn table_to_compound(t: &Table, like: Option<&Compound>) -> mlua::Result<Compound> {
+    let mut walk = Walk::default();
+    walk.enter(t)?;
+    walk.compound(t, like)
 }
 
 #[cfg(test)]
@@ -226,5 +311,35 @@ mod tests {
         // Unchanged data reads back equal.
         let same = table_to_compound(&compound_to_table(&lua, &c).unwrap(), Some(&c)).unwrap();
         assert_eq!(same, c);
+    }
+
+    #[test]
+    fn a_cycle_or_a_deep_nest_is_an_error_naming_the_path() {
+        let lua = Lua::new();
+        let t: Table = lua
+            .load("local d = { items = { { count = 1 } } }; d.items[1].me = d; return d")
+            .eval()
+            .unwrap();
+        let e = table_to_compound(&t, None).unwrap_err().to_string();
+        assert!(
+            e.contains("items[1].me") && e.contains("holds itself"),
+            "{e}"
+        );
+        let t: Table = lua
+            .load("local t = {} for i = 1, 1000 do t = { t } end return { deep = t }")
+            .eval()
+            .unwrap();
+        let e = table_to_compound(&t, None).unwrap_err().to_string();
+        assert!(e.contains("deeper than") && e.contains("deep[1][1]"), "{e}");
+        // A table reached twice, not on its own path, is saved twice.
+        let t: Table = lua
+            .load("local shared = { x = 1 } return { a = shared, b = { shared } }")
+            .eval()
+            .unwrap();
+        let c = table_to_compound(&t, None).unwrap();
+        let Some(Tag::List(b)) = c.get(&"b".into()) else {
+            panic!("{c:?}");
+        };
+        assert_eq!(c.get(&"a".into()), b.first());
     }
 }
