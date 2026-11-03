@@ -10941,6 +10941,8 @@ mod tests {
         let motion_hooks = free_hooks(include_str!("../motion.rs"));
         // The chat relay's (`horizon_client_lib::lan::hub::chat`).
         let chat_hooks = free_hooks(include_str!("../lan/hub/chat.rs"));
+        // The mob AI's (`horizon_client_lib::mobs::ai`, docs/mob-ai-hooks.md).
+        let mob_ai_hooks = free_hooks(include_str!("../mobs/ai.rs"));
         let declared: BTreeSet<_> = section
             .lines()
             .chain(level_section.lines())
@@ -10960,6 +10962,7 @@ mod tests {
             .chain(landing_hooks.iter().copied())
             .chain(motion_hooks.iter().copied())
             .chain(chat_hooks.iter().copied())
+            .chain(mob_ai_hooks.iter().copied())
             .collect();
         let mut names = BTreeSet::new();
         let mut contracts = BTreeSet::new();
@@ -10989,6 +10992,8 @@ mod tests {
                 format!("horizon_client_lib::motion::native_{name}")
             } else if chat_hooks.contains(name) {
                 format!("horizon_client_lib::lan::hub::chat::native_{name}")
+            } else if mob_ai_hooks.contains(name) {
+                format!("horizon_client_lib::mobs::ai::native_{name}")
             } else if menu_hooks.contains(name) {
                 // menu.rs compiles into horizon-client-lib (#5446's
                 // split): horizon-mixins resolves the crate by its package.
