@@ -53,18 +53,8 @@ pub(super) fn id_of(t: Target) -> Option<u32> {
     }
 }
 
-/// Remember ids the Lua console named, so the tick reads their data: the
-/// targets it found are in its own table.
-pub(super) fn remember_ids(ids: &[u32]) {
-    let mut watch = WATCH.lock().unwrap_or_else(|e| e.into_inner());
-    for &id in ids {
-        if !watch.iter().any(|t| id_of(*t) == Some(id)) {
-            watch.push(Target::Mob(id));
-        }
-    }
-}
-
-fn remember(targets: &[Target]) {
+/// Remember targets a command or the Lua console named, so the tick reads their data.
+pub(super) fn remember(targets: &[Target]) {
     let mut watch = WATCH.lock().unwrap_or_else(|e| e.into_inner());
     for &t in targets {
         if !watch.contains(&t) {
@@ -108,7 +98,7 @@ impl Game<'_> {
         Ok((watched, ids, skipped))
     }
 
-    fn tools_note(&self) -> &'static str {
+    pub(super) fn tools_note(&self) -> &'static str {
         if crate::dev_tools::enabled() {
             ""
         } else {
@@ -211,6 +201,7 @@ impl Game<'_> {
     pub(super) fn cmd_mobai_log(&mut self, ctx: &Context, stop: bool) -> R<i32> {
         if stop {
             let n = LOGS.lock().unwrap_or_else(|e| e.into_inner()).drain(..).count();
+            observe::clear_logs();
             forget_unwatched();
             self.feedback(Text::literal(format!("Closed {}", plural(n, "AI log", "AI logs"))));
             return Ok(n as i32);
@@ -262,7 +253,7 @@ impl Game<'_> {
         // The snapshots come from the AI step, which only watches what the
         // store lists: a log is a watch without a window.
         let ids: Vec<u32> = mobs.iter().map(|(_, id)| *id).collect();
-        observe::add_path(&ids, "Health");
+        observe::add_log(&ids);
         self.feedback(Text::literal(if opened.is_empty() {
             "Already logging those".to_string()
         } else {

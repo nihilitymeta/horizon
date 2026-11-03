@@ -18,7 +18,7 @@ pub mod console;
 
 use crate::gfx::native_render::{RenderHooks, WorldDrawnEvent};
 use crate::mobs::observe::{self, BrainSnapshot, GoalRow, HistoryTick, Inspected, Series, View};
-use crate::mod_api::{Hooks, Host, Mods, NativeBlockRim, VisualsEvent};
+use crate::mod_api::{Hooks, Host, NativeBlockRim, VisualsEvent};
 use horizon_client_core::snbt::java_hash_order;
 use horizon_world::nbt::Tag;
 use horizon_world::snbt_text::to_snbt;
@@ -64,6 +64,9 @@ pub fn mods() -> Vec<Box<dyn Hooks>> {
             toggle_key()
         );
         ENABLED.store(true, Ordering::Relaxed);
+        // The commands come with the tools and only then: they run Lua and
+        // the owner's commands.
+        horizon_client::command::vanilla::set_dev_tools_commands(true);
         mods.push(Box::new(DevTools::default()));
     }
     mods
@@ -239,7 +242,7 @@ pub fn frame(window: Option<&Window>) -> PointerChange {
         return PointerChange::None;
     };
     zoom_for(window);
-    let windows = observe::watching() || console::OPEN.load(Ordering::Relaxed);
+    let windows = observe::showing() || console::OPEN.load(Ordering::Relaxed);
     let had = HAD_WINDOWS.swap(windows, Ordering::Relaxed);
     let mut change = PointerChange::None;
     if console::WANT_POINTER.swap(false, Ordering::Relaxed) && !holds_pointer() {

@@ -19,18 +19,24 @@ use mlua::{Function, Lua, MultiValue, Table, Value};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 
 thread_local! {
     /// The server thread's state, made on first use.
     static VM: RefCell<Option<Lua>> = const { RefCell::new(None) };
     /// The entities a selector found, by id, so a number names one later.
     static KNOWN: RefCell<HashMap<u32, Target>> = RefCell::new(HashMap::new());
+    /// When the chunk running now must have finished: the interrupt stops it after.
+    static DEADLINE: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
 }
 
 /// The registry key of the tick handlers: a sequence of functions.
 const TICKERS: &str = "mc_tickers";
 /// Memory a script may take.
 const MEMORY: usize = 64 << 20;
+/// Wall-clock time one chunk (a line, a script, a tick's handlers) may take:
+/// the server thread runs it, so an endless loop would freeze the game.
+const BUDGET: Duration = Duration::from_secs(2);
 
 fn vm() -> mlua::Result<Lua> {
     VM.with(|cell| {
@@ -40,6 +46,14 @@ fn vm() -> mlua::Result<Lua> {
         }
         let lua = Lua::new();
         lua.set_memory_limit(MEMORY)?;
+        lua.set_interrupt(|_| {
+            let over = DEADLINE.with(|d| d.get().is_some_and(|at| Instant::now() > at));
+            if over {
+                Err(mlua::Error::runtime(format!("ran over {BUDGET:?}: stopped")))
+            } else {
+                Ok(mlua::VmState::Continue)
+            }
+        });
         lua.set_named_registry_value(TICKERS, lua.create_table()?)?;
         lua.globals().set(
             "print",
@@ -195,6 +209,7 @@ impl Game<'_> {
     fn lua_run(&mut self, lua: &Lua, label: &str, code: &str) {
         console::push(Kind::Echo, label);
         let game = RefCell::new(self);
+        DEADLINE.with(|d| d.set(Some(Instant::now() + BUDGET)));
         let result = lua.scope(|scope| {
             let mc = lua.create_table()?;
             mc.set(
@@ -326,12 +341,8 @@ impl Game<'_> {
                 "inspect",
                 scope.create_function_mut(|_, (v, view): (Value, Option<String>)| {
                     let mut g = game.borrow_mut();
-                    let ids: Vec<u32> = g
-                        .lua_targets(&v)
-                        .map_err(lua_err)?
-                        .iter()
-                        .filter_map(|t| id_of(*t))
-                        .collect();
+                    let targets = g.lua_targets(&v).map_err(lua_err)?;
+                    let ids: Vec<u32> = targets.iter().filter_map(|t| id_of(*t)).collect();
                     let view = match view.as_deref() {
                         None | Some("data") | Some("inspect") => View::Data,
                         Some("goals") => View::Goals,
@@ -343,7 +354,7 @@ impl Game<'_> {
                             )));
                         }
                     };
-                    super::inspect::remember_ids(&ids);
+                    super::inspect::remember(&targets);
                     observe::add(&ids, view);
                     Ok(ids.len())
                 })?,
@@ -353,13 +364,9 @@ impl Game<'_> {
                 scope.create_function_mut(|_, (v, path): (Value, String)| {
                     let mut g = game.borrow_mut();
                     NbtPath::parse(&path).map_err(|e| lua_err(format!("{e:?}")))?;
-                    let ids: Vec<u32> = g
-                        .lua_targets(&v)
-                        .map_err(lua_err)?
-                        .iter()
-                        .filter_map(|t| id_of(*t))
-                        .collect();
-                    super::inspect::remember_ids(&ids);
+                    let targets = g.lua_targets(&v).map_err(lua_err)?;
+                    let ids: Vec<u32> = targets.iter().filter_map(|t| id_of(*t)).collect();
+                    super::inspect::remember(&targets);
                     observe::add_path(&ids, &path);
                     Ok(ids.len())
                 })?,
@@ -384,6 +391,15 @@ impl Game<'_> {
             mc.set(
                 "run",
                 lua.create_function(|lua, file: String| {
+                    // A name in the folder, not a path: the console reaches no other file.
+                    let mut parts = std::path::Path::new(&file).components();
+                    let plain = matches!(parts.next(), Some(std::path::Component::Normal(_)))
+                        && parts.next().is_none();
+                    if !plain {
+                        return Err(lua_err(format!(
+                            "{file}: a script is named by its file name in {SCRIPTS_DIR}/"
+                        )));
+                    }
                     let path = std::path::Path::new(SCRIPTS_DIR).join(&file);
                     let code = std::fs::read_to_string(&path)
                         .map_err(|e| lua_err(format!("{}: {e}", path.display())))?;
@@ -409,6 +425,7 @@ impl Game<'_> {
             lua.globals().set("mc", mc)?;
             lua.load(code).set_name(label).exec()
         });
+        DEADLINE.with(|d| d.set(None));
         if let Err(e) = result {
             console::push(Kind::Err, e.to_string());
         }
@@ -450,6 +467,14 @@ impl Game<'_> {
 
     /// `/lua`: the console window; `/lua <code>` runs a line in it.
     pub(super) fn cmd_lua(&mut self, code: Option<String>) -> super::R<i32> {
+        // The console runs with the owner's powers and shows on the owner's
+        // screen: a guest's /lua is refused.
+        if self.lan_acting.is_some() {
+            return Err(super::CommandError::new(horizon_client::text::Text::literal(
+                "The Lua console is the host's own",
+            )));
+        }
+        let note = self.tools_note();
         match code {
             None => {
                 let open = !console::OPEN.load(Ordering::Relaxed);
@@ -458,11 +483,10 @@ impl Game<'_> {
                 } else {
                     console::OPEN.store(false, Ordering::Relaxed);
                 }
-                self.feedback(horizon_client::text::Text::literal(if open {
-                    "Lua console open"
-                } else {
-                    "Lua console closed"
-                }));
+                self.feedback(horizon_client::text::Text::literal(format!(
+                    "Lua console {}{note}",
+                    if open { "open" } else { "closed" }
+                )));
                 Ok(1)
             }
             Some(code) => {

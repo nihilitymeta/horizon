@@ -139,6 +139,8 @@ struct Watch {
     id: u32,
     views: Vec<View>,
     paths: Vec<String>,
+    /// `/mobai log`: snapshots wanted, no window.
+    logged: bool,
 }
 
 struct Observed {
@@ -151,6 +153,8 @@ struct Observed {
 
 /// The fast path for every mob's tick: whether anything is watched at all.
 static WATCHING: AtomicBool = AtomicBool::new(false);
+/// Whether any watch has a window (a view or a path): the tools' pointer follows it.
+static SHOWING: AtomicBool = AtomicBool::new(false);
 static STATE: Mutex<Observed> = Mutex::new(Observed {
     watch: Vec::new(),
     snapshots: Vec::new(),
@@ -172,13 +176,14 @@ impl Observed {
                 id,
                 views: Vec::new(),
                 paths: Vec::new(),
+                logged: false,
             });
             self.watch.last_mut().expect("just pushed")
         }
     }
     /// Drops what no watch asks for any more.
     fn prune(&mut self) {
-        self.watch.retain(|w| !w.views.is_empty() || !w.paths.is_empty());
+        self.watch.retain(|w| !w.views.is_empty() || !w.paths.is_empty() || w.logged);
         let ids: Vec<u32> = self.watch.iter().map(|w| w.id).collect();
         self.snapshots.retain(|s| ids.contains(&s.id));
         self.data.retain(|d| ids.contains(&d.id));
@@ -193,6 +198,10 @@ impl Observed {
                 .any(|w| w.id == *id && w.paths.contains(&s.path))
         });
         WATCHING.store(!self.watch.is_empty(), Ordering::Relaxed);
+        SHOWING.store(
+            self.watch.iter().any(|w| !w.views.is_empty() || !w.paths.is_empty()),
+            Ordering::Relaxed,
+        );
     }
 }
 
@@ -257,6 +266,29 @@ pub fn clear(view: Option<View>) {
         }
     }
     s.prune();
+}
+
+/// Snapshot these entities each tick for a log, with no window.
+pub fn add_log(ids: &[u32]) {
+    let mut s = state();
+    for &id in ids {
+        s.entry(id).logged = true;
+    }
+    s.prune();
+}
+
+/// The logs stopped: what only they kept watched is dropped.
+pub fn clear_logs() {
+    let mut s = state();
+    for w in &mut s.watch {
+        w.logged = false;
+    }
+    s.prune();
+}
+
+/// Whether any window is wanted: a view or a path of some entity.
+pub fn showing() -> bool {
+    SHOWING.load(Ordering::Relaxed)
 }
 
 /// Stop watching every path.
@@ -496,6 +528,17 @@ mod tests {
         assert_eq!(watched(), vec![3, 5]);
         remove_path(3, "Health");
         assert_eq!(watched(), vec![5]);
+        // A log keeps an entity watched without a window.
+        add_log(&[9]);
+        assert_eq!(watched(), vec![5, 9]);
+        assert!(showing());
+        clear(None);
+        assert_eq!(watched(), vec![9]);
+        assert!(watching() && !showing());
+        clear_logs();
+        assert!(watched().is_empty());
+        add(&[5], View::Data);
+        add(&[5], View::Goals);
         clear(Some(View::Goals));
         assert_eq!(watched(), vec![5]);
         clear(Some(View::Data));

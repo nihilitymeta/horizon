@@ -580,6 +580,7 @@ pub fn game_dispatcher() -> &'static Dispatcher {
         std::env::var_os("HORIZON_DEV_COMMANDS").is_some(),
         HORIZON_COMMANDS.load(std::sync::atomic::Ordering::Relaxed),
         DEDICATED_COMMANDS.load(std::sync::atomic::Ordering::Relaxed),
+        DEV_TOOLS_COMMANDS.load(std::sync::atomic::Ordering::Relaxed),
     )
 }
 /// The server's tree for this world's enabled features. Cache entries are
@@ -588,15 +589,19 @@ pub fn game_dispatcher_with_features(features: &[String]) -> &'static Dispatcher
     if !features.iter().any(|f| f == MINECART_IMPROVEMENTS) {
         return game_dispatcher();
     }
-    static TREES: [std::sync::OnceLock<Dispatcher>; 8] = [const { std::sync::OnceLock::new() }; 8];
+    static TREES: [std::sync::OnceLock<Dispatcher>; 16] = [const { std::sync::OnceLock::new() }; 16];
     let dev = std::env::var_os("HORIZON_DEV_COMMANDS").is_some();
     let horizon = HORIZON_COMMANDS.load(std::sync::atomic::Ordering::Relaxed);
     let dedicated = DEDICATED_COMMANDS.load(std::sync::atomic::Ordering::Relaxed);
-    TREES[usize::from(dev) | usize::from(horizon) << 1 | usize::from(dedicated) << 2].get_or_init(
+    let tools = DEV_TOOLS_COMMANDS.load(std::sync::atomic::Ordering::Relaxed);
+    TREES[usize::from(dev) | usize::from(horizon) << 1 | usize::from(dedicated) << 2 | usize::from(tools) << 3].get_or_init(
         || {
             let mut d = build_for_features(dev, dedicated, true);
             if horizon {
                 horizon_commands(&mut d, 0);
+            }
+            if tools {
+                super::tree_extra::register_dev_tools(&mut d, 0);
             }
             d
         },
@@ -612,6 +617,21 @@ static DEDICATED_COMMANDS: std::sync::atomic::AtomicBool =
 pub fn set_dedicated_commands(on: bool) {
     DEDICATED_COMMANDS.store(on, std::sync::atomic::Ordering::Relaxed);
 }
+/// Whether this process has the developer tools' commands (`/inspect`,
+/// `/lua`...; docs/dev-tools.md). Off unless the game started with the
+/// tools (`--dev-tools`, `HORIZON_DEV_TOOLS=1`): they run Lua and the
+/// owner's commands, so no server has them by default.
+static DEV_TOOLS_COMMANDS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+/// Turns the developer tools' commands on or off for the trees
+/// `game_dispatcher` returns from now on.
+pub fn set_dev_tools_commands(on: bool) {
+    DEV_TOOLS_COMMANDS.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+/// Whether the developer tools' commands are on (the client's tree lists them then).
+pub fn dev_tools_commands() -> bool {
+    DEV_TOOLS_COMMANDS.load(std::sync::atomic::Ordering::Relaxed)
+}
 /// Whether this process's server has Horizon's own commands (`/pregen`). Off
 /// by default, so `/help` and the command tree are vanilla's; a dedicated
 /// server turns them on with `horizon-pregen=true` in server.properties, the
@@ -625,16 +645,22 @@ pub fn set_horizon_commands(on: bool) {
 /// The server.properties key that turns `/pregen` on (Horizon's own; vanilla
 /// ignores keys it doesn't know).
 pub const PREGEN_PROPERTY: &str = "horizon-pregen";
-pub(crate) fn game_tree(dev: bool, horizon: bool, dedicated: bool) -> &'static Dispatcher {
-    static TREES: [std::sync::OnceLock<Dispatcher>; 8] = [const { std::sync::OnceLock::new() }; 8];
-    match (dev, horizon, dedicated) {
-        (true, false, false) => dispatcher(),
-        (false, false, false) => release_dispatcher(),
-        _ => TREES[usize::from(dev) | usize::from(horizon) << 1 | usize::from(dedicated) << 2]
+pub(crate) fn game_tree(dev: bool, horizon: bool, dedicated: bool, tools: bool) -> &'static Dispatcher {
+    static TREES: [std::sync::OnceLock<Dispatcher>; 16] = [const { std::sync::OnceLock::new() }; 16];
+    match (dev, horizon, dedicated, tools) {
+        (true, false, false, false) => dispatcher(),
+        (false, false, false, false) => release_dispatcher(),
+        _ => TREES[usize::from(dev)
+            | usize::from(horizon) << 1
+            | usize::from(dedicated) << 2
+            | usize::from(tools) << 3]
             .get_or_init(|| {
                 let mut d = build_for(dev, dedicated);
                 if horizon {
                     horizon_commands(&mut d, 0);
+                }
+                if tools {
+                    super::tree_extra::register_dev_tools(&mut d, 0);
                 }
                 d
             }),

@@ -702,8 +702,9 @@ impl Options {
                 ),
                 // Horizon's own commands (/pregen), off by default as on vanilla.
                 "--pregen" => horizon_client::command::vanilla::set_horizon_commands(true),
-                // Read by `dev_tools::mods()` before the options are parsed.
-                "--dev-tools" => {}
+                // Read by `dev_tools::mods()` before the options are parsed; the
+                // commands follow it (docs/dev-tools.md).
+                "--dev-tools" => horizon_client::command::vanilla::set_dev_tools_commands(true),
                 _ => {
                     let value = args
                         .next()

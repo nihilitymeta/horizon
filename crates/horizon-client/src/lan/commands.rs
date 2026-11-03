@@ -152,8 +152,13 @@ pub fn horizon_commands() -> Value {
 }
 
 /// `extra` (the mods' commands root, or Null) with [`horizon_commands`]
-/// added: a mod's command of the same name keeps the mod's.
-pub fn with_horizon_commands(extra: &Value) -> Value {
+/// added when the developer tools' commands are on (`tools`,
+/// `vanilla::dev_tools_commands`): a mod's command of the same name keeps
+/// the mod's. Off, `extra` as it is.
+pub fn with_horizon_commands(extra: &Value, tools: bool) -> Value {
+    if !tools {
+        return extra.clone();
+    }
     let mut out = horizon_commands();
     if let Some(children) = extra["children"].as_object()
         && let Some(target) = out["children"].as_object_mut()
@@ -531,7 +536,7 @@ mod tests {
         .unwrap();
         let tree = CommandTree { root: report };
         let names = |level: u8, extra: &Value| -> Vec<String> {
-            tree.packet_with(level, false, &Builtin::default(), &with_horizon_commands(extra))
+            tree.packet_with(level, false, &Builtin::default(), &with_horizon_commands(extra, true))
                 .nodes
                 .iter()
                 .map(|n| n.name.clone())
@@ -549,5 +554,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(names(0, &mods), ["", "me", "beacon", "inspect"]);
+        // With the tools off, the tree is the mods' alone.
+        assert_eq!(with_horizon_commands(&mods, false), mods);
+        assert_eq!(with_horizon_commands(&Value::Null, false), Value::Null);
     }
 }
