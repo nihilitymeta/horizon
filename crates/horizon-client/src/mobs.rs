@@ -4468,7 +4468,6 @@ mod teams_tests {
 pub(crate) mod sensor_scan_tests {
     use super::*;
     use horizon_core::geometry::Vec3;
-    use serde_json::json;
 
     pub(crate) fn kind() -> Arc<MobType> {
         Arc::new(MobType {
