@@ -981,6 +981,12 @@ impl Content {
         self.reader()?.read(name)
     }
 
+    /// The bytes of a file `scripts/registry.lua` registered: none for a
+    /// file of the mod's folder or archive.
+    pub fn registered(&self, name: &str) -> Option<&[u8]> {
+        self.registered.get(name).map(Vec::as_slice)
+    }
+
     /// A reader of its content files. A packaged mod's archive is opened
     /// once for all of them (opening it reads its whole index).
     pub fn reader(&self) -> Result<FileReader<'_>, String> {

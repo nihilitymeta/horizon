@@ -137,7 +137,7 @@ A Lua goal is a `NativeGoal` over a `LuaBehaviour` ([mob-ai-hooks.md](mob-ai-hoo
 the view before each call and applies the actions after it, so a script never holds the mob. A goal function's error
 is logged once at error level, then at debug level, and reads as "no".
 
-Limits: a handler or a goal function that runs past 250 ms of wall-clock time is stopped by Luau's interrupt with an
+Limits: a hook's handlers (250 ms of wall-clock time per handler registered, as one call) or a goal function that runs past 250 ms is stopped by Luau's interrupt with an
 error that reads as any other error of its (the log, the dev tools' console, "no" for a goal), and `init.lua` with the
 modules it requires has 5 s at load and reload; a state may take 64 MiB. Luau has no `io`, `loadfile` or `dofile`,
 its `os` is `clock`, `date`, `difftime` and `time`, and `require` is the game's own over the mod's `scripts/`, so a

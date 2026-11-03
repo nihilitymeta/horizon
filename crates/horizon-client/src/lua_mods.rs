@@ -94,6 +94,29 @@ const HANDLERS: &str = "horizon_handlers";
 const KIND_HANDLERS: &str = "horizon_kind_handlers";
 /// The registry key of the queue of actions a handler asked for.
 const QUEUE: &str = "horizon_queue";
+/// The registry key of the function that runs a hook's handlers and takes
+/// the queue, as one call into the state: the state is shared by the
+/// threads that fire hooks (the server's, the render thread's own mobs), and
+/// a call is the unit they take turns at, so no handler sees another
+/// thread's actions and none are left behind.
+const RUNNER: &str = "horizon_runner";
+const RUNNER_CODE: &str = r#"
+return function(handlers, queue, ...)
+  local failed
+  for _, f in ipairs(handlers) do
+    local ok, e = pcall(f, ...)
+    if not ok then failed = e break end
+  end
+  local n = #queue
+  local out
+  if n > 0 then
+    out = {}
+    for i = 1, n do out[i] = queue[i]; queue[i] = nil end
+  end
+  if failed ~= nil then error(failed, 0) end
+  return out
+end
+"#;
 /// The registry key of the modules `require` ran: `name -> value`.
 const LOADED: &str = "horizon_loaded";
 
@@ -471,6 +494,8 @@ impl LuaMod {
         lua.set_named_registry_value(KIND_HANDLERS, lua.create_table()?)?;
         lua.set_named_registry_value(QUEUE, lua.create_table()?)?;
         lua.set_named_registry_value(LOADED, lua.create_table()?)?;
+        let runner: Function = lua.load(RUNNER_CODE).set_name("horizon").eval()?;
+        lua.set_named_registry_value(RUNNER, runner)?;
         let api = lua.create_table()?;
         let id = self.id.clone();
         api.set("mod_id", id.as_str())?;
@@ -962,17 +987,21 @@ impl LuaMod {
         if list.is_empty() {
             return Ok(());
         }
-        let args = args.into_lua_multi(lua)?;
-        for f in list {
-            self.budget
-                .run(HANDLER_BUDGET, || f.call::<()>(args.clone()))?;
-        }
+        let count = list.len() as u32;
+        let runner: Function = lua.named_registry_value(RUNNER)?;
         let queue: Table = lua.named_registry_value(QUEUE)?;
-        if queue.raw_len() == 0 {
+        let handlers = lua.create_sequence_from(list)?;
+        let mut args = args.into_lua_multi(lua)?;
+        args.push_front(Value::Table(queue));
+        args.push_front(Value::Table(handlers));
+        // One call runs every handler and takes what they queued.
+        let actions: Option<Table> = self
+            .budget
+            .run(HANDLER_BUDGET * count, || runner.call(args))?;
+        let Some(actions) = actions else {
             return Ok(());
-        }
-        let actions: Vec<Table> = queue.sequence_values().collect::<mlua::Result<_>>()?;
-        queue.clear()?;
+        };
+        let actions: Vec<Table> = actions.sequence_values().collect::<mlua::Result<_>>()?;
         for entry in actions {
             let action: String = entry.get("action")?;
             let args: Table = entry.get("args")?;

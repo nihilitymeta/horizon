@@ -2813,7 +2813,11 @@ fn stamp(base: &Path, mods: &[ContentMod]) -> Result<String> {
             // Declared in code only: nothing to read.
         } else if source.is_dir() {
             for file in &m.content.files {
-                parts.push(meta(&source.join(file))?);
+                // A registered file has no path: its bytes stand for it.
+                match m.content.registered(file) {
+                    Some(bytes) => parts.push(String::from_utf8_lossy(bytes).into_owned()),
+                    None => parts.push(meta(&source.join(file))?),
+                }
             }
         } else {
             parts.push(meta(source)?);
