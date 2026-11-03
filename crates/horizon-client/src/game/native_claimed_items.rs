@@ -148,10 +148,11 @@ impl Game<'_> {
             .into_iter()
             .find(|p| p.uuid == uuid)
             .or_else(|| self.native_acting_player().filter(|p| p.uuid == uuid))?;
-        // A standing player's eyes (`Player.DEFAULT_EYE_HEIGHT`).
+        // Their eyes in their pose: crouching, swimming and crawling lower
+        // them (`native_player_eye_height`).
         let eye = [
             player.position[0],
-            player.position[1] + 1.62,
+            player.position[1] + self.native_player_eye_height(uuid),
             player.position[2],
         ];
         let dir = super::view_vector(player.yaw, player.pitch);

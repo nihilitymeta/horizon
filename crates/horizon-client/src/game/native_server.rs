@@ -259,6 +259,27 @@ impl Game<'_> {
         );
         players
     }
+    /// The eye height of the server player `uuid`, from their pose
+    /// (`Avatar.POSES`: standing 1.62, crouching 1.27, swimming, gliding or
+    /// spinning 0.4, scaled by their scale attribute): a hub guest's from
+    /// the hub, the window's own player's (or the guest whose state is
+    /// swapped in for their action) from their box, a standing player's for
+    /// one not known.
+    pub(super) fn native_player_eye_height(&self, uuid: u128) -> f64 {
+        if let Some(g) = self
+            .lan
+            .as_ref()
+            .and_then(|host| host.hub.guests.iter().find(|g| g.uuid == uuid))
+        {
+            return g.eye_height();
+        }
+        let own = self.native_acting_player().is_some_and(|p| p.uuid == uuid)
+            || (self.remote.is_none() && self.serving.is_none() && uuid == self.owner_uuid());
+        match &self.player {
+            Some(p) if own => f64::from(p.dimensions.eye_height),
+            _ => 1.62,
+        }
+    }
     /// The owner of a single-player world, by the uuid the hooks name them
     /// with: the integrated server's owner (the hub's guest for them; read
     /// from the serving state, as the hub is out of reach while a guest's
