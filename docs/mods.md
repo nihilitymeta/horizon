@@ -42,6 +42,7 @@ cd my-mod
 cargo horizon-mod run               # build my-mod.hmod, then start the game with it turned on
 cargo horizon-mod build             # only build: target/horizon-mod/my_mod.hmod
 cargo horizon-mod check target/horizon-mod/my_mod.hmod   # the registry's checks; --json for JSON
+cargo horizon-mod check . --game <horizon-client>        # a folder too; a scripted mod's scripts loaded headlessly (lua-bindings.md)
 ```
 
 - `new <path> [--name "Name"]` writes the template. `--template native [--horizon <commit>]` writes a native trait

@@ -589,6 +589,40 @@ mod tests {
         assert_eq!(called, named);
     }
 
+    /// The hook names a script registers for (`LUA_HOOK_NAMES` in the
+    /// runtime, which `horizon.on` checks) are the ones the reference's Lua
+    /// column names, no more and no fewer.
+    #[test]
+    fn the_hook_names_a_script_may_register_are_the_reference_s() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let src =
+            std::fs::read_to_string(root.join("crates/horizon-client/src/lua_mods.rs")).unwrap();
+        let start = src.find("pub const LUA_HOOK_NAMES").unwrap();
+        let end = start + src[start..].find("];").unwrap();
+        let runtime: std::collections::BTreeSet<String> = src[start..end]
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            .map(str::to_owned)
+            .collect();
+        // Every `name(` in backticks in the Lua column is a handler a script writes.
+        let mut named = std::collections::BTreeSet::new();
+        for (_, lua) in super::LUA_HOOKS {
+            for part in lua.split('`').skip(1).step_by(2) {
+                if let Some(name) = part.split('(').next()
+                    && part.contains('(')
+                    && !name.contains('.')
+                    && !name.contains(' ')
+                    && name != "fn"
+                {
+                    named.insert(name.to_owned());
+                }
+            }
+        }
+        named.insert("command".to_owned());
+        assert_eq!(runtime, named);
+    }
+
     #[test]
     fn the_api_number_is_the_last_one_named() {
         assert_eq!(super::api_of("A thing. API 40. Later, API 57."), Some(57));

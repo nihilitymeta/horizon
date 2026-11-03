@@ -100,6 +100,62 @@ impl Budget {
 /// The file a scripted mod starts from, inside its folder.
 pub const ENTRY: &str = horizon_mods::content::SCRIPT_ENTRY;
 
+/// The hooks a script may register for with `horizon.on` (`docs/lua-bindings.md`):
+/// a name not here is refused when the script loads, so a misspelling is a
+/// load error with its line, not a handler that never runs. `command` is
+/// `horizon.command`'s own.
+pub const LUA_HOOK_NAMES: &[&str] = &[
+    "server_tick",
+    "world_lifecycle",
+    "mob_spawned",
+    "mob_ai_register",
+    "random_tick",
+    "tick_block",
+    "right_click_block",
+    "block_entity_tick",
+    "mob_hurt",
+    "player_hurt",
+    "mob_killed",
+    "mob_interact",
+    "mob_tick",
+    "mob_died",
+    "mob_fall",
+    "player_fall",
+    "mob_heal",
+    "mob_knockback",
+    "player_knockback",
+    "mob_equipped",
+    "entity_joined",
+    "item_use",
+    "item_use_on",
+    "item_hit",
+    "item_hurt_enemy",
+    "item_use_start",
+    "item_finished",
+    "item_tick",
+    "item_picked_up",
+    "item_crafted",
+    "item_dropped",
+    "loot_drops",
+    "projectile_impact",
+    "projectile_launched",
+    "explosion",
+    "player_joined",
+    "player_left",
+    "player_respawned",
+    "player_died",
+    "player_tick",
+    "player_chat",
+    "player_command",
+    "player_changed_dimension",
+    "player_bed_enter",
+    "player_exp_change",
+    "player_container_open",
+    "block_broken",
+    "block_placed",
+    "command",
+];
+
 /// The content mod's manifest, which names the mod.
 const MANIFEST: &str = "horizon-mod.toml";
 /// The Lua global the game provides.
@@ -180,6 +236,13 @@ return function(slot, horizon)
   horizon.count_items = function(who, item) return read("count_items", who, item) end
   horizon.carried_items = function(who) return read("carried_items", who) end
   horizon.data = function(path) return read("data", path) end
+  -- A refused registration (a hook name the runtime does not know) is
+  -- raised from the script's own line, as any Lua error is.
+  local on = horizon.on
+  horizon.on = function(name, f, kind)
+    local ok, e = pcall(on, name, f, kind)
+    if not ok then error(tostring(e), 2) end
+  end
   -- A summon with a host at hand is made at once and answers the mob's id;
   -- in a level hook it waits for the level's pass (the queued action).
   local queued_summon = horizon.summon
@@ -945,6 +1008,58 @@ pub fn discover(args: impl Iterator<Item = String>) -> Mods {
     mods.into()
 }
 
+/// Loads the mod at `path` headlessly, as the game would at start, with the
+/// libraries it depends on found among `dev` (mod folders or `.hmod`s), and
+/// says what went wrong: a script that fails to load (file and line), a hook
+/// `horizon.on` does not know, a command or goal that errors when declared.
+/// `Ok` carries what loaded: the mod's id and its scripts and the libraries,
+/// one line each. For `horizon-client --check-mod <path> [--dev-mod <lib>]...`
+/// and `cargo horizon-mod check`.
+pub fn check_mod(path: &Path, dev: &[PathBuf]) -> Result<Vec<String>, String> {
+    let at = |e: String| format!("{}: {e}", path.display());
+    let package = Package::read(path).map_err(at)?;
+    let manifest = package.manifest;
+    if !manifest.capabilities.contains(&Capability::Scripts) {
+        return Err(at(format!(
+            "no capability scripts in {MANIFEST}: a content mod, nothing to check here"
+        )));
+    }
+    // The registry script, as the content loader runs it.
+    Content::read(path, &manifest).map_err(at)?;
+    let mut libraries = Vec::new();
+    for dep in &manifest.depends {
+        let found = dev
+            .iter()
+            .find(|d| Package::read(d).is_ok_and(|p| p.manifest.id == *dep));
+        match found {
+            Some(d) => libraries.push((dep.clone(), d.clone())),
+            None => {
+                return Err(at(format!(
+                    "depends on {dep}, not among the --dev-mod folders given"
+                )));
+            }
+        }
+    }
+    // A settings folder of its own: `horizon.config()` works at load, and
+    // what a script saves there is thrown away with it.
+    let config = std::env::temp_dir().join(format!("horizon-check-mod-{}", std::process::id()));
+    let loaded = LuaMod::load_with(path, &libraries, Some(&config));
+    let _ = std::fs::remove_dir_all(&config);
+    let m = loaded?;
+    let mut lines = vec![format!("{}: scripts loaded", m.id)];
+    if let Ok(scripts) = m.scripts.lock() {
+        let mut names: Vec<&String> = scripts.keys().collect();
+        names.sort();
+        for name in names {
+            lines.push(format!("  {name}"));
+        }
+    }
+    for (id, lib) in &libraries {
+        lines.push(format!("  with {id} from {}", lib.display()));
+    }
+    Ok(lines)
+}
+
 /// A mod that is on, as `discover` found it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Candidate {
@@ -1186,6 +1301,12 @@ impl LuaMod {
             "on",
             lua.create_function(
                 move |lua, (name, f, kind): (String, Function, Option<String>)| {
+                    if !LUA_HOOK_NAMES.contains(&name.as_str()) {
+                        return Err(mlua::Error::runtime(format!(
+                            "horizon.on({name:?}): no such hook; the hooks are {}",
+                            LUA_HOOK_NAMES.join(", ")
+                        )));
+                    }
                     let list = match kind {
                         None => {
                             let handlers: Table = lua.named_registry_value(HANDLERS)?;
@@ -6313,6 +6434,50 @@ experimental = ["scripts"]
         assert_eq!(
             level.data[&[1, 64, -3]].get(&key("under")),
             Some(&Tag::String("ruby:hive".into()))
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A hook name the runtime does not know is refused when the script
+    /// loads, with the file and line, and the headless check says so; a mod
+    /// that loads is listed with its scripts and libraries.
+    #[test]
+    fn an_unknown_hook_name_fails_the_load_and_the_headless_check_reports_it() {
+        let (dir, path) = hmod(
+            "unknown-hook",
+            &[(
+                "scripts/init.lua",
+                b"horizon.on(\"player_joined\", function() end)\nhorizon.on(\"player_jioned\", function() end)\n",
+            )],
+        );
+        let e = LuaMod::load(&path, &[]).unwrap_err();
+        assert!(
+            e.contains("scripts/init.lua\"]:2:")
+                && e.contains("no such hook")
+                && e.contains("player_joined"),
+            "{e}"
+        );
+        let e = check_mod(&path, &[]).unwrap_err();
+        assert!(e.contains(":2:") && e.contains("player_jioned"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+        let (dir, path) = hmod(
+            "fine",
+            &[
+                (
+                    "scripts/init.lua",
+                    b"local m = require(\"helper\")\nhorizon.on(\"player_joined\", m.hello)\n",
+                ),
+                ("scripts/helper.lua", b"return { hello = function() end }\n"),
+            ],
+        );
+        let lines = check_mod(&path, &[]).unwrap();
+        assert_eq!(
+            lines,
+            [
+                "ruby: scripts loaded",
+                "  scripts/helper.lua",
+                "  scripts/init.lua"
+            ]
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }

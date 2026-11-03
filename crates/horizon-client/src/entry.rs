@@ -3,6 +3,32 @@ use crate::{crash, game, logging};
 
 /// Start the game. The executable supplies the allocator and retains the mod API marker.
 pub fn main() {
+    // `--check-mod <path> [--dev-mod <library>]...`: load a scripted mod
+    // headlessly, report, and leave; no window, no world.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(i) = args.iter().position(|a| a == "--check-mod") {
+        let Some(path) = args.get(i + 1) else {
+            eprintln!("--check-mod <path to a mod folder or .hmod>");
+            std::process::exit(2);
+        };
+        let dev: Vec<std::path::PathBuf> = args
+            .windows(2)
+            .filter(|w| w[0] == "--dev-mod")
+            .map(|w| std::path::PathBuf::from(&w[1]))
+            .collect();
+        match crate::lua_mods::check_mod(std::path::Path::new(path), &dev) {
+            Ok(lines) => {
+                for line in lines {
+                    println!("{line}");
+                }
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+    }
     main_with(crate::lua_mods::discover(std::env::args().skip(1)));
 }
 
