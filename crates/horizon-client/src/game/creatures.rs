@@ -837,6 +837,7 @@ impl Game<'_> {
             others_grid: None,
             others_index: None,
             others_villagers: None,
+            kinds: Some(self.res.mob_types()),
             daylight: self.dim != Dim::Nether && self.sky_darken() < 4,
             // day.json: false from tick 12542, true from 23460 (a step track).
             monsters_burn: self.dim == Dim::Overworld
@@ -8080,6 +8081,7 @@ mod pearl_tests {
             others_grid: None,
             others_index: None,
             others_villagers: None,
+            kinds: None,
             daylight: true,
             monsters_burn: false,
             game_time: 1000,

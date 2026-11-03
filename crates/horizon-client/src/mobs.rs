@@ -2866,6 +2866,10 @@ pub struct MobWorld<'a> {
     /// keeps them (the mob ticks: a slot keeps its mob, and its species, all
     /// tick). Each zombie looking for a village read every slot.
     pub others_villagers: Option<&'a [u32]>,
+    /// The level's mob types by id, for the kinds a goal from outside the
+    /// crate names (`GoalAction::Convert`, `Summon`): None in a harness
+    /// without them, which then takes any kind.
+    pub kinds: Option<&'a HashMap<String, Arc<MobType>>>,
     pub daylight: bool,
     /// The `gameplay/monsters_burn` attribute: the overworld day timeline's
     /// step track, false in every other dimension.

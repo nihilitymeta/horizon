@@ -40,7 +40,10 @@ shape that borrows nothing of the mob.
 - `Actions` / `GoalAction`: what the call asks for (`navigate_to`, `navigate_to_target`, `stop_navigation`,
   `move_toward`, `look_at`, `look_at_target`, `set_target`, `jump`, `attack`, `swing`; `hurt(who, amount)`,
   `convert(kind)` (become another mob, as a zombie drowns into a drowned), `summon(kind, at)`, `despawn`, `heal`,
-  `effect(name, ticks, amplifier)`). Applied in order after the call, with the mob and the world.
+  `effect(name, ticks, amplifier)`). Applied in order after the call, with the mob and the world. An action the game
+  cannot apply is dropped with a warning in the log and the mob is left as it was: a position, speed or amount that is
+  not finite, an effect no definition exists for, a kind (`convert`, `summon`; a bare name is vanilla's) the level has
+  no mob type of (`GoalAction::refused`).
 - `MobView::nearby`: the other mobs within the follow range, nearest first (`NearbyView`: id, kind, position,
   distance, health, alive, hostile, baby, target), so an infection can look for hosts or a brood for its mother.
 - `NativeBehaviour`: the decisions (`can_use`, `can_continue`, `start`, `tick`, `stop`) over a `MobView` and an

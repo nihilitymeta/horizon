@@ -282,9 +282,18 @@ impl Actions {
         &self.0
     }
     /// Applies the actions to `m`, in order, dropping those that need a world
-    /// when `cx` is `None`.
+    /// when `cx` is `None`, and those the game refuses
+    /// ([`GoalAction::refused`]) with a warning in the log.
     pub fn apply(self, m: &mut Mob, mut cx: Option<&mut Cx>) {
         for action in self.0 {
+            if let Some(why) = action.refused(cx.as_deref().map(|cx| cx.w)) {
+                log::warn!(
+                    "Horizon: goal action of mob {} ({}) dropped: {why}",
+                    m.id,
+                    m.kind.id
+                );
+                continue;
+            }
             match action {
                 GoalAction::NavigateTo { at, speed } => {
                     if let Some(cx) = cx.as_deref_mut() {
@@ -342,10 +351,12 @@ impl Actions {
                     }
                 }
                 GoalAction::Convert { kind } => {
+                    // `refused` checked the kind against the level's types:
+                    // the mob goes only when another takes its place.
                     if let Some(cx) = cx.as_deref_mut() {
                         cx.events.push(super::MobEvent::Convert {
                             from: Box::new(m.clone()),
-                            kind: intern(&kind),
+                            kind: intern(&full_kind(&kind)),
                             params: super::conversion::Params::KEEP_ALL,
                         });
                         m.removed = true;
@@ -354,7 +365,7 @@ impl Actions {
                 GoalAction::Summon { kind, at } => {
                     if let Some(cx) = cx.as_deref_mut() {
                         cx.events.push(super::MobEvent::SpawnKind {
-                            kind,
+                            kind: full_kind(&kind),
                             at,
                             setup: super::SpawnSetup {
                                 yaw: m.yaw,
@@ -371,8 +382,57 @@ impl Actions {
                     effect,
                     ticks,
                     amplifier,
-                } => m.add_effect(intern(&effect), ticks, amplifier),
+                } => {
+                    // `refused` found the definition: its id is the static
+                    // one the game's own effects carry.
+                    if let Some(def) = horizon_client_core::potions::effect(&effect) {
+                        m.add_effect(def.id, ticks, amplifier);
+                    }
+                }
             }
+        }
+    }
+}
+
+/// A kind as the level's types name it: `zombie` is `minecraft:zombie`.
+fn full_kind(kind: &str) -> String {
+    if kind.contains(':') {
+        kind.to_owned()
+    } else {
+        format!("minecraft:{kind}")
+    }
+}
+
+impl GoalAction {
+    /// Why the game drops this action instead of applying it: a position,
+    /// speed or amount that is not finite (a script's NaN would poison the
+    /// mob's position and be saved with it), an effect no definition
+    /// exists for (the check `native_mob_effect` makes), or a kind of mob
+    /// the level has no type of (`convert_to` would make nothing and the
+    /// mob would vanish). A kind passes when `w` has no type table.
+    pub fn refused(&self, w: Option<&MobWorld>) -> Option<String> {
+        let finite3 = |at: &[f64; 3]| at.iter().all(|v| v.is_finite());
+        let not_finite = || Some(format!("{self:?} has a number that is not finite"));
+        let kind_known = |kind: &str| -> Option<String> {
+            let known = w
+                .and_then(|w| w.kinds)
+                .is_none_or(|kinds| kinds.contains_key(&full_kind(kind)));
+            (!known).then(|| format!("{self:?}: no mob type {kind:?}"))
+        };
+        match self {
+            Self::NavigateTo { at, speed } | Self::MoveToward { at, speed }
+                if !(finite3(at) && speed.is_finite()) =>
+            {
+                not_finite()
+            }
+            Self::NavigateToTarget { speed } if !speed.is_finite() => not_finite(),
+            Self::LookAt { at } | Self::Summon { at, .. } if !finite3(at) => not_finite(),
+            Self::Hurt { amount, .. } | Self::Heal(amount) if !amount.is_finite() => not_finite(),
+            Self::Convert { kind } | Self::Summon { kind, .. } => kind_known(kind),
+            Self::Effect { effect, .. } => horizon_client_core::potions::effect(effect)
+                .is_none()
+                .then(|| format!("{self:?}: no effect {effect:?}")),
+            _ => None,
         }
     }
 }
@@ -540,6 +600,77 @@ mod tests {
         // No path was made and no swing started: those need the world.
         assert!(m.ai.nav.is_done());
         assert!(!m.ai.swinging);
+    }
+
+    #[test]
+    fn an_action_with_a_number_that_is_not_finite_is_dropped() {
+        let mut m = mob();
+        m.health = 4.0;
+        let before = (m.ai.mov.wanted, m.ai.mov.speed_modifier, m.ai.look.wanted);
+        let mut out = Actions::default();
+        out.move_toward([f64::NAN, 64.0, 0.5], 1.0);
+        out.move_toward([2.0, 64.0, 2.0], f64::INFINITY);
+        out.look_at([1.0, f64::NEG_INFINITY, 0.0]);
+        out.heal(f32::NAN);
+        for a in out.as_slice() {
+            assert!(a.refused(None).is_some_and(|w| w.contains("not finite")), "{a:?}");
+        }
+        out.apply(&mut m, None);
+        assert_eq!((m.ai.mov.wanted, m.ai.mov.speed_modifier, m.ai.look.wanted), before);
+        assert_eq!(m.health, 4.0);
+        // The same shapes with finite numbers pass.
+        let mut fine = Actions::default();
+        fine.move_toward([2.0, 64.0, 2.0], 1.5);
+        fine.look_at([1.0, 64.0, 0.0]);
+        fine.heal(1.0);
+        fine.hurt(Who::Player, 2.0);
+        fine.navigate_to([3.0, 64.0, 3.0], 1.0);
+        assert!(fine.as_slice().iter().all(|a| a.refused(None).is_none()));
+    }
+
+    #[test]
+    fn an_unknown_effect_or_kind_is_dropped_and_the_mob_stays() {
+        let ran = crate::mobs::world::with_test_world(&[], |w, _| {
+            let mut m = mob();
+            let mut events = Vec::new();
+            let mut lr = horizon_core::random::LegacyRandom::new(1);
+            let mut cx = Cx {
+                w,
+                lr: &mut lr,
+                events: &mut events,
+            };
+            let mut out = Actions::default();
+            out.convert("ruby:crawlr");
+            out.effect("ruby:nope", 100, 0);
+            out.summon("ruby:crawlr", [0.5, 64.0, 0.5]);
+            let refused: Vec<String> = out
+                .as_slice()
+                .iter()
+                .filter_map(|a| a.refused(Some(w)))
+                .collect();
+            assert_eq!(refused.len(), 3, "{refused:?}");
+            assert!(refused[0].contains("no mob type \"ruby:crawlr\""), "{refused:?}");
+            assert!(refused[1].contains("no effect \"ruby:nope\""), "{refused:?}");
+            out.apply(&mut m, Some(&mut cx));
+            // Nothing happened: the mob is still there, with no phantom effect.
+            assert!(!m.removed);
+            assert!(m.extra.effects.is_empty());
+            assert!(cx.events.is_empty());
+            // A known effect and a known kind (bare names are vanilla's) pass.
+            let mut out = Actions::default();
+            out.effect("poison", 100, 0);
+            out.convert("drowned");
+            out.apply(&mut m, Some(&mut cx));
+            assert!(m.extra.effects.iter().any(|e| e.0 == "minecraft:poison"));
+            assert!(m.removed);
+            assert!(matches!(
+                cx.events.as_slice(),
+                [super::super::MobEvent::Convert { kind: "minecraft:drowned", .. }]
+            ));
+        });
+        if !ran {
+            eprintln!("skipped: no vanilla data");
+        }
     }
 
     /// Counts its calls per mob: the behaviour is shared, the state is the mob's.

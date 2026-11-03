@@ -442,6 +442,11 @@ pub(crate) fn with_resource_test_world(
     let motion = crate::motion::MotionResources::load(root, &assets).unwrap();
     let data = super::MobData::load(root, &facts);
     let types = super::MobTypes::load(root).unwrap();
+    let kinds: std::collections::HashMap<String, std::sync::Arc<super::MobType>> = types
+        .types
+        .iter()
+        .map(|(id, t)| (id.clone(), std::sync::Arc::new(t.clone())))
+        .collect();
     let biomes = crate::biome::Biomes::load(root).unwrap();
     let items = crate::items::Items::load(
         root,
@@ -476,6 +481,7 @@ pub(crate) fn with_resource_test_world(
         others_grid: None,
         others_index: None,
         others_villagers: None,
+        kinds: Some(&kinds),
         daylight: true,
         monsters_burn: false,
         game_time: 1000,
