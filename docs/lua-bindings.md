@@ -575,6 +575,23 @@ table when its step lands, with the tests and the game check that show it.
 | Client-side scripts | Every script runs on the server side of the game: the window's own server in single player, the host's in LAN. `side` in the manifest is the content's. There is no HUD, key binding, rendering or sound of the client's own; a server script reaches the client through the engine's packets, such as titles, sounds and particles. A client script would be a second state, with its own hooks (`hud`, `key`, `render_*`), kept apart |
 | Configuration | `horizon.config()` and `horizon.save_config(t)` are all of it: one JSON file that a person edits. There is no options screen and no setting per world; a mod that wants values per world keeps them in `horizon.world_data()`, and sets them with a command of its own |
 
+## Working on a script
+
+The developer tools are made for this ([dev-tools.md](dev-tools.md), on the `egui-tools` branch, which is stacked on
+this one). Start the game with `--dev-tools --dev-mod /path/to/mod`, then:
+
+- Type `/lua` to open the console. Its first section lists the scripted mods, with their scripts, handlers, goals
+  and last error. Its **reload** button reads a mod's scripts again and runs `init.lua` from the start at the next
+  server tick, as `/reload` does, and shows the result. The mod's `horizon.log` and `print` lines, and its errors,
+  appear there too, tagged `[mod_id]`, so you see a failing handler at once instead of finding it in the log.
+- Type `/goals @e[type=zombie,sort=nearest,limit=1]` to see a mob's goal selectors. A Lua goal is named
+  `mod_id:name`, marked running or idle, with a history of when it ran. `/senses` and `/nav` show what the goal's
+  view sees (the target, the nearest player, navigation) and the path that the game walks for `out.navigate_to`.
+- Type `/inspect <targets>` to see an entity's data as `/data get entity` prints it, and
+  `/watch <targets> <path>` to chart one number of it over time.
+- In the console, `mc.mods()` and `mc.reload_mods([id])` do what the console's mod section does, for a script of
+  the tools' own.
+
 ## Plan
 
 | Step | What | Why |

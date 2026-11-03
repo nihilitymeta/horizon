@@ -13,6 +13,10 @@
 //!
 //! Scripts travel inside the `.hmod` under capability `scripts`, or load from
 //! `--dev-mod` folders. Mob behaviour is written as goals ([`goals`]).
+//!
+//! With the developer tools on (docs/dev-tools.md), each mod's `horizon.log`,
+//! `print` and errors also reach the Lua console's window, which lists the
+//! mods ([`status`]) and reloads one on demand ([`request_reload`]).
 use crate::mod_api::{
     AttachmentCodec, AttachmentType, BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
     BlockPos, BlockStateId, Compound, DataPackFilesEvent, EntityTickListenedEvent,
@@ -42,6 +46,68 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
+
+/// What the developer tools show of one scripted mod (docs/dev-tools.md).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ModStatus {
+    /// The mod's id, or its path's file name when it did not load.
+    pub id: String,
+    /// The `.hmod` or folder.
+    pub source: String,
+    /// Scripts read from it.
+    pub scripts: usize,
+    /// Reloads done (`/reload`, the console).
+    pub reloads: u32,
+    /// Hook names with the count of handlers registered for each, sorted.
+    pub handlers: Vec<(String, usize)>,
+    /// Goal names (`horizon.goal`), sorted.
+    pub goals: Vec<String>,
+    /// The last error: a load or reload failure, or a handler's error, until the next reload.
+    pub error: Option<String>,
+}
+
+/// Every scripted mod's status, in load order.
+static STATUS: Mutex<Vec<ModStatus>> = Mutex::new(Vec::new());
+/// Reloads asked for from the developer tools: by mod id, or everyone with a
+/// new generation of `RELOAD_ALL`. Served on the server thread at the start
+/// of a tick.
+static RELOAD: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static RELOAD_ALL: AtomicU32 = AtomicU32::new(0);
+
+/// The scripted mods and what is known of them, for the developer tools.
+pub fn status() -> Vec<ModStatus> {
+    STATUS.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// Ask the mod `id` (None: every mod) to read its scripts again and run
+/// `init.lua` afresh at the next server tick, as `/reload` makes it do.
+pub fn request_reload(id: Option<&str>) {
+    match id {
+        Some(id) => RELOAD
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(id.to_owned()),
+        None => {
+            RELOAD_ALL.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+/// A line for the developer tools' console, when they are on.
+fn to_console(error: bool, line: String) {
+    if crate::dev_tools::enabled() {
+        use crate::dev_tools::console::{Kind, push};
+        push(if error { Kind::Err } else { Kind::Out }, line);
+    }
+}
+
+fn set_status(status: ModStatus) {
+    let mut all = STATUS.lock().unwrap_or_else(|e| e.into_inner());
+    match all.iter_mut().find(|s| s.id == status.id) {
+        Some(s) => *s = status,
+        None => all.push(status),
+    }
+}
 
 pub mod goals;
 pub mod json;
@@ -866,6 +932,10 @@ pub struct LuaMod {
     /// The mod's settings file (`horizon.config`): `config/<id>.json` of
     /// the game folder; none when the folder is not known (a test).
     config_path: Option<PathBuf>,
+    /// Reloads done, for the status.
+    reloads: AtomicU32,
+    /// The `RELOAD_ALL` generation served last.
+    reload_seen: AtomicU32,
 }
 
 /// A mod's goal definitions, shared with the `horizon.goal` function.
@@ -1002,10 +1072,17 @@ pub fn discover(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
     for step in load_order(&on) {
         let c = &on[step.index];
         if let Some(missing) = step.missing {
-            log::error!(
-                "Horizon: Lua mod {} not loaded: it needs {missing}, which is not installed, not on, or not that version",
-                c.id
+            let e = format!(
+                "needs {missing}, which is not installed, not on, or not that version"
             );
+            log::error!("Horizon: Lua mod {} not loaded: it {e}", c.id);
+            to_console(true, format!("[{}] not loaded: {e}", c.id));
+            set_status(ModStatus {
+                id: c.id.clone(),
+                source: c.path.display().to_string(),
+                error: Some(e),
+                ..Default::default()
+            });
             continue;
         }
         if !c.scripted {
@@ -1026,14 +1103,20 @@ pub fn discover(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
         let config_dir = game_dir.as_deref().unwrap_or(&here).join("config");
         match LuaMod::load_with(&c.path, &libraries, Some(&config_dir)) {
             Ok(lua) => {
-                log::info!(
-                    "Horizon: Lua mod {} loaded from {}",
-                    lua.id,
-                    c.path.display()
-                );
+                log::info!("Horizon: Lua mod {} loaded from {}", lua.id, c.path.display());
+                lua.publish(None);
                 mods.push(Box::new(lua));
             }
-            Err(e) => log::error!("Horizon: Lua mod in {} not loaded: {e}", c.path.display()),
+            Err(e) => {
+                log::error!("Horizon: Lua mod in {} not loaded: {e}", c.path.display());
+                to_console(true, format!("[{}] not loaded: {e}", c.path.display()));
+                set_status(ModStatus {
+                    id: c.id.clone(),
+                    source: c.path.display().to_string(),
+                    error: Some(e),
+                    ..Default::default()
+                });
+            }
         }
     }
     mods
@@ -1278,6 +1361,8 @@ impl LuaMod {
             world_attachment,
             player_attachment,
             config_path,
+            reloads: AtomicU32::new(0),
+            reload_seen: AtomicU32::new(RELOAD_ALL.load(Ordering::Relaxed)),
         };
         m.install_api().map_err(|e| e.to_string())?;
         m.run(ENTRY).map_err(|e| e.to_string())?;
@@ -1407,6 +1492,88 @@ impl LuaMod {
         &self.id
     }
 
+    /// Reload because of `why`, and tell the log and the console how it went.
+    fn reload_now(&self, why: &str) {
+        match self.reload() {
+            Ok(()) => {
+                self.reloads.fetch_add(1, Ordering::Relaxed);
+                log::info!("Horizon: Lua mod {} reloaded ({why})", self.id);
+                to_console(false, format!("[{}] reloaded ({why})", self.id));
+                self.publish(None);
+            }
+            Err(e) => {
+                log::error!(
+                    "Horizon: Lua mod {} not reloaded, still running as before: {e}",
+                    self.id
+                );
+                to_console(true, format!("[{}] not reloaded, running as before: {e}", self.id));
+                self.publish(Some(e));
+            }
+        }
+    }
+
+    /// Whether the developer tools asked this mod to reload since last asked.
+    fn reload_asked(&self) -> bool {
+        let all = RELOAD_ALL.load(Ordering::Relaxed);
+        let mut asked = self.reload_seen.swap(all, Ordering::Relaxed) != all;
+        let mut list = RELOAD.lock().unwrap_or_else(|e| e.into_inner());
+        if list.contains(&self.id) {
+            list.retain(|id| *id != self.id);
+            asked = true;
+        }
+        asked
+    }
+
+    /// The status the developer tools show, with `error` as the last error.
+    fn publish(&self, error: Option<String>) {
+        let handlers = (|| -> mlua::Result<Vec<(String, usize)>> {
+            let table: Table = self.lua.named_registry_value(HANDLERS)?;
+            let mut list = Vec::new();
+            for pair in table.pairs::<String, Table>() {
+                let (name, fns) = pair?;
+                list.push((name, fns.raw_len()));
+            }
+            list.sort();
+            Ok(list)
+        })()
+        .unwrap_or_default();
+        let mut goals: Vec<String> = self
+            .goals
+            .lock()
+            .map(|g| g.keys().cloned().collect())
+            .unwrap_or_default();
+        goals.sort();
+        set_status(ModStatus {
+            id: self.id.clone(),
+            source: self.source.display().to_string(),
+            scripts: self.scripts.lock().map(|s| s.len()).unwrap_or(0),
+            reloads: self.reloads.load(Ordering::Relaxed),
+            handlers,
+            goals,
+            error,
+        });
+    }
+
+    /// An error of a hook or an action: the log, the console, the status.
+    fn error(&self, text: String) {
+        log::error!("[lua:{}] {text}", self.id);
+        to_console(true, format!("[{}] {text}", self.id));
+        if let Some(s) = STATUS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter_mut()
+            .find(|s| s.id == self.id)
+        {
+            s.error = Some(text);
+        }
+    }
+
+    /// Something dropped or odd: the log and the console.
+    fn warn(&self, text: String) {
+        log::warn!("[lua:{}] {text}", self.id);
+        to_console(true, format!("[{}] {text}", self.id));
+    }
+
     fn install_api(&self) -> mlua::Result<()> {
         let lua = &self.lua;
         let scripts = self.scripts.clone();
@@ -1435,6 +1602,25 @@ impl LuaMod {
             "log",
             lua.create_function(move |_, msg: String| {
                 log::info!("[lua:{id}] {msg}");
+                to_console(false, format!("[{id}] {msg}"));
+                Ok(())
+            })?,
+        )?;
+        // `print` goes where `horizon.log` goes, not to the terminal.
+        let id = self.id.clone();
+        lua.globals().set(
+            "print",
+            lua.create_function(move |_, args: MultiValue| {
+                let line: Vec<String> = args
+                    .iter()
+                    .map(|v| match v {
+                        Value::String(s) => s.to_string_lossy(),
+                        other => format!("{other:#?}"),
+                    })
+                    .collect();
+                let msg = line.join("\t");
+                log::info!("[lua:{id}] {msg}");
+                to_console(false, format!("[{id}] {msg}"));
                 Ok(())
             })?,
         )?;
@@ -1511,7 +1697,9 @@ impl LuaMod {
             )?,
         )?;
         // Goals: `horizon.goal(name, def)` defines one for `horizon.add_goal`.
+        // Its name for F3 and the tools' /goals is `mod_id:name`.
         let goals = self.goals.clone();
+        let id = self.id.clone();
         api.set(
             "goal",
             lua.create_function(move |lua, (name, def): (String, Table)| {
@@ -1519,7 +1707,7 @@ impl LuaMod {
                 // One name for the game's life: a redefinition keeps the first string.
                 let leaked: &'static str = match goals.get(name.as_str()) {
                     Some(g) => g.name,
-                    None => Box::leak(name.clone().into_boxed_str()),
+                    None => Box::leak(format!("{id}:{name}").into_boxed_str()),
                 };
                 let def = goals::GoalDef::parse(lua, leaked, def)?;
                 goals.insert(name, def);
@@ -2072,7 +2260,7 @@ impl LuaMod {
     }
 
     fn hook_error(&self, hook: &str, e: mlua::Error) -> Flow {
-        log::error!("[lua:{}] {hook}: {e}", self.id);
+        self.error(format!("{hook}: {e}"));
         Flow::Continue
     }
 
@@ -2096,12 +2284,12 @@ impl LuaMod {
                 self.run_action(host, action, a)
             }),
             None => self.call_bare(hook, kind, args, &mut |action, _| {
-                log::warn!("[lua:{}] {hook}: {action} needs a host; dropped", self.id);
+                self.warn(format!("{hook}: {action} needs a host; dropped"));
                 Ok(())
             }),
         };
         if let Err(e) = r {
-            log::error!("[lua:{}] {hook}: {e}", self.id);
+            self.error(format!("{hook}: {e}"));
         }
     }
 
@@ -2566,7 +2754,7 @@ impl LuaMod {
                     host.teleport_mob(&dimension, id, v);
                 }
             }
-            other => log::warn!("[lua:{}] unknown action {other}", self.id),
+            other => self.warn(format!("unknown action {other}")),
         }
         Ok(())
     }
@@ -2602,13 +2790,7 @@ impl Hooks for LuaMod {
             );
             return;
         }
-        match self.reload() {
-            Ok(()) => log::info!("Horizon: Lua mod {} reloaded", self.id),
-            Err(e) => log::error!(
-                "Horizon: Lua mod {} not reloaded, still running as before: {e}",
-                self.id
-            ),
-        }
+        self.reload_now("/reload");
     }
     /// A block that ticks randomly does: `random_tick(dimension, block, x, y,
     /// z, props, data)`, `data` the block entity's saved table when the block
@@ -2774,6 +2956,10 @@ impl Hooks for LuaMod {
             ServerTickPhase::ServerTickStart { world_running } => ("start", world_running),
             ServerTickPhase::ServerTickEnd { world_running } => ("end", world_running),
         };
+        // The developer tools asked for a reload: before this tick's handlers.
+        if phase == "start" && self.reload_asked() {
+            self.reload_now("the console");
+        }
         self.call(Some(host), "server_tick", (phase, running));
     }
     /// A mob's goals as its species set them up: handlers see the mob's view
@@ -2784,7 +2970,7 @@ impl Hooks for LuaMod {
         let mob = &mut *event.mob;
         let view = match goals::view_table(&self.lua, &MobView::of(mob, None)) {
             Ok(view) => view,
-            Err(e) => return log::error!("[lua:{}] mob_ai_register: {e}", self.id),
+            Err(e) => return self.error(format!("mob_ai_register: {e}")),
         };
         let kind = qualify(&mob.kind.id);
         let r = self.call_bare("mob_ai_register", Some(&kind), view, &mut |action, args| {
@@ -2810,15 +2996,12 @@ impl Hooks for LuaMod {
                 }
                 "clear_goals" => mob.ai.goals.clear(),
                 "clear_target_goals" => mob.ai.targets.clear(),
-                other => log::warn!(
-                    "[lua:{}] mob_ai_register: {other} needs a host; dropped",
-                    self.id
-                ),
+                other => self.warn(format!("mob_ai_register: {other} needs a host; dropped")),
             }
             Ok(())
         });
         if let Err(e) = r {
-            log::error!("[lua:{}] mob_ai_register: {e}", self.id);
+            self.error(format!("mob_ai_register: {e}"));
         }
     }
     fn mob_spawned(&self, host: &mut dyn Host, event: &mut MobSpawnedEvent<'_>) {
@@ -4083,9 +4266,7 @@ impl Hooks for LuaMod {
                 match action {
                     "set_amount" => amount = args.get::<f32>(1)?,
                     "cancel" => cancel = true,
-                    other => {
-                        log::warn!("[lua:{}] {hook}: {other} needs a host; dropped", self.id)
-                    }
+                    other => self.warn(format!("{hook}: {other} needs a host; dropped")),
                 }
                 Ok(())
             },
@@ -6967,6 +7148,49 @@ experimental = ["scripts"]
         let m = LuaMod::load(&user, &[("lib".into(), new)]).unwrap();
         assert_eq!(m.lua.globals().get::<String>("MINE").unwrap(), "0.3.0");
         assert_eq!(m.lua.globals().get::<String>("LIB").unwrap(), "2.1.0");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_developer_tools_see_a_mods_status_and_reload_it() {
+        let (dir, path) = hmod(
+            "status",
+            &[(
+                "scripts/init.lua",
+                b"horizon.goal('stalk', { can_use = function() return false end })\n\
+                  horizon.on('server_tick', function() end)\n\
+                  horizon.on('mob_spawned', function() error('oops') end)",
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        m.publish(None);
+        let of = |m: &LuaMod| status().into_iter().find(|s| s.id == m.id()).unwrap();
+        let s = of(&m);
+        assert_eq!((s.scripts, s.reloads), (1, 0));
+        assert_eq!(s.goals, ["stalk"]);
+        assert_eq!(
+            s.handlers,
+            [("mob_spawned".to_string(), 1), ("server_tick".to_string(), 1)]
+        );
+        assert!(s.error.is_none());
+        // The goal's name for F3 and /goals says whose it is.
+        assert_eq!(
+            m.goals.lock().unwrap()["stalk"].name,
+            format!("{}:stalk", m.id())
+        );
+        // A handler's error is the status's last error.
+        m.call(None, "mob_spawned", ());
+        assert!(of(&m).error.unwrap().contains("oops"));
+        // The console asks for a reload, by id or for everyone: each is served once.
+        assert!(!m.reload_asked());
+        request_reload(Some(m.id()));
+        assert!(m.reload_asked() && !m.reload_asked());
+        request_reload(None);
+        assert!(m.reload_asked() && !m.reload_asked());
+        m.reload_now("the test");
+        let s = of(&m);
+        assert_eq!(s.reloads, 1);
+        assert!(s.error.is_none());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

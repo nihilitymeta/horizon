@@ -415,6 +415,35 @@ impl Game<'_> {
                 })?,
             )?;
             mc.set(
+                "mods",
+                lua.create_function(|lua, ()| {
+                    let list = lua.create_table()?;
+                    for m in crate::lua_mods::status() {
+                        let t = lua.create_table()?;
+                        t.set("id", m.id)?;
+                        t.set("source", m.source)?;
+                        t.set("scripts", m.scripts)?;
+                        t.set("reloads", m.reloads)?;
+                        let handlers = lua.create_table()?;
+                        for (name, n) in m.handlers {
+                            handlers.set(name, n)?;
+                        }
+                        t.set("handlers", handlers)?;
+                        t.set("goals", lua.create_sequence_from(m.goals)?)?;
+                        t.set("error", m.error)?;
+                        list.push(t)?;
+                    }
+                    Ok(list)
+                })?,
+            )?;
+            mc.set(
+                "reload_mods",
+                lua.create_function(|_, id: Option<String>| {
+                    crate::lua_mods::request_reload(id.as_deref());
+                    Ok(())
+                })?,
+            )?;
+            mc.set(
                 "log",
                 lua.create_function(|_, msg: String| {
                     log::info!("[lua console] {msg}");

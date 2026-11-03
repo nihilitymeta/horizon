@@ -1,10 +1,18 @@
 # Developer tools (egui)
 
-Status: the overlay, pointer input with a release key, and a read-only entity inspector (`/data get entity` as a
-tree, plus a mob's goals) are built (`crates/horizon-client/src/dev_tools.rs`, `mobs/observe.rs`,
-`game/commands/inspect.rs`, `/inspect`); the rest is the plan. Branch
-`egui-tools` of whos-carmen/horizon, `main` + this one concern. For people working on mods and engine features,
-never on in a player's game.
+Status: the overlay, pointer input with a release key, the read-only entity windows (`/inspect`, `/goals`,
+`/senses`, `/nav`, `/watch`, `/mobai log`) and the Lua console (`/lua`) are built
+(`crates/horizon-client/src/dev_tools.rs`, `dev_tools/console.rs`, `mobs/observe.rs`, `game/commands/inspect.rs`,
+`game/commands/lua_console.rs`); the rest is the plan. Branch `egui-tools` of whos-carmen/horizon, stacked on
+`lua-bindings` (which sits on `mob-ai-hooks`): the console shows and reloads the scripted mods
+([lua-bindings.md](lua-bindings.md)). For people working on mods and engine features, never on in a player's game.
+
+**Only with the tools.** The commands exist only in a game started with the tools (`--dev-tools` or
+`HORIZON_DEV_TOOLS=1` call `vanilla::set_dev_tools_commands`; `tree_extra::register_dev_tools`), as `/pregen` exists
+only with `--pregen`: they run Lua and the owner's commands, so no LAN world or dedicated server has them unless its
+owner asked. The chat tree lists them under the same switch. `/lua` refuses a guest (it runs as the host and shows on
+the host's screen), `mc.run` takes a file name in the scripts folder and no path, and a chunk that runs over two
+seconds is stopped by Luau's interrupt, so a typo's endless loop does not freeze the server thread.
 
 ## Why egui, not Dear ImGui
 
@@ -74,6 +82,8 @@ command.
 | `mc.on_tick(fn)`, `mc.off_tick()` | Run `fn` every server tick until stopped (the window's button, `mc.off_tick()`, or an error in a handler) |
 | `mc.run(file)`, `mc.scripts_dir()` | Run a script of the scripts folder; the folder's path |
 | `print(...)`, `mc.log(msg)` | To the window; `mc.log` also to the game log |
+| `mc.mods()` | The scripted mods ([lua-bindings.md](lua-bindings.md)): `id`, `source`, `scripts`, `reloads`, `handlers` (hook name to count), `goals`, `error` |
+| `mc.reload_mods([id])` | The scripted mods (or one, by id) read their scripts again and run `init.lua` afresh at the next server tick, as `/reload` makes them do |
 
 ```lua
 -- dev-tools/scripts/follow.lua: the nearest pig walks after the player.
@@ -84,6 +94,12 @@ mc.on_tick(function()
   mc.cmd(string.format("execute as @e[type=pig,limit=1,sort=nearest] run tp @s %.1f %.1f %.1f", x, y, z))
 end)
 ```
+
+**The scripted mods in the console.** The window's first fold lists every Lua mod (`lua_mods::status`): its source,
+how many scripts it has, how often it was reloaded, its handlers by hook and its goals, its last error in red (a
+failed load or reload, or a handler's error, until the next reload) and a reload button (`lua_mods::request_reload`,
+served at the start of the next server tick). A mod's `horizon.log` and `print` lines, and its errors, show in the
+console's output beside the console's own, tagged `[mod_id]`. In `/goals`, a Lua goal is named `mod_id:name`.
 
 The chat box completes and colours these like vanilla's commands: the tree a player gets is vanilla's commands
 report plus `lan/commands.rs`'s `horizon_commands`, where Horizon's own commands must be listed.
@@ -107,7 +123,7 @@ HUD overlaps them; egui's cursor icons and clipboard are not wired (no resize cu
 | 2 | ~~Pointer input and a toggle key~~ built (above); left: egui's platform output (cursor icons, clipboard) | Clickable tools |
 | 3 | ~~`/goals`, `/senses`, `/nav`, `/watch`, `/mobai log`~~ built (above); left: the F3 numbers as live plots, a mod list with each mod's hooks and the time spent in them,  brain species (villagers, piglins and wardens run `*_brain.rs`, not goals), block entities and storage as `/data` reads them | What a mod developer needs while the game runs |
 | 4 | ~~`--dev-tools` launch option~~ built; a registry entry (`registry/dev_tools.json`, kind `engine`) so the launcher's Mods page switches it | No environment variables for people |
-| 5 | Build feature `dev-tools`, off in release profiles; `/inspect` registered only then | A player's binary carries no egui and no `/inspect` |
+| 5 | Build feature `dev-tools`, off in release profiles (~~the commands registered only with the tools~~ built) | A player's binary carries no egui |
 | 6 | Brains over the network: the server sends snapshots on a mod channel (`net_send_to_player`) so a remote server's mobs show too | Multiplayer |
 
 Step 1 is an engine hook point: small, upstreamable, and useful to any mod that draws. Step 3 is where the tools

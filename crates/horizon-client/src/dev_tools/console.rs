@@ -144,6 +144,8 @@ pub const SIGNATURES: &[(&str, &str, &str)] = &[
     ("mc.run", "mc.run(file)  a script of the scripts folder", "mc.run(\"hello.lua\")"),
     ("mc.scripts_dir", "mc.scripts_dir() -> path", "print(mc.scripts_dir())"),
     ("mc.log", "mc.log(message)  the window and the game log", "mc.log(\"hi\")"),
+    ("mc.mods", "mc.mods() -> {{id, source, scripts, reloads, handlers, goals, error}, ...}", "for _, m in ipairs(mc.mods()) do print(m.id, m.error) end"),
+    ("mc.reload_mods", "mc.reload_mods([id])  the scripted mods read their scripts again next tick", "mc.reload_mods(\"horizon_parasite_mod\")"),
     ("print", "print(...)  the window", "print(mc.snbt(\"@p\", \"Pos\"))"),
 ];
 
@@ -228,6 +230,8 @@ const LUA_NAMES: &[(&str, &str)] = &[
     ("mc.run(", "run a script of the scripts folder"),
     ("mc.scripts_dir()", "the scripts folder"),
     ("mc.log(", "to the window and the game log"),
+    ("mc.mods()", "the scripted mods: id, source, scripts, reloads, handlers, goals, error"),
+    ("mc.reload_mods(", "reload the scripted mods' scripts next tick: all, or one by id"),
     ("print(", "to the window"),
     ("string.format(", ""),
     ("tostring(", ""),
@@ -456,6 +460,55 @@ pub fn run_file(path: &Path) {
     }
 }
 
+/// The scripted mods (docs/lua-bindings.md): each with its source, scripts,
+/// handlers and goals, its last error in red, and a reload button that
+/// reads its scripts again at the next server tick.
+fn mods_fold(ui: &mut egui::Ui) {
+    let mods = crate::lua_mods::status();
+    egui::CollapsingHeader::new(format!("Lua mods ({})", mods.len()))
+        .id_salt("mods")
+        .default_open(mods.iter().any(|m| m.error.is_some()))
+        .show(ui, |ui| {
+            if mods.is_empty() {
+                ui.weak("none: a .hmod with capability scripts that is on, or --dev-mod <folder>");
+                return;
+            }
+            for m in &mods {
+                ui.horizontal(|ui| {
+                    if m.scripts > 0 && ui.small_button("reload").clicked() {
+                        crate::lua_mods::request_reload(Some(&m.id));
+                    }
+                    ui.strong(&m.id);
+                    ui.weak(&m.source);
+                });
+                if m.scripts > 0 {
+                    let handlers: Vec<String> = m
+                        .handlers
+                        .iter()
+                        .map(|(name, n)| if *n == 1 { name.clone() } else { format!("{name} ×{n}") })
+                        .collect();
+                    ui.weak(format!(
+                        "{} script{}, reloaded {} time{}; handlers: {}; goals: {}",
+                        m.scripts,
+                        if m.scripts == 1 { "" } else { "s" },
+                        m.reloads,
+                        if m.reloads == 1 { "" } else { "s" },
+                        if handlers.is_empty() { "none".to_string() } else { handlers.join(", ") },
+                        if m.goals.is_empty() { "none".to_string() } else { m.goals.join(", ") },
+                    ));
+                }
+                if let Some(e) = &m.error {
+                    ui.colored_label(egui::Color32::LIGHT_RED, e);
+                }
+            }
+            if mods.len() > 1 && ui.small_button("reload all").clicked() {
+                crate::lua_mods::request_reload(None);
+            }
+            ui.weak("a reload runs at the next server tick, as /reload does; the mods' log and print lines show below");
+        });
+    ui.separator();
+}
+
 /// The console window, when open.
 pub fn window(ctx: &egui::Context) {
     if !OPEN.load(Ordering::Relaxed) {
@@ -469,6 +522,7 @@ pub fn window(ctx: &egui::Context) {
         .default_width(560.0)
         .default_height(480.0)
         .show(ctx, |ui| {
+            mods_fold(ui);
             // Scripts: the folder's files, each with a run button.
             egui::CollapsingHeader::new(format!("scripts in {SCRIPTS_DIR}/"))
                 .id_salt("scripts")
