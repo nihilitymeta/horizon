@@ -444,7 +444,7 @@ mod tests {
         assert!(
             std::fs::read_to_string(path.join(".luaurc"))
                 .unwrap()
-                .contains("horizon-modkit/types")
+                .contains("horizon-modkit/scripts/modkit")
         );
         assert!(
             std::fs::read_to_string(path.join("README.md"))
