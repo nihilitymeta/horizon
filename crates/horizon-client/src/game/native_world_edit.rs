@@ -77,6 +77,28 @@ impl Game<'_> {
         }
         self.block_state(&b).ok()
     }
+    /// The block state `state` names, as a command writes one
+    /// (`minecraft:oak_log[axis=x]`; `minecraft:air` for a state the game
+    /// doesn't have): the reverse of `native_state_named`, for a hook that
+    /// hands a state (`native_loot_drops`'s block). API 369.
+    pub(super) fn native_state_name(&self, state: BlockStateId) -> String {
+        let Some(s) = self.pack.assets.registry.state(state) else {
+            return "minecraft:air".to_owned();
+        };
+        let mut name = s.name.to_string();
+        if !s.properties.is_empty() {
+            let mut props: Vec<String> = s
+                .properties
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect();
+            props.sort();
+            name.push('[');
+            name.push_str(&props.join(","));
+            name.push(']');
+        }
+        name
+    }
     pub(super) fn native_level_open(&self, dimension: &str) -> bool {
         (self.serving.is_some() || self.options.dedicated.is_some()) && dimension == self.dim.id()
     }

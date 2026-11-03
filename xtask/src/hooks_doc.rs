@@ -21,7 +21,7 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ("mob_ai_register", "`mob_ai_register(mob)`, by kind"),
     (
         "living_incoming_damage",
-        "`mob_hurt(mob, damage_type, causing, direct, amount)`, by kind",
+        "`mob_hurt(mob, damage_type, causing, direct, amount)`, by kind; `player_hurt(player, ...)` for a player",
     ),
     (
         "mob_killed",
@@ -102,6 +102,71 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ("player_died", "`player_died(player, cause)`"),
     ("register_commands", "`horizon.command(usage, level, fn)`"),
     ("perform_command", "`fn(player, args)` of `horizon.command`"),
+    ("player_tick", "`player_tick(player)`"),
+    (
+        "living_fall",
+        "`mob_fall(mob, distance, multiplier)`, by kind; `player_fall(player, distance, multiplier)`",
+    ),
+    ("living_heal", "`mob_heal(mob, amount)`"),
+    (
+        "living_knockback",
+        "`mob_knockback(mob, damage_type, causing, direct, strength, x, z)`, by kind; `player_knockback(...)`",
+    ),
+    ("player_command", "`player_command(player, line)`"),
+    (
+        "item_crafted",
+        "`item_crafted(player, recipe, item)`, by item",
+    ),
+    (
+        "item_dropped",
+        "`item_dropped(player, item, count)`, by item",
+    ),
+    (
+        "loot_drops",
+        "`loot_drops(source, drops)`, by block or by kind",
+    ),
+    (
+        "hears_projectile_impacts",
+        "true while a script watches `projectile_impact`",
+    ),
+    (
+        "projectile_impact",
+        "`projectile_impact(projectile, kind, owner, hit)`, by projectile kind",
+    ),
+    (
+        "projectile_launch",
+        "`projectile_launched(projectile, kind, player)`, by projectile kind",
+    ),
+    (
+        "explosion_detonate",
+        "`explosion(dimension, center, blocks)`",
+    ),
+    (
+        "player_changed_dimension",
+        "`player_changed_dimension(player, from, to)`",
+    ),
+    ("player_bed_enter", "`player_bed_enter(player, x, y, z)`"),
+    ("player_exp_change", "`player_exp_change(player, amount)`"),
+    (
+        "player_container_open",
+        "`player_container_open(player, menu, pos)`",
+    ),
+    (
+        "living_equipment_change",
+        "`mob_equipped(mob, slot, from, to)`, by kind",
+    ),
+    (
+        "entity_join_level",
+        "`entity_joined(dimension, id, kind, x, y, z, loaded)`, by kind",
+    ),
+    (
+        "hurt_enemy",
+        "`item_hurt_enemy(item, player, target)`, by item",
+    ),
+    (
+        "living_entity_use_item_start",
+        "`item_use_start(item, player, hand, duration)`, by item",
+    ),
 ];
 
 /// The host helpers the Lua runtime calls, and the `horizon.*` function or
@@ -203,6 +268,7 @@ const LUA_HELPERS: &[(&str, &str)] = &[
         "state_named",
         "the block id and properties of `horizon.set_block` and `horizon.falling_block`",
     ),
+    ("state_name", "`source.block` of `loot_drops`"),
     (
         "summon",
         "`horizon.summon(dimension, kind, x, y, z)`, `horizon.drop_item(x, y, z, id[, count])`",

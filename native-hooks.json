@@ -729,6 +729,10 @@
     {
       "name": "take_from",
       "target": "horizon_client::game::native_server::Game<'_>::native_take_from"
+    },
+    {
+      "name": "state_name",
+      "target": "horizon_client::game::native_world_edit::Game<'_>::native_state_name"
     }
   ],
   "hooks": [

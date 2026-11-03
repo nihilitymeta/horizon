@@ -152,7 +152,28 @@ current, so it is the place to look for what the hooks below are built on.
 | `player_joined(player)`, `player_left(player)`, `player_respawned(player)`, `player_died(player, cause)` | A player joined the game, left it by any path, respawned after a death, died (`cause` the death message's key, `death.attack.lava`, or nil) |
 | `block_broken(x, y, z, block, player)` | A player breaks a block, once the game allowed it; `horizon.cancel()` keeps it (nothing breaks or drops). Register by block id |
 | `block_placed(x, y, z, block, player, item)` | A player placed a block from `item`; it only hears (take the click in `item_use_on` to stop one). Register by block id |
+| `player_tick(player)` | A living player's server tick ended: every player, every tick, with the host actions and the reads (keep it light; a `kind` is not taken) |
+| `player_hurt(player, damage_type, causing, direct, amount)` | A player is about to take damage, as `mob_hurt` tells it of a mob: `player` is `{id, kind}` only (mid-hit: no host, no name); `set_amount(n)`, `cancel()` |
+| `mob_fall(mob, distance, multiplier)`, `player_fall(player, distance, multiplier)` | A living entity is about to handle a fall (no host; `mob` and `player` are `{id, kind}`): `set_distance(n)`, `set_multiplier(n)`, `cancel()` (no fall damage). `mob_fall` by kind |
+| `mob_heal(mob, amount)` | A living entity is about to heal (no host; `mob` is `{id}`: the engine names no kind here, so every handler hears every entity, players too): `set_amount(n)`, `cancel()` |
+| `mob_knockback(mob, damage_type, causing, direct, strength, x, z)`, `player_knockback(...)` | A living entity is about to be knocked back (no host): `strength` on the raw value, `x` and `z` the direction; `set_strength(n)`, `cancel()`. `mob_knockback` by kind |
+| `player_command(player, line)` | A player typed a command (without its slash), any command, before it runs: `cancel()` and nothing runs; `reply(text)` answers them (no player's state is in place, so `tell` and the item helpers reach nobody here) |
+| `item_crafted(player, recipe, item)` | A player took a crafting grid's result (`recipe` its id, `item` the stack); by the result's item id. It only hears |
+| `item_dropped(player, item, count)` | A player threw an item (the drop key, a menu's throw; not what scatters at death); by item id. It only hears |
+| `loot_drops(source, drops)` | A block a player, an explosion or a mob broke, or a mob that died, is about to drop its loot. Register by block id or by mob kind. `source` has `table` (the loot table's id), `dimension`, `origin`, and `block` (`{x, y, z, id, state}`) or `mob` (`{id, kind}`), `player` (the one credited, or nil), `tool` (an item table, or nil), `explosion` (a radius, or nil). `drops` is a sequence of `{id, count, damage, plain}`: change it in place (add entries, change counts, remove some) and it is written back after the call; an entry whose id is the stack's at that place keeps that stack's components |
+| `projectile_impact(projectile, kind, owner, hit)` | A projectile (an arrow, a snowball, an egg, a potion, a fireball...) hit something, before the hit acts: `owner` the shooter's entity id (0 none), `hit` has `x`, `y`, `z` and either `entity` and `entity_kind` or `block` (`{x, y, z, id}`) and `face`. By projectile kind; `cancel()` and it flies on. The engine keeps the copy each impact needs only while a script watches this |
+| `projectile_launched(projectile, kind, player)` | A projectile was added to the level: `player` the launcher's table, or nil (a mob's, a dispenser's). By projectile kind. It only hears |
+| `explosion(dimension, center, blocks)` | An explosion is about to break `blocks`, a sequence of `{x, y, z}`: take entries out to spare them (they keep their block and get no fire), written back after the call |
+| `player_changed_dimension(player, from, to)` | A player's move to another level ended (a portal, `/execute in ... run tp`, a respawn elsewhere). The engine tells it on a dedicated server only |
+| `player_bed_enter(player, x, y, z)` | A player is about to enter the bed at that position; `cancel()` keeps them out |
+| `player_exp_change(player, amount)` | A player's experience is about to grow by `amount` from an orb (after Mending's share); `set_amount(n)` |
+| `player_container_open(player, menu, pos)` | A player opened a menu: `menu` its type (`minecraft:generic_9x3`, `minecraft:furnace`, `minecraft:crafting`...), `pos` the block it is of (`{x, y, z}`) or nil |
+| `mob_equipped(mob, slot, from, to)` | A mob's equipment slot (`mainhand`, `offhand`, `feet`, `legs`, `chest`, `head`, `body`, `saddle`) took a different stack: `from` and `to` item tables or nil. By kind. It only hears |
+| `entity_joined(dimension, id, kind, x, y, z, loaded)` | An entity joined the level, any entity (`minecraft:item`, `minecraft:arrow`, a mob), `loaded` true for one coming back with its chunk; by kind. `cancel()` keeps it out. `mob_spawned` stays for mobs |
+| `item_hurt_enemy(item, player, target)` | A player's blow landed on `target` (`{id, kind}`) holding `item`, after the damage (`item_hit` is before it). By item id. It only hears |
+| `item_use_start(item, player, hand, duration)` | A player starts using an item over time (eating, drinking, drawing a bow, a mod item with a `use_duration`): `hand` is `"main"` or `"off"`, `duration` the ticks it takes; `set_duration(ticks)` changes that, `cancel()` and the use does not start. By item id |
 | `item_picked_up(player, item, count)` | A player is about to pick up `count` of `item` (an id) from the ground; `horizon.cancel()` leaves them there. Register by item id |
+| Not a hook yet: a player's chat | No hook point carries a player's chat line (`broadcast_message` sees the server's own lines only). The shape, when the engine gets one: `player_chat(player, line)` with `set_line(text)` and `cancel()`, registered as the player hooks are |
 | `player` (in the hooks) | `uuid`, `name`, `dimension`, `position` (`{x, y, z}`), `game_mode` (0 survival, 1 creative, 2 adventure, 3 spectator), `health`, and for the player whose action the hook hears (a click, a command, a break) `held` (`{item, count, plain}` of their main hand, nil when empty); a player the world has no record of at that moment (one dying) has `uuid` and the `name` a player hook told before |
 | `data` (on a mob) | The mod's own saved table on the mob, empty at first; kept with the mob as the engine's attachment under the mod's id (`horizon:attachments` in its NBT), so it survives a save and a restart, and other mods' data stays apart. Written back after the call as a block entity's is (types kept, nil removes); nil when the host has no such mob |
 | The `.hmod` | `cargo horizon-mod build` packs `scripts/` beside `assets/` and `data/`; `horizon_mods::Content` lists them (`scripts`), checks the paths and that `scripts/init.lua` is there; the Mods page says "May run its own scripts in your worlds" |
@@ -196,6 +217,20 @@ script reads nothing but its mod (`lua_mods::Budget`).
 Run: install the `.hmod` and turn it on, or `horizon-client --dev-mod /path/to/mod`. A mod without capability `scripts`
 is content only, as before. Scripted mods are gathered when the game starts, like trait mods: turning one on or off on
 the Mods page takes effect at the next start.
+
+## Not yet: the shapes to come
+
+What a gameplay mod asks for next, with the API it will get, so a mod can be written toward it; none of it is
+built, and the engine's own helpers are the limit of what a script can reach today.
+
+| | |
+|---|---|
+| A mob's attributes, equipment and name at runtime | Host helpers over a mob by id (`set_attribute(dimension, id, name, value)`, `equip(dimension, id, slot, stack)`, `set_name(dimension, id, text)`), then `horizon.set_attribute(id, "max_health", 40)`, `horizon.equip(id, "mainhand", "minecraft:iron_sword")`, `horizon.set_name(id, "Old One")` from any hook with a host, and `mob:set_attribute`, `mob:equip`, `mob:set_name` in the modkit. Until then a mod declares attributes and equipment in its entity type (`registry.entity_type`) and names mobs through `run_command` |
+| Custom projectiles and other non-mob entities | A thrown mod item already flies as its template does (a snowball's `template` in `registry.item`); an entity type of the mod's own over a projectile template (`registry.entity_type("spore", { template = "minecraft:snowball", ... })`) with `projectile_impact` by that kind, and `horizon.shoot(dimension, kind, x, y, z, vx, vy, vz)` to launch one, is the shape. Vehicles, displays and markers stay the engine's own |
+| Screens | Content mods have menu types (`data/<id>/horizon/menu/`); a screen that draws them is native only (`native_screen`). Scripts get no screens: the title, the subtitle, the action bar, chat lines and commands are their UI. A later `horizon.open_menu(player, menu, pos)` would show a content mod's menu |
+| Client-side scripts | Every script runs on the server side of the game (the window's own server in single player, the host's in LAN); `side` in the manifest is the content's. No HUD, keybinds, rendering or sounds of the client's own; a server script reaches the client through the engine's packets (titles, sounds, particles). A client script would be a second state with its own hooks (`hud`, `key`, `render_*`), kept apart |
+| Configuration | `horizon.config()` and `horizon.save_config(t)` are the whole of it: one JSON file a person edits. No options screen, no per-world settings; a mod that wants per-world values keeps them in `horizon.world_data()` and sets them with a command of its own |
+| A player's chat | No hook point yet; see the row above |
 
 ## The plan
 
