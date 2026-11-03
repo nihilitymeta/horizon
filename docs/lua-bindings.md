@@ -212,7 +212,9 @@ the view before each call and applies the actions after it, so a script never ho
 is logged once at error level, then at debug level, and reads as "no".
 
 Limits: a hook's handlers (250 ms of wall-clock time per handler registered, as one call) or a goal function that runs past 250 ms is stopped by Luau's interrupt with an
-error that reads as any other error of its (the log, the dev tools' console, "no" for a goal), and `init.lua` with the
+error that reads as any other error of its (the log, the dev tools' console, "no" for a goal); a `pcall` around the slow
+code catches that error, and the next loop iteration or call raises it again, so nothing of the handler runs on past
+its deadline (the timers' own `pcall` included), and the actions it queued are dropped. `init.lua` with the
 modules it requires has 5 s at load and reload; a state may take 64 MiB. Luau has no `io`, `loadfile` or `dofile`,
 its `os` is `clock`, `date`, `difftime` and `time`, and `require` is the game's own over the mod's `scripts/`, so a
 script reads nothing but its mod (`lua_mods::Budget`).

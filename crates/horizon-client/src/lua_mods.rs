@@ -68,14 +68,17 @@ fn epoch() -> Instant {
 }
 
 impl Budget {
-    /// Makes the state stop a chunk that runs past its deadline.
+    /// Makes the state stop a chunk that runs past its deadline: the error
+    /// is raised at every safepoint (a loop's back edge, a call, a return)
+    /// from then on until the call ends, so a `pcall` around a slow loop
+    /// catches one error and the next instruction raises another; nothing
+    /// Lua does after the deadline runs for long. What runs after the
+    /// chunk (restoring the host slot, taking the queue) is Rust's.
     fn install(&self, lua: &Lua) {
         let budget = self.clone();
         lua.set_interrupt(move |_| {
             let deadline = budget.0.load(Ordering::Relaxed);
             if deadline != 0 && epoch().elapsed().as_nanos() as u64 > deadline {
-                // Cleared, so the error can unwind without being raised again.
-                budget.0.store(0, Ordering::Relaxed);
                 Err(mlua::Error::runtime(
                     "ran over its time budget and was stopped (an endless loop?)",
                 ))
@@ -167,22 +170,24 @@ const HANDLERS: &str = "horizon_handlers";
 const KIND_HANDLERS: &str = "horizon_kind_handlers";
 /// The registry key of the queue of actions a handler asked for.
 const QUEUE: &str = "horizon_queue";
-/// The registry key of the function that runs a hook's handlers and takes
-/// the queue, as one call into the state: the state is shared by the
-/// threads that fire hooks (the server's, the render thread's own mobs), and
-/// a call is the unit they take turns at, so no handler sees another
-/// thread's actions and none are left behind.
+/// The registry key of the function that runs a hook's handlers, as one
+/// call into the state: the state is shared by the threads that fire hooks
+/// (the server's, the render thread's own mobs), and a call is the unit
+/// they take turns at, so no handler sees another thread's actions. The
+/// runner sets the host slot; `run_handlers` restores it and takes the
+/// queue once the call is back, whether the runner finished or was stopped
+/// by the budget mid-way.
 const RUNNER: &str = "horizon_runner";
 const RUNNER_CODE: &str = r#"
 return function(slot)
-  return function(handlers, queue, host, full, ...)
+  return function(handlers, host, full, ...)
     -- A hook fired from inside a handler (a summon answered at once tells of
-    -- the spawn) runs nested: the outer call's host and queued actions are
-    -- kept for it, and the inner takes only what it queued itself.
-    local outer_host, outer_full = slot[1], slot[2]
-    local start = #queue
+    -- the spawn) runs nested: the outer call's host is kept for it. slot[3]
+    -- counts the runners in progress: an action outside any is refused.
+    local outer_host, outer_full, depth = slot[1], slot[2], slot[3] or 0
     slot[1] = host
     slot[2] = full
+    slot[3] = depth + 1
     local failed
     for _, f in ipairs(handlers) do
       local ok, e = pcall(f, ...)
@@ -190,19 +195,16 @@ return function(slot)
     end
     slot[1] = outer_host
     slot[2] = outer_full
-    local n = #queue
-    local out
-    if n > start then
-      out = {}
-      for i = start + 1, n do out[i - start] = queue[i]; queue[i] = nil end
-    end
+    slot[3] = depth
     if failed ~= nil then error(failed, 0) end
-    return out
   end
 end
 "#;
-/// The registry key of the one-slot table holding the read function of the
-/// call in progress (`horizon.block` and the other reads go through it).
+/// The registry key of the table holding the call in progress: `[1]` its
+/// read function (`horizon.block` and the other reads go through it; nil in
+/// a hook without a host), `[2]` whether the host is a full one, `[3]` how
+/// many runners are in progress (0: no hook's handlers run, and an action
+/// has nowhere to go).
 const HOST_SLOT: &str = "horizon_host";
 /// The registry key of the timers' own `server_tick` handler, so a listing
 /// of the handlers can leave it out.
@@ -2070,10 +2072,24 @@ impl LuaMod {
         let count = list.len() as u32;
         let runner: Function = lua.named_registry_value(RUNNER)?;
         let queue: Table = lua.named_registry_value(QUEUE)?;
+        let slot: Table = lua.named_registry_value(HOST_SLOT)?;
         let handlers = lua.create_sequence_from(list)?;
-        // One call runs every handler and takes what they queued; the read
-        // function lives for the call's scope only, whatever kept it, and
-        // the saved tables it handed out are written back after.
+        // What the call finds in the slot and the queue: a hook fired from
+        // inside a handler runs nested, and gives both back as they were.
+        // Nothing is below `start` unless a runner was stopped before it
+        // could take its queue; a top-level call starts clean.
+        let outer = (
+            slot.get::<Value>(1)?,
+            slot.get::<Value>(2)?,
+            slot.get::<Option<i64>>(3)?.unwrap_or(0),
+        );
+        if outer.2 == 0 {
+            queue.clear()?;
+        }
+        let start = queue.raw_len();
+        // One call runs every handler; the read function lives for the
+        // call's scope only, whatever kept it, and the saved tables it handed
+        // out are written back after.
         let reader = std::cell::RefCell::new(reader);
         let fetched: std::cell::RefCell<Vec<Fetched>> = std::cell::RefCell::new(Vec::new());
         let result = lua.scope(|scope| {
@@ -2090,25 +2106,32 @@ impl LuaMod {
             let mut args = args.into_lua_multi(lua)?;
             args.push_front(Value::Boolean(full));
             args.push_front(read);
-            args.push_front(Value::Table(queue));
             args.push_front(Value::Table(handlers));
-            self.budget.run(HANDLER_BUDGET * count, || {
-                runner.call::<Option<Table>>(args)
-            })
+            self.budget
+                .run(HANDLER_BUDGET * count, || runner.call::<()>(args))
         });
+        // The runner restores the slot itself when it gets that far; one
+        // stopped by the budget (raised at every safepoint past the
+        // deadline) may not, so it is restored here in any case.
+        slot.set(1, outer.0)?;
+        slot.set(2, outer.1)?;
+        slot.set(3, outer.2)?;
+        // What the handlers queued, in order; taken out whether or not
+        // they all ran, and handed on only when they did.
+        let mut out = Vec::new();
+        for i in start + 1..=queue.raw_len() {
+            let entry: Table = queue.raw_get(i)?;
+            queue.raw_set(i, Value::Nil)?;
+            if result.is_ok() {
+                out.push((entry.get::<String>("action")?, entry.get::<Table>("args")?));
+            }
+        }
         if let Reader::Host(host) = &mut *reader.borrow_mut() {
             for f in fetched.borrow().iter() {
                 self.store_fetched(*host, hook, f);
             }
         }
-        let Some(actions) = result? else {
-            return Ok(Vec::new());
-        };
-        let mut out = Vec::new();
-        for entry in actions.sequence_values::<Table>() {
-            let entry = entry?;
-            out.push((entry.get::<String>("action")?, entry.get::<Table>("args")?));
-        }
+        result?;
         Ok(out)
     }
 
@@ -6291,6 +6314,58 @@ experimental = ["scripts"]
             started.elapsed()
         );
         // The state is fine afterwards, and the next chunk has a budget of its own.
+        m.call_bare("world_lifecycle", None, ("start", "x"), &mut |_, _| Ok(()))
+            .unwrap();
+        assert_eq!(m.lua.globals().get::<i64>("N").unwrap(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_pcall_around_a_slow_loop_does_not_defeat_the_budget() {
+        let (dir, path) = hmod(
+            "budget-pcall",
+            &[(
+                "scripts/init.lua",
+                br#"
+                N = 0
+                -- The first loop's error is caught; the second loop is stopped
+                -- all the same, as is a loop that keeps catching.
+                horizon.on('mob_spawned', function()
+                  pcall(function() while true do end end)
+                  while true do end
+                end)
+                horizon.on('mob_killed', function()
+                  while true do pcall(function() while true do end end) end
+                end)
+                -- The timers' own pcall catches the first timer's error; the
+                -- timers after it get no budget of their own.
+                horizon.after(1, function() while true do end end)
+                horizon.after(1, function() while true do end end)
+                horizon.on('world_lifecycle', function() N = N + 1 end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        for hook in ["mob_spawned", "mob_killed", "server_tick"] {
+            let started = std::time::Instant::now();
+            let e = m
+                .call_bare(hook, None, ("end", true), &mut |_, _| Ok(()))
+                .unwrap_err()
+                .to_string();
+            assert!(e.contains("ran over"), "{hook}: {e}");
+            assert!(
+                started.elapsed() < HANDLER_BUDGET * 4,
+                "{hook}: {:?}",
+                started.elapsed()
+            );
+        }
+        // The host slot and the queue are back as they were, and the next
+        // call has a budget of its own.
+        let slot: Table = m.lua.named_registry_value(HOST_SLOT).unwrap();
+        assert!(slot.get::<Value>(1).unwrap().is_nil());
+        assert_eq!(slot.get::<Option<i64>>(3).unwrap().unwrap_or(0), 0);
+        let queue: Table = m.lua.named_registry_value(QUEUE).unwrap();
+        assert_eq!(queue.raw_len(), 0);
         m.call_bare("world_lifecycle", None, ("start", "x"), &mut |_, _| Ok(()))
             .unwrap();
         assert_eq!(m.lua.globals().get::<i64>("N").unwrap(), 1);
