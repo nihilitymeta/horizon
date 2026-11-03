@@ -7437,6 +7437,34 @@ impl Game<'_> {
     pub(super) fn native_mob_killed(&mut self, player: u128, entity: u32, kind: &str) {
         mod_api::dispatch_mob_killed(self, mod_api::mods(), player, entity, kind);
     }
+    /// The mob `entity` of `kind` died in `dimension`, by any cause (a blow,
+    /// an arrow, fire, a fall, `/kill`): `damage_type` the killing damage's
+    /// type (`minecraft:player_attack`, `minecraft:on_fire`...;
+    /// `minecraft:generic` when none is known), `causing` the mob behind it
+    /// (0: none or a player), and `player` the player credited with the kill
+    /// (the one who last hurt it, while that memory lasts). Told before its
+    /// loot drops; the mob is already gone from the game's lists. It only
+    /// hears. Server-side. API 400.
+    pub(super) fn native_mob_died(
+        &mut self,
+        dimension: &str,
+        entity: u32,
+        kind: &str,
+        damage_type: &str,
+        causing: i32,
+        player: Option<u128>,
+    ) {
+        mod_api::dispatch_mob_died(
+            self,
+            mod_api::mods(),
+            dimension,
+            entity,
+            kind,
+            damage_type,
+            causing,
+            player,
+        );
+    }
     /// A block broke or a mob died, and `drops` are the items about to drop, in
     /// the order they drop: what the loot tables rolled (after
     /// `native_loot_table_load`'s changes), and for a mob what it wore, held or

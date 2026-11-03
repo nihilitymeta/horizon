@@ -1419,6 +1419,17 @@ impl Game<'_> {
         if let Some(player) = player.filter(|_| m.extra.leash.is_some()) {
             self.lead_killers.insert(m.id, (player, self.dim));
         }
+        {
+            use horizon_client::mobs::Who;
+            let damage = m.last_damage.map(|(d, _)| d);
+            let damage_type = damage.map_or("minecraft:generic", source_damage_type);
+            let causing = match damage.and_then(|d| d.attacker) {
+                Some(Who::Mob(id)) => id as i32,
+                _ => 0,
+            };
+            let kind = super::native_hooks::mob_kind(m);
+            self.native_mob_died(self.dim.id(), m.id, &kind, damage_type, causing, player);
+        }
         self.drop_death_loot(&mut dying, player, by_player, killer_entity, consumed, pos);
         self.create_wither_rose(m);
         if m.species() == Species::CopperGolem {

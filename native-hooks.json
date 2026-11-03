@@ -1160,6 +1160,14 @@
       }
     },
     {
+      "name": "mob_died",
+      "version": 1,
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_mob_died",
+      "mod_api": {
+        "contract": "listen"
+      }
+    },
+    {
       "name": "item_dropped",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_item_dropped",

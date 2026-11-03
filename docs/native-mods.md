@@ -1701,6 +1701,9 @@ API 408 adds reading the server's play packets on the client (`native_client_pac
 
 API 409 adds `native_send_packet(packet)` sends any serverbound play packet (`ServerboundPlayPacket`), a plugin channel's custom payload included, to any server, unchecked; an error when not in a server's play state. Bundles need "hooks": 409.
 
+API 400 adds a mob's death by any cause (`native_mob_died`: the killing damage's type, the mob behind it and the
+player credited), where `native_mob_killed` told of a player's melee blow only. Bundles need "hooks": 400.
+
 ## What the launcher does
 
 **Developing a mod?** Run `horizon-launcher settings native-profile dev` once, or pick "Dev build" in the Mods page's
