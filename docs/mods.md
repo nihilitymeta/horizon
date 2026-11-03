@@ -78,7 +78,7 @@ Unknown keys are refused, so a typo is an error, not a silently ignored permissi
 ### Content mods (API 0.2)
 
 A content mod has capability `registries` and carries `assets/` and `data/` in the `.hmod`; with capability `scripts`
-(experimental) it carries `scripts/` too, Lua the game runs on its hook points ([lua-bindings.md](lua-bindings.md)). It adds blocks and items
+(experimental) it carries `scripts/` too, Lua the game runs on its hook points, and may declare its content in `scripts/registry.lua` instead of files ([lua-bindings.md](lua-bindings.md)). It adds blocks and items
 by declaring them in `data/<id>/horizon/block/*.json` and `data/<id>/horizon/item/*.json`, each copying a vanilla
 template ([modpacks.md](modpacks.md#registries-02-data-driven-blocks-items-and-mob-effects)), and creative tabs, mob
 effects, entity types and menu types (each below) in `creative_tab/`, `mob_effect/`, `entity_type/` and `menu/` beside

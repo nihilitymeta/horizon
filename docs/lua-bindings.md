@@ -41,6 +41,41 @@ the library's state only. `/reload` reads the libraries again too. The intended 
 [whos-carmen/horizon-modkit](https://github.com/whos-carmen/horizon-modkit): entities, blocks and goals as classes
 with lifecycle callbacks, the API a mod developer writes against, over this file's hook API.
 
+## Registering content from Lua: `scripts/registry.lua`
+
+A scripted mod may declare its entity types, blocks, items, mob effects, creative tabs and menu types, and write
+any other data or asset JSON (loot tables, recipes, tags, lang, models), in `scripts/registry.lua` instead of
+files. The script runs once, when the game reads the mod's content (at start: `/reload` does not run it again),
+in a Luau state of its own with nothing but the `registry` table, a 5 s budget and 64 MiB. What it registers
+becomes content files in memory, checked and read exactly like the files in `data/` and `assets/`, so the rest
+of the game never knows the difference; a path both in the mod and registered is an error, as is anything the
+file would have been refused for. Textures stay files. The mod needs capability `registries` as well as `scripts`.
+
+| | |
+|---|---|
+| `registry.id`, `registry.namespaces` | the mod's id and the namespaces it owns |
+| `registry.entity_type(name, def)`, `.block`, `.item`, `.mob_effect`, `.creative_tab`, `.menu` | `data/<id>/horizon/<kind>/<name>.json`, `def` the file's JSON as a table ([mods.md](mods.md)); `name` may hold `/` |
+| `registry.data(name, value)` | `data/<ns>/<name>.json`, `ns:` from the name or the mod's id: `"loot_table/entities/crawler"`, `"minecraft:tags/block/mineable/hoe"` |
+| `registry.asset(name, value)` | `assets/<ns>/<name>.json`: `"lang/en_us"`, `"models/block/hive"`, `"blockstates/hive"` |
+| `registry.file(path, value)` | any content path; `value` a table (written as JSON) or a string (written as it is) |
+
+A table whose keys are 1..n is a JSON array, any other an object (`{}` is an empty object); a whole number is an
+integer. The launcher's Mods page, built without Lua, lists the mod's files only.
+
+```lua
+-- scripts/registry.lua
+registry.entity_type("crawler", {
+  template = "minecraft:zombie",
+  attributes = { max_health = 30, movement_speed = 0.3 },
+  texture = registry.id .. ":entity/crawler",
+  goals = "none",
+})
+registry.data("loot_table/entities/crawler", {
+  type = "minecraft:entity",
+  pools = { { rolls = 1, entries = { { type = "minecraft:item", name = "minecraft:slime_ball" } } } },
+})
+```
+
 ## What is built
 
 | | |

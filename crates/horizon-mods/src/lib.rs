@@ -7,6 +7,8 @@ pub mod content;
 pub mod index;
 pub mod manifest;
 pub mod modpack;
+#[cfg(feature = "lua")]
+pub mod registry;
 
 pub use content::Content;
 pub use manifest::{Capability, Manifest, Package, Side, find};

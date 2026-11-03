@@ -3,8 +3,10 @@
 //! effects, entity types and menu types it declares in
 //! `data/<id>/horizon/{block,item,mob_effect,entity_type,menu}/`.
 //!
-//! Content is data, not code: nothing here runs in the sandbox. What a mod
-//! may add is fenced instead. Its own namespaces (its id and the ones its
+//! Content is data, not code: nothing here runs in the sandbox (a scripted
+//! mod's `scripts/registry.lua`, feature `lua`, runs in a state of its own
+//! with no reach beyond the files it registers: [`crate::registry`]). What
+//! a mod may add is fenced instead. Its own namespaces (its id and the ones its
 //! manifest lists), plus additions to vanilla tags and to the convention
 //! tags (`c`, which NeoForge and Fabric mods share). Paths are plain, files
 //! and totals are capped, vanilla ids cannot be redefined, and no two mods
@@ -24,6 +26,8 @@ pub const MAX_TOTAL: u64 = 512 << 20;
 
 /// The script a scripted mod starts from (capability `scripts`).
 pub const SCRIPT_ENTRY: &str = "scripts/init.lua";
+/// The script whose declarations join the content files (feature `lua`).
+pub const REGISTRY_SCRIPT: &str = "scripts/registry.lua";
 
 /// Checks a content path: `assets/` or `data/`, then `/`-separated parts of
 /// `[a-z0-9_.-]`, none of them `.` or `..` (vanilla's resource-location
@@ -711,10 +715,17 @@ pub struct Content {
     pub menu_types: Vec<MenuType>,
     /// The namespaces it owns: the mod id, then the manifest's `namespaces`.
     pub namespaces: Vec<String>,
+    /// The files `scripts/registry.lua` registered, by path: in `files` too,
+    /// read from here.
+    registered: BTreeMap<String, Vec<u8>>,
 }
 
 /// Reads a mod's content files ([`Content::reader`]).
-pub enum FileReader<'a> {
+pub struct FileReader<'a> {
+    from: ReadFrom<'a>,
+    registered: &'a BTreeMap<String, Vec<u8>>,
+}
+enum ReadFrom<'a> {
     Dir(&'a Path),
     Zip(Box<zip::ZipArchive<std::fs::File>>),
 }
@@ -722,11 +733,14 @@ impl FileReader<'_> {
     /// One content file's bytes.
     pub fn read(&mut self, name: &str) -> Result<Vec<u8>, String> {
         check_path(name)?;
-        let reader: Box<dyn Read + '_> = match self {
-            Self::Dir(root) => {
+        if let Some(bytes) = self.registered.get(name) {
+            return Ok(bytes.clone());
+        }
+        let reader: Box<dyn Read + '_> = match &mut self.from {
+            ReadFrom::Dir(root) => {
                 Box::new(std::fs::File::open(root.join(name)).map_err(|e| format!("{name}: {e}"))?)
             }
-            Self::Zip(zip) => Box::new(zip.by_name(name).map_err(|e| format!("{name}: {e}"))?),
+            ReadFrom::Zip(zip) => Box::new(zip.by_name(name).map_err(|e| format!("{name}: {e}"))?),
         };
         let mut out = Vec::new();
         reader
@@ -806,10 +820,44 @@ impl Content {
         if total > MAX_TOTAL {
             return Err(format!("content is over {} MiB", MAX_TOTAL >> 20));
         }
-        files.sort();
-        files.dedup();
         scripts.sort();
         scripts.dedup();
+        // The registry script's declarations join the files, in memory.
+        #[cfg_attr(not(feature = "lua"), allow(unused_mut))]
+        let mut registered = BTreeMap::new();
+        #[cfg(feature = "lua")]
+        if scripts.iter().any(|s| s == REGISTRY_SCRIPT) {
+            let mut reader = FileReader {
+                from: read_from(&source)?,
+                registered: &registered,
+            };
+            let code = reader.read(REGISTRY_SCRIPT)?;
+            let code =
+                String::from_utf8(code).map_err(|_| format!("{REGISTRY_SCRIPT}: not UTF-8"))?;
+            let namespaces: Vec<String> = manifest.owned_namespaces().map(str::to_owned).collect();
+            let made = crate::registry::run(&code, &manifest.id, &namespaces)?;
+            for (name, bytes) in made {
+                if files.contains(&name) {
+                    return Err(format!(
+                        "{name}: both a file of the mod and registered by {REGISTRY_SCRIPT}"
+                    ));
+                }
+                if bytes.len() as u64 > MAX_FILE {
+                    return Err(format!("{name}: registered over {} MiB", MAX_FILE >> 20));
+                }
+                total += bytes.len() as u64;
+                files.push(name.clone());
+                registered.insert(name, bytes);
+            }
+            if files.len() + scripts.len() > MAX_FILES {
+                return Err(format!("more than {MAX_FILES} content files"));
+            }
+            if total > MAX_TOTAL {
+                return Err(format!("content is over {} MiB", MAX_TOTAL >> 20));
+            }
+        }
+        files.sort();
+        files.dedup();
         let mut content = Content {
             source,
             files,
@@ -821,6 +869,7 @@ impl Content {
             entity_types: Vec::new(),
             menu_types: Vec::new(),
             namespaces: manifest.owned_namespaces().map(str::to_owned).collect(),
+            registered,
         };
         content.check(manifest, declared)?;
         Ok(content)
@@ -839,6 +888,7 @@ impl Content {
             creative_tabs: Vec::new(),
             entity_types: Vec::new(),
             menu_types: Vec::new(),
+            registered: BTreeMap::new(),
             namespaces: vec![namespace.to_owned()],
         }
     }
@@ -934,7 +984,7 @@ impl Content {
     /// A reader of its content files. A packaged mod's archive is opened
     /// once for all of them (opening it reads its whole index).
     pub fn reader(&self) -> Result<FileReader<'_>, String> {
-        reader_of(&self.source)
+        reader_of(&self.source, &self.registered)
     }
 
     /// Where content may go, and the declarations.
@@ -1020,7 +1070,8 @@ impl Content {
         // One reader for every declaration: opening a packaged mod reads its
         // whole index, so a reader per file made loading a big mod quadratic.
         let source = self.source.clone();
-        let mut reader = reader_of(&source)?;
+        let registered = self.registered.clone();
+        let mut reader = reader_of(&source, &registered)?;
         let mut ids = BTreeSet::new();
         for (block, name) in blocks {
             let file: BlockFile =
@@ -1486,11 +1537,13 @@ fn check_sign_walls(blocks: &[&Block]) -> Result<(), String> {
     Ok(())
 }
 
-fn reader_of(source: &Source) -> Result<FileReader<'_>, String> {
-    Ok(match source {
-        Source::Dir(root) => FileReader::Dir(root),
-        Source::Zip(path) => FileReader::Zip(Box::new(open_zip(path)?)),
-        Source::Code => FileReader::Dir(Path::new("")),
+fn reader_of<'a>(
+    source: &'a Source,
+    registered: &'a BTreeMap<String, Vec<u8>>,
+) -> Result<FileReader<'a>, String> {
+    Ok(FileReader {
+        from: read_from(source)?,
+        registered,
     })
 }
 
@@ -1501,6 +1554,14 @@ fn open_zip(path: &Path) -> Result<zip::ZipArchive<std::fs::File>, String> {
 
 /// Files under `dir`, relative to `root` with `/` separators. Symbolic links
 /// are not followed: a mod folder holds its own files.
+fn read_from(source: &Source) -> Result<ReadFrom<'_>, String> {
+    Ok(match source {
+        Source::Dir(root) => ReadFrom::Dir(root),
+        Source::Zip(path) => ReadFrom::Zip(Box::new(open_zip(path)?)),
+        Source::Code => ReadFrom::Dir(Path::new("")),
+    })
+}
+
 fn walk(root: &Path, dir: &Path, out: &mut Vec<(String, u64)>) -> Result<(), String> {
     let Ok(read) = std::fs::read_dir(dir) else {
         return Ok(());
@@ -1595,6 +1656,126 @@ capabilities = ["registries"]
         let mut nonfinite = oversized;
         nonfinite.default = Some(vec![[f64::NAN; 6]]);
         assert!(nonfinite.check().is_err());
+    }
+
+    /// A mod folder holding `files`, read as content.
+    #[cfg(feature = "lua")]
+    fn folder(name: &str, manifest: &str, files: &[(&str, &[u8])]) -> Result<Content, String> {
+        let dir = scratch(name);
+        std::fs::write(dir.join(MANIFEST), manifest).unwrap();
+        for (path, bytes) in files {
+            let path = dir.join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, bytes).unwrap();
+        }
+        let package = Package::read(&dir)?;
+        Content::read(&dir, &package.manifest)
+    }
+
+    #[cfg(feature = "lua")]
+    #[test]
+    fn the_registry_script_declares_content_like_the_files_do() {
+        const MANIFEST_SCRIPTED: &str = r#"
+id = "ruby"
+name = "Ruby"
+version = "0.1.0"
+api = "0.2"
+side = "both"
+capabilities = ["registries", "scripts"]
+experimental = ["scripts"]
+"#;
+        let registry = br#"
+            registry.entity_type("crawler", { template = "minecraft:zombie", attributes = { max_health = 30 }, goals = "none" })
+            registry.block("hive", { template = "minecraft:sculk", properties = { hardness = 1.5 }, item = true })
+            registry.data("loot_table/blocks/hive", { type = "minecraft:block", pools = {} })
+            registry.data("minecraft:tags/block/mineable/hoe", { values = { "ruby:hive" } })
+        "#;
+        let content = folder(
+            "registry",
+            MANIFEST_SCRIPTED,
+            &[
+                ("scripts/init.lua", b""),
+                ("scripts/registry.lua", registry),
+                ("data/ruby/horizon/item/ruby.json", ITEM),
+            ],
+        )
+        .unwrap();
+        assert_eq!(content.entity_types.len(), 1);
+        assert_eq!(content.entity_types[0].id, "ruby:crawler");
+        assert_eq!(content.entity_types[0].template, "minecraft:zombie");
+        assert_eq!(content.blocks.len(), 1);
+        assert_eq!(content.blocks[0].id, "ruby:hive");
+        assert_eq!(content.items.len(), 1);
+        assert_eq!(
+            content.files,
+            [
+                "data/minecraft/tags/block/mineable/hoe.json",
+                "data/ruby/horizon/block/hive.json",
+                "data/ruby/horizon/entity_type/crawler.json",
+                "data/ruby/horizon/item/ruby.json",
+                "data/ruby/loot_table/blocks/hive.json",
+            ]
+        );
+        // Registered files read like the others, through the reader too.
+        let bytes = content
+            .file("data/ruby/loot_table/blocks/hive.json")
+            .unwrap();
+        assert!(bytes.starts_with(b"{"));
+        let mut reader = content.reader().unwrap();
+        assert_eq!(
+            reader.read("data/ruby/horizon/item/ruby.json").unwrap(),
+            ITEM
+        );
+        assert!(
+            reader
+                .read("data/ruby/horizon/entity_type/crawler.json")
+                .is_ok()
+        );
+        // A path both in the folder and registered is refused, as is a bad
+        // declaration and a failing script.
+        let e = folder(
+            "registry-clash",
+            MANIFEST_SCRIPTED,
+            &[
+                ("scripts/init.lua", b""),
+                (
+                    "scripts/registry.lua",
+                    b"registry.item('ruby', { template = 'minecraft:diamond' })",
+                ),
+                ("data/ruby/horizon/item/ruby.json", ITEM),
+            ],
+        )
+        .unwrap_err();
+        assert!(e.contains("both a file of the mod and registered"), "{e}");
+        let e = folder(
+            "registry-bad",
+            MANIFEST_SCRIPTED,
+            &[
+                ("scripts/init.lua", b""),
+                (
+                    "scripts/registry.lua",
+                    b"registry.block('hive', { template = 'minecraft:sculk', connects_to = 'x' })",
+                ),
+            ],
+        )
+        .unwrap_err();
+        assert!(
+            e.contains("data/ruby/horizon/block/hive.json") && e.contains("connects_to"),
+            "{e}"
+        );
+        let e = folder(
+            "registry-fail",
+            MANIFEST_SCRIPTED,
+            &[
+                ("scripts/init.lua", b""),
+                ("scripts/registry.lua", b"error('no')"),
+            ],
+        )
+        .unwrap_err();
+        assert!(
+            e.starts_with("scripts/registry.lua:") && e.contains("no"),
+            "{e}"
+        );
     }
 
     fn hmod(name: &str, manifest: &str, files: &[(&str, &[u8])]) -> Result<Content, String> {

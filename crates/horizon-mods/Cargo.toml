@@ -19,10 +19,14 @@ sha2 = { version = "0.10", optional = true }
 minisign-verify = { version = "0.3", optional = true }
 # A shader pack's check (kind `shader`): the one the game runs before it loads a pack.
 horizon-shader-api = { path = "../horizon-shader-api", optional = true }
+# `scripts/registry.lua` (feature `lua`): declarations written in Luau, run when the content is read (the game).
+mlua = { version = "0.12", features = ["luau", "vendored"], optional = true }
 
 [features]
 # The mod registry's index (docs/api/mod-index.md): the launcher, the registry server and its CI.
 index = ["dep:sha2", "dep:minisign-verify", "dep:horizon-shader-api", "dep:wasmparser"]
+# A mod's `scripts/registry.lua` runs when its content is read (src/registry.rs): the game; the launcher lists files only.
+lua = ["dep:mlua"]
 
 [lints]
 workspace = true
