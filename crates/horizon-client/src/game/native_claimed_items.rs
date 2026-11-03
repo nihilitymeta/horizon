@@ -138,6 +138,36 @@ impl Game<'_> {
         let (d, hit) = self.native_view_hit()?;
         (d <= distance.clamp(0.0, RAYCAST_MAX)).then_some(hit)
     }
+    /// The first block within `distance` (at most `RAYCAST_MAX`) along the
+    /// look of the server player `uuid`, from their eyes: what they point at.
+    /// None for a player who is not on, or nothing within the loaded chunks.
+    /// API 362.
+    pub(super) fn native_player_raycast(&self, uuid: u128, distance: f32) -> Option<NativeHit> {
+        let player = self
+            .native_server_players()
+            .into_iter()
+            .find(|p| p.uuid == uuid)
+            .or_else(|| self.native_acting_player().filter(|p| p.uuid == uuid))?;
+        // A standing player's eyes (`Player.DEFAULT_EYE_HEIGHT`).
+        let eye = [
+            player.position[0],
+            player.position[1] + 1.62,
+            player.position[2],
+        ];
+        let dir = super::view_vector(player.yaw, player.pitch);
+        let reach = f64::from(distance.clamp(0.0, RAYCAST_MAX));
+        let hit = self.clip_ray(eye, dir, reach)?;
+        let state = self.world.block(hit.pos[0], hit.pos[1], hit.pos[2]);
+        Some(NativeHit {
+            block_x: hit.pos[0],
+            block_y: hit.pos[1],
+            block_z: hit.pos[2],
+            x: hit.point[0],
+            y: hit.point[1],
+            z: hit.point[2],
+            block: self.res.facts().get(state).name.to_string(),
+        })
+    }
     /// The first block along the view within `RAYCAST_MAX`, and its distance. API 116.
     pub(super) fn native_view_hit(&self) -> Option<(f32, NativeHit)> {
         self.player.as_ref()?;

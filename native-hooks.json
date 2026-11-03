@@ -685,6 +685,14 @@
     {
       "name": "mob_view",
       "target": "horizon_client::game::native_mobs::Game<'_>::native_mob_view"
+    },
+    {
+      "name": "mob_views",
+      "target": "horizon_client::game::native_mobs::Game<'_>::native_mob_views"
+    },
+    {
+      "name": "player_raycast",
+      "target": "horizon_client::game::native_claimed_items::Game<'_>::native_player_raycast"
     }
   ],
   "hooks": [

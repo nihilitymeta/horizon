@@ -230,6 +230,18 @@ impl Game<'_> {
         let mob = self.mobs.iter().find(|m| m.id == id && !m.removed)?;
         mob.alive().then(|| MobView::of(mob, None))
     }
+    /// The views of every living mob in the level in place, `dimension`, as
+    /// `native_mob_view` gives one: none on a client's copy. API 362.
+    pub(super) fn native_mob_views(&self, dimension: &str) -> Vec<MobView> {
+        if !self.native_mob_level(dimension) {
+            return Vec::new();
+        }
+        self.mobs
+            .iter()
+            .filter(|m| !m.removed && m.alive())
+            .map(|m| MobView::of(m, None))
+            .collect()
+    }
     /// The living mobs in the level in place, `dimension`; none on a client's
     /// copy. API 37.
     pub(super) fn native_mobs(&self, dimension: &str) -> Vec<NativeMob> {

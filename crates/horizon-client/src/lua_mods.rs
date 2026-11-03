@@ -16,7 +16,7 @@
 use crate::mod_api::{
     AttachmentCodec, AttachmentType, BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
     BlockPos, BlockStateId, Compound, DataPackFilesEvent, EntityTickListenedEvent,
-    EntityTickPostEvent, Flow, Holder, Hooks, Host, InteractEntityEvent, LevelDimension,
+    EntityTickPostEvent, Flow, Holder, Hooks, Host, InteractEntityEvent, LevelDimension, LevelHost,
     LevelWriteHost, LivingIncomingDamageEvent, MobAiRegisterEvent, MobKilledEvent, MobSpawnedEvent,
     MobView, Mods, RandomTickEvent, RightClickBlockEvent, ServerTickEvent, ServerTickPhase,
     TickBlockEvent, WorldLifecycleEvent,
@@ -101,22 +101,223 @@ const QUEUE: &str = "horizon_queue";
 /// thread's actions and none are left behind.
 const RUNNER: &str = "horizon_runner";
 const RUNNER_CODE: &str = r#"
-return function(handlers, queue, ...)
-  local failed
-  for _, f in ipairs(handlers) do
-    local ok, e = pcall(f, ...)
-    if not ok then failed = e break end
+return function(slot)
+  return function(handlers, queue, host, ...)
+    slot[1] = host
+    local failed
+    for _, f in ipairs(handlers) do
+      local ok, e = pcall(f, ...)
+      if not ok then failed = e break end
+    end
+    slot[1] = nil
+    local n = #queue
+    local out
+    if n > 0 then
+      out = {}
+      for i = 1, n do out[i] = queue[i]; queue[i] = nil end
+    end
+    if failed ~= nil then error(failed, 0) end
+    return out
   end
-  local n = #queue
-  local out
-  if n > 0 then
-    out = {}
-    for i = 1, n do out[i] = queue[i]; queue[i] = nil end
-  end
-  if failed ~= nil then error(failed, 0) end
-  return out
 end
 "#;
+/// The registry key of the one-slot table holding the read function of the
+/// call in progress (`horizon.block` and the other reads go through it).
+const HOST_SLOT: &str = "horizon_host";
+/// `horizon.block`, `block_property`, `mob`, `mobs`, `players`, `player`,
+/// `time` and `raycast`: wrappers over the call's read function, which the
+/// runner keeps in the slot while the handlers run; outside a call there is
+/// none, and a read is an error.
+const READS_CODE: &str = r#"
+return function(slot, horizon)
+  local function read(what, ...)
+    local f = slot[1]
+    if f == nil then
+      error("horizon." .. what .. ": reads work inside a hook with a host (not in mob_hurt, mob_ai_register or a goal)", 3)
+    end
+    return f(what, ...)
+  end
+  horizon.block = function(x, y, z) return read("block", x, y, z) end
+  horizon.block_property = function(x, y, z, key) return read("block_property", x, y, z, key) end
+  horizon.mob = function(id) return read("mob", id) end
+  horizon.mobs = function() return read("mobs") end
+  horizon.players = function() return read("players") end
+  horizon.player = function(who) return read("player", who) end
+  horizon.time = function() return read("time") end
+  horizon.raycast = function(who, distance) return read("raycast", who, distance) end
+end
+"#;
+
+/// What a hook's handlers may read from while they run: the hook's host.
+/// It reaches Lua as a function of the call's scope (`Lua::scope`), gone
+/// when the call returns, whatever kept it.
+#[derive(Clone, Copy)]
+enum Reader<'a> {
+    /// A hook without a host (`mob_hurt`, `mob_ai_register`): reads fail.
+    None,
+    Host(&'a dyn Host),
+    Level(&'a dyn LevelHost),
+}
+
+/// One read (`what`, its arguments) answered from `reader`.
+fn read_dispatch(
+    lua: &Lua,
+    reader: Reader<'_>,
+    what: &str,
+    rest: MultiValue,
+) -> mlua::Result<Value> {
+    use mlua::FromLuaMulti;
+    let host = || -> mlua::Result<&dyn Host> {
+        match reader {
+            Reader::Host(h) => Ok(h),
+            _ => Err(mlua::Error::runtime(format!(
+                "horizon.{what}: a level hook (random_tick, tick_block) reads blocks only"
+            ))),
+        }
+    };
+    let no_host = || mlua::Error::runtime(format!("horizon.{what}: no host"));
+    Ok(match what {
+        "block" => {
+            let (x, y, z): (i32, i32, i32) = FromLuaMulti::from_lua_multi(rest, lua)?;
+            let id = match reader {
+                Reader::Host(h) => h.block([x, y, z]),
+                Reader::Level(l) => l
+                    .state_block(l.block_state([x, y, z]))
+                    .unwrap_or_else(|| "minecraft:air".to_owned()),
+                Reader::None => return Err(no_host()),
+            };
+            Value::String(lua.create_string(id)?)
+        }
+        "block_property" => {
+            let (x, y, z, key): (i32, i32, i32, String) = FromLuaMulti::from_lua_multi(rest, lua)?;
+            let value = match reader {
+                Reader::Host(h) => h.block_property([x, y, z], &key),
+                Reader::Level(l) => l
+                    .state_properties(l.block_state([x, y, z]))
+                    .into_iter()
+                    .find(|(k, _)| *k == key)
+                    .map(|(_, v)| v),
+                Reader::None => return Err(no_host()),
+            };
+            match value {
+                Some(v) => Value::String(lua.create_string(v)?),
+                None => Value::Nil,
+            }
+        }
+        "mob" => {
+            let id: u32 = FromLuaMulti::from_lua_multi(rest, lua)?;
+            let h = host()?;
+            match h.mob_view(h.dimension(), id) {
+                Some(view) => Value::Table(goals::view_table(lua, &view)?),
+                None => Value::Nil,
+            }
+        }
+        "mobs" => {
+            let h = host()?;
+            let out = lua.create_table()?;
+            for view in h.mob_views(h.dimension()) {
+                out.push(goals::view_table(lua, &view)?)?;
+            }
+            Value::Table(out)
+        }
+        "players" => {
+            let h = host()?;
+            let out = lua.create_table()?;
+            for p in h.server_players() {
+                out.push(player_table_of(lua, &p)?)?;
+            }
+            Value::Table(out)
+        }
+        "player" => {
+            let who: String = FromLuaMulti::from_lua_multi(rest, lua)?;
+            let h = host()?;
+            let uuid = uuid_parse(&who);
+            match h
+                .server_players()
+                .into_iter()
+                .find(|p| p.name == who || Some(p.uuid) == uuid)
+            {
+                Some(p) => Value::Table(player_table_of(lua, &p)?),
+                None => Value::Nil,
+            }
+        }
+        "time" => {
+            let h = host()?;
+            let (rain, thunder) = h.weather();
+            let day_time = h.day_time();
+            let t = lua.create_table()?;
+            t.set("dimension", h.dimension())?;
+            t.set("day_time", day_time)?;
+            t.set("day", day_time.div_euclid(24000))?;
+            t.set("time_of_day", day_time.rem_euclid(24000))?;
+            t.set("rain", rain)?;
+            t.set("thunder", thunder)?;
+            Value::Table(t)
+        }
+        "raycast" => {
+            let (who, distance): (String, Option<f32>) = FromLuaMulti::from_lua_multi(rest, lua)?;
+            let h = host()?;
+            let uuid = uuid_parse(&who).or_else(|| {
+                h.server_players()
+                    .into_iter()
+                    .find(|p| p.name == who)
+                    .map(|p| p.uuid)
+            });
+            let hit = uuid.and_then(|uuid| h.player_raycast(uuid, distance.unwrap_or(64.0)));
+            match hit {
+                Some(hit) => {
+                    let t = lua.create_table()?;
+                    t.set("id", hit.block.as_str())?;
+                    t.set("x", hit.x)?;
+                    t.set("y", hit.y)?;
+                    t.set("z", hit.z)?;
+                    let block = lua.create_table()?;
+                    block.set("x", hit.block_x)?;
+                    block.set("y", hit.block_y)?;
+                    block.set("z", hit.block_z)?;
+                    t.set("block", block)?;
+                    Value::Table(t)
+                }
+                None => Value::Nil,
+            }
+        }
+        other => {
+            return Err(mlua::Error::runtime(format!(
+                "horizon.{other}: no such read"
+            )));
+        }
+    })
+}
+
+/// A UUID as written (`8-4-4-4-12`, or 32 hex digits), back.
+fn uuid_parse(text: &str) -> Option<u128> {
+    let hex: String = text.chars().filter(|c| *c != '-').collect();
+    (hex.len() == 32)
+        .then(|| u128::from_str_radix(&hex, 16).ok())
+        .flatten()
+}
+
+/// A server player as a table: `uuid`, `name`, `dimension`, `position`
+/// (`{x, y, z}`), `yaw`, `pitch`, `game_mode`, `health`.
+fn player_table_of(lua: &Lua, p: &crate::mod_api::NativeServerPlayer) -> mlua::Result<Table> {
+    let t = lua.create_table()?;
+    t.set("uuid", uuid_text(p.uuid))?;
+    t.set("name", p.name.as_str())?;
+    t.set("dimension", p.dimension.as_str())?;
+    t.set("position", goals::vec3(lua, p.position)?)?;
+    t.set("yaw", p.yaw)?;
+    t.set("pitch", p.pitch)?;
+    t.set("game_mode", p.game_mode)?;
+    t.set("health", p.health)?;
+    Ok(t)
+}
+
+/// Installs the read wrappers (`READS_CODE`) on the `horizon` table.
+fn install_reads(lua: &Lua, api: &Table) -> mlua::Result<()> {
+    let slot: Table = lua.named_registry_value(HOST_SLOT)?;
+    let install: Function = lua.load(READS_CODE).set_name("horizon").eval()?;
+    install.call::<()>((slot, api))
+}
 /// The registry key of the modules `require` ran: `name -> value`.
 const LOADED: &str = "horizon_loaded";
 
@@ -460,6 +661,8 @@ impl LuaMod {
             lua.set_named_registry_value(KIND_HANDLERS, lua.create_table()?)?;
             lua.set_named_registry_value(QUEUE, lua.create_table()?)?;
             lua.set_named_registry_value(LOADED, lua.create_table()?)?;
+            lua.named_registry_value::<Table>(HOST_SLOT)?
+                .set(1, Value::Nil)?;
             Ok(())
         };
         reset().map_err(|e| e.to_string())?;
@@ -494,7 +697,10 @@ impl LuaMod {
         lua.set_named_registry_value(KIND_HANDLERS, lua.create_table()?)?;
         lua.set_named_registry_value(QUEUE, lua.create_table()?)?;
         lua.set_named_registry_value(LOADED, lua.create_table()?)?;
-        let runner: Function = lua.load(RUNNER_CODE).set_name("horizon").eval()?;
+        let slot = lua.create_table()?;
+        lua.set_named_registry_value(HOST_SLOT, &slot)?;
+        let make_runner: Function = lua.load(RUNNER_CODE).set_name("horizon").eval()?;
+        let runner: Function = make_runner.call(slot)?;
         lua.set_named_registry_value(RUNNER, runner)?;
         let api = lua.create_table()?;
         let id = self.id.clone();
@@ -575,6 +781,7 @@ impl LuaMod {
             })?,
         )?;
         api.set("distance", lua.create_function(goals::distance)?)?;
+        install_reads(lua, &api)?;
         // Actions on the game, run after the handler with the hook's host
         // (or, in `mob_ai_register`, on the mob).
         for action in [
@@ -718,16 +925,7 @@ impl LuaMod {
     fn player_table(&self, host: &dyn Host) -> mlua::Result<Value> {
         let lua = &self.lua;
         Ok(match host.acting_player() {
-            Some(p) => {
-                let t = lua.create_table()?;
-                t.set("uuid", uuid_text(p.uuid))?;
-                t.set("name", p.name.as_str())?;
-                t.set("dimension", p.dimension.as_str())?;
-                t.set("position", goals::vec3(lua, p.position)?)?;
-                t.set("game_mode", p.game_mode)?;
-                t.set("health", p.health)?;
-                Value::Table(t)
-            }
+            Some(p) => Value::Table(player_table_of(lua, &p)?),
             None => Value::Nil,
         })
     }
@@ -845,8 +1043,9 @@ impl LuaMod {
             Err(e) => return self.hook_error(hook, e),
         };
         let mut handled = false;
-        let r = self.call_with(
+        let r = self.call_level(
             hook,
+            level,
             (
                 dimension_id(dimension),
                 block.as_str(),
@@ -856,7 +1055,7 @@ impl LuaMod {
                 props,
                 data.clone(),
             ),
-            &mut |action, args| {
+            &mut |level, action, args| {
                 match action {
                     "set_block_property" => {
                         let (key, value): (String, String) = (args.get(1)?, args.get(2)?);
@@ -950,10 +1149,10 @@ impl LuaMod {
         args: impl mlua::IntoLuaMulti,
     ) {
         let r = match host {
-            Some(host) => self.call_kind(hook, kind, args, &mut |action, a| {
+            Some(host) => self.call_kind(hook, kind, host, args, &mut |host, action, a| {
                 self.run_action(host, action, a)
             }),
-            None => self.call_kind(hook, kind, args, &mut |action, _| {
+            None => self.call_bare(hook, kind, args, &mut |action, _| {
                 log::warn!("[lua:{}] {hook}: {action} needs a host; dropped", self.id);
                 Ok(())
             }),
@@ -963,51 +1162,102 @@ impl LuaMod {
         }
     }
 
-    /// Call the handlers of `hook` with `args`, then hand each queued action
-    /// (its name and arguments) to `apply`, in order.
-    fn call_with(
-        &self,
-        hook: &str,
-        args: impl mlua::IntoLuaMulti,
-        apply: &mut dyn FnMut(&str, &Table) -> mlua::Result<()>,
-    ) -> mlua::Result<()> {
-        self.call_kind(hook, None, args, apply)
-    }
-
-    /// `call_with` for a hook about a mob of `kind` (`handlers`).
-    fn call_kind(
+    /// Call the handlers of `hook` (those for every kind and those watching
+    /// `kind`) with `args` and no host to read from, then hand each queued
+    /// action (its name and arguments) to `apply`, in order.
+    fn call_bare(
         &self,
         hook: &str,
         kind: Option<&str>,
         args: impl mlua::IntoLuaMulti,
         apply: &mut dyn FnMut(&str, &Table) -> mlua::Result<()>,
     ) -> mlua::Result<()> {
+        for (action, args) in self.run_handlers(hook, kind, Reader::None, args)? {
+            apply(&action, &args)?;
+        }
+        Ok(())
+    }
+
+    /// Call the handlers of `hook` with `args`, reading from `host`, then
+    /// hand each queued action to `apply` with the host to act on.
+    fn call_kind(
+        &self,
+        hook: &str,
+        kind: Option<&str>,
+        host: &mut dyn Host,
+        args: impl mlua::IntoLuaMulti,
+        apply: &mut dyn FnMut(&mut dyn Host, &str, &Table) -> mlua::Result<()>,
+    ) -> mlua::Result<()> {
+        let actions = self.run_handlers(hook, kind, Reader::Host(&*host), args)?;
+        for (action, args) in actions {
+            apply(host, &action, &args)?;
+        }
+        Ok(())
+    }
+
+    /// `call_kind` on a level (`random_tick`, `tick_block`): the handlers read
+    /// the level's blocks.
+    fn call_level(
+        &self,
+        hook: &str,
+        level: &mut dyn LevelWriteHost,
+        args: impl mlua::IntoLuaMulti,
+        apply: &mut dyn FnMut(&mut dyn LevelWriteHost, &str, &Table) -> mlua::Result<()>,
+    ) -> mlua::Result<()> {
+        let actions = self.run_handlers(hook, None, Reader::Level(&*level), args)?;
+        for (action, args) in actions {
+            apply(level, &action, &args)?;
+        }
+        Ok(())
+    }
+
+    /// Runs the handlers of `hook` (those for every kind and those watching
+    /// `kind`) with `args`, `reader` at hand for `horizon.block` and the other
+    /// reads, as one call into the state: what they queued, in order.
+    fn run_handlers(
+        &self,
+        hook: &str,
+        kind: Option<&str>,
+        reader: Reader<'_>,
+        args: impl mlua::IntoLuaMulti,
+    ) -> mlua::Result<Vec<(String, Table)>> {
         let lua = &self.lua;
         let list = self.handlers(hook, kind)?;
         if list.is_empty() {
-            return Ok(());
+            return Ok(Vec::new());
         }
         let count = list.len() as u32;
         let runner: Function = lua.named_registry_value(RUNNER)?;
         let queue: Table = lua.named_registry_value(QUEUE)?;
         let handlers = lua.create_sequence_from(list)?;
-        let mut args = args.into_lua_multi(lua)?;
-        args.push_front(Value::Table(queue));
-        args.push_front(Value::Table(handlers));
-        // One call runs every handler and takes what they queued.
-        let actions: Option<Table> = self
-            .budget
-            .run(HANDLER_BUDGET * count, || runner.call(args))?;
-        let Some(actions) = actions else {
-            return Ok(());
+        // One call runs every handler and takes what they queued; the read
+        // function lives for the call's scope only, whatever kept it.
+        let result = lua.scope(|scope| {
+            let read = match reader {
+                Reader::None => Value::Nil,
+                r => Value::Function(scope.create_function(
+                    move |lua, (what, rest): (String, MultiValue)| {
+                        read_dispatch(lua, r, &what, rest)
+                    },
+                )?),
+            };
+            let mut args = args.into_lua_multi(lua)?;
+            args.push_front(read);
+            args.push_front(Value::Table(queue));
+            args.push_front(Value::Table(handlers));
+            self.budget.run(HANDLER_BUDGET * count, || {
+                runner.call::<Option<Table>>(args)
+            })
+        });
+        let Some(actions) = result? else {
+            return Ok(Vec::new());
         };
-        let actions: Vec<Table> = actions.sequence_values().collect::<mlua::Result<_>>()?;
-        for entry in actions {
-            let action: String = entry.get("action")?;
-            let args: Table = entry.get("args")?;
-            apply(&action, &args)?;
+        let mut out = Vec::new();
+        for entry in actions.sequence_values::<Table>() {
+            let entry = entry?;
+            out.push((entry.get::<String>("action")?, entry.get::<Table>("args")?));
         }
-        Ok(())
+        Ok(out)
     }
 
     fn run_action(&self, host: &mut dyn Host, action: &str, args: &Table) -> mlua::Result<()> {
@@ -1148,10 +1398,12 @@ impl Hooks for LuaMod {
             Err(e) => return self.hook_error(hook, e),
         };
         let mut cancel = false;
-        let r = self.call_with(
+        let r = self.call_kind(
             hook,
+            None,
+            host,
             (x, y, z, block.as_str(), face, player, held, data.clone()),
-            &mut |action, args| {
+            &mut |host, action, args| {
                 match action {
                     "set_block_property" => {
                         let (key, value): (String, String) = (args.get(1)?, args.get(2)?);
@@ -1216,10 +1468,12 @@ impl Hooks for LuaMod {
         let [x, y, z] = event.pos;
         let pos = event.pos;
         let dimension = host.dimension();
-        let r = self.call_with(
+        let r = self.call_kind(
             hook,
+            None,
+            host,
             (dimension, id.as_str(), x, y, z, data.clone()),
-            &mut |action, args| {
+            &mut |host, action, args| {
                 match action {
                     "set_block_property" => {
                         let (key, value): (String, String) = (args.get(1)?, args.get(2)?);
@@ -1264,7 +1518,7 @@ impl Hooks for LuaMod {
             Err(e) => return log::error!("[lua:{}] mob_ai_register: {e}", self.id),
         };
         let kind = qualify(&mob.kind.id);
-        let r = self.call_kind("mob_ai_register", Some(&kind), view, &mut |action, args| {
+        let r = self.call_bare("mob_ai_register", Some(&kind), view, &mut |action, args| {
             match action {
                 "add_goal" | "add_target_goal" => {
                     let (priority, name): (i32, String) = (args.get(1)?, args.get(2)?);
@@ -1335,7 +1589,7 @@ impl Hooks for LuaMod {
             Ok(t) => t,
             Err(e) => return self.hook_error(hook, e),
         };
-        let r = self.call_kind(
+        let r = self.call_bare(
             hook,
             Some(&kind),
             (
@@ -1383,13 +1637,14 @@ impl Hooks for LuaMod {
             self.call_kind(
                 hook,
                 Some(&kind),
+                host,
                 (
                     dimension,
                     mob,
                     killer,
                     data.as_ref().map(|(_, t)| t.clone()),
                 ),
-                &mut |action, args| self.run_action(host, action, args),
+                &mut |host, action, args| self.run_action(host, action, args),
             )?;
             self.store_mob_data(host, hook, id, data);
             Ok(())
@@ -1430,6 +1685,7 @@ impl Hooks for LuaMod {
             self.call_kind(
                 hook,
                 Some(&kind),
+                host,
                 (
                     dimension,
                     mob,
@@ -1437,7 +1693,7 @@ impl Hooks for LuaMod {
                     held,
                     data.as_ref().map(|(_, t)| t.clone()),
                 ),
-                &mut |action, args| {
+                &mut |host, action, args| {
                     match action {
                         "cancel" => cancel = true,
                         other => self.run_action(host, other, args)?,
@@ -1487,8 +1743,9 @@ impl Hooks for LuaMod {
             self.call_kind(
                 hook,
                 Some(&kind),
+                host,
                 (dimension, view, data.as_ref().map(|(_, t)| t.clone())),
-                &mut |action, args| self.run_action(host, action, args),
+                &mut |host, action, args| self.run_action(host, action, args),
             )?;
             self.store_mob_data(host, hook, id, data);
             Ok(())
@@ -1584,7 +1841,7 @@ experimental = ["scripts"]
         let view = m.lua.create_table().unwrap();
         view.set("kind", "minecraft:cow").unwrap();
         let mut seen = Vec::new();
-        let r = m.call_with("mob_ai_register", view, &mut |action, args| {
+        let r = m.call_bare("mob_ai_register", None, view, &mut |action, args| {
             let name: Option<String> = args.get(2)?;
             if let Some(name) = &name {
                 // The game resolves the goal here; a missing one is the handler's error.
@@ -1847,6 +2104,41 @@ experimental = ["scripts"]
             self.pushes.push(velocity);
             true
         }
+        fn block(&self, pos: [i32; 3]) -> String {
+            if pos == [1, 2, 3] {
+                "minecraft:stone".into()
+            } else {
+                "minecraft:air".into()
+            }
+        }
+        fn block_property(&self, pos: [i32; 3], key: &str) -> Option<String> {
+            (pos == [1, 2, 3] && key == "facing").then(|| "north".to_owned())
+        }
+        fn server_players(&self) -> Vec<crate::mod_api::NativeServerPlayer> {
+            self.acting_player().into_iter().collect()
+        }
+        fn day_time(&self) -> i64 {
+            30000
+        }
+        fn weather(&self) -> (f32, f32) {
+            (0.5, 0.0)
+        }
+        fn mob_views(&self, dimension: &str) -> Vec<MobView> {
+            self.mob_view(dimension, 7).into_iter().collect()
+        }
+        fn player_raycast(&self, uuid: u128, distance: f32) -> Option<crate::mod_api::NativeHit> {
+            (uuid == 0x123e4567_e89b_12d3_a456_426614174000 && distance == 8.0).then(|| {
+                crate::mod_api::NativeHit {
+                    block_x: 4,
+                    block_y: 5,
+                    block_z: 6,
+                    x: 4.5,
+                    y: 6.0,
+                    z: 6.5,
+                    block: "minecraft:dirt".into(),
+                }
+            })
+        }
         fn broadcast(&self, text: crate::mod_api::Text) {
             self.lines.lock().unwrap().push(text.plain());
         }
@@ -1863,6 +2155,7 @@ experimental = ["scripts"]
                 HURT = {}
                 horizon.on("mob_hurt", function(mob, damage_type, causing, direct, amount)
                   HURT[#HURT + 1] = mob.kind .. ":" .. damage_type
+                  HURT_READ = pcall(horizon.block, 1, 2, 3)
                   if damage_type == "minecraft:on_fire" then horizon.cancel() end
                   horizon.set_amount(amount * 2)
                 end, "cow")
@@ -1877,6 +2170,15 @@ experimental = ["scripts"]
                 horizon.on("mob_interact", function(dimension, mob, player, held, data)
                   data.pets = (data.pets or 0) + 1
                   if mob.health ~= 10 then error("view") end
+                  data.block = horizon.block(1, 2, 3) .. "," .. horizon.block(0, 0, 0)
+                  data.facing = horizon.block_property(1, 2, 3, "facing") or "none"
+                  data.players = #horizon.players() .. ":" .. horizon.players()[1].name .. ":" .. (horizon.player("steve") and "found" or "lost") .. ":" .. (horizon.player(player.uuid) and "found" or "lost") .. ":" .. (horizon.player("alex") and "found" or "lost")
+                  local t = horizon.time()
+                  data.time = t.day .. ":" .. t.time_of_day .. ":" .. t.rain .. ":" .. t.dimension
+                  data.mobs = #horizon.mobs() .. ":" .. horizon.mob(7).max_health .. ":" .. tostring(horizon.mob(8))
+                  local hit = horizon.raycast(player.uuid, 8)
+                  data.hit = hit.id .. ":" .. hit.block.y .. ":" .. hit.x .. ":" .. tostring(horizon.raycast("alex", 8))
+                  KEPT = horizon.block
                   if held and held.item == "minecraft:wheat" then horizon.cancel() end
                 end, "minecraft:cow")
                 "#,
@@ -1916,6 +2218,8 @@ experimental = ["scripts"]
             ]
         );
         // The mod listens to entity ticks: it has a mob_tick handler.
+        // No host mid-hit: the reads refuse there.
+        assert!(!m.lua.globals().get::<bool>("HURT_READ").unwrap());
         let mut listened = EntityTickListenedEvent { listened: false };
         m.entity_tick_listened(&mut NoHost, &mut listened);
         assert!(listened.listened);
@@ -1987,6 +2291,21 @@ experimental = ["scripts"]
             .unwrap();
         assert_eq!(saved.get(&key("pets")), Some(&Tag::Int(2)));
         assert_eq!(saved.get(&key("ticks")), Some(&Tag::Int(3)));
+        // The reads answered from the host during the click; a read kept
+        // past the call is refused.
+        let text = |k: &str| match saved.get(&key(k)) {
+            Some(Tag::String(s)) => s.to_string().unwrap(),
+            other => panic!("{k}: {other:?}"),
+        };
+        assert_eq!(text("block"), "minecraft:stone,minecraft:air");
+        assert_eq!(text("facing"), "north");
+        assert_eq!(text("players"), "1:steve:found:found:lost");
+        assert_eq!(text("time"), "1:6000:0.5:minecraft:overworld");
+        assert_eq!(text("mobs"), "1:10:nil");
+        assert_eq!(text("hit"), "minecraft:dirt:5:4.5:nil");
+        let kept: Function = m.lua.globals().get("KEPT").unwrap();
+        let e = kept.call::<String>((1, 2, 3)).unwrap_err().to_string();
+        assert!(e.contains("inside a hook with a host"), "{e}");
         // The kill hears the player and the data.
         m.mob_killed(
             &mut host,
@@ -2079,7 +2398,7 @@ experimental = ["scripts"]
         let m = LuaMod::load(&path, &[]).unwrap();
         let started = std::time::Instant::now();
         let e = m
-            .call_with("server_tick", ("end", true), &mut |_, _| Ok(()))
+            .call_bare("server_tick", None, ("end", true), &mut |_, _| Ok(()))
             .unwrap_err()
             .to_string();
         assert!(e.contains("ran over"), "{e}");
@@ -2089,7 +2408,7 @@ experimental = ["scripts"]
             started.elapsed()
         );
         // The state is fine afterwards, and the next chunk has a budget of its own.
-        m.call_with("world_lifecycle", ("start", "x"), &mut |_, _| Ok(()))
+        m.call_bare("world_lifecycle", None, ("start", "x"), &mut |_, _| Ok(()))
             .unwrap();
         assert_eq!(m.lua.globals().get::<i64>("N").unwrap(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -2198,7 +2517,8 @@ experimental = ["scripts"]
                   data.name = nil
                 end)
                 horizon.on("random_tick", function(dimension, block, x, y, z, props, data)
-                  if data then data.charge = data.charge * 10 end
+                  if data then data.charge = data.charge * 10; data.under = horizon.block(x, y - 1, z) end
+                  if pcall(horizon.players) then error("a level hook reads blocks only") end
                 end)
                 "#,
             )],
@@ -2284,6 +2604,10 @@ experimental = ["scripts"]
         assert_eq!(
             level.data[&[1, 64, -3]].get(&key("charge")),
             Some(&Tag::Int(20))
+        );
+        assert_eq!(
+            level.data[&[1, 64, -3]].get(&key("under")),
+            Some(&Tag::String("ruby:hive".into()))
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }
