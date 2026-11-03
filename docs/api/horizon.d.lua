@@ -161,9 +161,14 @@ declare horizon: {
 -- `scripts/registry.lua` runs with this instead of `horizon`.
 declare registry: {
     id: string,
+    namespaces: { string },
     entity_type: (name: string, def: Data) -> (),
     block: (name: string, def: Data) -> (),
     item: (name: string, def: Data) -> (),
+    mob_effect: (name: string, def: Data) -> (),
+    creative_tab: (name: string, def: Data) -> (),
+    menu: (name: string, def: Data) -> (),
     data: (path: string, value: Data) -> (),
     asset: (path: string, value: Data) -> (),
+    file: (path: string, value: Data | string) -> (),
 }

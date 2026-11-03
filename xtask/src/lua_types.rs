@@ -391,11 +391,16 @@ const FUNCTIONS: &[(&str, &str)] = &[
 /// The `registry` global of `scripts/registry.lua`.
 const REGISTRY: &[(&str, &str)] = &[
     ("id", "string"),
+    ("namespaces", "{ string }"),
     ("entity_type", "(name: string, def: Data) -> ()"),
     ("block", "(name: string, def: Data) -> ()"),
     ("item", "(name: string, def: Data) -> ()"),
+    ("mob_effect", "(name: string, def: Data) -> ()"),
+    ("creative_tab", "(name: string, def: Data) -> ()"),
+    ("menu", "(name: string, def: Data) -> ()"),
     ("data", "(path: string, value: Data) -> ()"),
     ("asset", "(path: string, value: Data) -> ()"),
+    ("file", "(path: string, value: Data | string) -> ()"),
 ];
 
 fn render() -> String {
@@ -509,6 +514,36 @@ mod tests {
             .map(|(n, _)| n.to_string())
             .chain(std::iter::once("on".to_owned()))
             .collect();
+        assert_eq!(installed, declared);
+    }
+
+    /// Every name the registry script's `registry` table gets (the
+    /// `registry.set` calls, the `data`/`asset` pair and the declaration
+    /// kinds of `horizon-mods`' registry.rs) is declared, and no other.
+    #[test]
+    fn every_name_of_the_registry_table_is_declared() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let src =
+            std::fs::read_to_string(root.join("crates/horizon-mods/src/registry.rs")).unwrap();
+        let mut installed = BTreeSet::new();
+        for part in src.split("registry.set(").skip(1) {
+            let part = part.trim_start();
+            if let Some(name) = part.strip_prefix('"').and_then(|p| p.split('"').next()) {
+                installed.insert(name.to_owned());
+            }
+        }
+        let pair_start = src.find("for (function, top) in [").unwrap();
+        let pair_end = pair_start + src[pair_start..].find("] {").unwrap();
+        for name in src[pair_start..pair_end].split('"').skip(1).step_by(4) {
+            installed.insert(name.to_owned());
+        }
+        let kinds_start = src.find("const KINDS").unwrap();
+        let kinds_end = kinds_start + src[kinds_start..].find("];").unwrap();
+        for name in src[kinds_start..kinds_end].split('"').skip(1).step_by(2) {
+            installed.insert(name.to_owned());
+        }
+        let declared: BTreeSet<String> =
+            super::REGISTRY.iter().map(|(n, _)| n.to_string()).collect();
         assert_eq!(installed, declared);
     }
 
