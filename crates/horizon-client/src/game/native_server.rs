@@ -259,9 +259,14 @@ impl Game<'_> {
         );
         players
     }
-    /// The owner of a single-player world, as `ensure_player_uuid` makes it:
-    /// the saved uuid, else the offline one of "Player".
+    /// The owner of a single-player world, by the uuid the hooks name them
+    /// with: the integrated server's owner (the hub's guest for them), else,
+    /// before it starts, the one `ensure_player_uuid` makes (the saved uuid,
+    /// else the offline one of "Player").
     fn owner_uuid(&self) -> u128 {
+        if let Some(owner) = self.lan.as_ref().and_then(|h| h.hub.singleplayer_owner) {
+            return owner;
+        }
         self.level
             .player_uuid
             .map(horizon_client::lan::playerdata::ints_uuid)

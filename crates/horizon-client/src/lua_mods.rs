@@ -2503,7 +2503,8 @@ impl Hooks for LuaMod {
         }
     }
     /// A player right-clicks a mob: `mob_interact(dimension, mob, player,
-    /// held, data)`, before the mob and the item act; `mob` is its view.
+    /// held, data)`, before the mob and the item act; `mob` is its view (a
+    /// mob the host has no view of, dead or gone, is not told).
     /// `horizon.cancel()` takes the click (the hand swings, nothing else
     /// happens); `data` is written back.
     fn interact_entity(&self, host: &mut dyn Host, event: &mut InteractEntityEvent<'_>) -> Flow {
@@ -2529,7 +2530,10 @@ impl Hooks for LuaMod {
                 None => Value::Nil,
             };
             let dimension = host.dimension().to_owned();
-            let mob = self.mob_table(host, &dimension, id, &kind)?;
+            let Some(view) = host.mob_view(&dimension, id) else {
+                return Ok(());
+            };
+            let mob = goals::view_table(&self.lua, &view)?;
             let data = self.mob_data(host, id)?;
             self.call_kind(
                 hook,
@@ -3705,6 +3709,18 @@ experimental = ["scripts"]
                 }
             ),
             Flow::Cancel
+        );
+        // A click on a mob the host has no view of (dead, gone) is not told.
+        assert_eq!(
+            m.interact_entity(
+                &mut host,
+                &mut InteractEntityEvent {
+                    entity: 8,
+                    kind: "cow",
+                    stack: Some(&wheat)
+                }
+            ),
+            Flow::Continue
         );
         let saved = m
             .attachment
