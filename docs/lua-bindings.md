@@ -1,8 +1,8 @@
 # Lua as a modding language
 
 Status: the runtime (`crates/horizon-client/src/lua_mods.rs`), scripts inside the `.hmod`, mob goals in Lua
-(`lua_mods/goals.rs`), block behaviour (random and scheduled ticks, right clicks) and reload on `/reload` are built;
-the limits (step 7) are the plan. The branch builds on `mob-ai-hooks`. Branch
+(`lua_mods/goals.rs`), block behaviour (random and scheduled ticks, right clicks), reload on `/reload` and the
+limits (time budget, memory cap) are built. The branch builds on `mob-ai-hooks`. Branch
 `lua-bindings` of whos-carmen/horizon, `main` + this one concern.
 
 ## Why
@@ -82,6 +82,12 @@ A Lua goal is a `NativeGoal` over a `LuaBehaviour` ([mob-ai-hooks.md](mob-ai-hoo
 the view before each call and applies the actions after it, so a script never holds the mob. A goal function's error
 is logged once at error level, then at debug level, and reads as "no".
 
+Limits: a handler or a goal function that runs past 250 ms of wall-clock time is stopped by Luau's interrupt with an
+error that reads as any other error of its (the log, the dev tools' console, "no" for a goal), and `init.lua` with the
+modules it requires has 5 s at load and reload; a state may take 64 MiB. Luau has no `io`, `loadfile` or `dofile`,
+its `os` is `clock`, `date`, `difftime` and `time`, and `require` is the game's own over the mod's `scripts/`, so a
+script reads nothing but its mod (`lua_mods::Budget`).
+
 Run: install the `.hmod` and turn it on, or `horizon-client --dev-mod /path/to/mod`. A mod without capability `scripts`
 is content only, as before. Scripted mods are gathered when the game starts, like trait mods: turning one on or off on
 the Mods page takes effect at the next start.
@@ -92,7 +98,6 @@ the Mods page takes effect at the next start.
 |---|---|---|
 | 2 | Hook coverage by generation: `xtask mod-api` emits the Lua adapter for every `listen` hook from the catalog, as it emits the trait | Every hook point reaches Lua without hand-written glue |
 | 3 | Host reads: `horizon.block(dimension, x, y, z)`, `horizon.mobs(dimension)`, `horizon.mob(dimension, id)`, returned synchronously (reads borrow the host for the call) | Scripts need to look before they act |
-| 7 | Limits: an instruction budget per handler (`Lua::set_interrupt`), memory cap per state, no `io`/`os` | A script cannot hang or read the player's files; a content mod stays shareable |
 
 The block hooks needed one addition to the mod API: `LevelHost::state_block`
 and `state_properties`, so a hook that gets a state can name its block without a world lookup (trait mods get them too). Everything

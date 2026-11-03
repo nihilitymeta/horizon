@@ -82,13 +82,19 @@ impl GoalDef {
         })
     }
     /// The goal to add to a mob, running in `lua`.
-    pub fn goal(&self, lua: Lua, mod_id: &str) -> mlua::Result<NativeGoal<LuaBehaviour>> {
+    pub fn goal(
+        &self,
+        lua: Lua,
+        mod_id: &str,
+        budget: super::Budget,
+    ) -> mlua::Result<NativeGoal<LuaBehaviour>> {
         let (api, queue) = actions_table(&lua)?;
         let behaviour = LuaBehaviour {
             api: lua.create_registry_value(api)?,
             queue: lua.create_registry_value(queue)?,
             lua,
             mod_id: mod_id.to_owned(),
+            budget,
             def: self.clone(),
             reported: Mutex::new(HashSet::new()),
         };
@@ -119,6 +125,8 @@ impl LuaGoalState {
 pub struct LuaBehaviour {
     lua: Lua,
     mod_id: String,
+    /// The mod's deadline for the state's interrupt: each call gets `HANDLER_BUDGET`.
+    budget: super::Budget,
     def: GoalDef,
     /// The `out` table handed to each call and the queue its methods fill.
     api: RegistryKey,
@@ -160,7 +168,9 @@ impl LuaBehaviour {
         let view = view_table(lua, mob)?;
         let api: Table = lua.registry_value(&self.api)?;
         let queue: Table = lua.registry_value(&self.queue)?;
-        let r: Value = f.call((view, st, api))?;
+        let r: Value = self
+            .budget
+            .run(super::HANDLER_BUDGET, || f.call((view, st, api)))?;
         let drained = drain_actions(&queue, out);
         queue.clear()?;
         drained?;

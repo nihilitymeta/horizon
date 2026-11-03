@@ -22,10 +22,59 @@ use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 pub mod goals;
+
+/// Wall-clock time one handler or one goal function may take before Luau's
+/// interrupt stops it with an error: the server thread runs them, so an
+/// endless loop would otherwise freeze the game.
+pub const HANDLER_BUDGET: Duration = Duration::from_millis(250);
+/// The same for `init.lua` and the modules it requires, at load and reload.
+const LOAD_BUDGET: Duration = Duration::from_secs(5);
+/// Memory one mod's state may take.
+const MEMORY: usize = 64 << 20;
+
+/// The deadline of the chunk running in one mod's state, shared with the
+/// state's interrupt: nanoseconds since the first budget was made, 0 for
+/// none. A chunk runs inside [`Budget::run`].
+#[derive(Clone, Debug, Default)]
+pub struct Budget(Arc<AtomicU64>);
+
+fn epoch() -> Instant {
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    *EPOCH.get_or_init(Instant::now)
+}
+
+impl Budget {
+    /// Makes the state stop a chunk that runs past its deadline.
+    fn install(&self, lua: &Lua) {
+        let budget = self.clone();
+        lua.set_interrupt(move |_| {
+            let deadline = budget.0.load(Ordering::Relaxed);
+            if deadline != 0 && epoch().elapsed().as_nanos() as u64 > deadline {
+                // Cleared, so the error can unwind without being raised again.
+                budget.0.store(0, Ordering::Relaxed);
+                Err(mlua::Error::runtime(
+                    "ran over its time budget and was stopped (an endless loop?)",
+                ))
+            } else {
+                Ok(mlua::VmState::Continue)
+            }
+        });
+    }
+
+    /// Runs `f`, a call into Lua, with `limit` as its budget.
+    pub(crate) fn run<R>(&self, limit: Duration, f: impl FnOnce() -> R) -> R {
+        let deadline = (epoch().elapsed() + limit).as_nanos() as u64;
+        self.0.store(deadline.max(1), Ordering::Relaxed);
+        let r = f();
+        self.0.store(0, Ordering::Relaxed);
+        r
+    }
+}
 
 /// The file a scripted mod starts from, inside its folder.
 pub const ENTRY: &str = horizon_mods::content::SCRIPT_ENTRY;
@@ -53,6 +102,8 @@ pub struct LuaMod {
     goals: Goals,
     /// Data loads seen (`data_pack_files`): the scripts reload from the second on.
     loads: AtomicU32,
+    /// The running chunk's deadline, for the state's interrupt.
+    budget: Budget,
 }
 
 /// A mod's goal definitions, shared with the `horizon.goal` function.
@@ -132,13 +183,18 @@ impl LuaMod {
     /// `horizon-mod.toml`, its scripts read once, `scripts/init.lua` run.
     pub fn load(path: &Path) -> Result<Self, String> {
         let (id, scripts) = Self::read_scripts(path)?;
+        let lua = Lua::new();
+        lua.set_memory_limit(MEMORY).map_err(|e| e.to_string())?;
+        let budget = Budget::default();
+        budget.install(&lua);
         let m = LuaMod {
             id,
             source: path.to_owned(),
-            lua: Lua::new(),
+            lua,
             scripts: Arc::new(Mutex::new(scripts)),
             goals: Goals::default(),
             loads: AtomicU32::new(0),
+            budget,
         };
         m.install_api().map_err(|e| e.to_string())?;
         m.run(ENTRY).map_err(|e| e.to_string())?;
@@ -309,7 +365,8 @@ impl LuaMod {
             .ok()
             .and_then(|s| s.get(name).cloned())
             .ok_or_else(|| mlua::Error::runtime(format!("{name}: not in the mod")))?;
-        self.lua.load(code.as_str()).set_name(name).exec()
+        self.budget
+            .run(LOAD_BUDGET, || self.lua.load(code.as_str()).set_name(name).exec())
     }
 
     /// Whether any handler is registered for `hook`: the hooks that fire
@@ -422,7 +479,9 @@ impl LuaMod {
         };
         let args = args.into_lua_multi(lua)?;
         for f in list.sequence_values::<Function>() {
-            f?.call::<()>(args.clone())?;
+            let f = f?;
+            self.budget
+                .run(HANDLER_BUDGET, || f.call::<()>(args.clone()))?;
         }
         let queue: Table = lua.named_registry_value(QUEUE)?;
         if queue.raw_len() == 0 {
@@ -611,7 +670,7 @@ impl Hooks for LuaMod {
                                 "{action}({priority}, {name:?}): no such goal; define it with horizon.goal"
                             ))
                         })?;
-                    let goal = def.goal(self.lua.clone(), &self.id)?;
+                    let goal = def.goal(self.lua.clone(), &self.id, self.budget.clone())?;
                     if action == "add_goal" {
                         mob.ai.goals.add(priority, goal);
                     } else {
@@ -726,7 +785,7 @@ experimental = ["scripts"]
                 // The game resolves the goal here; a missing one is the handler's error.
                 let def = m.goals.lock().unwrap().get(name).cloned();
                 let def = def.ok_or_else(|| mlua::Error::runtime(format!("no goal {name}")))?;
-                let goal = def.goal(m.lua.clone(), m.id()).unwrap();
+                let goal = def.goal(m.lua.clone(), m.id(), m.budget.clone()).unwrap();
                 assert!(!goal.state().started());
                 assert_eq!(
                     def.flags,
@@ -935,6 +994,32 @@ experimental = ["scripts"]
         )
         .unwrap();
         assert!(m.reload().is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_handler_that_never_returns_is_stopped_and_the_state_goes_on() {
+        let (dir, path) = hmod(
+            "budget",
+            &[(
+                "scripts/init.lua",
+                b"N = 0\n\
+                  horizon.on('server_tick', function() while true do end end)\n\
+                  horizon.on('world_lifecycle', function() N = N + 1 end)",
+            )],
+        );
+        let m = LuaMod::load(&path).unwrap();
+        let started = std::time::Instant::now();
+        let e = m
+            .call_with("server_tick", ("end", true), &mut |_, _| Ok(()))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("ran over"), "{e}");
+        assert!(started.elapsed() < HANDLER_BUDGET * 4, "{:?}", started.elapsed());
+        // The state is fine afterwards, and the next chunk has a budget of its own.
+        m.call_with("world_lifecycle", ("start", "x"), &mut |_, _| Ok(()))
+            .unwrap();
+        assert_eq!(m.lua.globals().get::<i64>("N").unwrap(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
