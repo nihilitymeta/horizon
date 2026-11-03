@@ -256,7 +256,6 @@ pub fn layers_shown(m: &Mob) -> bool {
 }
 /// The model layer key and texture for the mob's body.
 pub fn body(m: &Mob) -> (Cow<'static, str>, Cow<'_, str>) {
-    use Species as S;
     let baby = m.is_baby();
     let b = |s: &str| -> Cow<'static, str> {
         if baby {
@@ -272,6 +271,24 @@ pub fn body(m: &Mob) -> (Cow<'static, str>, Cow<'_, str>) {
             m.skin.as_deref().unwrap_or(&m.kind.texture).into(),
         );
     }
+    let (model, texture) = species_body(m, b);
+    // A mod's mob with a texture of its own (`<id>:entity/<name>`, in the
+    // atlas under that name) wears it over its template's layout; the
+    // species' choice of model (baby, variant) stays.
+    if m.kind.texture.contains(':') && m.skin.is_none() {
+        return (model, m.kind.texture.as_str().into());
+    }
+    (model, texture)
+}
+
+/// The species' model and texture for the body (`body`'s choice before a
+/// mod mob's own texture).
+fn species_body<'m>(
+    m: &'m Mob,
+    b: impl Fn(&str) -> Cow<'static, str>,
+) -> (Cow<'static, str>, Cow<'m, str>) {
+    use Species as S;
+    let baby = m.is_baby();
     match m.species() {
         S::Llama | S::TraderLlama => {
             let name = if m.species() == S::Llama {

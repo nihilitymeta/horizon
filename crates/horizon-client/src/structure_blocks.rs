@@ -149,10 +149,14 @@ fn load_loot(root: &Path, overlay: &horizon_world::loot::PackOverlay) -> LoadedL
 /// once per process (a world open with other packs, or `/reload`, loads it
 /// again).
 pub fn loot_data(root: &Path, overlay: &horizon_world::loot::PackOverlay) -> Option<Arc<LootData>> {
-    let mut loot = LOOT.lock().unwrap_or_else(|e| e.into_inner());
-    loot.get_or_insert_with(|| load_loot(root, overlay))
-        .1
-        .clone()
+    // Loaded again when the root or the packs changed: the world's preload
+    // reads the base resources, and a content mod's tables (a mod mob's
+    // `<id>:entities/<name>`) are only in the content root.
+    reuse_or_load(
+        &mut LOOT.lock().unwrap_or_else(|e| e.into_inner()),
+        root,
+        overlay,
+    )
 }
 
 /// [`loot_data`] for a world being opened: the copy already loaded when it
