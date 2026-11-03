@@ -490,7 +490,10 @@ pub fn die(
         out.push(slot_drop(m, "mainhand", stack));
         clear_slot(m, "mainhand");
     }
-    if let Some(table) = death_loot_table(m, d.mob_drops) {
+    if let Some(table) = death_loot_table(m, d.mob_drops)
+        .into_iter()
+        .find(|t| d.loot.has_table(t))
+    {
         let params = EntityLootParams {
             this: this.clone(),
             damage: d.damage.clone(),
@@ -600,18 +603,26 @@ pub fn die(
     }
     (out, skulls)
 }
-/// The loot table `die` rolls for `m` (`LivingEntity.getLootTable`), when it
-/// rolls one: none with `doMobLoot` off, nor for a baby that isn't a monster.
-pub fn death_loot_table(m: &Mob, mob_drops: bool) -> Option<String> {
-    // Mob.getLootTable: the mob's own `DeathLootTable`, else its type's.
-    (mob_drops && (is_monster(m.species()) || !m.is_baby())).then(|| {
-        m.extra.death_loot_table.clone().unwrap_or_else(|| {
-            format!(
-                "minecraft:entities/{}",
-                m.kind.id.trim_start_matches("minecraft:")
-            )
-        })
-    })
+/// The loot tables `die` may roll for `m` (`LivingEntity.getLootTable`),
+/// the first that exists: none with `doMobLoot` off, nor for a baby that
+/// isn't a monster. The mob's own `DeathLootTable` comes first; then its
+/// type's, and a mod's mob (`<mod>:entities/<name>`) falls back to its
+/// template's.
+pub fn death_loot_table(m: &Mob, mob_drops: bool) -> Vec<String> {
+    if !(mob_drops && (is_monster(m.species()) || !m.is_baby())) {
+        return Vec::new();
+    }
+    let (ns, path) = m
+        .kind
+        .id
+        .split_once(':')
+        .unwrap_or(("minecraft", &m.kind.id));
+    let mut tables: Vec<String> = m.extra.death_loot_table.iter().cloned().collect();
+    tables.push(format!("{ns}:entities/{path}"));
+    if ns != "minecraft" {
+        tables.push(format!("minecraft:entities/{}", super::species::def(m.species()).name));
+    }
+    tables
 }
 /// `LootTable.getRandomItems(params, seed, ...)`: a seed's own random, else
 /// the table's random sequence, else the level's random.

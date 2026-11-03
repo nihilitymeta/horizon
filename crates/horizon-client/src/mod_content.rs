@@ -866,8 +866,11 @@ impl Plan<'_> {
     /// `entity-types.json` with a row for each mod type: its template's, so its
     /// size, eyes and category are the template's (`execute anchored eyes`,
     /// spawner checks and the commands' entity type list, `reg.entity_types`).
-    /// The rows are appended as text: parsed and written back, a float such as
-    /// a zombie's `movement_speed` can come back one ulp off.
+    /// A thrown type's row is appended as text: parsed and written back, a
+    /// float such as a zombie's `movement_speed` can come back one ulp off. A
+    /// mob type's row is the template's with the type's own size and
+    /// attributes, plus a `horizon` object naming the template, the texture
+    /// and the goals, which `mobs::MobTypes::load` reads to build the kind.
     fn entity_types_json(&self, bytes: &[u8]) -> std::result::Result<Vec<u8>, String> {
         use serde_json::value::RawValue;
         let rows: BTreeMap<String, Box<RawValue>> =
@@ -889,10 +892,73 @@ impl Plan<'_> {
             }
             out.extend(serde_json::to_vec(&t.id).map_err(|e| e.to_string())?);
             out.push(b':');
-            out.extend(row.get().as_bytes());
+            if t.is_mob() {
+                let mut v: serde_json::Value =
+                    serde_json::from_str(row.get()).map_err(|e| e.to_string())?;
+                if let Some(size) = &t.size {
+                    v["width"] = size.width.into();
+                    v["height"] = size.height.into();
+                    v["eye_height"] = match size.eye_height {
+                        Some(e) => e.into(),
+                        // The template's eyes, at the same fraction of the height.
+                        None => {
+                            let (h, e) = (
+                                v["height"].as_f64().unwrap_or(1.8),
+                                v["eye_height"].as_f64().unwrap_or(1.6),
+                            );
+                            (e / h.max(f64::EPSILON) * size.height).into()
+                        }
+                    };
+                }
+                if !t.attributes.is_empty() {
+                    let attrs = v["attributes"]
+                        .as_object_mut()
+                        .ok_or_else(|| format!("{}: the template's row has no attributes", t.template))?;
+                    for (key, value) in &t.attributes {
+                        attrs.insert(format!("minecraft:{key}"), (*value).into());
+                    }
+                }
+                v["horizon"] = serde_json::json!({
+                    "template": t.template,
+                    "texture": t.texture,
+                    "goals": match t.goals {
+                        horizon_mods::content::Goals::Template => "template",
+                        horizon_mods::content::Goals::None => "none",
+                    },
+                });
+                out.extend(serde_json::to_vec(&v).map_err(|e| e.to_string())?);
+            } else {
+                out.extend(row.get().as_bytes());
+            }
         }
         out.push(b'}');
         Ok(out)
+    }
+
+    /// The mob types' own textures as atlas sources, by namespace: vanilla's
+    /// `atlases/` list no `entity/` folder, so a mod's entity texture joins
+    /// the shared atlas through a `single` source of its own
+    /// (`assets/<ns>/atlases/horizon_entities.json`).
+    fn entity_atlases(&self) -> Vec<(String, Vec<u8>)> {
+        let mut by_ns: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for t in self.entity_types.iter().filter(|t| t.is_mob()) {
+            if let Some((ns, _)) = t.texture.as_deref().and_then(|tex| tex.split_once(':')) {
+                by_ns.entry(ns).or_default().push(t.texture.as_deref().unwrap_or_default());
+            }
+        }
+        by_ns
+            .into_iter()
+            .map(|(ns, textures)| {
+                let sources: Vec<serde_json::Value> = textures
+                    .iter()
+                    .map(|t| serde_json::json!({ "type": "single", "resource": t }))
+                    .collect();
+                (
+                    format!("assets/{ns}/atlases/horizon_entities.json"),
+                    serde_json::to_vec(&serde_json::json!({ "sources": sources })).unwrap_or_default(),
+                )
+            })
+            .collect()
     }
 }
 
@@ -2422,6 +2488,9 @@ pub fn build(base: &Path, mods: &[ContentMod], out: &Path) -> Result<Vec<String>
     let plan = Plan::new(base, mods)?;
     let overlay = Overlay::new(base, out)?;
     tables(base, &plan, &overlay)?;
+    for (name, bytes) in plan.entity_atlases() {
+        overlay.write(&name, &bytes)?;
+    }
     // Mod files, and every tag addition gathered per tag file.
     let mut tags: BTreeMap<String, TagMerge> = BTreeMap::new();
     let mut warnings = Vec::new();

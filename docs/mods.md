@@ -298,14 +298,37 @@ as vanilla's; without one it draws as the missing texture). It does nothing on i
 attribute modifiers. A world opened without the mod drops the effect from its players and mobs. Clients join a server
 only with the same mods' effects, as with its blocks.
 
-A mod entity type is declared in `data/<id>/horizon/entity_type/<name>.json`. It copies a vanilla type: for now only
-`minecraft:snowball`, a thrown item projectile. `item` is one of the mod's own items (one type per item), and `damage`
-(0 by default) is what a hit deals to anything it hits, as `thrown` damage from the thrower (the snowball's 3 to blazes
-is not copied):
+A mod entity type is declared in `data/<id>/horizon/entity_type/<name>.json`. It copies a vanilla type: a thrown item
+projectile (`minecraft:snowball`) or a mob (any vanilla mob: `minecraft:zombie`, `minecraft:pig`, `minecraft:spider`…).
+
+A thrown type names `item`, one of the mod's own items (one type per item), and `damage` (0 by default), what a hit
+deals to anything it hits, as `thrown` damage from the thrower (the snowball's 3 to blazes is not copied):
 
 ```json
 { "template": "minecraft:snowball", "item": "ruby:ember", "damage": 2.0 }
 ```
+
+A mob type is its template with the mod's own values: `attributes` that differ from the template's, by name
+(`max_health`, `movement_speed`, `attack_damage`, `follow_range`, `armor`, `knockback_resistance`, `scale`…), `size`
+(`width`, `height`, and `eye_height`, else the template's at the same fraction of the height), `texture`
+(`<id>:entity/<name>`, the mod's `assets/<id>/textures/entity/<name>.png`, laid out as the template's texture; the
+template's without one), and `goals`: `"template"` (the default) gives it the species' goals, `"none"` leaves both goal
+selectors empty for the mod's scripts to fill ([lua-bindings.md](lua-bindings.md), `mob_ai_register`;
+[mob-ai-hooks.md](mob-ai-hooks.md)):
+
+```json
+{ "template": "minecraft:zombie",
+  "attributes": { "max_health": 30, "movement_speed": 0.3, "attack_damage": 4 },
+  "size": { "width": 0.6, "height": 1.95 },
+  "texture": "ruby:entity/crawler",
+  "goals": "none" }
+```
+
+It moves, fights, sounds, animates and is drawn as its template (the model is the template's, so the texture follows
+the template's layout), burns, drowns, converts and breeds as the template's species does, and `/summon <id>:<name>`
+makes one. Its name is the translation `entity.<id>.<name>`. It drops its own loot table,
+`data/<id>/loot_table/entities/<name>.json`, or the template's without one. Not yet: natural spawning (a script's
+`summon`, a spawner or a command places it), a spawn egg, a model of its own.
 
 It is the entity type `<id>:<name>`, with its network id after vanilla's. Using its item throws it as a snowball is
 thrown: same speed, spread, sound and cooldown, and one item used outside creative. It flies as a snowball, breaks on

@@ -1435,6 +1435,7 @@ impl Def {
         );
         Flags {
             aquatic_swimmer: aquatic,
+            scripted_goals: false,
             fall_immune: matches!(
                 s,
                 S::Chicken

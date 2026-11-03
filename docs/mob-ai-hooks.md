@@ -1,6 +1,7 @@
 # Mob AI for mods
 
-Status: the hook point (`mob_ai_register`, pending its API number) and the goal adapter for mods are built; the rest is the plan. Branch
+Status: the hook point (`mob_ai_register`, pending its API number), the goal adapter for mods and mobs declared in a
+content mod's data (a vanilla template with the mod's attributes, size, texture and goals) are built; the rest is the plan. Branch
 `mob-ai-hooks` of whos-carmen/horizon, `main` + this one concern. Written for horizon-parasite-mod, whose first needs
 are custom blocks and custom mob behaviour.
 
@@ -79,12 +80,25 @@ The same two types are what the Lua runtime hands a script's goal ([lua-bindings
 view becomes a table, the actions come back from it. Unit tests cover the view and the world-free actions; the path
 and attack actions run only in a game with the vanilla data.
 
+## Mobs from data (built)
+
+A content mod declares a mob in `data/<id>/horizon/entity_type/<name>.json` with a vanilla mob as `template` and its
+own `attributes`, `size`, `texture` and `goals` ([mods.md](mods.md#content-mods-api-02), entity types). The game
+appends the type's row to `entity-types.json` (the template's, with the mod's values and a `horizon` object naming
+the template, texture and goals: `mod_content::entity_types_json`), and `mobs::MobTypes::load` builds a `MobType`
+for it from the template's species definition (model, sounds, animation, flags, brain) with the mod's id and texture.
+The mob is the template's species everywhere species decides (`Mob::species`): AI families, conversion, burning,
+breeding. Its texture joins the shared atlas through a `single` atlas source the content root writes
+(`assets/<id>/atlases/horizon_entities.json`). With `"goals": "none"`, `Mob::new` clears both goal selectors after
+the species registered them, so `mob_ai_register` (and a script's `horizon.add_goal`) sees empty selectors and the
+species' controls. It drops `<id>:entities/<name>` when that loot table exists, else the template's.
+
 ## The plan
 
 | Step | What | Why |
 |---|---|---|
 | 2 | `native_set_mob_target(dimension, id, target)` and `native_mob_navigate_to(dimension, id, pos, speed)` helpers | A tick hook can drive a mob it did not register a goal on. Later: the goal adapter above covers the parasite mod |
-| 4 | Content entity types from a mob template: `"template": "minecraft:zombie"` in `entity_type/*.json`, with `attributes`, `size` and a `goals` list naming vanilla goals by name with their arguments | A parasite is declared in data, as a block is; its behaviour comes from step 1's hook or a script |
+| 4 | ~~Content entity types from a mob template~~ built (above); left: a `goals` list naming vanilla goals by name with their arguments, natural spawning rules, a spawn egg | A parasite is declared in data, as a block is; its behaviour comes from step 1's hook or a script |
 | 5 | `mob_ai_tick(mob)` listen hook each AI tick, and `mob_target_changed` | Reactive scripts (infection spreading, host conversion) without a goal |
 | 6 | Brain species: a hook after a brain's activities are built | Villagers, piglins and wardens use brains, not goals |
 

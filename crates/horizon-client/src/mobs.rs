@@ -357,6 +357,9 @@ pub struct Flags {
     /// Hurt by water (endermen, blazes, striders out of lava, snow golems).
     pub water_sensitive: bool,
     pub animal: bool,
+    /// A mod's mob whose goal selectors start empty, for its scripts to
+    /// fill (`"goals": "none"` in its entity type; docs/mob-ai-hooks.md).
+    pub scripted_goals: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -520,18 +523,14 @@ impl MobTypes {
                 .collect(),
         );
         let mut out = HashMap::new();
-        for def in species::ALL {
-            let id = format!("minecraft:{}", def.name);
-            let t = &types[&id];
-            if t.is_null() {
-                continue;
-            }
+        // One kind from a species' definition and its row of the table: the
+        // species' own, or a mod's copy of it (`horizon` in the row).
+        let build = |def: &species::Def, id: String, t: &Value, defaults: HashMap<String, f64>| -> Option<MobType> {
             let model_key = format!("minecraft:{}", def.model);
             let model = models.as_ref().and_then(|models| models.get(&model_key));
             if models_needed && model.is_none() {
-                continue;
+                return None;
             }
-            let defaults = exact.get(&id).cloned().unwrap_or_default();
             let attr = |k: &str| defaults.get(&format!("minecraft:{k}")).copied();
             let mut layers = crate::fast_hash::FxHashMap::default();
             if let Some(all) = models.as_ref().and_then(Value::as_object) {
@@ -552,8 +551,7 @@ impl MobTypes {
             let category = t["category"].as_str().unwrap_or("creature").to_owned();
             let speed = attr("movement_speed").unwrap_or(0.25);
             let flags = def.flags(t["fire_immune"].as_bool().unwrap_or(false));
-            out.insert(
-                id.clone(),
+            Some(
                 MobType {
                     species: def.species,
                     item_stack_limits: item_stack_limits.clone(),
@@ -614,7 +612,43 @@ impl MobTypes {
                     category,
                     id,
                 },
-            );
+            )
+        };
+        for def in species::ALL {
+            let id = format!("minecraft:{}", def.name);
+            let t = &types[&id];
+            if t.is_null() {
+                continue;
+            }
+            let defaults = exact.get(&id).cloned().unwrap_or_default();
+            if let Some(kind) = build(def, id.clone(), t, defaults) {
+                out.insert(id, kind);
+            }
+        }
+        // The mods' mobs (`mod_content::entity_types_json`): each row a
+        // template's with the mod's values, and `horizon` naming the template.
+        if let Some(rows) = types.as_object() {
+            for (id, t) in rows {
+                let Some(template) = t["horizon"]["template"].as_str() else {
+                    continue;
+                };
+                let Some(def) = species::ALL
+                    .iter()
+                    .find(|d| template.strip_prefix("minecraft:") == Some(d.name))
+                else {
+                    log::warn!("Horizon: entity type {id}: template {template} is not a mob; skipped");
+                    continue;
+                };
+                let defaults = exact.get(id).cloned().unwrap_or_default();
+                let Some(mut kind) = build(def, id.clone(), t, defaults) else {
+                    continue;
+                };
+                if let Some(texture) = t["horizon"]["texture"].as_str() {
+                    kind.texture = texture.to_owned();
+                }
+                kind.flags.scripted_goals = t["horizon"]["goals"].as_str() == Some("none");
+                out.insert(id.clone(), kind);
+            }
         }
         Ok(Self { types: out })
     }
@@ -2946,6 +2980,12 @@ impl Mob {
         // The PathNavigation constructor: the base follow range.
         mob.ai.nav.max_visited_nodes = (mob.kind.follow_range * 16.0).floor() as i32;
         ai::register(&mut mob);
+        // A mod's mob that leaves its goals to scripts: the species' goals
+        // go, its controls and the rest of its nature stay.
+        if mob.kind.flags.scripted_goals {
+            mob.ai.goals.clear();
+            mob.ai.targets.clear();
+        }
         ai::native_mob_ai_register(&mut mob);
         mob
     }

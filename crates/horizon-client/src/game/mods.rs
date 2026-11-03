@@ -235,11 +235,15 @@ fn register_mob_effects(mods: &[horizon_client::mod_content::ContentMod]) {
 /// startup root.
 fn register_entity_types(mods: &[horizon_client::mod_content::ContentMod]) {
     use horizon_client::projectiles;
-    let types = horizon_client::mod_content::entity_types(mods);
+    // The mob types are kinds of `mobs::MobTypes`, not thrown items.
+    let types: Vec<_> = horizon_client::mod_content::entity_types(mods)
+        .into_iter()
+        .filter(|t| !t.is_mob())
+        .collect();
     let set = projectiles::register_thrown_types(
         types
             .iter()
-            .map(|t| (t.id.clone(), t.item.clone(), t.damage)),
+            .map(|t| (t.id.clone(), t.item.clone().unwrap_or_default(), t.damage)),
     );
     if !set
         && projectiles::thrown_types()

@@ -1689,7 +1689,9 @@ impl Game<'_> {
             }
         }
         let kind = super::native_hooks::mob_kind(m);
-        let table = drops::death_loot_table(m, death.mob_drops).filter(|t| loot.has_table(t));
+        let table = drops::death_loot_table(m, death.mob_drops)
+            .into_iter()
+            .find(|t| loot.has_table(t));
         let context = NativeLootDrops {
             table: table.as_deref().unwrap_or_default(),
             dimension: self.dim.id(),
