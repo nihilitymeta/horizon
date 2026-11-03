@@ -541,6 +541,13 @@ impl Hooks for LuaMod {
     /// script is live after `/reload`.
     fn data_pack_files(&self, _host: &dyn Host, _event: &mut DataPackFilesEvent<'_>) {
         if self.loads.fetch_add(1, Ordering::Relaxed) == 0 {
+            // The first data load: the logger is up now (it was not when the
+            // mods were gathered), so this is where the mod says it runs.
+            log::info!(
+                "Horizon: Lua mod {} running from {}",
+                self.id,
+                self.source.display()
+            );
             return;
         }
         match self.reload() {
