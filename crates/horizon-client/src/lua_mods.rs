@@ -1103,7 +1103,11 @@ pub fn discover(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
         let config_dir = game_dir.as_deref().unwrap_or(&here).join("config");
         match LuaMod::load_with(&c.path, &libraries, Some(&config_dir)) {
             Ok(lua) => {
-                log::info!("Horizon: Lua mod {} loaded from {}", lua.id, c.path.display());
+                log::info!(
+                    "Horizon: Lua mod {} loaded from {}",
+                    lua.id,
+                    c.path.display()
+                );
                 lua.publish(None);
                 mods.push(Box::new(lua));
             }
@@ -1506,7 +1510,10 @@ impl LuaMod {
                     "Horizon: Lua mod {} not reloaded, still running as before: {e}",
                     self.id
                 );
-                to_console(true, format!("[{}] not reloaded, running as before: {e}", self.id));
+                to_console(
+                    true,
+                    format!("[{}] not reloaded, running as before: {e}", self.id),
+                );
                 self.publish(Some(e));
             }
         }
@@ -1528,10 +1535,18 @@ impl LuaMod {
     fn publish(&self, error: Option<String>) {
         let handlers = (|| -> mlua::Result<Vec<(String, usize)>> {
             let table: Table = self.lua.named_registry_value(HANDLERS)?;
+            // The timers' own handler is the runtime's, not the script's.
+            let timers: Option<Function> = self.lua.named_registry_value(TIMERS_HANDLER).ok();
             let mut list = Vec::new();
             for pair in table.pairs::<String, Table>() {
                 let (name, fns) = pair?;
-                list.push((name, fns.raw_len()));
+                let count = fns
+                    .sequence_values::<Function>()
+                    .filter(|f| f.as_ref().is_ok_and(|f| timers.as_ref() != Some(f)))
+                    .count();
+                if count > 0 {
+                    list.push((name, count));
+                }
             }
             list.sort();
             Ok(list)
@@ -7170,7 +7185,10 @@ experimental = ["scripts"]
         assert_eq!(s.goals, ["stalk"]);
         assert_eq!(
             s.handlers,
-            [("mob_spawned".to_string(), 1), ("server_tick".to_string(), 1)]
+            [
+                ("mob_spawned".to_string(), 1),
+                ("server_tick".to_string(), 1)
+            ]
         );
         assert!(s.error.is_none());
         // The goal's name for F3 and /goals says whose it is.
