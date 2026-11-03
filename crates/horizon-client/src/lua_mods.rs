@@ -22,8 +22,9 @@ use crate::mod_api::{
     TickBlockEvent, WorldLifecycleEvent,
 };
 use crate::mod_api::{
-    AttackEntityEvent, InventoryTickEvent, ItemStack, LivingEntityUseItemFinishEvent, UseItemEvent,
-    UseItemOnEvent,
+    AttackEntityEvent, DestroyBlockEvent, InventoryTickEvent, ItemPickedUpEvent, ItemStack,
+    LivingEntityUseItemFinishEvent, MobDiedEvent, PlaceBlockEvent, PlayerDiedEvent,
+    PlayerLoggedInEvent, PlayerLoggedOutEvent, PlayerRespawnedEvent, UseItemEvent, UseItemOnEvent,
 };
 use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
@@ -986,6 +987,59 @@ impl LuaMod {
         }
     }
 
+    /// The player `uuid` as a table: the world's record when they are on,
+    /// else just `uuid` and `name`.
+    fn player_by_uuid(
+        &self,
+        host: &dyn Host,
+        uuid: u128,
+        name: Option<&str>,
+    ) -> mlua::Result<Table> {
+        match host.level_players().into_iter().find(|p| p.uuid == uuid) {
+            Some(p) => player_table_of(&self.lua, &p),
+            None => {
+                let t = self.lua.create_table()?;
+                t.set("uuid", uuid_text(uuid))?;
+                if let Some(name) = name.filter(|n| !n.is_empty()) {
+                    t.set("name", name)?;
+                }
+                Ok(t)
+            }
+        }
+    }
+
+    /// A hook about a player, told by uuid (`player_joined`...): `hook(player[,
+    /// cause])`, with the host actions.
+    fn player_hook(
+        &self,
+        host: &mut dyn Host,
+        hook: &str,
+        uuid: u128,
+        name: &str,
+        cause: Option<Option<&str>>,
+    ) {
+        if !self.has_handlers(hook) {
+            return;
+        }
+        let r = (|| -> mlua::Result<()> {
+            let player = self.player_by_uuid(host, uuid, Some(name))?;
+            let cause = match cause {
+                Some(Some(c)) => Value::String(self.lua.create_string(c)?),
+                _ => Value::Nil,
+            };
+            self.call_kind(
+                hook,
+                None,
+                host,
+                (player, cause),
+                &mut |host, action, args| self.run_action(host, action, args),
+            )
+        })();
+        if let Err(e) = r {
+            self.hook_error(hook, e);
+        }
+    }
+
     /// The mod's saved data on mob `id`, as the compound it is and as a table
     /// for a handler (an empty one for a mob without any yet); none when the
     /// host has no such mob (a client's copy, a mob already gone).
@@ -1821,6 +1875,152 @@ impl Hooks for LuaMod {
             self.hook_error(hook, e);
         }
     }
+    /// A mob died, by any cause: `mob_died(dimension, mob, cause, data)`,
+    /// `mob` its `{id, kind}` (gone: no view), `cause` `{damage_type,
+    /// causing, player}` (`causing` the mob behind it or 0, `player` the
+    /// player credited with the kill, or nil), `data` the mod's saved data
+    /// on it while the game still holds it. Register by kind.
+    fn mob_died(&self, host: &mut dyn Host, event: &mut MobDiedEvent<'_>) {
+        let hook = "mob_died";
+        let kind = qualify(event.kind);
+        if !self.watches(hook, &kind) {
+            return;
+        }
+        let id = event.entity;
+        let r = (|| -> mlua::Result<()> {
+            let lua = &self.lua;
+            let mob = self.mob_table(host, event.dimension, id, &kind)?;
+            let cause = lua.create_table()?;
+            cause.set("damage_type", event.damage_type)?;
+            cause.set("causing", event.causing)?;
+            if let Some(uuid) = event.player {
+                cause.set("player", self.player_by_uuid(host, uuid, None)?)?;
+            }
+            let data = self.mob_data(host, id)?;
+            self.call_kind(
+                hook,
+                Some(&kind),
+                host,
+                (
+                    event.dimension,
+                    mob,
+                    cause,
+                    data.as_ref().map(|(_, t)| t.clone()),
+                ),
+                &mut |host, action, args| self.run_action(host, action, args),
+            )?;
+            self.store_mob_data(host, hook, id, data);
+            Ok(())
+        })();
+        if let Err(e) = r {
+            self.hook_error(hook, e);
+        }
+    }
+    /// A player joined the game: `player_joined(player)`.
+    fn player_logged_in(&self, host: &mut dyn Host, event: &mut PlayerLoggedInEvent<'_>) {
+        self.player_hook(host, "player_joined", event.player, event.name, None);
+    }
+    /// A player left the game, by any path: `player_left(player)`.
+    fn player_logged_out(&self, host: &mut dyn Host, event: &mut PlayerLoggedOutEvent<'_>) {
+        self.player_hook(host, "player_left", event.player, event.name, None);
+    }
+    /// A player respawned after a death: `player_respawned(player)`.
+    fn player_respawned(&self, host: &mut dyn Host, event: &mut PlayerRespawnedEvent<'_>) {
+        self.player_hook(host, "player_respawned", event.player, event.name, None);
+    }
+    /// A player died: `player_died(player, cause)`, `cause` the death
+    /// message's key (`death.attack.lava`) when the game knows it, else nil.
+    fn player_died(&self, host: &mut dyn Host, event: &mut PlayerDiedEvent<'_>) {
+        self.player_hook(host, "player_died", event.player, "", Some(event.cause));
+    }
+    /// A player breaks a block, once the game allowed it: `block_broken(x,
+    /// y, z, block, player)`; `horizon.cancel()` keeps the block (nothing
+    /// breaks or drops). Register by block id.
+    fn destroy_block(&self, host: &mut dyn Host, event: &mut DestroyBlockEvent) -> Flow {
+        let hook = "block_broken";
+        let block = host.block(event.pos);
+        if !self.watches(hook, &block) {
+            return Flow::Continue;
+        }
+        let mut cancel = false;
+        let [x, y, z] = event.pos;
+        let r = (|| -> mlua::Result<()> {
+            let player = self.player_table(host)?;
+            self.call_kind(
+                hook,
+                Some(&block),
+                host,
+                (x, y, z, block.as_str(), player),
+                &mut |host, action, args| {
+                    match action {
+                        "cancel" => cancel = true,
+                        other => self.run_action(host, other, args)?,
+                    }
+                    Ok(())
+                },
+            )
+        })();
+        if let Err(e) = r {
+            return self.hook_error(hook, e);
+        }
+        if cancel { Flow::Cancel } else { Flow::Continue }
+    }
+    /// A player placed a block: `block_placed(x, y, z, block, player, item)`,
+    /// `item` the stack placed. It only hears (a use hook stops a placement
+    /// before it). Register by block id.
+    fn place_block(&self, host: &mut dyn Host, event: &mut PlaceBlockEvent<'_>) {
+        let hook = "block_placed";
+        let block = host.block(event.pos);
+        if !self.watches(hook, &block) {
+            return;
+        }
+        let [x, y, z] = event.pos;
+        let r = (|| -> mlua::Result<()> {
+            let player = self.player_table(host)?;
+            let item = item_table_of(&self.lua, event.stack)?;
+            self.call_kind(
+                hook,
+                Some(&block),
+                host,
+                (x, y, z, block.as_str(), player, item),
+                &mut |host, action, args| self.run_action(host, action, args),
+            )
+        })();
+        if let Err(e) = r {
+            self.hook_error(hook, e);
+        }
+    }
+    /// A player is about to pick up items from the ground:
+    /// `item_picked_up(player, item, count)`; `horizon.cancel()` leaves them
+    /// there. Register by item id.
+    fn item_picked_up(&self, host: &mut dyn Host, event: &mut ItemPickedUpEvent<'_>) -> Flow {
+        let hook = "item_picked_up";
+        let id = qualify(event.item);
+        if !self.watches(hook, &id) {
+            return Flow::Continue;
+        }
+        let mut cancel = false;
+        let r = (|| -> mlua::Result<()> {
+            let player = self.player_by_uuid(host, event.player, None)?;
+            self.call_kind(
+                hook,
+                Some(&id),
+                host,
+                (player, id.as_str(), event.count),
+                &mut |host, action, args| {
+                    match action {
+                        "cancel" => cancel = true,
+                        other => self.run_action(host, other, args)?,
+                    }
+                    Ok(())
+                },
+            )
+        })();
+        if let Err(e) = r {
+            return self.hook_error(hook, e);
+        }
+        if cancel { Flow::Cancel } else { Flow::Continue }
+    }
     /// A mob is about to take damage: `mob_hurt(mob, damage_type, causing,
     /// direct, amount)`, `mob` just `{id, kind}` (the game is mid-hit: no
     /// host, so no view, no data, and the host actions are dropped),
@@ -2537,6 +2737,170 @@ experimental = ["scripts"]
             ]
         );
         assert_eq!(*host.lines.lock().unwrap(), ["took 1 ruby:wand"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_world_hooks_tell_of_deaths_players_blocks_and_pickups() {
+        let (dir, path) = hmod(
+            "world-hooks",
+            &[(
+                "scripts/init.lua",
+                br#"
+                LOG = {}
+                local function log(s) LOG[#LOG + 1] = s end
+                horizon.on("mob_died", function(dimension, mob, cause, data)
+                  log("died " .. mob.kind .. " " .. mob.id .. " by " .. cause.damage_type .. " causing " .. cause.causing .. " credited " .. (cause.player and cause.player.name or "nobody"))
+                end, "cow")
+                horizon.on("player_joined", function(player) log("joined " .. player.name .. " hp " .. player.health) end)
+                horizon.on("player_left", function(player) log("left " .. player.name) end)
+                horizon.on("player_respawned", function(player) log("respawned " .. player.name) end)
+                horizon.on("player_died", function(player, cause) log("player died " .. player.name .. " " .. tostring(cause)) end)
+                horizon.on("block_broken", function(x, y, z, block, player)
+                  log("broke " .. block .. " at " .. x .. "," .. y .. "," .. z .. " by " .. player.name)
+                  horizon.cancel()
+                end, "minecraft:stone")
+                horizon.on("block_placed", function(x, y, z, block, player, item)
+                  log("placed " .. block .. " with " .. item.id .. " x" .. item.count)
+                end, "minecraft:stone")
+                horizon.on("item_picked_up", function(player, item, count)
+                  log("pickup " .. item .. " x" .. count .. " by " .. player.name)
+                  horizon.cancel()
+                end, "ruby:wand")
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+        };
+        let steve = 0x123e4567_e89b_12d3_a456_426614174000;
+        m.mob_died(
+            &mut host,
+            &mut MobDiedEvent {
+                dimension: "minecraft:overworld",
+                entity: 7,
+                kind: "cow",
+                damage_type: "minecraft:on_fire",
+                causing: 0,
+                player: Some(steve),
+            },
+        );
+        m.mob_died(
+            &mut host,
+            &mut MobDiedEvent {
+                dimension: "minecraft:overworld",
+                entity: 9,
+                kind: "minecraft:zombie",
+                damage_type: "minecraft:fall",
+                causing: 0,
+                player: None,
+            },
+        );
+        m.player_logged_in(
+            &mut host,
+            &mut PlayerLoggedInEvent {
+                player: steve,
+                name: "steve",
+            },
+        );
+        m.player_logged_out(
+            &mut host,
+            &mut PlayerLoggedOutEvent {
+                player: 5,
+                name: "alex",
+            },
+        );
+        m.player_respawned(
+            &mut host,
+            &mut PlayerRespawnedEvent {
+                player: steve,
+                name: "steve",
+            },
+        );
+        m.player_died(
+            &mut host,
+            &mut PlayerDiedEvent {
+                player: steve,
+                cause: Some("death.attack.lava"),
+            },
+        );
+        assert_eq!(
+            m.destroy_block(
+                &mut host,
+                &mut DestroyBlockEvent {
+                    pos: [1, 2, 3],
+                    state: BlockStateId(1)
+                }
+            ),
+            Flow::Cancel
+        );
+        assert_eq!(
+            m.destroy_block(
+                &mut host,
+                &mut DestroyBlockEvent {
+                    pos: [0, 0, 0],
+                    state: BlockStateId(0)
+                }
+            ),
+            Flow::Continue
+        );
+        let wand = wand();
+        m.place_block(
+            &mut host,
+            &mut PlaceBlockEvent {
+                stack: &wand,
+                pos: [1, 2, 3],
+                state: BlockStateId(1),
+            },
+        );
+        assert_eq!(
+            m.item_picked_up(
+                &mut host,
+                &mut ItemPickedUpEvent {
+                    player: steve,
+                    item: "ruby:wand",
+                    count: 2
+                }
+            ),
+            Flow::Cancel
+        );
+        assert_eq!(
+            m.item_picked_up(
+                &mut host,
+                &mut ItemPickedUpEvent {
+                    player: steve,
+                    item: "minecraft:apple",
+                    count: 2
+                }
+            ),
+            Flow::Continue
+        );
+        let log: Vec<String> = m
+            .lua
+            .globals()
+            .get::<Table>("LOG")
+            .unwrap()
+            .sequence_values()
+            .map(|v| v.unwrap())
+            .collect();
+        assert_eq!(
+            log,
+            [
+                "died minecraft:cow 7 by minecraft:on_fire causing 0 credited steve",
+                "joined steve hp 20",
+                "left alex",
+                "respawned steve",
+                "player died steve death.attack.lava",
+                "broke minecraft:stone at 1,2,3 by steve",
+                "placed minecraft:stone with ruby:wand x3",
+                "pickup ruby:wand x2 by steve",
+            ]
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
