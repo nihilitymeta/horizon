@@ -37,6 +37,7 @@ cargo binstall --git https://github.com/horizon-rust/horizon cargo-horizon-mod
 # Or build it from source, without cargo-binstall:
 cargo install --git https://github.com/horizon-rust/horizon cargo-horizon-mod
 cargo horizon-mod new my-mod        # a content mod: manifest, one block with its model, loot and recipe
+cargo horizon-mod new my-mod --template lua   # a scripted mod on the modkit: a wand with an on_use (lua-bindings.md)
 cd my-mod
 cargo horizon-mod run               # build my-mod.hmod, then start the game with it turned on
 cargo horizon-mod build             # only build: target/horizon-mod/my_mod.hmod

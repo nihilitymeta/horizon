@@ -2,6 +2,7 @@
 //! items, data and assets, no code. Code mods are native (docs/native-mods.md).
 //!
 //! - `new <path> [--name "Name"]`: a content mod from the template; with
+//!   `--template lua`, a scripted mod written with the modkit; with
 //!   `--template native [--horizon <commit>]`, a native trait mod's bundle.
 //! - `build`: the `.hmod` in `target/horizon-mod/`, with the mod's `assets/`
 //!   and `data/`.
@@ -33,7 +34,7 @@ fn main() -> ExitCode {
         Some("run") => run(&args[1..]),
         Some("check") => check(&args[1..]),
         Some("registry") => registry::main(&args[1..]),
-        _ => Err("usage: cargo horizon-mod new <path> [--name \"Name\"] [--template content|native [--horizon <commit>]] | build | run [--game <horizon-client>] [-- <game args>] | check <file> [--kind <kind>] [--key <public key> --signature <file.minisig>] [--json] | registry build|review|check|list".into()),
+        _ => Err("usage: cargo horizon-mod new <path> [--name \"Name\"] [--template content|lua|native [--horizon <commit>]] | build | run [--game <horizon-client>] [-- <game args>] | check <file> [--kind <kind>] [--key <public key> --signature <file.minisig>] [--json] | registry build|review|check|list".into()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -77,8 +78,9 @@ fn new(args: &[String]) -> Result<(), String> {
     let fill = |t: &str| t.replace("{id}", &id).replace("{name}", &name);
     match flag(args, "--template") {
         None | Some("content") => {}
+        Some("lua") => return new_lua(dir, path, &id, fill),
         Some("native") => return new_native(dir, &id, flag(args, "--horizon"), fill),
-        Some(_) => return Err("--template is content or native".into()),
+        Some(_) => return Err("--template is content, lua or native".into()),
     }
     // A block copying a vanilla one, with its model, name, loot, recipe and tag.
     let files = [
@@ -133,6 +135,44 @@ fn new(args: &[String]) -> Result<(), String> {
     Content::read(dir, &manifest)?;
     println!(
         "Created {} (mod id {id}). Next: cd {path} && cargo horizon-mod run",
+        dir.display()
+    );
+    Ok(())
+}
+
+/// A scripted mod in `dir`, written with the modkit (docs/lua-bindings.md): a
+/// manifest with capabilities `registries` and `scripts` that depends on
+/// `horizon_modkit`, a registry script with one item (a wand) and its look,
+/// an init script with the wand's `on_use`, a `.luaurc` naming the modkit
+/// checkout beside it for an editor, and a README that says how to run it.
+fn new_lua(dir: &Path, path: &str, id: &str, fill: impl Fn(&str) -> String) -> Result<(), String> {
+    let files = [
+        (MANIFEST, include_str!("../template/lua/horizon-mod.toml")),
+        (
+            "scripts/registry.lua",
+            include_str!("../template/lua/registry.lua"),
+        ),
+        ("scripts/init.lua", include_str!("../template/lua/init.lua")),
+        (
+            "assets/{id}/lang/en_us.json",
+            include_str!("../template/lua/lang.json"),
+        ),
+        (".luaurc", include_str!("../template/lua/luaurc.json")),
+        ("README.md", include_str!("../template/lua/README.md")),
+        (".gitignore", include_str!("../template/gitignore")),
+    ];
+    for (file, text) in files {
+        let file = fill(file);
+        let to = dir.join(file.as_str());
+        std::fs::create_dir_all(to.parent().expect("a file in the mod"))
+            .map_err(|e| e.to_string())?;
+        std::fs::write(&to, fill(text)).map_err(|e| format!("{}: {e}", to.display()))?;
+    }
+    let manifest =
+        Manifest::parse(&std::fs::read_to_string(dir.join(MANIFEST)).map_err(|e| e.to_string())?)?;
+    Content::read(dir, &manifest)?;
+    println!(
+        "Created {} (mod id {id}). Next: cd {path} && cargo horizon-mod run -- --dev-mod /path/to/horizon-modkit",
         dir.display()
     );
     Ok(())
@@ -332,10 +372,64 @@ mod tests {
             new(&[
                 dir.join("x").display().to_string(),
                 "--template".into(),
-                "lua".into()
+                "wasm".into()
             ])
             .is_err()
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The Lua template is a scripted mod the modkit runs: its manifest
+    /// depends on the modkit, its scripts are packed and read, the registry's
+    /// check accepts the `.hmod`, and the scripts are the ones the template
+    /// says (the wand, its `on_use`).
+    #[test]
+    fn the_lua_template_builds_and_checks_as_a_scripted_mod_on_the_modkit() {
+        let dir = std::env::temp_dir().join(format!("horizon-mod-lua-{}", std::process::id()));
+        let path = dir.join("my-wand");
+        new(&[
+            path.display().to_string(),
+            "--template".into(),
+            "lua".into(),
+            "--name".into(),
+            "My Wand".into(),
+        ])
+        .unwrap();
+        let manifest =
+            Manifest::parse(&std::fs::read_to_string(path.join(MANIFEST)).unwrap()).unwrap();
+        assert_eq!(manifest.id, "my_wand");
+        assert_eq!(manifest.depends, ["horizon_modkit"]);
+        assert!(
+            manifest
+                .capabilities
+                .contains(&horizon_mods::Capability::Scripts)
+        );
+        let init = std::fs::read_to_string(path.join("scripts/init.lua")).unwrap();
+        assert!(init.contains("modkit.mod(\"my_wand\")") && init.contains("function Wand:on_use"));
+        assert!(
+            std::fs::read_to_string(path.join(".luaurc"))
+                .unwrap()
+                .contains("horizon-modkit/types")
+        );
+        assert!(
+            std::fs::read_to_string(path.join("README.md"))
+                .unwrap()
+                .contains("--dev-mod")
+        );
+        let hmod = build_in(&path).unwrap();
+        let package = Package::read(&hmod).unwrap();
+        let content = Content::read(&hmod, &package.manifest).unwrap();
+        assert_eq!(
+            content.scripts,
+            ["scripts/init.lua", "scripts/registry.lua"]
+        );
+        assert!(
+            content
+                .files
+                .contains(&"assets/my_wand/lang/en_us.json".into())
+        );
+        let report = check::check(&hmod, check::kind_of(&hmod).unwrap(), None, None).unwrap();
+        assert!(report.text().contains("scripts"), "{}", report.text());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

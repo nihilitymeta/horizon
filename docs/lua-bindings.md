@@ -214,6 +214,9 @@ modules it requires has 5 s at load and reload; a state may take 64 MiB. Luau ha
 its `os` is `clock`, `date`, `difftime` and `time`, and `require` is the game's own over the mod's `scripts/`, so a
 script reads nothing but its mod (`lua_mods::Budget`).
 
+Start one: `cargo horizon-mod new my-mod --template lua` writes a scripted mod that depends on the modkit (a
+manifest, `scripts/registry.lua` with one item, `scripts/init.lua` with its `on_use`, a `.luaurc` for an editor,
+a README); `cargo horizon-mod run -- --dev-mod /path/to/horizon-modkit` runs it.
 Run: install the `.hmod` and turn it on, or `horizon-client --dev-mod /path/to/mod`. A mod without capability `scripts`
 is content only, as before. Scripted mods are gathered when the game starts, like trait mods: turning one on or off on
 the Mods page takes effect at the next start.
