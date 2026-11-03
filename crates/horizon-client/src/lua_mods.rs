@@ -98,6 +98,11 @@ pub struct LuaMod {
     lua: Lua,
     /// The scripts, by path, as last read from `source`.
     scripts: Scripts,
+    /// The mods it depends on (`depends`), whose scripts `require` reaches
+    /// after the mod's own: id and source, in the manifest's order.
+    libraries: Vec<(String, PathBuf)>,
+    /// The libraries' scripts, by path, the first library's winning.
+    library_scripts: Scripts,
     /// The goals the scripts defined (`horizon.goal`), by name.
     goals: Goals,
     /// Data loads seen (`data_pack_files`): the scripts reload from the second on.
@@ -147,42 +152,142 @@ pub fn discover(args: impl Iterator<Item = String>) -> Mods {
     let mut paths = horizon_mods::find(&here.join(crate::mod_list::DIR));
     paths.retain(|p| !dev.contains(p));
     paths.extend(dev.iter().cloned());
-    let mut mods: Vec<Box<dyn Hooks>> = Vec::new();
-    let mut ids: Vec<String> = Vec::new();
+    // Every mod that is on, scripted or not: a dependency may be content only.
+    let mut on: Vec<Candidate> = Vec::new();
     for path in &paths {
         let Ok(package) = Package::read(path) else {
             continue;
         };
-        let m = &package.manifest;
-        if !m.capabilities.contains(&Capability::Scripts) {
-            if dev.contains(path) && path.join(ENTRY).is_file() {
-                log::warn!(
-                    "Horizon: {} has {ENTRY} but no capability scripts in {MANIFEST}: not run",
-                    path.display()
-                );
-            }
+        let m = package.manifest;
+        let scripted = m.capabilities.contains(&Capability::Scripts);
+        if !scripted && dev.contains(path) && path.join(ENTRY).is_file() {
+            log::warn!(
+                "Horizon: {} has {ENTRY} but no capability scripts in {MANIFEST}: not run",
+                path.display()
+            );
+        }
+        if !(enabled.contains(&m.id) || dev.contains(path)) || on.iter().any(|c| c.id == m.id) {
             continue;
         }
-        if !(enabled.contains(&m.id) || dev.contains(path)) || ids.contains(&m.id) {
+        on.push(Candidate {
+            id: m.id,
+            path: path.clone(),
+            scripted,
+            depends: m.depends,
+        });
+    }
+    let mut mods: Vec<Box<dyn Hooks>> = Vec::new();
+    for step in load_order(&on) {
+        let c = &on[step.index];
+        if let Some(missing) = step.missing {
+            log::error!(
+                "Horizon: Lua mod {} not loaded: it needs mod {missing}, which is not installed or not on",
+                c.id
+            );
             continue;
         }
-        match LuaMod::load(path) {
+        if !c.scripted {
+            continue;
+        }
+        let libraries: Vec<(String, PathBuf)> = c
+            .depends
+            .iter()
+            .filter_map(|d| on.iter().find(|o| o.id == *d).map(|o| (o.id.clone(), o.path.clone())))
+            .collect();
+        match LuaMod::load(&c.path, &libraries) {
             Ok(lua) => {
-                log::info!("Horizon: Lua mod {} loaded from {}", lua.id, path.display());
-                ids.push(lua.id.clone());
+                log::info!("Horizon: Lua mod {} loaded from {}", lua.id, c.path.display());
                 mods.push(Box::new(lua));
             }
-            Err(e) => log::error!("Horizon: Lua mod in {} not loaded: {e}", path.display()),
+            Err(e) => log::error!("Horizon: Lua mod in {} not loaded: {e}", c.path.display()),
         }
     }
     mods.into()
 }
 
+/// A mod that is on, as `discover` found it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Candidate {
+    id: String,
+    path: PathBuf,
+    scripted: bool,
+    depends: Vec<String>,
+}
+
+/// One mod's turn in the load order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Step {
+    index: usize,
+    /// A dependency that is not among the mods, or that could not load
+    /// itself: the mod is skipped with this named.
+    missing: Option<String>,
+}
+
+/// The order to load `on` in: a mod after everything it depends on. A mod
+/// whose dependency is missing, failed, or in a cycle gets a `missing` step.
+fn load_order(on: &[Candidate]) -> Vec<Step> {
+    let mut steps: Vec<Step> = Vec::new();
+    let mut done: Vec<bool> = vec![false; on.len()];
+    let mut failed: Vec<bool> = vec![false; on.len()];
+    loop {
+        let mut progressed = false;
+        for (i, c) in on.iter().enumerate() {
+            if done[i] {
+                continue;
+            }
+            let missing = c
+                .depends
+                .iter()
+                .find(|d| on.iter().position(|o| o.id == **d).is_none_or(|j| failed[j]));
+            if let Some(missing) = missing {
+                done[i] = true;
+                failed[i] = true;
+                progressed = true;
+                steps.push(Step {
+                    index: i,
+                    missing: Some(missing.clone()),
+                });
+                continue;
+            }
+            let ready = c
+                .depends
+                .iter()
+                .all(|d| on.iter().position(|o| o.id == *d).is_some_and(|j| done[j]));
+            if ready {
+                done[i] = true;
+                progressed = true;
+                steps.push(Step {
+                    index: i,
+                    missing: None,
+                });
+            }
+        }
+        if done.iter().all(|d| *d) {
+            return steps;
+        }
+        if !progressed {
+            // What is left waits on each other: a cycle.
+            for (i, c) in on.iter().enumerate() {
+                if !done[i] {
+                    done[i] = true;
+                    failed[i] = true;
+                    steps.push(Step {
+                        index: i,
+                        missing: c.depends.first().cloned(),
+                    });
+                }
+            }
+            return steps;
+        }
+    }
+}
+
 impl LuaMod {
     /// Load the mod at `path` (a `.hmod` or a mod folder): its id from
     /// `horizon-mod.toml`, its scripts read once, `scripts/init.lua` run.
-    pub fn load(path: &Path) -> Result<Self, String> {
+    pub fn load(path: &Path, libraries: &[(String, PathBuf)]) -> Result<Self, String> {
         let (id, scripts) = Self::read_scripts(path)?;
+        let library_scripts = Self::read_libraries(libraries)?;
         let lua = Lua::new();
         lua.set_memory_limit(MEMORY).map_err(|e| e.to_string())?;
         let budget = Budget::default();
@@ -192,6 +297,8 @@ impl LuaMod {
             source: path.to_owned(),
             lua,
             scripts: Arc::new(Mutex::new(scripts)),
+            libraries: libraries.to_vec(),
+            library_scripts: Arc::new(Mutex::new(library_scripts)),
             goals: Goals::default(),
             loads: AtomicU32::new(0),
             budget,
@@ -220,12 +327,30 @@ impl LuaMod {
         Ok((manifest.id, scripts))
     }
 
+    /// The libraries' scripts, the first library's winning a shared name.
+    /// A library without scripts (content only) contributes none.
+    fn read_libraries(libraries: &[(String, PathBuf)]) -> Result<HashMap<String, String>, String> {
+        let mut out: HashMap<String, String> = HashMap::new();
+        for (id, path) in libraries {
+            let package = Package::read(path).map_err(|e| format!("library {id}: {e}"))?;
+            if !package.manifest.capabilities.contains(&Capability::Scripts) {
+                continue;
+            }
+            let (_, scripts) = Self::read_scripts(path).map_err(|e| format!("library {id}: {e}"))?;
+            for (name, code) in scripts {
+                out.entry(name).or_insert(code);
+            }
+        }
+        Ok(out)
+    }
+
     /// Reads the scripts again and runs `scripts/init.lua` afresh: the
     /// handlers, the goals and the modules `require` ran are forgotten first;
     /// the Lua state and its globals stay. On an error the mod keeps running
     /// as it was, with its old handlers.
     pub fn reload(&self) -> Result<(), String> {
         let (_, scripts) = Self::read_scripts(&self.source)?;
+        let library_scripts = Self::read_libraries(&self.libraries)?;
         let lua = &self.lua;
         let reset = || -> mlua::Result<()> {
             lua.set_named_registry_value(HANDLERS, lua.create_table()?)?;
@@ -240,6 +365,9 @@ impl LuaMod {
         if let Ok(mut current) = self.scripts.lock() {
             *current = scripts;
         }
+        if let Ok(mut current) = self.library_scripts.lock() {
+            *current = library_scripts;
+        }
         self.run(ENTRY).map_err(|e| e.to_string())
     }
 
@@ -251,6 +379,7 @@ impl LuaMod {
     fn install_api(&self) -> mlua::Result<()> {
         let lua = &self.lua;
         let scripts = self.scripts.clone();
+        let library_scripts = self.library_scripts.clone();
         lua.set_named_registry_value(HANDLERS, lua.create_table()?)?;
         lua.set_named_registry_value(QUEUE, lua.create_table()?)?;
         lua.set_named_registry_value(LOADED, lua.create_table()?)?;
@@ -328,23 +457,36 @@ impl LuaMod {
         api.set(
             "require",
             lua.create_function(move |lua, name: String| {
-                if name.contains("..") || name.contains('/') || name.contains('\\') {
+                // `modkit.entity` is `scripts/modkit/entity.lua`, or
+                // `scripts/modkit/entity/init.lua`: the mod's own first, then
+                // the mods it depends on.
+                let plain = !name.is_empty()
+                    && !name.contains("..")
+                    && name
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'.');
+                if !plain {
                     return Err(mlua::Error::runtime(format!(
-                        "require({name:?}): a plain module name"
+                        "require({name:?}): a module name, with dots for folders"
                     )));
                 }
                 let loaded: Table = lua.named_registry_value(LOADED)?;
                 if let Some(v) = loaded.get::<Option<Value>>(name.as_str())? {
                     return Ok(v);
                 }
-                let key = format!("scripts/{name}.lua");
-                let code = scripts
-                    .lock()
-                    .ok()
-                    .and_then(|s| s.get(&key).cloned())
-                    .ok_or_else(|| {
-                        mlua::Error::runtime(format!("require({name:?}): no {key} in the mod"))
-                    })?;
+                let path = name.replace('.', "/");
+                let keys = [format!("scripts/{path}.lua"), format!("scripts/{path}/init.lua")];
+                let find = |map: &Scripts| -> Option<(String, String)> {
+                    let map = map.lock().ok()?;
+                    keys.iter()
+                        .find_map(|k| map.get(k).map(|code| (k.clone(), code.clone())))
+                };
+                let (key, code) = find(&scripts).or_else(|| find(&library_scripts)).ok_or_else(|| {
+                    mlua::Error::runtime(format!(
+                        "require({name:?}): no {} in the mod or the mods it depends on",
+                        keys[0]
+                    ))
+                })?;
                 let v: Value = lua.load(code.as_str()).set_name(&key).eval()?;
                 let v = if v.is_nil() { Value::Boolean(true) } else { v };
                 loaded.set(name.as_str(), &v)?;
@@ -762,7 +904,7 @@ experimental = ["scripts"]
                 ("scripts/util.lua", b"return 42"),
             ],
         );
-        let m = LuaMod::load(&path).unwrap();
+        let m = LuaMod::load(&path, &[]).unwrap();
         assert_eq!(m.id(), "ruby");
         let handlers: Table = m.lua.named_registry_value(HANDLERS).unwrap();
         let ticks: Table = handlers.get("server_tick").unwrap();
@@ -792,7 +934,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path).unwrap();
+        let m = LuaMod::load(&path, &[]).unwrap();
         let view = m.lua.create_table().unwrap();
         view.set("kind", "minecraft:cow").unwrap();
         let mut seen = Vec::new();
@@ -921,7 +1063,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path).unwrap();
+        let m = LuaMod::load(&path, &[]).unwrap();
         let mut level = FakeLevel {
             block: "ruby:hive",
             props: vec![("stage".into(), "dormant".into())],
@@ -981,7 +1123,7 @@ experimental = ["scripts"]
                 ("scripts/v.lua", b"return 1"),
             ],
         );
-        let m = LuaMod::load(&path).unwrap();
+        let m = LuaMod::load(&path, &[]).unwrap();
         let handlers = |m: &LuaMod| -> i64 {
             let h: Table = m.lua.named_registry_value(HANDLERS).unwrap();
             h.get::<Option<Table>>("server_tick")
@@ -1035,7 +1177,7 @@ experimental = ["scripts"]
                   horizon.on('world_lifecycle', function() N = N + 1 end)",
             )],
         );
-        let m = LuaMod::load(&path).unwrap();
+        let m = LuaMod::load(&path, &[]).unwrap();
         let started = std::time::Instant::now();
         let e = m
             .call_with("server_tick", ("end", true), &mut |_, _| Ok(()))
@@ -1051,14 +1193,75 @@ experimental = ["scripts"]
     }
 
     #[test]
+    fn mods_load_after_what_they_depend_on_and_without_it_not_at_all() {
+        let c = |id: &str, depends: &[&str]| Candidate {
+            id: id.into(),
+            path: PathBuf::from(id),
+            scripted: true,
+            depends: depends.iter().map(|d| d.to_string()).collect(),
+        };
+        let on = [c("parasite", &["modkit"]), c("modkit", &[]), c("lost", &["nowhere"]), c("a", &["b"]), c("b", &["a"]), c("leaf", &["lost"])];
+        let steps = load_order(&on);
+        let order: Vec<(&str, Option<&str>)> = steps
+            .iter()
+            .map(|s| (on[s.index].id.as_str(), s.missing.as_deref()))
+            .collect();
+        // modkit before parasite; lost names its missing dependency, leaf
+        // fails with it; the cycle fails naming a member.
+        let at = |id: &str| order.iter().position(|(i, _)| *i == id).unwrap();
+        assert!(at("modkit") < at("parasite"));
+        assert_eq!(order[at("parasite")], ("parasite", None));
+        assert_eq!(order[at("modkit")], ("modkit", None));
+        assert!(order.contains(&("lost", Some("nowhere"))));
+        assert!(order.contains(&("leaf", Some("lost"))));
+        assert!(order.contains(&("a", Some("b"))) || order.contains(&("a", Some("a"))));
+        assert_eq!(steps.len(), on.len());
+    }
+
+    #[test]
+    fn require_reaches_a_librarys_modules_by_dotted_name() {
+        let (lib_dir, lib) = hmod(
+            "lib",
+            &[
+                ("scripts/init.lua", b"LIB_RAN = true"),
+                ("scripts/modkit.lua", b"local m = { VERSION = '1', entity = require('modkit.entity') }\nreturn m"),
+                ("scripts/modkit/entity/init.lua", b"return { kind = 'entity' }"),
+            ],
+        );
+        let (dir, path) = hmod(
+            "user",
+            &[
+                ("scripts/init.lua", b"local modkit = require('modkit')\nV = modkit.VERSION .. modkit.entity.kind\nMINE = require('mine')"),
+                ("scripts/mine.lua", b"return 'own'"),
+                // The mod's own module wins a shared name.
+                ("scripts/modkit/entity.lua", b"return { kind = 'own entity' }"),
+            ],
+        );
+        let m = LuaMod::load(&path, &[("lib".into(), lib.clone())]).unwrap();
+        assert_eq!(m.lua.globals().get::<String>("V").unwrap(), "1own entity");
+        assert_eq!(m.lua.globals().get::<String>("MINE").unwrap(), "own");
+        // A library's init.lua runs in the library's own state, not here.
+        assert!(m.lua.globals().get::<Option<bool>>("LIB_RAN").unwrap().is_none());
+        // Without the library, the first require fails and names the search.
+        let e = LuaMod::load(&path, &[]).unwrap_err();
+        assert!(e.contains("scripts/modkit.lua") && e.contains("depends on"), "{e}");
+        // A bad name is refused before any lookup.
+        let (bad_dir, bad) = hmod("badname", &[("scripts/init.lua", b"require('../x')")]);
+        assert!(LuaMod::load(&bad, &[]).unwrap_err().contains("dots for folders"));
+        for d in [lib_dir, dir, bad_dir] {
+            std::fs::remove_dir_all(&d).unwrap();
+        }
+    }
+
+    #[test]
     fn a_missing_module_or_a_failing_script_is_an_error_with_the_file_named() {
         let (dir, path) = hmod("missing", &[("scripts/init.lua", b"require('nothing')")]);
-        let e = LuaMod::load(&path).unwrap_err();
+        let e = LuaMod::load(&path, &[]).unwrap_err();
         assert!(e.contains("scripts/nothing.lua"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
 
         let (dir, path) = hmod("broken", &[("scripts/init.lua", b"error('boom')")]);
-        let e = LuaMod::load(&path).unwrap_err();
+        let e = LuaMod::load(&path, &[]).unwrap_err();
         assert!(e.contains("boom") && e.contains("scripts/init.lua"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
     }

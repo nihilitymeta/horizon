@@ -58,6 +58,11 @@ pub struct Manifest {
     /// accepted here, so the manifest keeps loading once it is promoted.
     #[serde(default)]
     pub experimental: Vec<Capability>,
+    /// Mods this one needs installed and on (`["horizon_modkit"]`): a
+    /// library whose scripts it `require`s, or content it builds on. The
+    /// game loads them first and refuses to run this mod without them.
+    #[serde(default)]
+    pub depends: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -280,6 +285,21 @@ impl Manifest {
                 "{MANIFEST}: capability {c} is experimental and may change in any release: \
                  add experimental = [\"{c}\"] to use it"
             ));
+        }
+        for (i, dep) in m.depends.iter().enumerate() {
+            let dep_ok = (1..=64).contains(&dep.len())
+                && dep
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+            if !dep_ok {
+                return Err(format!("{MANIFEST}: depends {dep:?} is not a mod id, [a-z0-9_]{{1,64}}"));
+            }
+            if *dep == m.id {
+                return Err(format!("{MANIFEST}: a mod does not depend on itself"));
+            }
+            if m.depends[..i].contains(dep) {
+                return Err(format!("{MANIFEST}: depends lists {dep:?} twice"));
+            }
         }
         if !m.namespaces.is_empty() && !m.capabilities.contains(&Capability::Registries) {
             return Err(format!(

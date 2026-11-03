@@ -70,6 +70,7 @@ api = "0.2"                  # content mods
 side = "both"
 capabilities = ["registries"]
 namespaces = []              # optional: more namespaces the mod's files use (below)
+depends = []                 # optional: mods this one needs installed and on (a scripts library)
 ```
 
 Unknown keys are refused, so a typo is an error, not a silently ignored permission.

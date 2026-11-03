@@ -30,6 +30,17 @@ reaches Lua by one adapter method, and a hook added for Rust is available to scr
   unsafe code, no reentrancy into the game from Lua.
 - Errors in a script are logged with the mod's id and never stop the game.
 
+## Libraries: a mod's scripts over another mod's
+
+A mod lists the mods it needs in its manifest, `depends = ["horizon_modkit"]`: the game loads them first and does
+not run a mod whose dependency is not installed or not on (the log says which). `require("modkit")` then finds
+`scripts/modkit.lua` (or `scripts/modkit/init.lua`) in the mod's own scripts first, then in each dependency's, in
+the manifest's order; a dotted name is a folder (`require("modkit.entity")` is `scripts/modkit/entity.lua`). The
+library's code runs in the requiring mod's own Lua state, as a Lua module does; the library's own `init.lua` runs in
+the library's state only. `/reload` reads the libraries again too. The intended library is
+[whos-carmen/horizon-modkit](https://github.com/whos-carmen/horizon-modkit): entities, blocks and goals as classes
+with lifecycle callbacks, the API a mod developer writes against, over this file's hook API.
+
 ## What is built
 
 | | |
