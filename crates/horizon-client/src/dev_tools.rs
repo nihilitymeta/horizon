@@ -220,6 +220,14 @@ pub fn window_event(window: Option<&Window>, event: &WindowEvent, playing: bool)
 /// Whether a window of the tools was open last frame, for [`frame`].
 static HAD_WINDOWS: AtomicBool = AtomicBool::new(false);
 
+/// The world closed: the tools let the pointer go (the game frees it with
+/// the world and grabs it again when the next one opens) and forget that
+/// they had windows, which the store no longer lists (`observe::reset`).
+pub fn world_closed() {
+    HOLDS_POINTER.store(false, Ordering::Relaxed);
+    HAD_WINDOWS.store(false, Ordering::Relaxed);
+}
+
 /// What [`frame`] asks of the game's pointer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PointerChange {

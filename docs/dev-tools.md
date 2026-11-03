@@ -20,6 +20,13 @@ host. The owner's own commands act through the hub as the owner and pass; a dedi
 console passes and every player is refused. `mc.run` takes a file name in the scripts folder and no path, and a chunk
 that runs over two seconds is stopped by Luau's interrupt, so a typo's endless loop does not freeze the server thread.
 
+**A world at a time.** Everything the tools remember is process-wide (the watched entities, the AI logs' open files,
+the chart's tick count, the console's tick handlers and the ids its selectors found, whether the tools hold the
+pointer), and an entity id means nothing outside its world. So closing a world sweeps it all
+(`Game::dev_tools_world_closed`, from `finish_close_world`): the windows close, the log files are closed, the
+console window closes and its handlers stop at the next server tick (the console's output and history stay), and the
+pointer is the game's again. A watch set in one world never shows the next world's entity of the same id.
+
 ## Why egui, not Dear ImGui
 
 The game draws with wgpu 30.0.1 and winit 0.30.13 and has no immediate-mode UI library. `egui` 0.37 tracks exactly

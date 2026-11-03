@@ -32,6 +32,9 @@ thread_local! {
 
 /// The registry key of the tick handlers: a sequence of functions.
 const TICKERS: &str = "mc_tickers";
+/// The world closed (`world_closed`): the next server tick drops the tick
+/// handlers and the ids a selector found, which named that world's entities.
+static RESET: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Memory a script may take.
 const MEMORY: usize = 64 << 20;
 /// Wall-clock time one chunk (a line, a script, a tick's handlers) may take:
@@ -530,6 +533,17 @@ impl Game<'_> {
     /// Once a server tick, after every level ticked: what the window
     /// queued, then the tick handlers.
     pub(in crate::game) fn dev_console_tick(&mut self) {
+        if RESET.swap(false, Ordering::Relaxed) {
+            // The world the handlers and the known ids belonged to is gone.
+            KNOWN.with(|k| k.borrow_mut().clear());
+            if TICKING.swap(false, Ordering::Relaxed)
+                && let Ok(lua) = vm()
+                && let Ok(t) = lua.create_table()
+            {
+                let _ = lua.set_named_registry_value(TICKERS, t);
+                console::push(Kind::Out, "tick handlers stopped: the world closed");
+            }
+        }
         let requests = console::take_requests();
         if STOP_TICKS.swap(false, Ordering::Relaxed)
             && let Ok(lua) = vm()
@@ -586,6 +600,17 @@ impl Game<'_> {
             console::push(Kind::Err, "tick handlers stopped after the error");
         }
     }
+}
+
+/// The world closed: the console window closes, nothing of it asks for the
+/// pointer any more, and the next server tick (of the next world) drops the
+/// tick handlers and the ids a selector found, which named this world's
+/// entities. The output and the history stay: what was printed is still
+/// worth reading.
+pub(in crate::game) fn world_closed() {
+    console::OPEN.store(false, Ordering::Relaxed);
+    console::WANT_POINTER.store(false, Ordering::Relaxed);
+    RESET.store(true, Ordering::Relaxed);
 }
 
 /// An empty compound, for scripts that build data up.

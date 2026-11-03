@@ -12828,6 +12828,9 @@ impl Game<'_> {
         self.begin_closing_save(false)
     }
     fn finish_close_world(&mut self) -> Result<()> {
+        // The developer tools forget this world's entities, close their log
+        // files and let the pointer go (docs/dev-tools.md).
+        self.dev_tools_world_closed();
         self.ambience.clear(&mut self.audio);
         // updateLevelInEngines(null): every sound stops; the music manager
         // lets go of its track.

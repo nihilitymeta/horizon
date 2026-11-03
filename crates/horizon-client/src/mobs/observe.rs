@@ -286,6 +286,19 @@ pub fn clear_logs() {
     s.prune();
 }
 
+/// The world closed: nothing of it is watched any more. Every watch, window,
+/// path, log mark and stored snapshot goes, so an entity of the next world
+/// that happens to have the same id is not shown under the old one's window.
+pub fn reset() {
+    let mut s = state();
+    s.watch.clear();
+    s.snapshots.clear();
+    s.data.clear();
+    s.history.clear();
+    s.series.clear();
+    s.prune();
+}
+
 /// Whether any window is wanted: a view or a path of some entity.
 pub fn showing() -> bool {
     SHOWING.load(Ordering::Relaxed)
@@ -566,5 +579,24 @@ mod tests {
         assert_eq!(all[0].series[0].samples.len(), 1);
         assert_eq!(all[0].series[0].error.as_deref(), Some("not a number"));
         clear(None);
+    }
+
+    #[test]
+    fn a_world_close_resets_the_whole_store() {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        clear(None);
+        add(&[7], View::Data);
+        add_path(&[7], "Health");
+        add_log(&[8]);
+        set_data(7, "Zombie".into(), Tag::Compound(Default::default()));
+        set_sample(7, "Health", 1, Ok(20.0));
+        assert!(watching() && showing());
+        reset();
+        assert!(watched().is_empty());
+        assert!(!watching() && !showing());
+        assert!(snapshots().is_empty());
+        assert!(brain_of(8).is_none());
+        // A log mark does not survive either: the next world's entity 8 is not snapshotted.
+        assert!(paths_of(7).is_empty());
     }
 }

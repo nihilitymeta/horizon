@@ -101,6 +101,20 @@ impl Game<'_> {
         Ok(())
     }
 
+    /// The world closed: nothing of it stays watched. The windows' store
+    /// empties, the AI logs' files close, the tick count restarts, the
+    /// console closes and drops its handlers, and the tools let the pointer
+    /// go, so a watch on entity 123 of this world never reads the next
+    /// world's entity 123.
+    pub(in crate::game) fn dev_tools_world_closed(&mut self) {
+        LOGS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        WATCH.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        *TICKS.lock().unwrap_or_else(|e| e.into_inner()) = 0;
+        observe::reset();
+        super::lua_console::world_closed();
+        crate::dev_tools::world_closed();
+    }
+
     /// The targets of the command with their ids, players left out.
     fn watchable(&mut self, ctx: &Context) -> R<(Vec<Target>, Vec<u32>, usize)> {
         let targets = self.entities(ctx, "targets", false)?;
