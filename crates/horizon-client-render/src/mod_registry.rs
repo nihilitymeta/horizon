@@ -177,12 +177,12 @@ pub fn follow_toggle(s: &mut Settings, i: usize) {
 }
 
 fn follow_toggle_with(entries: &[Entry], s: &mut Settings, id: &str) {
+    // Only the toggled feature follows its line; the other lines are brought up to date when
+    // the list is saved (`mods_mirroring`), so a stale one never moves a switch here, and a
+    // plain installed mod's toggle leaves the list as the player set it.
     if let Some(entry) = entries.iter().find(|e| e.id == id) {
         sync_from_mods_with(std::slice::from_ref(entry), s);
     }
-    let mut mods = std::mem::take(&mut s.mods);
-    sync_to_mods_with(entries, &mut mods, s);
-    s.mods = mods;
 }
 
 /// Writes every feature's state into the mod list as its `mod.<id>` line, so the list (and the
@@ -355,8 +355,14 @@ mod tests {
             s.extras.fullbright,
             "the stale line did not undo Fullbright"
         );
-        // The list now says what the switches say, for the launcher.
-        assert_eq!(s.mods.serialize(), "mod.fullbright:true\nmod.shadow:true\n");
+        // The toggle moved only its own line; the save brings the rest up to date for the launcher.
+        assert_eq!(
+            s.mods.serialize(),
+            "mod.shadow:true\nmod.fullbright:false\n"
+        );
+        let mut saved = s.mods.clone();
+        sync_to_mods_with(&entries, &mut saved, &s);
+        assert_eq!(saved.serialize(), "mod.fullbright:true\nmod.shadow:true\n");
         // Toggling it off again in Options > Mods switches it off, and nothing else.
         s.mods.enabled.remove("fullbright");
         s.mods.disabled.insert("fullbright".into());
