@@ -1,6 +1,6 @@
 -- What the mod does, with Horizon Modkit (its docs/api.md). This file and
 -- the modules it requires run again on /reload.
-local modkit = require("modkit")
+local modkit = require("@modkit")
 local M = modkit.mod("{id}")
 
 -- A right click with the wand, in the air or on a block: a word to everyone,

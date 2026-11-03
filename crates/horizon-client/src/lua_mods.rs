@@ -1521,9 +1521,12 @@ impl LuaMod {
         api.set(
             "require",
             lua.create_function(move |lua, name: String| {
-                // `modkit.entity` is `scripts/modkit/entity.lua`, or
+                // `modkit.entity`, `modkit/entity` or `@modkit/entity` (the
+                // form a Luau editor resolves through `.luaurc` aliases) is
+                // `scripts/modkit/entity.lua`, or
                 // `scripts/modkit/entity/init.lua`: the mod's own first, then
                 // the mods it depends on.
+                let name = name.strip_prefix('@').unwrap_or(&name).replace('/', ".");
                 let plain = !name.is_empty()
                     && !name.contains("..")
                     && name
@@ -1531,7 +1534,7 @@ impl LuaMod {
                         .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'.');
                 if !plain {
                     return Err(mlua::Error::runtime(format!(
-                        "require({name:?}): a module name, with dots for folders"
+                        "require({name:?}): a module name, with dots or slashes for folders"
                     )));
                 }
                 let loaded: Table = lua.named_registry_value(LOADED)?;
@@ -6292,7 +6295,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "user",
             &[
-                ("scripts/init.lua", b"local modkit = require('modkit')\nV = modkit.VERSION .. modkit.entity.kind\nMINE = require('mine')"),
+                ("scripts/init.lua", b"local modkit = require('@modkit')\nV = modkit.VERSION .. modkit.entity.kind\nMINE = require('mine')\nSAME = require('modkit/entity') == modkit.entity and require('modkit.entity') == modkit.entity"),
                 ("scripts/mine.lua", b"return 'own'"),
                 // The mod's own module wins a shared name.
                 ("scripts/modkit/entity.lua", b"return { kind = 'own entity' }"),
@@ -6301,6 +6304,8 @@ experimental = ["scripts"]
         let m = LuaMod::load(&path, &[("lib".into(), lib.clone())]).unwrap();
         assert_eq!(m.lua.globals().get::<String>("V").unwrap(), "1own entity");
         assert_eq!(m.lua.globals().get::<String>("MINE").unwrap(), "own");
+        // `@modkit/entity` and `modkit/entity` name the same module as `modkit.entity`.
+        assert!(m.lua.globals().get::<bool>("SAME").unwrap());
         // A library's init.lua runs in the library's own state, not here.
         assert!(
             m.lua
@@ -6317,11 +6322,7 @@ experimental = ["scripts"]
         );
         // A bad name is refused before any lookup.
         let (bad_dir, bad) = hmod("badname", &[("scripts/init.lua", b"require('../x')")]);
-        assert!(
-            LuaMod::load(&bad, &[])
-                .unwrap_err()
-                .contains("dots for folders")
-        );
+        assert!(LuaMod::load(&bad, &[]).unwrap_err().contains("for folders"));
         for d in [lib_dir, dir, bad_dir] {
             std::fs::remove_dir_all(&d).unwrap();
         }

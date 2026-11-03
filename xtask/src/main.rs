@@ -18,13 +18,14 @@
 //! and `horizon.icns`. `docs/media/brand/README.md` lists what goes where.
 
 mod hooks_doc;
+mod lua_types;
 mod mod_api;
 
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-const USAGE: &str = "usage: cargo run -p xtask -- package BINARY OUTDIR | package-server ENGINE OUTDIR | mod-api | hooks-doc [--check] | tokens | icons";
+const USAGE: &str = "usage: cargo run -p xtask -- package BINARY OUTDIR | package-server ENGINE OUTDIR | mod-api | hooks-doc [--check] | lua-types [--check] | tokens | icons";
 
 /// What the release folder takes from the repository at HEAD, as `git archive` writes it.
 const ARCHIVED: [&str; 5] = [
@@ -54,6 +55,8 @@ fn main() -> ExitCode {
         [task] if task == "mod-api" => mod_api::run(),
         [task] if task == "hooks-doc" => hooks_doc::run(false),
         [task, check] if task == "hooks-doc" && check == "--check" => hooks_doc::run(true),
+        [task] if task == "lua-types" => lua_types::run(false),
+        [task, check] if task == "lua-types" && check == "--check" => lua_types::run(true),
         [task] if task == "tokens" => tokens(),
         [task] if task == "icons" => icons(),
         _ => Err(USAGE.to_string()),

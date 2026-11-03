@@ -1,7 +1,6 @@
 {
   "languageMode": "nonstrict",
   "aliases": {
-    "modkit": "../horizon-modkit/scripts",
-    "horizon-types": "../horizon-modkit/types"
+    "modkit": "../horizon-modkit/scripts/modkit"
   }
 }
