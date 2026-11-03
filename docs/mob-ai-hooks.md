@@ -96,6 +96,17 @@ breeding. Its texture joins the shared atlas through a `single` atlas source the
 the species registered them, so `mob_ai_register` (and a script's `horizon.add_goal`) sees empty selectors and the
 species' controls. It drops `<id>:entities/<name>` when that loot table exists, else the template's.
 
+## Natural spawning and spawn eggs (built)
+
+A content mob spawns on its own where a NeoForge biome modifier of type `neoforge:add_spawns` puts it
+(`data/<id>/neoforge/biome_modifier/<name>.json`: `biomes` a biome, a tag or a list, `spawners` entries of
+`type`, `weight`, `min_count`, `max_count`); the entry goes into those biomes' natural spawns in the category
+of its kind (a mod mob's: its template's, from `entity-types.json`; `category` in the entry chooses), beside
+vanilla's, with a uniform pack size. `add_features` and `remove_features` were read before; `add_carvers` and
+the rest are still skipped with a warning. A spawn egg is any item whose id ends in `_spawn_egg`: the kind is the
+id before it, so `<id>:crawler_spawn_egg` (template `minecraft:zombie_spawn_egg`, a texture of its own) spawns
+`<id>:crawler` as vanilla's eggs do, on a spawner too.
+
 ## The plan
 
 | Step | What | Why |
