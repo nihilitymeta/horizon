@@ -4286,7 +4286,7 @@ impl OptionsUi {
                         }
                         Act::ToggleMod(i) => {
                             s.mods.toggle(i);
-                            crate::mod_registry::sync_from_mods(s);
+                            crate::mod_registry::follow_toggle(s, i);
                             events.push(Event::Changed);
                         }
                         Act::ModSettings(i) => {
@@ -5226,7 +5226,7 @@ impl OptionsUi {
                         }
                         Act::ToggleMod(i) => {
                             s.mods.toggle(i);
-                            crate::mod_registry::sync_from_mods(s);
+                            crate::mod_registry::follow_toggle(s, i);
                             events.push(Event::Changed);
                         }
                         Act::ModSettings(i) => {

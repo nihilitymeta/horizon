@@ -4,8 +4,8 @@
 //! `horizon-extras.txt`, a key, its on and off values), so the feature itself, Options > Mods and
 //! the launcher all agree on one switch: the mod list's `mod.<id>` line mirrors the setting
 //! (`sync_to_mods`), and a line written while the game was closed, by the launcher, is applied to
-//! the setting at the next start (`sync_from_mods`). `horizon-client --list-mods` prints the list
-//! for the launcher.
+//! the setting at the next start (`sync_from_mods`); a toggle in Options > Mods moves only its own
+//! switch (`follow_toggle`). `horizon-client --list-mods` prints the list for the launcher.
 use crate::{extras::Extras, graphics::Graphics, mod_list::ModList, settings::Settings};
 use serde::{Deserialize, Serialize};
 
@@ -164,6 +164,27 @@ fn sync_from_mods_with(entries: &[Entry], s: &mut Settings) {
     }
 }
 
+/// After Options > Mods toggled installed mod `i`'s line: that feature's switch follows its new
+/// line, and every other feature's line follows its switch. Applying every line here
+/// (`sync_from_mods`) would re-impose a `mod.<id>` line the launcher wrote before this session on
+/// a switch moved since, in Extras or Video Settings: Fullbright turned on, then any mod toggled,
+/// and Fullbright was off again. A mod that is not one of the build's features changes nothing.
+pub fn follow_toggle(s: &mut Settings, i: usize) {
+    let Some(id) = s.mods.installed.get(i).map(|m| m.id.clone()) else {
+        return;
+    };
+    follow_toggle_with(&entries(), s, &id);
+}
+
+fn follow_toggle_with(entries: &[Entry], s: &mut Settings, id: &str) {
+    if let Some(entry) = entries.iter().find(|e| e.id == id) {
+        sync_from_mods_with(std::slice::from_ref(entry), s);
+    }
+    let mut mods = std::mem::take(&mut s.mods);
+    sync_to_mods_with(entries, &mut mods, s);
+    s.mods = mods;
+}
+
 /// Writes every feature's state into the mod list as its `mod.<id>` line, so the list (and the
 /// launcher reading it) says what the switches say.
 pub fn sync_to_mods(s: &mut Settings) {
@@ -293,6 +314,54 @@ mod tests {
         let mut mods = s.mods.clone();
         sync_to_mods_with(&[e], &mut mods, &s);
         assert!(mods.enabled.contains("fullbright") && !mods.disabled.contains("fullbright"));
+    }
+
+    /// A switch moved this session, in Extras or Video Settings, is not undone by a `mod.<id>`
+    /// line the launcher wrote before it when the player toggles another mod in Options > Mods.
+    #[test]
+    fn a_feature_turned_on_this_session_stays_on_when_another_mod_is_toggled() {
+        let mut s = Settings::default();
+        let fullbright = entry(
+            "fullbright",
+            File::Extras,
+            "fullbright",
+            "true",
+            "false",
+            false,
+        );
+        let shadow = entry(
+            "shadow",
+            File::Graphics,
+            "shadowCache",
+            "true",
+            "false",
+            false,
+        );
+        let entries = [fullbright, shadow];
+        // The launcher turned Fullbright off while the game was closed; the start applied it.
+        s.mods.disabled.insert("fullbright".into());
+        sync_from_mods_with(&entries, &mut s);
+        assert!(!s.extras.fullbright);
+        // The player turns Fullbright on in Extras, then toggles the shadow cache mod on in
+        // Options > Mods (`ModList::toggle` moves its line).
+        s.extras.fullbright = true;
+        s.mods.enabled.insert("shadow".into());
+        follow_toggle_with(&entries, &mut s, "shadow");
+        assert!(
+            s.horizon.shadow_cache,
+            "the toggled mod's line switched its feature"
+        );
+        assert!(
+            s.extras.fullbright,
+            "the stale line did not undo Fullbright"
+        );
+        // The list now says what the switches say, for the launcher.
+        assert_eq!(s.mods.serialize(), "mod.fullbright:true\nmod.shadow:true\n");
+        // Toggling it off again in Options > Mods switches it off, and nothing else.
+        s.mods.enabled.remove("fullbright");
+        s.mods.disabled.insert("fullbright".into());
+        follow_toggle_with(&entries, &mut s, "fullbright");
+        assert!(!s.extras.fullbright && s.horizon.shadow_cache);
     }
 
     #[test]
