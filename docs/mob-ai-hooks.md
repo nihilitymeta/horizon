@@ -38,8 +38,11 @@ shape that borrows nothing of the mob.
   it is in melee range, whether a path is being walked, the nearest player, the home). A plain copy, made before the
   call.
 - `Actions` / `GoalAction`: what the call asks for (`navigate_to`, `navigate_to_target`, `stop_navigation`,
-  `move_toward`, `look_at`, `look_at_target`, `set_target`, `jump`, `attack`, `swing`). Applied in order after the
-  call, with the mob and the world.
+  `move_toward`, `look_at`, `look_at_target`, `set_target`, `jump`, `attack`, `swing`; `hurt(who, amount)`,
+  `convert(kind)` (become another mob, as a zombie drowns into a drowned), `summon(kind, at)`, `despawn`, `heal`,
+  `effect(name, ticks, amplifier)`). Applied in order after the call, with the mob and the world.
+- `MobView::nearby`: the other mobs within the follow range, nearest first (`NearbyView`: id, kind, position,
+  distance, health, alive, hostile, baby, target), so an infection can look for hosts or a brood for its mother.
 - `NativeBehaviour`: the decisions (`can_use`, `can_continue`, `start`, `tick`, `stop`) over a `MobView` and an
   `Actions`. One value is shared by every mob the goal is on; the per-mob part is its `State` (`Default` when added).
 - `NativeGoal::new(name, flags, behaviour)`: the `Goal` to add, with `GOAL_MOVE | GOAL_LOOK | GOAL_JUMP | GOAL_TARGET`

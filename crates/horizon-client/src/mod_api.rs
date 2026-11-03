@@ -40,7 +40,7 @@ pub use crate::mobs::{
         Cx as GoalCx, Goal, GoalSelector, JUMP as GOAL_JUMP, LOOK as GOAL_LOOK, MOVE as GOAL_MOVE,
         TARGET as GOAL_TARGET,
     },
-    native_goal::{Actions, GoalAction, MobView, NativeBehaviour, NativeGoal},
+    native_goal::{Actions, GoalAction, MobView, NativeBehaviour, NativeGoal, NearbyView},
 };
 pub use crate::music::{Music, MusicLayer};
 pub use crate::particles::{ParticleOptions, ParticleType};

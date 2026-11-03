@@ -2251,6 +2251,8 @@ pub struct Seen {
     pub last_damage: Option<Damage>,
     pub id: u32,
     pub species: Species,
+    /// Its type: `kind.id` tells a mod's mob from its template's species.
+    pub kind: Arc<MobType>,
     pub position: Vec3,
     pub bounds: Aabb,
     pub eye_y: f64,
@@ -2463,6 +2465,7 @@ impl Mob {
             last_damage: self.last_damage.map(|(d, _)| d),
             id: m.id,
             species: m.species(),
+            kind: m.kind.clone(),
             position: m.position,
             bounds: m.bounds(),
             eye_y: m.eye_y(),

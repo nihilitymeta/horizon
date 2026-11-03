@@ -40,7 +40,31 @@ pub struct MobView {
     pub nearest_player: Option<[f64; 3]>,
     /// The home position and radius a mob is restricted to, if any.
     pub home: Option<([i32; 3], i32)>,
+    /// The other mobs within the mob's follow range, nearest first (at most
+    /// [`NEARBY_LIMIT`]); empty without the world.
+    pub nearby: Vec<NearbyView>,
 }
+
+/// How many nearby mobs a view lists.
+pub const NEARBY_LIMIT: usize = 32;
+
+/// Another mob near the viewed one, as the world saw it this tick.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct NearbyView {
+    pub id: u32,
+    /// `minecraft:zombie`, or a content mod's own id.
+    pub kind: String,
+    pub position: [f64; 3],
+    /// Straight-line distance from the viewed mob.
+    pub distance: f64,
+    pub health: f32,
+    pub alive: bool,
+    pub hostile: bool,
+    pub baby: bool,
+    pub target: Option<Who>,
+}
+
 impl MobView {
     /// The view of `m`; with `w`, the fields that need the world too.
     pub fn of(m: &Mob, w: Option<&MobWorld>) -> Self {
@@ -70,6 +94,7 @@ impl MobView {
             navigation_done: m.ai.nav.is_done(),
             nearest_player: w.and_then(|w| w.nearest_player).map(|p| [p.x, p.y, p.z]),
             home: m.ai.home,
+            nearby: w.map(|w| nearby(m, w)).unwrap_or_default(),
         }
     }
     /// Straight-line distance from the mob to `at`.
@@ -77,6 +102,51 @@ impl MobView {
         let [x, y, z] = self.position;
         ((at[0] - x).powi(2) + (at[1] - y).powi(2) + (at[2] - z).powi(2)).sqrt()
     }
+}
+
+/// The mobs within `m`'s follow range as the world saw them, nearest first.
+fn nearby(m: &Mob, w: &MobWorld) -> Vec<NearbyView> {
+    let range = m.kind.follow_range.max(1.0);
+    let mut out: Vec<NearbyView> = w
+        .others
+        .iter()
+        .filter(|s| s.id != m.id)
+        .filter_map(|s| {
+            let (dx, dy, dz) = (s.position.x - m.position.x, s.position.y - m.position.y, s.position.z - m.position.z);
+            let distance = (dx * dx + dy * dy + dz * dz).sqrt();
+            (distance <= range).then(|| NearbyView {
+                id: s.id,
+                kind: s.kind.id.clone(),
+                position: [s.position.x, s.position.y, s.position.z],
+                distance,
+                health: s.health,
+                alive: s.alive,
+                hostile: s.hostile,
+                baby: s.baby,
+                target: s.target,
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| a.distance.total_cmp(&b.distance));
+    out.truncate(NEARBY_LIMIT);
+    out
+}
+
+/// A kind or effect name as the game's events carry it: one static string
+/// per distinct name for the process's life.
+fn intern(name: &str) -> &'static str {
+    use std::sync::{Mutex, OnceLock};
+    static NAMES: OnceLock<Mutex<std::collections::HashSet<&'static str>>> = OnceLock::new();
+    let mut names = NAMES
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if let Some(known) = names.get(name) {
+        return known;
+    }
+    let leaked: &'static str = Box::leak(name.to_owned().into_boxed_str());
+    names.insert(leaked);
+    leaked
 }
 
 /// What a goal outside the crate asks of its mob. Applied in order after the
@@ -111,6 +181,32 @@ pub enum GoalAction {
     Attack(Who),
     /// Swing the arm only.
     Swing,
+    /// Deal `amount` of mob-attack damage to `who`, with no swing and no
+    /// species rules (an infection's bite, a touch).
+    Hurt {
+        who: Who,
+        amount: f32,
+    },
+    /// Become a mob of `kind` (`Mob.convertTo`, equipment and name kept):
+    /// this mob is discarded and the new one takes its place.
+    Convert {
+        kind: String,
+    },
+    /// Make a mob of `kind` at `at` (a conversion's spawn, a split, a brood).
+    Summon {
+        kind: String,
+        at: [f64; 3],
+    },
+    /// Vanish without dying: no drops, no death event (`Entity.discard`).
+    Despawn,
+    /// Heal by `amount`, up to the mob's max health.
+    Heal(f32),
+    /// Give the mob an effect (`minecraft:poison`) for `ticks` at `amplifier`.
+    Effect {
+        effect: String,
+        ticks: i32,
+        amplifier: i32,
+    },
 }
 
 /// The actions a goal's method collects.
@@ -143,6 +239,24 @@ impl Actions {
     }
     pub fn jump(&mut self) {
         self.push(GoalAction::Jump);
+    }
+    pub fn hurt(&mut self, who: Who, amount: f32) {
+        self.push(GoalAction::Hurt { who, amount });
+    }
+    pub fn convert(&mut self, kind: impl Into<String>) {
+        self.push(GoalAction::Convert { kind: kind.into() });
+    }
+    pub fn summon(&mut self, kind: impl Into<String>, at: [f64; 3]) {
+        self.push(GoalAction::Summon { kind: kind.into(), at });
+    }
+    pub fn despawn(&mut self) {
+        self.push(GoalAction::Despawn);
+    }
+    pub fn heal(&mut self, amount: f32) {
+        self.push(GoalAction::Heal(amount));
+    }
+    pub fn effect(&mut self, effect: impl Into<String>, ticks: i32, amplifier: i32) {
+        self.push(GoalAction::Effect { effect: effect.into(), ticks, amplifier });
     }
     pub fn attack(&mut self, who: Who) {
         self.push(GoalAction::Attack(who));
@@ -195,6 +309,58 @@ impl Actions {
                     }
                 }
                 GoalAction::Swing => m.swing(),
+                GoalAction::Hurt { who, amount } => {
+                    if let Some(cx) = cx.as_deref_mut() {
+                        let from = [m.position.x, m.position.y, m.position.z];
+                        cx.events.push(match who {
+                            Who::Player => super::MobEvent::DamagePlayer {
+                                amount,
+                                from,
+                                kind: "minecraft:mob_attack",
+                            },
+                            Who::Mob(target) => super::MobEvent::AttackMob {
+                                target,
+                                amount,
+                                source: super::Damage {
+                                    kind: super::DamageKind::MobAttack,
+                                    attacker: Some(Who::Mob(m.id)),
+                                    from: Some(from),
+                                },
+                            },
+                        });
+                    }
+                }
+                GoalAction::Convert { kind } => {
+                    if let Some(cx) = cx.as_deref_mut() {
+                        cx.events.push(super::MobEvent::Convert {
+                            from: Box::new(m.clone()),
+                            kind: intern(&kind),
+                            params: super::conversion::Params::KEEP_ALL,
+                        });
+                        m.removed = true;
+                    }
+                }
+                GoalAction::Summon { kind, at } => {
+                    if let Some(cx) = cx.as_deref_mut() {
+                        cx.events.push(super::MobEvent::SpawnKind {
+                            kind,
+                            at,
+                            setup: super::SpawnSetup {
+                                yaw: m.yaw,
+                                ..Default::default()
+                            },
+                        });
+                    }
+                }
+                GoalAction::Despawn => m.removed = true,
+                GoalAction::Heal(amount) => {
+                    m.health = (m.health + amount.max(0.0)).min(m.attrs.max_health);
+                }
+                GoalAction::Effect {
+                    effect,
+                    ticks,
+                    amplifier,
+                } => m.add_effect(intern(&effect), ticks, amplifier),
             }
         }
     }
