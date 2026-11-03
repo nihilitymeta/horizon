@@ -15,10 +15,11 @@
 //! `--dev-mod` folders. Mob behaviour is written as goals ([`goals`]).
 use crate::mod_api::{
     AttachmentCodec, AttachmentType, BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
-    BlockPos, BlockStateId, Compound, DataPackFilesEvent, EntityTickPostEvent, Flow, Holder, Hooks,
-    Host, InteractEntityEvent, LevelDimension, LevelWriteHost, LivingIncomingDamageEvent,
-    MobAiRegisterEvent, MobKilledEvent, MobSpawnedEvent, MobView, Mods, RandomTickEvent,
-    RightClickBlockEvent, ServerTickEvent, ServerTickPhase, TickBlockEvent, WorldLifecycleEvent,
+    BlockPos, BlockStateId, Compound, DataPackFilesEvent, EntityTickListenedEvent,
+    EntityTickPostEvent, Flow, Holder, Hooks, Host, InteractEntityEvent, LevelDimension,
+    LevelWriteHost, LivingIncomingDamageEvent, MobAiRegisterEvent, MobKilledEvent, MobSpawnedEvent,
+    MobView, Mods, RandomTickEvent, RightClickBlockEvent, ServerTickEvent, ServerTickPhase,
+    TickBlockEvent, WorldLifecycleEvent,
 };
 use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
@@ -1423,6 +1424,19 @@ impl Hooks for LuaMod {
         }
         if cancel { Flow::Cancel } else { Flow::Continue }
     }
+    /// The game keeps the list of ticking entities only while a mod listens:
+    /// this one does while a `mob_tick` handler is registered.
+    fn entity_tick_listened(&self, _host: &mut dyn Host, event: &mut EntityTickListenedEvent) {
+        if self.has_handlers("mob_tick")
+            || self
+                .kinds
+                .lock()
+                .ok()
+                .is_some_and(|k| k.get("mob_tick").is_some_and(|set| !set.is_empty()))
+        {
+            event.listened = true;
+        }
+    }
     /// A mob ticked: `mob_tick(dimension, mob, data)` for the
     /// handlers watching `kind` (`horizon.on("mob_tick", fn, kind)`; one for
     /// every kind hears every mob, so register by kind). `mob` is the mob's
@@ -1872,6 +1886,10 @@ experimental = ["scripts"]
                 "minecraft:cow:minecraft:on_fire"
             ]
         );
+        // The mod listens to entity ticks: it has a mob_tick handler.
+        let mut listened = EntityTickListenedEvent { listened: false };
+        m.entity_tick_listened(&mut NoHost, &mut listened);
+        assert!(listened.listened);
         // Ticks count in the mob's saved data; the second one sets its health.
         let mut host = MobHost {
             attachments: Default::default(),
