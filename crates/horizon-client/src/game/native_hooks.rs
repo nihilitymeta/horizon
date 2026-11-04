@@ -7444,7 +7444,7 @@ impl Game<'_> {
     /// (0: none or a player), and `player` the player credited with the kill
     /// (the one who last hurt it, while that memory lasts). Told before its
     /// loot drops; the mob is already gone from the game's lists. It only
-    /// hears. Server-side. API 400.
+    /// hears. Server-side. API @API:mob_died@.
     pub(super) fn native_mob_died(
         &mut self,
         dimension: &str,
