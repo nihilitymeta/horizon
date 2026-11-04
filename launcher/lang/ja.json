@@ -1128,5 +1128,13 @@
   "GitHub sources": "GitHub ソース",
   "Installed {tag}": "{tag} をインストール済み",
   "Nothing installed yet": "まだ何もインストールされていません",
-  "Update automatically": "自動的に更新"
+  "Update automatically": "自動的に更新",
+  "Horizon's versions": "Horizon のバージョン",
+  "Installed the modkit {version}.": "Modkit {version} をインストールしました。",
+  "Installed {version}": "{version} をインストール済み",
+  "Not installed": "未インストール",
+  "newest {version}": "最新 {version}",
+  "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "Event Horizon 用：このインスタンスは Modkit を実行しない Horizon のビルドを遊んでいます。バージョンページで Event Horizon のビルドを選んでください。",
+  "Horizon Modkit · for Event Horizon": "Horizon Modkit · Event Horizon 用",
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Event Horizon の Mod を書くための Lua ライブラリ。Event Horizon のビルドを遊ぶすべてのインスタンスに有効な状態で入ります。"
 }

@@ -44,16 +44,18 @@ released on its own.
 2. Sign in with a Microsoft account that owns Minecraft: Java Edition.
 3. Install one Horizon version, for its game files: Versions, the newest Nightly, Install.
 
-The launcher's Versions page has a **GitHub sources** card with two sources on it, both set to **Update
-automatically**:
+The launcher's Versions page lists Event Horizon's builds in a section of their own, above Horizon's: a release as
+**Event Horizon 0.1.0**, a build you made from the checkout as **Event Horizon · local <commit>**. Its **GitHub
+sources** card has Event Horizon's repository on it, set to **Update automatically**: at each update check, the
+launcher installs a new release on the Horizon version's game files, and plays it. To install the newest release at
+once, press **Update**.
 
-- **Event Horizon** (`whos-carmen/horizon`): at each update check, the launcher installs a new release on the Horizon
-  version's game files, and plays it.
-- **The modkit** (`whos-carmen/horizon-modkit`): its newest `horizon_modkit.hmod` goes into every Horizon instance and
-  is turned on, so a mod that depends on it runs with no `--dev-mod`. An instance made later gets it at the next check.
-
-To install a source's newest release at once, press **Update**. The modkit publishes a release when its own `v…` tag
-is pushed (the modkit's `.github/workflows/release.yml`).
+The **Horizon Modkit** card, at the top of the Mods page, installs the modkit that Event Horizon's mods need: its
+newest `horizon_modkit.hmod` goes into every instance that plays an Event Horizon build, turned on, so a mod that
+depends on it runs with no `--dev-mod`. The card shows the version installed and the newest release, and has its own
+**Update automatically** switch. The modkit publishes a release when its own `v…` tag is pushed (the modkit's
+`.github/workflows/release.yml`). From the command line: `horizon-launcher modkit`, `modkit update`,
+`modkit auto on|off`.
 
 Two switches are off by default in Event Horizon's launcher:
 
@@ -64,8 +66,7 @@ Two switches are off by default in Event Horizon's launcher:
   the Update button. A launcher you built yourself never updates itself.
 
 The command line does the same as the card: `horizon-launcher sources list`, `sources update`,
-`sources auto <owner>/<repo> on|off`, `sources add <owner>/<repo>` (with `--mod` for a repository that
-publishes a `.hmod`).
+`sources auto <owner>/<repo> on|off`, `sources add <owner>/<repo>`.
 
 ## Telemetry
 

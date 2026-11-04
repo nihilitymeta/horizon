@@ -1128,5 +1128,13 @@
   "GitHub sources": "Zdroje z GitHubu",
   "Installed {tag}": "Nainstalováno {tag}",
   "Nothing installed yet": "Zatím nic nenainstalováno",
-  "Update automatically": "Aktualizovat automaticky"
+  "Update automatically": "Aktualizovat automaticky",
+  "Horizon's versions": "Verze Horizonu",
+  "Installed the modkit {version}.": "Modkit {version} nainstalován.",
+  "Installed {version}": "Nainstalováno {version}",
+  "Not installed": "Nenainstalováno",
+  "newest {version}": "nejnovější {version}",
+  "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "Pro Event Horizon: tato instance hraje sestavení Horizonu, které modkit nespouští. Vyber pro ni sestavení Event Horizon na stránce Verze.",
+  "Horizon Modkit · for Event Horizon": "Horizon Modkit · pro Event Horizon",
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Knihovna Lua, ve které se píší mody Event Horizon. Přidá se, zapnutá, do každé instance, která hraje sestavení Event Horizon."
 }

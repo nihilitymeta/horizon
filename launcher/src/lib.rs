@@ -29,6 +29,7 @@ pub mod loaders;
 #[cfg(target_os = "macos")]
 mod mac_update;
 pub mod minecraft_versions;
+pub mod modkit;
 pub mod modpacks;
 pub mod mojang;
 mod native_cache;

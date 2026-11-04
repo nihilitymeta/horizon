@@ -1110,6 +1110,7 @@ impl Launcher {
         body = body.child(controls);
         // Native mods from a GitHub link: Horizon instances, on the Mods tab.
         if self.mods.kind == PackKind::Mod && self.mods.java.is_none() {
+            body = body.child(self.modkit_card(cx));
             body = body.child(self.github_panel(cx));
         }
         body = body.children(registry_sort);

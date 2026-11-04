@@ -1128,5 +1128,13 @@
   "GitHub sources": "GitHub kaynakları",
   "Installed {tag}": "{tag} kuruldu",
   "Nothing installed yet": "Henüz bir şey kurulmadı",
-  "Update automatically": "Otomatik güncelle"
+  "Update automatically": "Otomatik güncelle",
+  "Horizon's versions": "Horizon sürümleri",
+  "Installed the modkit {version}.": "Modkit {version} kuruldu.",
+  "Installed {version}": "{version} kurulu",
+  "Not installed": "Kurulu değil",
+  "newest {version}": "en yeni {version}",
+  "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "Event Horizon için: bu örnek, modkit'i çalıştırmayan bir Horizon derlemesi oynuyor. Sürümler sayfasında ona bir Event Horizon derlemesi seç.",
+  "Horizon Modkit · for Event Horizon": "Horizon Modkit · Event Horizon için",
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Event Horizon modlarının yazıldığı Lua kütüphanesi. Event Horizon derlemesi oynayan her örneğe açık olarak kurulur."
 }

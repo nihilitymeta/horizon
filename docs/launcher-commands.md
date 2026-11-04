@@ -849,7 +849,6 @@ Add a repository (https://github.com/<owner>/<repo>, or <owner>/<repo>).
     horizon-launcher sources add <REPO>
 
 - `REPO`
-- `--mod`: Its releases are a content mod (.hmod), installed into every Horizon instance
 - `--no-auto-update`: Don't install its new releases when the launcher checks for updates
 
 MCP: `sources_add`.
@@ -884,6 +883,32 @@ Install the newest release of a source now (of every source with none named).
 - `REPO`
 
 MCP: `sources_update`.
+
+## `horizon-launcher modkit status`
+
+The installed version, the newest release, and whether it updates itself (the default).
+
+    horizon-launcher modkit status
+
+MCP: `modkit_status`.
+
+## `horizon-launcher modkit update`
+
+Install the newest release into every Horizon instance now.
+
+    horizon-launcher modkit update
+
+MCP: `modkit_update`.
+
+## `horizon-launcher modkit auto`
+
+Turn its automatic updates on or off.
+
+    horizon-launcher modkit auto <STATE>
+
+- `STATE`
+
+MCP: `modkit_auto`.
 
 ## `horizon-launcher mods list`
 

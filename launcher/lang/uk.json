@@ -1128,5 +1128,13 @@
   "GitHub sources": "Джерела GitHub",
   "Installed {tag}": "Встановлено: {tag}",
   "Nothing installed yet": "Ще нічого не встановлено",
-  "Update automatically": "Оновлювати автоматично"
+  "Update automatically": "Оновлювати автоматично",
+  "Horizon's versions": "Версії Horizon",
+  "Installed the modkit {version}.": "Modkit {version} встановлено.",
+  "Installed {version}": "Встановлено: {version}",
+  "Not installed": "Не встановлено",
+  "newest {version}": "найновіша {version}",
+  "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "Для Event Horizon: цей екземпляр грає збірку Horizon, яка не запускає modkit. Виберіть для нього збірку Event Horizon на сторінці «Версії».",
+  "Horizon Modkit · for Event Horizon": "Horizon Modkit · для Event Horizon",
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Бібліотека Lua, якою пишуться моди Event Horizon. Вона потрапляє, увімкнена, в кожен екземпляр, що грає збірку Event Horizon."
 }

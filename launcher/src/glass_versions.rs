@@ -133,6 +133,13 @@ impl Launcher {
         );
         page = page
             .children(self.import_error.clone().map(|e| notice(e, &t).mb(px(10.))))
+            .children(self.glass_local_builds(
+                "Event Horizon",
+                horizon_launcher::game_sources::is_event_horizon,
+                None,
+                on_disk,
+                cx,
+            ))
             .children(sources)
             .children(self.glass_local_builds(
                 "Native mod builds",
@@ -143,7 +150,7 @@ impl Launcher {
             ))
             .children(self.glass_local_builds(
                 "Imported builds",
-                build_import::is_imported,
+                horizon_launcher::game_sources::is_other_import,
                 Some(tr(
                     "Unsigned: you picked these programs yourself, and Horizon can't \
                     check where they came from. Updates never replace them.",
@@ -199,7 +206,8 @@ impl Launcher {
                 self.glass_version_card(&release.tag, title, &mut line, i == 0, on_disk, right)
             },
         );
-        page.child(list)
+        page.child(ui::card_heading(tr("Horizon's versions").to_string()).mb(px(10.)))
+            .child(list)
     }
 
     /// One version's card: its name (Newest on the first, In use on the one in use), `line`
@@ -454,7 +462,7 @@ impl Launcher {
                 } else {
                     self.glass_version_actions(&tag, cx).into_any_element()
                 };
-                let title = horizon_launcher::nightly::label(&tag)
+                let title = horizon_launcher::game_sources::label(&tag)
                     .or_else(|| build_import::label(&tag))
                     .unwrap_or_else(|| tag.trim_start_matches('v').to_string());
                 d = d.child(self.glass_version_card(&tag, title, &mut line, false, on_disk, right));

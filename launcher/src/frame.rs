@@ -120,11 +120,17 @@ impl Launcher {
                         trf("{version} is not installed", &[("version", own)]),
                     ),
                     (None, None, None) => (Tone::Off, tr("No version installed").into()),
-                    // Following the launcher's version, which has a newer one waiting.
-                    (None, Some(_), None) if self.updates.horizon.is_some() => (
-                        Tone::Accent(self.look.accent_soft),
-                        tr("Update available").into(),
-                    ),
+                    // Following the launcher's version, which has a newer one waiting. Not for an
+                    // Event Horizon build: Horizon's newer Nightly is no update of it.
+                    (None, Some(tag), None)
+                        if self.updates.horizon.is_some()
+                            && !horizon_launcher::game_sources::is_event_horizon(tag) =>
+                    {
+                        (
+                            Tone::Accent(self.look.accent_soft),
+                            tr("Update available").into(),
+                        )
+                    }
                     (None, Some(_), _) if !prepared => (Tone::Warn, tr("Needs preparing").into()),
                     (None, Some(tag), _) if self.native_build_of(tag).is_some() => {
                         let build = self.native_build_of(tag).unwrap_or_default();

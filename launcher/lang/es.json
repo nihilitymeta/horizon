@@ -1128,5 +1128,13 @@
   "GitHub sources": "Fuentes de GitHub",
   "Installed {tag}": "{tag} instalado",
   "Nothing installed yet": "Aún no hay nada instalado",
-  "Update automatically": "Actualizar automáticamente"
+  "Update automatically": "Actualizar automáticamente",
+  "Horizon's versions": "Versiones de Horizon",
+  "Installed the modkit {version}.": "Se instaló el modkit {version}.",
+  "Installed {version}": "{version} instalado",
+  "Not installed": "No instalado",
+  "newest {version}": "más reciente {version}",
+  "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "Para Event Horizon: esta instancia juega una compilación de Horizon, que no ejecuta el modkit. Elige una compilación de Event Horizon para ella en la página Versiones.",
+  "Horizon Modkit · for Event Horizon": "Horizon Modkit · para Event Horizon",
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "La biblioteca Lua con la que se escriben los mods de Event Horizon. Se instala, activada, en cada instancia que juega una compilación de Event Horizon."
 }

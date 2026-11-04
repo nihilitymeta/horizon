@@ -48,6 +48,7 @@ mod location_page;
 mod markdown;
 mod mcp;
 mod microsoft;
+mod modkit_page;
 mod modpacks_page;
 mod mods_page;
 mod mods_project;
@@ -465,6 +466,7 @@ struct Launcher {
     mods: mods_page::Mods,
     github: github_mods_page::Github,
     sources: sources_page::Sources,
+    modkit: modkit_page::Modkit,
     /// The instances, for the sidebar and Play, and their dialog (`instances_page.rs`).
     instances: instances_page::Instances,
     /// Home's Worlds section, of the selected instance (`worlds_page.rs`).
@@ -725,6 +727,7 @@ impl Launcher {
             mods: mods_page::Mods::new(cx),
             github: github_mods_page::Github::new(cx),
             sources: sources_page::Sources::new(cx),
+            modkit: modkit_page::Modkit::new(),
             instances: instances_page::Instances::default(),
             worlds: worlds_page::Worlds::default(),
             multiplayer: multiplayer_page::Multiplayer::default(),
@@ -1331,6 +1334,8 @@ impl Launcher {
                     }
                 }
                 Msg::SourcesUpdated(results) => {
+                    // The same check updates the modkit (`modkit::update_automatic`).
+                    self.modkit = modkit_page::Modkit::new();
                     if results.iter().any(Result::is_ok) {
                         self.installed = backend::installed();
                         // `game_sources::install` may have moved the selection to the new build.
@@ -1519,6 +1524,7 @@ impl Launcher {
         changed |= self.mods_tick();
         changed |= self.github_tick();
         changed |= self.sources_tick();
+        changed |= self.modkit_tick();
         changed |= self.native_log_read(cx);
         changed |= self.toast_tick();
         if let Some(sign_in) = &self.sign_in {
@@ -2100,7 +2106,7 @@ fn version_tag(tag: &str) -> Div {
         .line_height(px(28.))
         .font_weight(FontWeight::MEDIUM)
         .child(
-            horizon_launcher::nightly::label(tag)
+            horizon_launcher::game_sources::label(tag)
                 .or_else(|| build_import::label(tag))
                 .unwrap_or_else(|| tag.trim_start_matches('v').to_string()),
         )
@@ -3107,7 +3113,7 @@ impl Launcher {
         let label = self.selected().map_or_else(
             || tr("No version").into(),
             |tag| {
-                horizon_launcher::nightly::label(tag)
+                horizon_launcher::game_sources::label(tag)
                     .or_else(|| build_import::label(tag))
                     .unwrap_or_else(|| tag.clone())
             },
@@ -4800,6 +4806,13 @@ impl Launcher {
         // Builds made here, not downloaded, are listed apart from the releases.
         let page = page
             .children(self.local_builds(
+                "Event Horizon",
+                horizon_launcher::game_sources::is_event_horizon,
+                None,
+                &on_disk,
+                cx,
+            ))
+            .children(self.local_builds(
                 "Native mod builds",
                 native_mods::is_native,
                 None,
@@ -4808,7 +4821,7 @@ impl Launcher {
             ))
             .children(self.local_builds(
                 "Imported builds",
-                build_import::is_imported,
+                horizon_launcher::game_sources::is_other_import,
                 Some(tr(
                     "Unsigned: you picked these programs yourself, and Horizon can't \
                     check where they came from. Updates never replace them.",

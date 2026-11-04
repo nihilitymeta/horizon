@@ -557,7 +557,7 @@ pub(super) fn horizon_choices(releases: &[Release], installed: &[String]) -> Vec
 
 /// "Nightly · c9d474d", "Imported · 2026-10-30", or the tag.
 fn version_label(tag: &str) -> String {
-    horizon_launcher::nightly::label(tag)
+    horizon_launcher::game_sources::label(tag)
         .or_else(|| build_import::label(tag))
         .unwrap_or_else(|| tag.to_string())
 }

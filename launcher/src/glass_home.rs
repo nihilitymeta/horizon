@@ -438,7 +438,7 @@ impl Launcher {
                         "Stay on {version}",
                         &[(
                             "version",
-                            &horizon_launcher::nightly::label(tag).unwrap_or(tag.to_string()),
+                            &horizon_launcher::game_sources::label(tag).unwrap_or(tag.to_string()),
                         )],
                     ),
                     locked || !ready,
@@ -522,7 +522,7 @@ impl Launcher {
         let label = self.selected().map_or_else(
             || tr("No version").into(),
             |tag| {
-                horizon_launcher::nightly::label(tag)
+                horizon_launcher::game_sources::label(tag)
                     .or_else(|| build_import::label(tag))
                     .unwrap_or_else(|| tag.clone())
             },
@@ -590,7 +590,7 @@ impl Launcher {
             for tag in &self.installed {
                 let chosen = self.selected() == Some(tag);
                 let latest = follows.as_ref() == Some(tag);
-                let name = horizon_launcher::nightly::label(tag)
+                let name = horizon_launcher::game_sources::label(tag)
                     .or_else(|| build_import::label(tag))
                     .unwrap_or_else(|| tag.clone());
                 let note = if latest {

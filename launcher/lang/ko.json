@@ -1128,5 +1128,13 @@
   "GitHub sources": "GitHub 소스",
   "Installed {tag}": "{tag} 설치됨",
   "Nothing installed yet": "아직 설치된 것이 없음",
-  "Update automatically": "자동 업데이트"
+  "Update automatically": "자동 업데이트",
+  "Horizon's versions": "Horizon 버전",
+  "Installed the modkit {version}.": "Modkit {version}을(를) 설치했습니다.",
+  "Installed {version}": "{version} 설치됨",
+  "Not installed": "설치되지 않음",
+  "newest {version}": "최신 {version}",
+  "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "Event Horizon용: 이 인스턴스는 Modkit을 실행하지 않는 Horizon 빌드를 플레이합니다. 버전 페이지에서 Event Horizon 빌드를 선택하세요.",
+  "Horizon Modkit · for Event Horizon": "Horizon Modkit · Event Horizon용",
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Event Horizon 모드를 작성하는 Lua 라이브러리입니다. Event Horizon 빌드를 플레이하는 모든 인스턴스에 켜진 상태로 들어갑니다."
 }

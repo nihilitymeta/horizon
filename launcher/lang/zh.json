@@ -1128,5 +1128,13 @@
   "GitHub sources": "GitHub 来源",
   "Installed {tag}": "已安装 {tag}",
   "Nothing installed yet": "尚未安装任何内容",
-  "Update automatically": "自动更新"
+  "Update automatically": "自动更新",
+  "Horizon's versions": "Horizon 的版本",
+  "Installed the modkit {version}.": "已安装 Modkit {version}。",
+  "Installed {version}": "已安装 {version}",
+  "Not installed": "未安装",
+  "newest {version}": "最新 {version}",
+  "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "用于 Event Horizon：此实例运行的是 Horizon 的构建，它不会运行 Modkit。请在“版本”页面为它选择一个 Event Horizon 构建。",
+  "Horizon Modkit · for Event Horizon": "Horizon Modkit · 用于 Event Horizon",
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "编写 Event Horizon 模组所用的 Lua 库。它会安装并启用到每个运行 Event Horizon 构建的实例中。"
 }

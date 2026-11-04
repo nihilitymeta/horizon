@@ -189,12 +189,16 @@ impl Launcher {
         if self.mods.kind == PackKind::Mod && self.mods.java.is_none() {
             more.push(card(self.github_panel(cx)));
         }
+        // Event Horizon: the modkit its mods need, above everything else on a Horizon instance's Mods.
+        let modkit = (self.mods.kind == PackKind::Mod && self.mods.java.is_none())
+            .then(|| card(self.modkit_card(cx)).mb(px(10.)));
         more.extend(self.mods_installed_list(cx).map(card));
         div()
             .flex()
             .flex_col()
             .child(header)
             .children(notice)
+            .children(modkit)
             .child(cards)
             .child(
                 div()

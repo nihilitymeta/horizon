@@ -60,7 +60,7 @@ impl Launcher {
             return;
         }
         self.sources.message = Some(
-            game_sources::add(&text, game_sources::Kind::Game, true)
+            game_sources::add(&text, true)
                 .map(|repo| trf("Added {repo}.", &[("repo", &repo)]).to_string()),
         );
         if matches!(self.sources.message, Some(Ok(_))) {

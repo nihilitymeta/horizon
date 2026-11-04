@@ -1128,5 +1128,13 @@
   "GitHub sources": "GitHub-lähteet",
   "Installed {tag}": "{tag} asennettu",
   "Nothing installed yet": "Mitään ei ole vielä asennettu",
-  "Update automatically": "Päivitä automaattisesti"
+  "Update automatically": "Päivitä automaattisesti",
+  "Horizon's versions": "Horizonin versiot",
+  "Installed the modkit {version}.": "Modkit {version} asennettu.",
+  "Installed {version}": "{version} asennettu",
+  "Not installed": "Ei asennettu",
+  "newest {version}": "uusin {version}",
+  "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "Event Horizonille: tämä instanssi pelaa Horizonin koontiversiota, joka ei aja modkitiä. Valitse sille Event Horizonin koontiversio Versiot-sivulla.",
+  "Horizon Modkit · for Event Horizon": "Horizon Modkit · Event Horizonille",
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Lua-kirjasto, jolla Event Horizonin modit kirjoitetaan. Se asennetaan päällä olevana jokaiseen instanssiin, joka pelaa Event Horizonin koontiversiota."
 }

@@ -9,6 +9,7 @@ use horizon_launcher::github_mods;
 use horizon_launcher::i18n::{tr, trf};
 use horizon_launcher::instances;
 use horizon_launcher::loaders;
+use horizon_launcher::modkit;
 use horizon_launcher::native_mods;
 use horizon_launcher::native_status;
 use horizon_launcher::other_launchers;
@@ -201,9 +202,6 @@ enum SourcesCmd {
     /// Add a repository (https://github.com/<owner>/<repo>, or <owner>/<repo>)
     Add {
         repo: String,
-        /// Its releases are a content mod (.hmod), installed into every Horizon instance
-        #[arg(long = "mod")]
-        is_mod: bool,
         /// Don't install its new releases when the launcher checks for updates
         #[arg(long)]
         no_auto_update: bool,
@@ -214,6 +212,16 @@ enum SourcesCmd {
     Auto { repo: String, state: String },
     /// Install the newest release of a source now (of every source with none named)
     Update { repo: Option<String> },
+}
+
+#[derive(Subcommand)]
+enum ModkitCmd {
+    /// The installed version, the newest release, and whether it updates itself (the default)
+    Status,
+    /// Install the newest release into every Horizon instance now
+    Update,
+    /// Turn its automatic updates on or off
+    Auto { state: String },
 }
 
 #[derive(Subcommand)]
@@ -974,6 +982,12 @@ enum Cmd {
     Sources {
         #[command(subcommand)]
         action: Option<SourcesCmd>,
+    },
+    /// The modkit, the Lua library Event Horizon's mods need: installed into every Horizon
+    /// instance, its version tracked (docs/event-horizon-releases.md)
+    Modkit {
+        #[command(subcommand)]
+        action: Option<ModkitCmd>,
     },
     /// The mod browser: Java mods, resource packs and modpacks from Modrinth
     /// (CurseForge support is coming soon), each file checked against its checksum
@@ -1788,6 +1802,7 @@ fn execute(command: Cmd, as_json: bool) -> Result<(), String> {
         Cmd::Instance { action } => instance(action.unwrap_or(InstanceCmd::List), as_json)?,
         Cmd::Modpack { action } => modpack(action.unwrap_or(ModpackCmd::List), as_json)?,
         Cmd::Sources { action } => sources(action.unwrap_or(SourcesCmd::List), as_json)?,
+        Cmd::Modkit { action } => modkit_cmd(action.unwrap_or(ModkitCmd::Status), as_json)?,
         Cmd::Mods { action } => mods(action.unwrap_or(ModsCmd::List { instance: None }), as_json)?,
         Cmd::Servers { action } => servers(action.unwrap_or(ServersCmd::List), as_json)?,
         Cmd::Rust { action } => rust(action.unwrap_or(RustCmd::Status), as_json)?,
@@ -3641,6 +3656,58 @@ fn worlds(action: WorldsCmd, as_json: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn modkit_cmd(action: ModkitCmd, as_json: bool) -> Result<(), String> {
+    match action {
+        ModkitCmd::Status => {
+            let state = modkit::load();
+            let newest = modkit::latest(&github_mods::api);
+            if as_json {
+                json(serde_json::json!({
+                    "installed": state.installed,
+                    "auto_update": state.auto_update,
+                    "newest": newest.as_ref().ok().map(|r| &r.tag),
+                    "error": newest.as_ref().err(),
+                }));
+                return Ok(());
+            }
+            match &state.installed {
+                Some(i) => println!("The modkit {} is installed ({}).", i.version, i.tag),
+                None => println!("The modkit is not installed."),
+            }
+            match newest {
+                Ok(r) => println!("Newest release: {}.", r.tag),
+                Err(e) => println!("Newest release: unknown ({e})"),
+            }
+            println!(
+                "It {}.",
+                if state.auto_update {
+                    "updates itself"
+                } else {
+                    "updates by hand"
+                }
+            );
+        }
+        ModkitCmd::Update => {
+            let release = modkit::latest(&github_mods::api)?;
+            let version = modkit::install(&release)?;
+            println!("Installed the modkit {version} into every Horizon instance.");
+        }
+        ModkitCmd::Auto { state } => {
+            let on = on_off(&state)?;
+            modkit::set_auto_update(on)?;
+            println!(
+                "The modkit {}.",
+                if on {
+                    "updates itself"
+                } else {
+                    "updates by hand"
+                }
+            );
+        }
+    }
+    Ok(())
+}
+
 fn sources(action: SourcesCmd, as_json: bool) -> Result<(), String> {
     match action {
         SourcesCmd::List => {
@@ -3660,24 +3727,15 @@ fn sources(action: SourcesCmd, as_json: bool) -> Result<(), String> {
                     } else {
                         "updates by hand"
                     };
-                    let kind = match s.kind {
-                        game_sources::Kind::Game => "game builds",
-                        game_sources::Kind::Mod => "a mod",
-                    };
-                    println!("{} ({kind}): {installed}, {auto}", s.repo);
+                    println!("{}: {installed}, {auto}", s.repo);
                 }
             }
         }
         SourcesCmd::Add {
             repo,
-            is_mod,
             no_auto_update,
         } => {
-            let kind = match is_mod {
-                true => game_sources::Kind::Mod,
-                false => game_sources::Kind::Game,
-            };
-            let repo = game_sources::add(&repo, kind, !no_auto_update)?;
+            let repo = game_sources::add(&repo, !no_auto_update)?;
             println!(
                 "Added {repo}. Install its newest release: horizon-launcher sources update {repo}"
             );
