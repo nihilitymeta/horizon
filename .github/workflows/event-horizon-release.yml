@@ -52,7 +52,11 @@ jobs:
       - name: Build the launcher
         shell: bash
         working-directory: launcher
+        # The release it belongs to: the launcher updates itself to a newer eh-v release (game_sources.rs).
+        env:
+          HORIZON_LAUNCHER_TAG: ${{ github.ref_name }}
         run: |
+          export HORIZON_LAUNCHER_VERSION="${HORIZON_LAUNCHER_TAG#eh-v}"
           [[ -n "$HORIZON_MSA_CLIENT_ID" ]] || echo "::warning::HORIZON_MSA_CLIENT_ID is not set: this launcher can't sign in to Microsoft, so it can't start the game"
           cargo build --release --locked
       - name: The game starts

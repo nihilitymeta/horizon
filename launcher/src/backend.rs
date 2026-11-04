@@ -2732,7 +2732,11 @@ fn launcher_update_from(releases: &[Release], own: &str) -> Option<Release> {
 pub fn releases_and_updates(
     on_releases: impl FnOnce(Result<Vec<Release>, String>),
 ) -> Result<Updates, String> {
-    releases_and_updates_with(release_list, installed, launcher_releases_in, on_releases)
+    let mut updates =
+        releases_and_updates_with(release_list, installed, launcher_releases_in, on_releases)?;
+    // Event Horizon: this launcher updates from Event Horizon's releases, never Horizon's.
+    updates.launcher = crate::game_sources::launcher_update(&crate::github_mods::api);
+    Ok(updates)
 }
 
 fn releases_and_updates_with(
@@ -3075,7 +3079,13 @@ pub fn stage_update(release: &Release, progress: impl Fn(f32)) -> Result<Option<
     {
         return Ok(None);
     }
-    let sha256 = signed_digest(&release.tag, launcher_asset().unwrap_or_default())?;
+    // An Event Horizon release is checked against the SHA-256 GitHub lists for it; Horizon's
+    // against their signed checksums.
+    let sha256 = if crate::game_sources::is_event_horizon_tag(&release.tag) {
+        crate::game_sources::launcher_digest(&release.tag, &crate::github_mods::api)?
+    } else {
+        signed_digest(&release.tag, launcher_asset().unwrap_or_default())?
+    };
     let work = update_work_dir();
     let _ = fs::remove_dir_all(&work);
     fs::create_dir_all(&work).map_err(|e| e.to_string())?;

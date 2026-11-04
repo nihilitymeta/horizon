@@ -55,10 +55,13 @@ automatically**:
 To install a source's newest release at once, press **Update**. The modkit publishes a release when its own `v…` tag
 is pushed (the modkit's `.github/workflows/release.yml`).
 
-Two switches are off in Event Horizon's launcher, so nothing upstream replaces the developer's build:
+Two switches are off by default in Event Horizon's launcher:
 
-- **Install new versions automatically** (Versions page): on, it would install and select Horizon's own new releases.
-- **Update the launcher automatically** (Settings): on, Horizon's launcher would replace this one.
+- **Install new versions automatically** (Versions page): leave it off. On, it would install and select Horizon's own
+  new releases over Event Horizon's.
+- **Update the launcher automatically** (Settings): the launcher updates itself from Event Horizon's releases, never
+  Horizon's, when a newer `eh-v` release is out. Turn it on to have that happen by itself; off, the Settings page offers
+  the Update button. A launcher you built yourself never updates itself.
 
 The command line does the same as the card: `horizon-launcher sources list`, `sources update`,
 `sources auto <owner>/<repo> on|off`, `sources add <owner>/<repo>` (with `--mod` for a repository that

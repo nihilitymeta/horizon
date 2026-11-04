@@ -68,6 +68,8 @@ pub struct Release {
     /// The archive for this platform.
     pub asset: String,
     pub url: String,
+    /// Its size in bytes, as GitHub lists it.
+    pub size: u64,
     /// The SHA-256 GitHub lists for it, when it does: the download must match.
     pub sha256: Option<String>,
 }
@@ -221,6 +223,7 @@ fn pick(
                     tag: tag.clone(),
                     asset: name.to_owned(),
                     url: url.to_owned(),
+                    size: a["size"].as_u64().unwrap_or(0),
                     sha256: a["digest"]
                         .as_str()
                         .and_then(|d| d.strip_prefix("sha256:"))
@@ -447,6 +450,65 @@ pub fn updates(sources: &[Source], api: Api) -> Vec<(Source, Result<Release, Str
         .collect()
 }
 
+/// Event Horizon's release tags: `eh-v<version>`.
+pub const TAG_PREFIX: &str = "eh-v";
+
+pub fn is_event_horizon_tag(tag: &str) -> bool {
+    tag.starts_with(TAG_PREFIX)
+}
+
+/// An `eh-v<major>.<minor>.<patch>` tag's numbers, missing ones as zero; None for any other tag.
+fn numbers(tag: &str) -> Option<[u64; 3]> {
+    let version = tag.strip_prefix(TAG_PREFIX)?;
+    let version = version.split(['-', '+']).next().unwrap_or(version);
+    let mut out = [0; 3];
+    for (slot, part) in out.iter_mut().zip(version.split('.')) {
+        *slot = part.parse().ok()?;
+    }
+    Some(out)
+}
+
+/// The release this launcher was built for, when the release workflow built it
+/// (`HORIZON_LAUNCHER_TAG`); None for a launcher built by hand, which never updates itself.
+fn own_tag() -> Option<&'static str> {
+    option_env!("HORIZON_LAUNCHER_TAG").filter(|t| is_event_horizon_tag(t))
+}
+
+fn newer(latest: &str, own: Option<&str>) -> bool {
+    match (numbers(latest), own.and_then(numbers)) {
+        (Some(latest), Some(own)) => latest > own,
+        _ => false,
+    }
+}
+
+/// The launcher's own update, from Event Horizon's releases, never Horizon's: the newest release
+/// with an archive for this computer, when it is newer than the one this launcher came with.
+pub fn launcher_update(api: Api) -> Option<backend::Release> {
+    let found = latest(DEFAULT, Kind::Game, api).ok().flatten()?;
+    newer(&found.tag, own_tag()).then(|| backend::Release {
+        name: format!("Event Horizon {}", &found.tag[TAG_PREFIX.len()..]),
+        body: String::new(),
+        date: String::new(),
+        time: String::new(),
+        asset: Some((found.url.clone(), found.size)),
+        prerelease: false,
+        nightly: None,
+        tag: found.tag,
+    })
+}
+
+/// The SHA-256 GitHub lists for Event Horizon release `tag`'s archive for this computer: what a
+/// launcher update from it is checked against (Horizon's releases are checked against their signed
+/// checksums instead).
+pub fn launcher_digest(tag: &str, api: Api) -> Result<String, String> {
+    let platform = platform().ok_or("Event Horizon has no launcher for this computer.")?;
+    let release = api(&format!("repos/{DEFAULT}/releases/tags/{tag}"))?
+        .ok_or_else(|| format!("Event Horizon has no release {tag}."))?;
+    pick(DEFAULT, Kind::Game, &release, platform)?
+        .sha256
+        .ok_or_else(|| format!("GitHub lists no checksum for Event Horizon {tag}: not installed."))
+}
+
 /// What the launcher's update check does: installs each new release of a source that updates
 /// itself. Returns what it installed, and what failed.
 pub fn update_automatic() -> Vec<Result<String, String>> {
@@ -481,6 +543,18 @@ pub fn update_automatic() -> Vec<Result<String, String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_launcher_updates_only_to_a_newer_event_horizon_release() {
+        assert!(newer("eh-v0.2.0", Some("eh-v0.1.9")));
+        assert!(newer("eh-v0.10.0", Some("eh-v0.9.0")));
+        assert!(!newer("eh-v0.1.0", Some("eh-v0.1.0")));
+        assert!(!newer("eh-v0.1.0", Some("eh-v0.2.0")));
+        // A launcher built by hand, or one of Horizon's tags, never updates from here.
+        assert!(!newer("eh-v0.2.0", None));
+        assert!(!newer("v0.3.0", Some("eh-v0.1.0")));
+        assert!(is_event_horizon_tag("eh-v0.1.0") && !is_event_horizon_tag("launcher@0.2.40"));
+    }
 
     #[test]
     fn a_new_launcher_follows_event_horizon_by_itself() {
