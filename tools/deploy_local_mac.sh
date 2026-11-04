@@ -12,11 +12,12 @@ set -euo pipefail
 #   tools/deploy_local_mac.sh [--no-build] [--no-select] [--profile fast|release]
 #   tools/deploy_local_mac.sh --launcher [--version X.Y.Z]
 #
-# --launcher builds the launcher (launcher/, release) and installs it as
-# ~/Applications/Horizon.app, signed ad hoc, swapping the bundle in one rename
-# so a running launcher keeps its files. Its version is the newest upstream
-# launcher@X.Y.Z tag (fetched if missing), so Settings says "up to date" rather
-# than offering the release of the same code; --version overrides it.
+# --launcher builds Event Horizon's launcher (launcher/, release) and installs
+# it as ~/Applications/Horizon.app, signed ad hoc, swapping the bundle in one
+# rename so a running launcher keeps its files. Its version is launcher/
+# Cargo.toml's; --version overrides it. A launcher built here never updates
+# itself (game_sources.rs). Microsoft sign-in needs HORIZON_MSA_CLIENT_ID in the
+# environment (docs/event-horizon-sign-in.md); without it the build says so.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -45,11 +46,10 @@ export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 
 if [[ "$LAUNCHER" == true ]]; then
     if [[ -z "$VERSION" ]]; then
-        [[ -n "$(git tag -l 'launcher@*')" ]] || git fetch -q upstream --tags || true
-        VERSION="$(git tag -l 'launcher@*' --sort=-v:refname | head -1)"
-        VERSION="${VERSION#launcher@}"
+        VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/launcher/Cargo.toml" | head -1)"
     fi
-    [[ -n "$VERSION" ]] || { echo "Error: no launcher@X.Y.Z tag found; pass --version" >&2; exit 1; }
+    [[ -n "$VERSION" ]] || { echo "Error: no version in launcher/Cargo.toml; pass --version" >&2; exit 1; }
+    [[ -n "${HORIZON_MSA_CLIENT_ID:-}" ]] || echo "Note: HORIZON_MSA_CLIENT_ID is not set: this launcher can't sign in (docs/event-horizon-sign-in.md)." >&2
     APP="$HOME/Applications/Horizon.app"
     STAGING="$APP.staging"
     echo "==> Building the launcher as $VERSION (release)..."

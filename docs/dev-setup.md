@@ -76,6 +76,19 @@ three through `HORIZON=~/src/horizon`. The first build takes a while; later ones
 To play the build from the launcher, install it as a local version: `tools/deploy_local_mac.sh` on macOS. On
 Linux, use the launcher's Versions page, **Import a game build…**, and pick `target/fast/horizon-client`.
 
+### Build the launcher yourself
+
+Event Horizon's releases are for Windows. On a Mac, or on Linux, build Event Horizon's launcher from the checkout:
+
+```sh
+export HORIZON_MSA_CLIENT_ID=<client id>       # for Microsoft sign-in (event-horizon-sign-in.md)
+tools/deploy_local_mac.sh --launcher           # macOS: builds it and installs it as ~/Applications/Horizon.app
+(cd launcher && cargo build --release)         # Linux: launcher/target/release/horizon-launcher
+```
+
+The build goes to `launcher/target/`, a workspace of its own beside the game's `target/`. A launcher built this way
+never updates itself; build it again after you pull.
+
 ## 5. Write mods
 
 A Lua mod needs no engine build. Keep the build you have while you write mods, and run it with the modkit and the
@@ -116,6 +129,7 @@ The checkout has two build folders, and nothing else uses disk:
 |---|---|---|
 | `target/fast` | the game, `cargo build --profile fast` | 4 GB |
 | `target/debug` | the checks and tests | 30 GB |
+| `launcher/target` | the launcher (`release` for installing, `debug` for its tests) | 5–15 GB |
 
 - The checks build with `CARGO_INCREMENTAL=0`. The incremental cache speeds up small edits only, and grows without
   limit.
