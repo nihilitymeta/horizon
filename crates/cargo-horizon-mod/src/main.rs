@@ -265,7 +265,15 @@ fn build_in(root: &Path) -> Result<PathBuf, String> {
     let content = Content::read(root, &manifest)?;
     let mut reader = content.reader()?;
     let mut files = Vec::with_capacity(content.files.len() + content.scripts.len());
-    for name in content.files.iter().chain(&content.scripts) {
+    // The registry's files are not packed: the game makes them again from
+    // scripts/registry.lua when it reads the mod (and refuses a mod that
+    // ships them as files too).
+    for name in content
+        .files
+        .iter()
+        .filter(|name| !content.is_registered(name))
+        .chain(&content.scripts)
+    {
         files.push((name.as_str(), reader.read(name)?));
     }
     let files: Vec<(&str, &[u8])> = files.iter().map(|(n, b)| (*n, b.as_slice())).collect();

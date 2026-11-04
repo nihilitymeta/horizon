@@ -723,6 +723,15 @@ pub struct Content {
 }
 
 /// Reads a mod's content files ([`Content::reader`]).
+impl Content {
+    /// Whether `name` is a file `scripts/registry.lua` registered rather than one of the
+    /// mod's own: the game makes it again when it reads the mod, so a package carries only
+    /// the mod's own files.
+    pub fn is_registered(&self, name: &str) -> bool {
+        self.registered.contains_key(name)
+    }
+}
+
 pub struct FileReader<'a> {
     from: ReadFrom<'a>,
     registered: &'a BTreeMap<String, Vec<u8>>,
