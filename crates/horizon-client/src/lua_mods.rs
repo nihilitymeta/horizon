@@ -1039,8 +1039,11 @@ pub fn discover(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
         dev.push(std::path::absolute(&dir).unwrap_or(dir));
     }
     let here = std::env::current_dir().unwrap_or_default();
-    let enabled = crate::mod_list::ModList::load(&crate::logging::shared_dir(&here)).enabled;
-    let mut paths = horizon_mods::find(&here.join(crate::mod_list::DIR));
+    // The game folder: `--game-dir` when given (the game moves there only after this runs, so a
+    // game started elsewhere, as horizon-ctl starts it, still finds its installed mods), else here.
+    let root = game_dir.clone().unwrap_or_else(|| here.clone());
+    let enabled = crate::mod_list::ModList::load(&crate::logging::shared_dir(&root)).enabled;
+    let mut paths = horizon_mods::find(&root.join(crate::mod_list::DIR));
     paths.retain(|p| !dev.contains(p));
     paths.extend(dev.iter().cloned());
     // Every mod that is on, scripted or not: a dependency may be content only.
