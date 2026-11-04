@@ -48,14 +48,15 @@ The launcher's Versions page lists Event Horizon's builds in a section of their 
 **Event Horizon 0.1.0**, a build you made from the checkout as **Event Horizon · local <commit>**. Its **GitHub
 sources** card has Event Horizon's repository on it, set to **Update automatically**: at each update check, the
 launcher installs a new release on the Horizon version's game files, and plays it. To install the newest release at
-once, press **Update**.
+once, press **Update** on the card. The Home page's Play button says **Update** only when the source that installed the
+build has a newer release: a build you made yourself, and Horizon's newer Nightlies, are never updates of one.
 
 The **Horizon Modkit** card, at the top of the Mods page, installs the modkit that Event Horizon's mods need: its
 newest `horizon_modkit.hmod` goes into every instance that plays an Event Horizon build, turned on, so a mod that
 depends on it runs with no `--dev-mod`. The card shows the version installed and the newest release, and has its own
 **Update automatically** switch. The modkit publishes a release when its own `v…` tag is pushed (the modkit's
 `.github/workflows/release.yml`). From the command line: `horizon-launcher modkit`, `modkit update`,
-`modkit auto on|off`.
+`modkit auto on|off`, and `modkit install <file>` for a `horizon_modkit.hmod` you built yourself.
 
 Two switches are off by default in Event Horizon's launcher:
 

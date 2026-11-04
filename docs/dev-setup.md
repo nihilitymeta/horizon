@@ -137,6 +137,25 @@ The checkout has two build folders, and nothing else uses disk:
 - The launcher keeps the build you chose and the newest nightly. Remove old local builds with
   `horizon-launcher remove <version>`.
 
+## What lives outside the repository
+
+The repositories on GitHub hold all of Event Horizon's code, docs and history: a clone of `whos-carmen/horizon`,
+`horizon-modkit` and `horizon-parasite-mod` brings back everything you wrote. A few things are not in them, by design or
+by necessity. Set them up again on a new machine:
+
+| What | Where | Why it isn't in git |
+|---|---|---|
+| The prepared vanilla data | `~/src/horizon-resources/26.3` | Mojang's files: never committed. Step 3 makes it again |
+| The launcher's data: versions, instances, accounts, settings | the launcher's data folder | a player's own data, and account tokens |
+| Your worlds, options and installed mods | the game folder (`~/Library/Application Support/horizon` on macOS) | a player's own data |
+| The Microsoft sign-in client ID | your shell profile, and the repository variable `HORIZON_MSA_CLIENT_ID` | a setting, set once ([event-horizon-sign-in.md](event-horizon-sign-in.md)) |
+| Claude Code's memory and settings | `~/.claude/` | the agent's own notes about this project, on this machine |
+| Drafts of issues not posted yet | `~/src/horizon-upstream-drafts` | not meant to be public yet |
+
+GitHub's own settings for the repository are kept by GitHub, not in a file: the default branch is `engine-work`,
+upstream's workflows are turned off (Actions tab), and Event Horizon's own release workflow is
+`.github/workflows/event-horizon-release.yml`.
+
 ## Sync upstream
 
 A sync merges upstream's changes into `engine-work`. Sync when upstream has something you want, not on a schedule;

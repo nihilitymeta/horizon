@@ -80,6 +80,10 @@ auto reconnect and own name tag are registered as hook mods.
 **Debug overlay** (`archive/debug-overlay`). F3 shows process memory and frame lows. Code:
 `crates/horizon-client/src/debug_overlay.rs`, `debug_chart.rs`.
 
+**Event Horizon's own name and no telemetry** (since 2026-11-04). The title screen says `Event Horizon 26.3 (Rust)`.
+The game and the launcher send nothing to Horizon's servers, the "I'm playing" ping included, unless
+`HORIZON_TELEMETRY_URL` names a server (`crates/horizon-telemetry/src/lib.rs`, `endpoint`).
+
 **Anti-Lag 2** (`archive/anti-lag`). AMD Anti-Lag 2 through `VK_AMD_anti_lag`, with Vulkan and an AMD driver only;
 it does nothing elsewhere. Graphics > Advanced > Frames; registers `anti_lag`.
 
@@ -97,10 +101,11 @@ additions:
   automatically** switch. Code: `launcher/src/game_sources.rs`, `sources_page.rs`; `horizon-launcher sources`.
 - **Event Horizon's builds named as such**: the Versions page lists them in a section of their own, as
   `Event Horizon 0.1.0` or `Event Horizon · local <commit>`, everywhere a version is named; Horizon's newer Nightly
-  is no "Update available" for them. Code: `game_sources::label`.
+  is no "Update available" for them, and the Play button offers an update only from the GitHub source that installed
+  the build. Code: `game_sources::label`, `game_sources::pending`.
 - **The modkit card** on the Mods page: the modkit installed into every instance that plays an Event Horizon build,
   its version tracked, with its own update switch. Code: `launcher/src/modkit.rs`, `modkit_page.rs`;
-  `horizon-launcher modkit`.
+  `horizon-launcher modkit`, and `modkit install <file>` for a `.hmod` you built.
 - **Nothing updates itself unless turned on**: installing new Horizon versions and the launcher's own self-update
   are off by default, so nothing upstream replaces an Event Horizon build (Settings > Launcher, or
   `horizon-launcher settings auto-update-launcher on`)
