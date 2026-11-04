@@ -786,6 +786,24 @@ impl RecipeIndex {
                 Some((format!("minecraft:{}", file.name), v))
             })
             .collect();
+        // The content mods' recipes, `<ns>:<name>`, as the crafting loader
+        // reads them: in the book and known to `/recipe` like vanilla's.
+        for namespace in horizon_items::content_namespaces::namespaces(root) {
+            let dir = root.join(format!("data/{namespace}/recipe"));
+            let Ok(folder) = crate::json_folder::read(&dir) else {
+                continue;
+            };
+            for file in &folder.files {
+                let Some(v) = file
+                    .bytes()
+                    .ok()
+                    .and_then(|b| serde_json::from_slice::<serde_json::Value>(b).ok())
+                else {
+                    continue;
+                };
+                sources.push((format!("{namespace}:{}", file.name), v));
+            }
+        }
         for (id, files) in overlay.kind("recipe") {
             match serde_json::from_slice::<serde_json::Value>(PackOverlay::top(files)) {
                 Ok(v) => match sources.iter_mut().find(|(n, _)| n == id) {
@@ -1174,6 +1192,61 @@ mod tests {
             toast("minecraft:coast_trim"),
             (Some("minecraft:smithing_table"), None)
         );
+    }
+    #[test]
+    fn a_content_mods_recipes_are_in_the_index_by_their_qualified_ids() {
+        let root =
+            std::env::temp_dir().join(format!("horizon-mod-recipe-index-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for (dir, name, json) in [
+            (
+                "data/minecraft/recipe",
+                "stick",
+                r#"{"type":"minecraft:crafting_shaped","result":{"id":"minecraft:stick"}}"#,
+            ),
+            (
+                "data/ruby/recipe",
+                "ruby_block",
+                r#"{"type":"minecraft:crafting_shaped","result":{"id":"ruby:ruby_block"}}"#,
+            ),
+            (
+                "data/ruby/recipe",
+                "ruby_from_smelting",
+                r#"{"type":"minecraft:smelting","result":{"id":"ruby:ruby"}}"#,
+            ),
+            // A namespace the root does not list is not a loaded mod's.
+            (
+                "data/other/recipe",
+                "thing",
+                r#"{"type":"minecraft:crafting_shaped","result":{"id":"other:thing"}}"#,
+            ),
+        ] {
+            let dir = root.join(dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join(format!("{name}.json")), json).unwrap();
+        }
+        std::fs::write(
+            root.join(horizon_items::content_namespaces::MARKER),
+            r#"["ruby"]"#,
+        )
+        .unwrap();
+        let index = RecipeIndex::load(&root, &PackOverlay::NONE);
+        std::fs::remove_dir_all(&root).unwrap();
+        let mut ids: Vec<&String> = index.ids().collect();
+        ids.sort();
+        assert_eq!(
+            ids,
+            [
+                "minecraft:stick",
+                "ruby:ruby_block",
+                "ruby:ruby_from_smelting"
+            ]
+        );
+        assert_eq!(
+            index.toast_station("ruby:ruby_from_smelting"),
+            Some("minecraft:furnace")
+        );
+        assert_eq!(index.result("ruby:ruby_block"), Some("ruby:ruby_block"));
     }
     #[test]
     fn small_recipes_are_centred_in_the_grid() {
