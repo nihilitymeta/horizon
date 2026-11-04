@@ -308,17 +308,32 @@ deals to anything it hits, as `thrown` damage from the thrower (the snowball's 3
 { "template": "minecraft:snowball", "item": "ruby:ember", "damage": 2.0 }
 ```
 
-A mob type is its template with the mod's own values: `attributes` that differ from the template's, by name
-(`max_health`, `movement_speed`, `attack_damage`, `follow_range`, `armor`, `knockback_resistance`, `scale`…), `size`
-(`width`, `height`, and `eye_height`, else the template's at the same fraction of the height), `texture`
-(`<id>:entity/<name>`, the mod's `assets/<id>/textures/entity/<name>.png`, laid out as the template's texture; the
-template's without one), `goals`: `"template"` (the default) gives it the species' goals, `"none"` leaves both goal
-selectors empty for the mod's scripts to fill ([lua-bindings.md](lua-bindings.md), `mob_ai_register`;
-[mob-ai-hooks.md](mob-ai-hooks.md)), `flags` of its nature that differ from the template's: `burns_in_day`,
-`fire_immune`, `fall_immune`, `water_sensitive`, and a look of its own: `model` (`<id>:entity/<name>`, the mod's
-`assets/<id>/models/entity/<name>.json`, parts holding cubes as a vanilla layer is written), `animation` (the set
-that moves the parts, by name: `zombie`, `quadruped`, `iron_golem`...) and `sounds` (`ambient`, `hurt`, `death`,
-`step`), each the template's without one ([mob-ai-hooks.md](mob-ai-hooks.md)):
+It is the entity type `<id>:<name>`, with its network id after vanilla's. Using its item throws it as a snowball is
+thrown: same speed, spread, sound and cooldown, and one item used outside creative. It flies as a snowball, breaks on
+what it hits with its item's crumbs, and is drawn as its item's model (`ThrownItemRenderer`). Its name is the translation
+`entity.<id>.<name>`. It works in single player and on LAN with the same mods. Dedicated servers share that code,
+untested so far. Clients join a server only with the same mods' entity types, as with its blocks. It is saved with its
+chunk, `/summon <id>:<name>` makes one, and it has its template's row in `entity-types.json`. A world opened without the
+mod keeps the saved ones as they are, frozen in place. Not yet: a dispenser doesn't throw it, and a vanilla client on a
+server with it may be disconnected when one spawns.
+
+A mob type is its template with the mod's own values. Each field falls back to the template's when it is left out
+([mob-ai-hooks.md](mob-ai-hooks.md)):
+
+- `attributes`: the attributes that differ, by name, such as `max_health`, `movement_speed`, `attack_damage`,
+  `follow_range`, `armor`, `knockback_resistance` and `scale`
+- `size`: `width`, `height`, and `eye_height`; without an eye height, the template's is used at the same fraction of
+  the height
+- `texture`: `<id>:entity/<name>`, the mod's `assets/<id>/textures/entity/<name>.png`, laid out as the template's
+  texture
+- `goals`: `"template"`, the default, gives it the species' goals; `"none"` leaves both goal selectors empty for the
+  mod's scripts to fill ([lua-bindings.md](lua-bindings.md), `mob_ai_register`)
+- `flags`: the parts of its nature that differ from the template's: `burns_in_day`, `fire_immune`, `fall_immune`
+  and `water_sensitive`
+- `model`: `<id>:entity/<name>`, the mod's `assets/<id>/models/entity/<name>.json`, with parts holding cubes as a
+  vanilla layer is written
+- `animation`: the set that moves the parts, by name, such as `zombie`, `quadruped` or `iron_golem`
+- `sounds`: sound events by `ambient`, `hurt`, `death` and `step`
 
 ```json
 { "template": "minecraft:zombie",
@@ -329,21 +344,13 @@ that moves the parts, by name: `zombie`, `quadruped`, `iron_golem`...) and `soun
   "flags": { "burns_in_day": false } }
 ```
 
-It moves, fights, sounds, animates and is drawn as its template (the model is the template's, so the texture follows
-the template's layout), burns, drowns, converts and breeds as the template's species does, and `/summon <id>:<name>`
-makes one. Its name is the translation `entity.<id>.<name>`. It drops its own loot table,
-`data/<id>/loot_table/entities/<name>.json`, or the template's without one. It spawns on its own where a
-`neoforge:add_spawns` biome modifier puts it, and `<id>:<name>_spawn_egg`, an item of the mod's, is its spawn egg
-([mob-ai-hooks.md](mob-ai-hooks.md)).
+It moves, fights, sounds, animates and is drawn as its template. The model is the template's, so the texture follows
+the template's layout. It burns, drowns, converts and breeds as the template's species does, and
+`/summon <id>:<name>` makes one. Its name is the translation `entity.<id>.<name>`.
 
-It is the entity type `<id>:<name>`, with its network id after vanilla's. Using its item throws it as a snowball is
-thrown: same speed, spread, sound and cooldown, and one item used outside creative. It flies as a snowball, breaks on
-what it hits with its item's crumbs, and is drawn as its item's model (`ThrownItemRenderer`). Its name is the translation
-`entity.<id>.<name>`. It works in single player and on LAN with the same mods. Dedicated servers share that code,
-untested so far. Clients join a server only with the same mods' entity types, as with its blocks. It is saved with its
-chunk, `/summon <id>:<name>` makes one, and it has its template's row in `entity-types.json`. A world opened without the
-mod keeps the saved ones as they are, frozen in place. Not yet: a dispenser doesn't throw it, and a vanilla client on a
-server with it may be disconnected when one spawns.
+It drops its own loot table, `data/<id>/loot_table/entities/<name>.json`, or the template's without one. It spawns
+on its own where a `neoforge:add_spawns` biome modifier puts it, and `<id>:<name>_spawn_egg`, an item of the mod's,
+is its spawn egg ([mob-ai-hooks.md](mob-ai-hooks.md)).
 
 #### Menu types
 

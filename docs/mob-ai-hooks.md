@@ -1,59 +1,102 @@
-# Mob AI for mods
+# Mob AI for Mods
 
-Status: the hook point (`mob_ai_register`, pending its API number), the goal adapter for mods and mobs declared in a
-content mod's data (a vanilla template with the mod's attributes, size, texture and goals) are built; the rest is the plan. Branch
-`mob-ai-hooks` of whos-carmen/horizon, `main` + this one concern. Written for horizon-parasite-mod, whose first needs
-are custom blocks and custom mob behaviour.
+This page describes how mods change what mobs do: a hook point that runs as a mob's goals are set up, a goal type
+that mods can write without borrowing the mob, and mobs that a content mod declares in its data. It lives on the
+`mob-ai-hooks` branch of whos-carmen/horizon, which is `main` plus this one concern. It was written for
+horizon-parasite-mod, which needs custom blocks and custom mob behaviour first.
 
-## What exists
+| Part | Status |
+|---|---|
+| The `mob_ai_register` hook point | built; its API number is not stamped yet |
+| Goals for mods: `MobView`, `Actions`, `NativeBehaviour`, `NativeGoal` | built |
+| Mobs declared in a content mod's data | built |
+| Natural spawning and spawn eggs for those mobs | built |
+| Models, animations and sounds for those mobs | built |
+| The rest | [planned](#plan) |
 
-- A mob's behaviour is a `GoalSelector` of `Goal`s (`crates/horizon-client/src/mobs/goals.rs`: `can_use`,
-  `can_continue`, `start`, `tick`, `stop`, flags) plus a second selector of target goals, filled per species in
-  `mobs/ai.rs` (`register`) and the family files (`mobs/cube.rs`, `mobs/raider.rs`…). Some species run a brain instead
-  (`villager_brain.rs`, `warden_brain.rs`…).
-- Hook points touch mobs from the outside only: `mob_spawned`, `mob_killed`, `entity_tick_pre/post`, the draw hooks
-  (`mob_submit`, `mob_layer`) and the helpers (`native_spawn_mob` with `no_ai`, `native_teleport_mob`,
-  `native_push_mob`). Nothing reaches the goals. The documented way to make "a mod's own creature" is a vanilla mob,
-  redrawn, steered by hand from a tick hook ([native-mods.md](native-mods.md#mobs-drawn-by-a-mod)).
+## How mobs think
 
-## Hook 1: `mob_ai_register` (built)
+A mob's behaviour is a `GoalSelector` of `Goal`s, plus a second selector of target goals
+(`crates/horizon-client/src/mobs/goals.rs`). A goal has `can_use`, `can_continue`, `start`, `tick`, `stop` and the
+control flags it locks. `mobs/ai.rs` (`register`) and the family files, such as `mobs/cube.rs` and
+`mobs/raider.rs`, fill the selectors for each species. Some species run a brain instead, such as
+`villager_brain.rs` and `warden_brain.rs`.
 
-`horizon_client_lib::mobs::ai::native_mob_ai_register(mob: &mut Mob)`, a free function wired through
-`native_client_hooks` like `native_living_breathe`. It runs in `Mob::new` right after the species' own `register`, so
-the mob's vanilla goals are in `mob.ai.goals` and `mob.ai.targets` and nothing has ticked yet. `Mob::new_client`, the
-constructor of the mobs a client only draws (a server's mob seen over the network, the first-person player model, a
-spawner's display), registers the species' goals too but tells no mod. A mod adds a goal
-(`mob.ai.goals.add(priority, goal)`), adds a target goal, or clears a selector and rebuilds it. Trait mods get
-`MobAiRegisterEvent { mob }` and the types `Mob`, `MobType`, `Goal`, `GoalSelector` and `GoalCx` through
-`horizon_client::mod_api`. One call a mob, server side only.
+Before this branch, hook points touched mobs only from the outside: `mob_spawned`, `mob_killed`,
+`entity_tick_pre` and `entity_tick_post`, the draw hooks `mob_submit` and `mob_layer`, and the helpers
+`native_spawn_mob` (with `no_ai`), `native_teleport_mob` and `native_push_mob`. Nothing reached the goals. The
+documented way to make a mod's own creature was a vanilla mob, redrawn and steered by hand from a tick hook
+([native-mods.md](native-mods.md#mobs-drawn-by-a-mod)).
 
-Fragment: `tools/native-hook-fragments/mob_ai_register.json`. The API number is given when it is stamped
-(`python3 tools/stamp_native_hooks.py`), which this fork does not do: a bundle on the fork pins the fork commit.
+## The `mob_ai_register` hook
 
-## Goals from outside the crate (built)
+`horizon_client_lib::mobs::ai::native_mob_ai_register(mob: &mut Mob)` is called as a mob's goals are set up. It is
+a free function, wired through `native_client_hooks` like `native_living_breathe`.
 
-`Goal` itself is public through `horizon_client::mod_api`, so a trait mod may implement it and touch everything a
-vanilla goal does. Most mods, and every script, should not need to: `mobs/native_goal.rs` gives a goal a fixed
-shape that borrows nothing of the mob.
+It runs in `Mob::new`, right after the species' own `register`. At that point the mob's vanilla goals are in
+`mob.ai.goals` and `mob.ai.targets`, and nothing has ticked yet. A handler can:
 
-- `MobView`: what a call sees of its mob (id, kind, position, velocity, health, target and where it stands, whether
-  it is in melee range, whether a path is being walked, the nearest player, the home). A plain copy, made before the
-  call.
-- `Actions` / `GoalAction`: what the call asks for (`navigate_to`, `navigate_to_target`, `stop_navigation`,
-  `move_toward`, `look_at`, `look_at_target`, `set_target`, `jump`, `attack`, `swing`; `hurt(who, amount)`,
-  `convert(kind)` (become another mob, as a zombie drowns into a drowned), `summon(kind, at)`, `despawn`, `heal`,
-  `effect(name, ticks, amplifier)`). Applied in order after the call, with the mob and the world. An action the game
-  cannot apply is dropped with a warning in the log and the mob is left as it was: a position, speed or amount that is
-  not finite, an effect no definition exists for, a kind (`convert`, `summon`; a bare name is vanilla's) the level has
-  no mob type of (`GoalAction::refused`).
-- `MobView::nearby`: the other mobs within the follow range, nearest first and at most 32 (`NearbyView`: id, kind
-  (the type, `kind.id` its name), position, distance, health, alive, hostile, baby, target), so an infection can look
-  for hosts or a brood for its mother. Read through the tick's spatial grid, so its cost is the mobs around, not the
-  level's.
-- `NativeBehaviour`: the decisions (`can_use`, `can_continue`, `start`, `tick`, `stop`) over a `MobView` and an
-  `Actions`. One value is shared by every mob the goal is on; the per-mob part is its `State` (`Default` when added).
-- `NativeGoal::new(name, flags, behaviour)`: the `Goal` to add, with `GOAL_MOVE | GOAL_LOOK | GOAL_JUMP | GOAL_TARGET`
-  for the control flags it locks, `.updated_every_tick()` and `.uninterruptable()`.
+- add a goal, with `mob.ai.goals.add(priority, goal)`
+- add a target goal
+- clear a selector and fill it again
+
+The hook runs once for each mob, on the server side only. `Mob::new_client` builds the mobs that a client only
+draws, such as a server's mob seen over the network, the first-person player model and a spawner's display. It sets
+up the species' goals too, but does not call the hook.
+
+Trait mods get `MobAiRegisterEvent { mob }`, and the types `Mob`, `MobType`, `Goal`, `GoalSelector` and `GoalCx`,
+through `horizon_client::mod_api`.
+
+The hook's fragment is `tools/native-hook-fragments/mob_ai_register.json`. Its API number is given when the fragment
+is stamped with `python3 tools/stamp_native_hooks.py`, which this fork does not do. A bundle built on the fork pins
+the fork's commit instead.
+
+## Goals for mods
+
+`Goal` is public through `horizon_client::mod_api`, so a trait mod can implement it and touch everything a vanilla
+goal does. Most mods, and every script, don't need that much. `mobs/native_goal.rs` gives a goal a fixed shape that
+borrows nothing of the mob.
+
+### `MobView`
+
+A copy of what a goal sees of its mob, made before each call: its id, kind, position, velocity, health, its target
+and where the target stands, whether the target is in melee range, whether a path is being walked, the nearest
+player, and the mob's home.
+
+`MobView::nearby` lists the other mobs within the mob's follow range, nearest first, up to 32. Each entry is a
+`NearbyView`: id, kind (`kind.id` is the type's name), position, distance, health, alive, hostile, baby and target.
+An infection can use it to look for hosts, or a brood to find its mother. It reads the tick's spatial grid, so its
+cost grows with the mobs around, not with the whole level.
+
+### `Actions` and `GoalAction`
+
+What a goal call asks the game to do. The actions run in order after the call, with the mob and the world at hand:
+
+- moving: `navigate_to`, `navigate_to_target`, `stop_navigation`, `move_toward`, `look_at`, `look_at_target`,
+  `jump`
+- fighting: `set_target`, `attack`, `swing`, `hurt(who, amount)`
+- living: `convert(kind)`, which turns the mob into another kind as a drowning zombie becomes a drowned;
+  `summon(kind, at)`, `despawn`, `heal`, and `effect(name, ticks, amplifier)`
+
+The game drops an action it cannot apply, logs a warning, and leaves the mob as it was. This happens for a
+position, speed or amount that is not a finite number, an effect that has no definition, and a kind that the level
+has no mob type for (`GoalAction::refused`). For `convert` and `summon`, a bare name is vanilla's.
+
+### `NativeBehaviour`
+
+The decisions of a goal: `can_use`, `can_continue`, `start`, `tick` and `stop`, each over a `MobView` and an
+`Actions`. One value is shared by every mob that has the goal. The part that belongs to each mob is the
+behaviour's `State`, which starts as `Default` when the goal is added.
+
+### `NativeGoal`
+
+`NativeGoal::new(name, flags, behaviour)` creates the `Goal` to add. *flags* are the controls it locks, any of
+`GOAL_MOVE`, `GOAL_LOOK`, `GOAL_JUMP` and `GOAL_TARGET`. `.updated_every_tick()` ticks it every tick, and
+`.uninterruptable()` keeps a more pressing goal from stopping it.
+
+### Example
+
+This trait mod makes every zombie walk at the nearest player within 24 blocks:
 
 ```rust
 use horizon_client::mod_api::{
@@ -86,55 +129,77 @@ impl Hooks for Mod {
 }
 ```
 
-The same two types are what the Lua runtime hands a script's goal ([lua-bindings.md](lua-bindings.md), step 4): the
-view becomes a table, the actions come back from it. Unit tests cover the view and the world-free actions; the path
-and attack actions run only in a game with the vanilla data.
+The Lua runtime hands a script's goal the same two types ([lua-bindings.md](lua-bindings.md)): the view becomes a
+table, and the actions come back from it. Unit tests cover the view and the actions that need no world. The path and
+attack actions run only in a game with the vanilla data.
 
-## Mobs from data (built)
+## Mobs declared in data
 
-A content mod declares a mob in `data/<id>/horizon/entity_type/<name>.json` with a vanilla mob as `template` and its
-own `attributes`, `size`, `texture` and `goals` ([mods.md](mods.md#content-mods-api-02), entity types). The game
-appends the type's row to `entity-types.json` (the template's, with the mod's values and a `horizon` object naming
-the template, texture and goals: `mod_content::entity_types_json`), and `mobs::MobTypes::load` builds a `MobType`
-for it from the template's species definition (model, sounds, animation, flags, brain) with the mod's id and texture.
-The mob is the template's species everywhere species decides (`Mob::species`): AI families, conversion, burning,
-breeding. Its texture joins the shared atlas through a `single` atlas source the content root writes
-(`assets/<id>/atlases/horizon_entities.json`). With `"goals": "none"`, `Mob::new` clears both goal selectors after
-the species registered them, so `mob_ai_register` (and a script's `horizon.add_goal`) sees empty selectors and the
-species' controls. It drops `<id>:entities/<name>` when that loot table exists, else the template's.
+A content mod declares a mob in `data/<id>/horizon/entity_type/<name>.json`, with a vanilla mob as its `template`
+and its own `attributes`, `size`, `texture` and `goals` ([mods.md](mods.md#content-mods-api-02), entity types).
 
-## Natural spawning and spawn eggs (built)
+When the game reads the mod:
 
-A content mob spawns on its own where a NeoForge biome modifier of type `neoforge:add_spawns` puts it
-(`data/<id>/neoforge/biome_modifier/<name>.json`: `biomes` a biome, a tag or a list, `spawners` entries of
-`type`, `weight`, `min_count`, `max_count`); the entry goes into those biomes' natural spawns in the category
-of its kind (a mod mob's: its template's, from `entity-types.json`; `category` in the entry chooses), beside
-vanilla's, with a uniform pack size. `add_features` and `remove_features` were read before; `add_carvers` and
-the rest are still skipped with a warning. A spawn egg is any item whose id ends in `_spawn_egg`: the kind is the
-id before it, so `<id>:crawler_spawn_egg` (template `minecraft:zombie_spawn_egg`, a texture of its own) spawns
-`<id>:crawler` as vanilla's eggs do, on a spawner too.
+1. It adds the type's row to `entity-types.json`: the template's row, with the mod's values and a `horizon` object
+   that names the template, texture and goals (`mod_content::entity_types_json`).
+2. `mobs::MobTypes::load` builds a `MobType` for it from the template's species definition (model, sounds,
+   animation, flags and brain), with the mod's id and texture.
+3. The texture joins the shared atlas through a `single` atlas source that the content root writes
+   (`assets/<id>/atlases/horizon_entities.json`).
 
-## Models, animations and sounds (built)
+Wherever the species decides (`Mob::species`), the mob is its template's species: AI families, conversion, burning
+and breeding.
 
-A content mob's `entity_type` may name a `model` of its own (`<id>:entity/<name>`: `assets/<id>/models/entity/<name>.json`,
-a tree of parts holding cubes, as a vanilla `LayerDefinition` is written and Blockbench exports: `texture_size`,
-`parts` by name with `offset`, `rotation` in degrees, `cubes` of `origin`, `size`, `uv`, `inflate`, `mirror`, and
-`children`), an `animation` set that moves the parts by their vanilla names (`zombie`, `skeleton`, `quadruped`,
-`iron_golem`, `spider`... every set the game has, in snake case), and `sounds` by `ambient`, `hurt`, `death` and
-`step`. Each falls back to the template's. The texture lays out as the model's `uv`s say. The content check
-(`cargo horizon-mod check`, and the game as it reads a mod) refuses a `model` that is not `<id>:entity/<name>` with
-the file in the mod (`horizon_mods::content::mob_model_file`), an `animation` outside the game's sets
-(`MOB_ANIMATIONS`) and a sound under a key other than those four or without a namespace.
+With `"goals": "none"`, `Mob::new` clears both goal selectors after the species has filled them. `mob_ai_register`,
+and a script's `horizon.add_goal`, then see empty selectors with the species' controls.
 
-## The plan
+The mob drops its own loot table, `<id>:entities/<name>`, when the table exists, and the template's otherwise.
+
+## Natural spawning and spawn eggs
+
+A content mob spawns on its own where a NeoForge biome modifier of type `neoforge:add_spawns` puts it, in
+`data/<id>/neoforge/biome_modifier/<name>.json`:
+
+- `biomes` is a biome, a tag or a list.
+- `spawners` holds entries with `type`, `weight`, `minCount` and `maxCount`, as NeoForge writes them.
+
+Each entry joins the natural spawns of those biomes, at the end of its kind's spawn category, next to vanilla's. The
+category is the kind's own; for a mod's mob, that is its template's category, from `entity-types.json`. Upstream's
+biome modifiers do this (`mod_content_biomes.rs`, which also reads `remove_spawns`, `add_spawn_costs` and
+`remove_spawn_costs`); this branch puts the mod's mobs in `entity-types.json` before the modifiers run, so they
+find them. `add_carvers` and the other modifier types are still skipped, with a warning.
+
+A spawn egg is any item whose id ends in `_spawn_egg`. The kind is the id before that suffix, so
+`<id>:crawler_spawn_egg` (template `minecraft:zombie_spawn_egg`, with a texture of its own) spawns `<id>:crawler`, as
+vanilla's eggs do, on a spawner too.
+
+## Models, animations and sounds
+
+A content mob's `entity_type` can name a look of its own. Each part falls back to the template's.
+
+- `model`: `<id>:entity/<name>`, which is `assets/<id>/models/entity/<name>.json`. It is a tree of parts holding
+  cubes, written as a vanilla `LayerDefinition` is, and as Blockbench exports it: a `texture_size`, and `parts` by
+  name, each with an `offset`, a `rotation` in degrees, `cubes` (each with `origin`, `size`, `uv`, `inflate` and
+  `mirror`) and `children`. The texture is laid out as the model's `uv`s say.
+- `animation`: a set that moves the parts by their vanilla names, such as `zombie`, `skeleton`, `quadruped`,
+  `iron_golem` or `spider`. Every set the game has is available, in snake case.
+- `sounds`: sound events by `ambient`, `hurt`, `death` and `step`.
+
+The content check, run by `cargo horizon-mod check` and by the game as it reads a mod, refuses:
+
+- a `model` that is not `<id>:entity/<name>` with the file in the mod (`horizon_mods::content::mob_model_file`)
+- an `animation` that is not one of the game's sets (`MOB_ANIMATIONS`)
+- a sound under any other key, or a sound without a namespace
+
+## Plan
 
 | Step | What | Why |
 |---|---|---|
-| 2 | `native_set_mob_target(dimension, id, target)` and `native_mob_navigate_to(dimension, id, pos, speed)` helpers | A tick hook can drive a mob it did not register a goal on. Later: the goal adapter above covers the parasite mod |
-| 4 | ~~Content entity types from a mob template~~ built (above); left: a `goals` list naming vanilla goals by name with their arguments, natural spawning rules, a spawn egg | A parasite is declared in data, as a block is; its behaviour comes from step 1's hook or a script |
-| 5 | `mob_ai_tick(mob)` listen hook each AI tick, and `mob_target_changed` | Reactive scripts (infection spreading, host conversion) without a goal |
-| 6 | Brain species: a hook after a brain's activities are built | Villagers, piglins and wardens use brains, not goals |
+| 2 | The helpers `native_set_mob_target(dimension, id, target)` and `native_mob_navigate_to(dimension, id, pos, speed)` | A tick hook could drive a mob that it did not register a goal on. The goal adapter above covers the parasite mod for now |
+| 4 | A `goals` list that names vanilla goals, with their arguments. Mobs declared in data, natural spawning and spawn eggs are built | A parasite is declared in data, as a block is |
+| 5 | A `mob_ai_tick(mob)` listen hook on each AI tick, and `mob_target_changed` | Scripts that react, such as an infection spreading or a host converting, without a goal |
+| 6 | For species with a brain: a hook after the brain's activities are built | Villagers, piglins and wardens use brains, not goals |
 
-Each step is one fragment and one hook or helper, named by the NeoForge rules in
-[native-hooks-neoforge.md](native-hooks-neoforge.md) where an event exists (there is none for `registerGoals`, so
-this one keeps a Horizon name). Step 4 is what the Lua branch needs next, so a parasite can be its own entity type rather than a redressed zombie.
+Each step is one fragment and one hook or helper. Hooks are named by the NeoForge rules in
+[native-hooks-neoforge.md](native-hooks-neoforge.md) where NeoForge has an event. It has none for `registerGoals`,
+so `mob_ai_register` keeps a Horizon name.
