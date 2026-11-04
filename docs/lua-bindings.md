@@ -499,7 +499,13 @@ and the file and line, when:
 - `horizon.on` is given a hook it does not know
 - a command or goal fails when it is declared
 
-`cargo horizon-mod check <folder> --game <horizon-client> --dev-mod <library>` runs it after the registry's checks.
+With `--resources <26.3 folder>` (the prepared vanilla folder), it also layers the mod's content on that folder, as the
+game does at start, and exits with code 1 when the game would refuse it. A refused file leaves every content mod out
+of the world, such as an `add_spawns` spawner with `min_count` where NeoForge writes `minCount`. A content mod without
+scripts gets only this check.
+
+`cargo horizon-mod check <folder> --game <horizon-client> --dev-mod <library> [--resources <26.3 folder>]` runs it
+after the registry's checks.
 
 ## Reloading
 

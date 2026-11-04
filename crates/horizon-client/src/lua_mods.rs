@@ -1044,19 +1044,35 @@ pub fn discover(args: impl Iterator<Item = String>) -> Mods {
 /// says what went wrong: a script that fails to load (file and line), a hook
 /// `horizon.on` does not know, a command or goal that errors when declared.
 /// `Ok` carries what loaded: the mod's id and its scripts and the libraries,
-/// one line each. For `horizon-client --check-mod <path> [--dev-mod <lib>]...`
-/// and `cargo horizon-mod check`.
-pub fn check_mod(path: &Path, dev: &[PathBuf]) -> Result<Vec<String>, String> {
+/// one line each. With `resources` (the prepared vanilla folder), the mod's
+/// content is also layered on it as the game does at start
+/// (`mod_content::build`), so a file the game would refuse, which leaves every
+/// content mod out of the world, fails the check instead; a content mod
+/// without scripts gets only that. For `horizon-client --check-mod <path>
+/// [--dev-mod <lib>]... [--resources <folder>]` and `cargo horizon-mod check`.
+pub fn check_mod(
+    path: &Path,
+    dev: &[PathBuf],
+    resources: Option<&Path>,
+) -> Result<Vec<String>, String> {
     let at = |e: String| format!("{}: {e}", path.display());
     let package = Package::read(path).map_err(at)?;
     let manifest = package.manifest;
-    if !manifest.capabilities.contains(&Capability::Scripts) {
+    let scripted = manifest.capabilities.contains(&Capability::Scripts);
+    if !scripted && resources.is_none() {
         return Err(at(format!(
-            "no capability scripts in {MANIFEST}: a content mod, nothing to check here"
+            "no capability scripts in {MANIFEST}: a content mod, nothing to check here without --resources"
         )));
     }
     // The registry script, as the content loader runs it.
-    Content::read(path, &manifest).map_err(at)?;
+    let content = Content::read(path, &manifest).map_err(at)?;
+    let mut lines = Vec::new();
+    if let Some(base) = resources {
+        lines.extend(check_content(base, &manifest.id, content).map_err(at)?);
+    }
+    if !scripted {
+        return Ok(lines);
+    }
     let mut libraries = Vec::new();
     for dep in &manifest.depends {
         let (id, min) = horizon_mods::manifest::parse_dependency(dep).map_err(at)?;
@@ -1091,7 +1107,7 @@ pub fn check_mod(path: &Path, dev: &[PathBuf]) -> Result<Vec<String>, String> {
     let loaded = LuaMod::load_with(path, &libraries, Some(&config));
     let _ = std::fs::remove_dir_all(&config);
     let m = loaded?;
-    let mut lines = vec![format!("{}: scripts loaded", m.id)];
+    lines.push(format!("{}: scripts loaded", m.id));
     if let Ok(scripts) = m.scripts.lock() {
         let mut names: Vec<&String> = scripts.keys().collect();
         names.sort();
@@ -1102,6 +1118,23 @@ pub fn check_mod(path: &Path, dev: &[PathBuf]) -> Result<Vec<String>, String> {
     for (id, lib) in &libraries {
         lines.push(format!("  with {id} from {}", lib.display()));
     }
+    Ok(lines)
+}
+
+/// Layers `content` on the vanilla folder `base` in a scratch folder, as the
+/// game's content root does, and answers its warnings, or the error the game
+/// would stop on.
+fn check_content(base: &Path, id: &str, content: Content) -> Result<Vec<String>, String> {
+    let out = std::env::temp_dir().join(format!("horizon-check-content-{}", std::process::id()));
+    let mods = [crate::mod_content::ContentMod {
+        id: id.to_owned(),
+        content,
+    }];
+    let built = crate::mod_content::build(base, &mods, &out);
+    let _ = std::fs::remove_dir_all(&out);
+    let warnings = built.map_err(|e| format!("its content would not load in a game: {e}"))?;
+    let mut lines = vec![format!("{id}: content layered on {}", base.display())];
+    lines.extend(warnings.into_iter().map(|w| format!("  warning: {w}")));
     Ok(lines)
 }
 
@@ -6865,7 +6898,7 @@ experimental = ["scripts"]
                 && e.contains("player_joined"),
             "{e}"
         );
-        let e = check_mod(&path, &[]).unwrap_err();
+        let e = check_mod(&path, &[], None).unwrap_err();
         assert!(e.contains(":2:") && e.contains("player_jioned"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
         let (dir, path) = hmod(
@@ -6878,7 +6911,7 @@ experimental = ["scripts"]
                 ("scripts/helper.lua", b"return { hello = function() end }\n"),
             ],
         );
-        let lines = check_mod(&path, &[]).unwrap();
+        let lines = check_mod(&path, &[], None).unwrap();
         assert_eq!(
             lines,
             [
@@ -6919,12 +6952,12 @@ experimental = ["scripts"]
             manifest("user", "0.3.0", "\"lib >= 2.0\""),
             b"MINE = horizon.mod_version\nLIB = horizon.libraries.lib\n",
         );
-        let e = check_mod(&user, std::slice::from_ref(&old)).unwrap_err();
+        let e = check_mod(&user, std::slice::from_ref(&old), None).unwrap_err();
         assert!(
             e.contains("lib >= 2.0") && e.contains("found lib 1.0.0"),
             "{e}"
         );
-        let lines = check_mod(&user, std::slice::from_ref(&new)).unwrap();
+        let lines = check_mod(&user, std::slice::from_ref(&new), None).unwrap();
         assert!(
             lines.iter().any(|l| l.contains("with lib from")),
             "{lines:?}"

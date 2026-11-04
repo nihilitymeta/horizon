@@ -34,7 +34,7 @@ fn main() -> ExitCode {
         Some("run") => run(&args[1..]),
         Some("check") => check(&args[1..]),
         Some("registry") => registry::main(&args[1..]),
-        _ => Err("usage: cargo horizon-mod new <path> [--name \"Name\"] [--template content|lua|native [--horizon <commit>]] | build | run [--game <horizon-client>] [-- <game args>] | check <file or folder> [--kind <kind>] [--key <public key> --signature <file.minisig>] [--game <horizon-client>] [--dev-mod <library>]... [--no-scripts] [--json] | registry build|review|check|list".into()),
+        _ => Err("usage: cargo horizon-mod new <path> [--name \"Name\"] [--template content|lua|native [--horizon <commit>]] | build | run [--game <horizon-client>] [-- <game args>] | check <file or folder> [--kind <kind>] [--key <public key> --signature <file.minisig>] [--game <horizon-client>] [--dev-mod <library>]... [--resources <26.3 folder>] [--no-scripts] [--json] | registry build|review|check|list".into()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -327,17 +327,20 @@ fn check(args: &[String]) -> Result<(), String> {
         print!("{}", report.text());
     }
     // A scripted mod's scripts: loaded headlessly by the game (`horizon-client
-    // --check-mod`), with the libraries it depends on from --dev-mod.
-    if report
+    // --check-mod`), with the libraries it depends on from --dev-mod; with
+    // --resources, any mod's content is also layered on the vanilla folder as
+    // the game does at start, so a file the game would refuse fails here.
+    let resources = flag(args, "--resources");
+    let scripted = report
         .facts
         .capabilities
         .contains(&horizon_mods::Capability::Scripts)
-        && !args.iter().any(|a| a == "--no-scripts")
-    {
+        && !args.iter().any(|a| a == "--no-scripts");
+    if scripted || resources.is_some() {
         let game = flag(args, "--game")
             .map(str::to_string)
             .or_else(|| std::env::var("HORIZON_CLIENT").ok())
-            .ok_or("the mod has scripts: pass --game <path to horizon-client> (or set HORIZON_CLIENT) to load them headlessly, or --no-scripts")?;
+            .ok_or("the mod has scripts or --resources was given: pass --game <path to horizon-client> (or set HORIZON_CLIENT) to load them headlessly, or --no-scripts")?;
         let target = folder.unwrap_or(path);
         let mut cmd = Command::new(&game);
         cmd.arg("--check-mod").arg(target);
@@ -346,9 +349,12 @@ fn check(args: &[String]) -> Result<(), String> {
                 cmd.arg("--dev-mod").arg(&w[1]);
             }
         }
+        if let Some(r) = resources {
+            cmd.arg("--resources").arg(r);
+        }
         let status = cmd.status().map_err(|e| format!("{game}: {e}"))?;
         if !status.success() {
-            return Err("the scripts did not load (above)".into());
+            return Err("the game refused the mod (above)".into());
         }
     }
     Ok(())
