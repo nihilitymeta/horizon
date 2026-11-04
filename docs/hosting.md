@@ -33,6 +33,8 @@ plan are in [server.md](server.md).
 - **Movement checks and chunk pacing** (release v2026.10.17.16 and newer). The server pulls back players who
   move too fast ("moved too quickly"), as vanilla does, and sends chunks as fast as each client acknowledges
   them.
+- **Behind a tunnel or an HTTP proxy**, such as a Cloudflare Tunnel, Horizon players join at a `wss://`
+  address on the same game port: [websocket.md](websocket.md).
 - **No Docker image is published.** You build it yourself from the repository (below). Publishing an image
   needs the project owner.
 - Nothing of Mojang's is downloaded or shipped. The server reads the game files you prepare from your own copy
