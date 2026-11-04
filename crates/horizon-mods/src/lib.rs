@@ -3,6 +3,7 @@
 //! native (docs/native-mods.md).
 pub mod api_level;
 pub mod content;
+pub mod feature_registry;
 #[cfg(feature = "index")]
 pub mod index;
 pub mod manifest;

@@ -12,8 +12,12 @@ static ALLOCATOR: horizon_threads::CensusAllocator = horizon_threads::CensusAllo
 /// to read without running it (`horizon_mods::api_level::MARK`). `main`
 /// reads it, so the linker keeps it.
 static MOD_API_LEVEL: [u8; 27] = horizon_mods::api_level::MARK;
+/// The feature registry this game answers `--list-mods` with, kept the same way
+/// (`horizon_mods::feature_registry::MARK`).
+static FEATURE_REGISTRY: [u8; 27] = horizon_mods::feature_registry::MARK;
 
 fn main() {
     std::hint::black_box(&MOD_API_LEVEL);
+    std::hint::black_box(&FEATURE_REGISTRY);
     horizon_client::entry::main();
 }

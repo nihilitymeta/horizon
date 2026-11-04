@@ -20,6 +20,11 @@ pub fn main_with(mods: crate::mod_api::Mods) {
     let help = game_args
         .clone()
         .any(|a| a == "--help" || a == "-h" || a == "--launch-api");
+    // The build's switchable features, for the launcher's Mods page (`mod_registry`).
+    if game_args.clone().any(|a| a == "--list-mods") {
+        println!("{}", horizon_client::mod_registry::to_json());
+        return;
+    }
     // --home before the log opens in it.
     if let Some(dir) = game_args.clone().skip_while(|a| *a != "--home").nth(1) {
         logging::set_game_home(std::path::absolute(dir).unwrap_or_else(|_| dir.into()));

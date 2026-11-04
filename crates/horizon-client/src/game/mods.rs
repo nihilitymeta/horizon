@@ -333,6 +333,7 @@ fn not_built(dir: &std::path::Path, built: &str, rows: &[Installed]) -> Vec<Inst
             out.push(Installed {
                 title: format!("{} {}", m.id, m.version),
                 id: m.id,
+                kind: mod_list::ModKind::Native,
                 description: String::new(),
                 problem: Some(mod_list::NOT_BUILT.to_owned()),
                 dev: false,
@@ -367,6 +368,7 @@ impl Game<'_> {
                     Err(e) => {
                         return Installed {
                             id: String::new(),
+                            kind: mod_list::ModKind::Content,
                             title: file.into_owned(),
                             description: String::new(),
                             problem: Some(format!("Can't be read: {e}")),
@@ -379,6 +381,7 @@ impl Game<'_> {
                 let problem = package.wasm.is_some().then(|| STOPPED.to_owned());
                 Installed {
                     id: m.id.clone(),
+                    kind: mod_list::ModKind::Content,
                     title: format!("{} {}", m.name, m.version),
                     description: m.description.clone(),
                     problem,

@@ -63,6 +63,7 @@ pub mod mesher;
 pub mod minimap;
 pub mod mipmap;
 pub mod mod_list;
+pub mod mod_registry;
 pub mod model_library;
 pub mod models;
 pub mod multiline_edit;

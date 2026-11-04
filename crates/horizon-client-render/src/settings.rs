@@ -347,7 +347,7 @@ impl Settings {
             .parent()
             .map(|dir| crate::mod_list::ModList::load(&crate::logging::shared_dir(dir)))
             .unwrap_or_default();
-        let settings = match fs::read(path) {
+        let mut settings = match fs::read(path) {
             Ok(bytes) => {
                 let text = String::from_utf8_lossy(&bytes);
                 extras.read_old_options(&extras_text, &text);
@@ -368,6 +368,8 @@ impl Settings {
             },
         };
         settings.describe_for_crashes();
+        // A `mod.<id>` line the launcher wrote for one of the build's features switches it.
+        crate::mod_registry::sync_from_mods(&mut settings);
         // Options.load: the backend asked for at startup, what a restart is measured from.
         Self {
             startup_api: settings.horizon.api,
@@ -658,7 +660,8 @@ impl Settings {
             self.horizon.save(dir);
             self.controller.save(dir);
             self.extras.save(dir);
-            self.mods.save(&crate::logging::shared_dir(dir));
+            // The features' lines say what their switches say, for the launcher.
+            crate::mod_registry::mods_mirroring(self).save(&crate::logging::shared_dir(dir));
         }
     }
     /// Volume of a sound source (master excluded).
