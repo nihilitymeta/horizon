@@ -378,6 +378,11 @@ fn generate(root: &Path, check: bool) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
     // The `native_*` functions, by the file the target names: a game module's
     // methods, or a crate's free functions.
+    // The function a target names: `native_<name>` mostly, but a fragment may name it otherwise
+    // (`destroy_block` is `native_machine_destroy_block` in machine_breaking.json).
+    fn target_fn(target: &str) -> &str {
+        target.rsplit("::").next().unwrap_or(target)
+    }
     let mut parsed: BTreeMap<String, Vec<(String, syn::ItemFn)>> = BTreeMap::new();
     let docs_of = |target: &str,
                    native: &str,
@@ -469,7 +474,7 @@ The full doc of each is on its `native_<name>` function.\n\n");
         let name = hook["name"].as_str().ok_or("hook name missing")?;
         let target = hook["target"].as_str().ok_or("target missing")?;
         let contract = hook["mod_api"]["contract"].as_str().unwrap_or("listen");
-        let text = docs_of(target, &format!("native_{name}"), &mut parsed)?;
+        let text = docs_of(target, target_fn(target), &mut parsed)?;
         let api = api_of(&text).map_or("—".to_owned(), |n| n.to_string());
         let lua = lua.get(name).copied().unwrap_or("");
         out.push_str(&format!(
@@ -491,7 +496,7 @@ The full doc of each is on its `native_<name>` function.\n\n");
     for helper in &helpers {
         let name = helper["name"].as_str().ok_or("helper name missing")?;
         let target = helper["target"].as_str().ok_or("helper target missing")?;
-        let text = docs_of(target, &format!("native_{name}"), &mut parsed)?;
+        let text = docs_of(target, target_fn(target), &mut parsed)?;
         let api = api_of(&text).map_or("—".to_owned(), |n| n.to_string());
         let lua = lua_helpers.get(name).copied().unwrap_or("");
         out.push_str(&format!("| `{name}` | {api} | {lua} | {} |\n", cell(&text)));

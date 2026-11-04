@@ -2294,11 +2294,11 @@ impl LuaMod {
                 ];
                 let volume: Option<f32> = args.get(5)?;
                 let pitch: Option<f32> = args.get(6)?;
-                let dimension = host.dimension().to_owned();
+                // Upstream's helper: the level in place, on the master source (0).
                 host.play_sound(
-                    &dimension,
-                    pos,
                     &qualify(&name),
+                    pos,
+                    0,
                     volume.unwrap_or(1.0),
                     pitch.unwrap_or(1.0),
                 );
@@ -4641,17 +4641,17 @@ experimental = ["scripts"]
         }
         fn play_sound(
             &mut self,
-            _: &str,
-            pos: [f64; 3],
             sound: &str,
+            pos: [f64; 3],
+            _: usize,
             volume: f32,
             pitch: f32,
-        ) -> u32 {
+        ) -> bool {
             self.lines.lock().unwrap().push(format!(
                 "sound {sound} at {},{},{} x{volume} p{pitch}",
                 pos[0], pos[1], pos[2]
             ));
-            1
+            true
         }
         fn particles(
             &mut self,

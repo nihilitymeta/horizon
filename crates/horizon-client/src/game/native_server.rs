@@ -317,66 +317,12 @@ impl Game<'_> {
         }
         canceled
     }
-    /// Plays the sound event `sound` (`minecraft:entity.zombie.ambient`, or a
-    /// mod's own) at `pos` in the level in place, `dimension`, for every
-    /// player within range (16 blocks, times `volume` past 1), as
-    /// `/playsound` does on the master source: how many heard it. API @API:play_sound@.
-    pub(super) fn native_play_sound(
-        &mut self,
-        dimension: &str,
-        pos: [f64; 3],
-        sound: &str,
-        volume: f32,
-        pitch: f32,
-    ) -> u32 {
-        if self.remote.is_some() || dimension != self.dim.id() || !pos.iter().all(|v| v.is_finite())
-        {
-            return 0;
-        }
-        let (volume, pitch) = (volume.clamp(0.0, 1000.0), pitch.clamp(0.0, 2.0));
-        let range = f64::from(if volume > 1.0 { 16.0 * volume } else { 16.0 });
-        let within = |p: [f64; 3]| {
-            (p[0] - pos[0]).powi(2) + (p[1] - pos[1]).powi(2) + (p[2] - pos[2]).powi(2)
-                <= range * range
-        };
-        let seed = self.world.random.next_long();
-        let mut heard = 0;
-        // The owner: through the hub while acting as a guest, else here.
-        if let Some(p) = self.player.as_ref()
-            && within([p.position.x, p.position.y, p.position.z])
-        {
-            heard += 1;
-            match (self.lan_acting, self.lan.as_ref()) {
-                (Some(_), Some(host)) => {
-                    let packet = host.hub.sound_packet(sound, pos, volume, pitch, 0, seed);
-                    self.guest_packets.push(packet);
-                }
-                _ => self.audio.play_on(0, sound, Some(pos), volume, pitch),
-            }
-        }
-        if let Some(host) = self.lan.as_ref() {
-            let acting = self.lan_acting;
-            for g in host.hub.guests.iter() {
-                if !g.placed
-                    || Some(g.conn) == acting
-                    || g.dimension != dimension
-                    || !within(g.position)
-                {
-                    continue;
-                }
-                let packet = host.hub.sound_packet(sound, pos, volume, pitch, 0, seed);
-                host.hub.send_to(g.conn, &packet);
-                heard += 1;
-            }
-        }
-        heard
-    }
     /// Shows `count` particles of the simple type `name` (`minecraft:flame`,
     /// `minecraft:happy_villager`; those with data of their own, dust and
     /// items, are not here) at `pos` in the level in place, spread by
     /// `spread` on each axis and moving up to `speed`, to every player within
     /// 32 blocks, as `/particle` does: how many saw them; 0 for a name the
-    /// game does not know. API @API:play_sound@.
+    /// game does not know. API @API:particles_titles@.
     pub(super) fn native_particles(
         &mut self,
         dimension: &str,
@@ -491,7 +437,7 @@ impl Game<'_> {
         false
     }
     /// Sets how the player `uuid`'s next titles fade in, stay and fade out,
-    /// in ticks, as `/title times` does; false when they are not on. API @API:play_sound@.
+    /// in ticks, as `/title times` does; false when they are not on. API @API:particles_titles@.
     pub(super) fn native_title_times(
         &mut self,
         uuid: u128,
