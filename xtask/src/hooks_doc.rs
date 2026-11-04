@@ -112,6 +112,7 @@ const LUA_HOOKS: &[(&str, &str)] = &[
         "living_knockback",
         "`mob_knockback(mob, damage_type, causing, direct, strength, x, z)`, by kind; `player_knockback(...)`",
     ),
+    ("player_chat", "`player_chat(player, line)`"),
     ("player_command", "`player_command(player, line)`"),
     (
         "item_crafted",

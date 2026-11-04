@@ -30,9 +30,9 @@ use crate::mod_api::{
     EntityJoinLevelEvent, ExplosionDetonateEvent, HearsProjectileImpactsEvent, HurtEnemyEvent,
     ItemCraftedEvent, ItemDroppedEvent, LivingEntityUseItemStartEvent, LivingEquipmentChangeEvent,
     LivingEquipmentListenedEvent, LivingFallEvent, LivingHealEvent, LivingKnockbackEvent,
-    LootDropsEvent, PlayerBedEnterEvent, PlayerChangedDimensionEvent, PlayerCommandEvent,
-    PlayerContainerOpenEvent, PlayerExpChangeEvent, PlayerTickEvent, ProjectileImpactEvent,
-    ProjectileLaunchEvent,
+    LootDropsEvent, PlayerBedEnterEvent, PlayerChangedDimensionEvent, PlayerChatEvent,
+    PlayerCommandEvent, PlayerContainerOpenEvent, PlayerExpChangeEvent, PlayerTickEvent,
+    ProjectileImpactEvent, ProjectileLaunchEvent,
 };
 use crate::mod_api::{NativeCommand, PerformCommandEvent, RegisterCommandsEvent};
 use horizon_mods::{Capability, Content, Package};
@@ -3056,6 +3056,50 @@ impl Hooks for LuaMod {
         }
         if cancel { Flow::Cancel } else { Flow::Continue }
     }
+    /// A player's chat line is about to go to everyone:
+    /// `player_chat(player, line)`, `player` their `{uuid, name}` (the hub
+    /// is mid-packet: no host). Handlers may queue `cancel()` (nobody sees
+    /// it) and `reply(text)` (a line back to the sender). The line itself
+    /// cannot change: a signed message would no longer verify.
+    fn player_chat(&self, event: &mut PlayerChatEvent<'_>) -> Flow {
+        let hook = "player_chat";
+        if !self.has_handlers(hook) {
+            return Flow::Continue;
+        }
+        let mut cancel = false;
+        let mut replies: Vec<String> = Vec::new();
+        let player = match self.lua.create_table().and_then(|t| {
+            t.set("uuid", uuid_text(event.player))?;
+            t.set("name", event.name)?;
+            Ok(t)
+        }) {
+            Ok(t) => t,
+            Err(e) => return self.hook_error(hook, e),
+        };
+        if let Ok(mut names) = self.names.lock() {
+            names.insert(event.player, event.name.to_owned());
+        }
+        let r = self.call_bare(
+            hook,
+            None,
+            (player, event.message),
+            &mut |action, args| {
+                match action {
+                    "cancel" => cancel = true,
+                    "reply" => replies.push(args.get::<String>(1)?),
+                    other => log::warn!("[lua:{}] {hook}: {other} needs a host; dropped", self.id),
+                }
+                Ok(())
+            },
+        );
+        if let Err(e) = r {
+            return self.hook_error(hook, e);
+        }
+        for line in replies {
+            event.replies.push(crate::mod_api::Text::literal(line));
+        }
+        if cancel { Flow::Cancel } else { Flow::Continue }
+    }
     /// A player typed a command: `player_command(player, line)`, the line
     /// without its slash, before it runs. Handlers may queue `cancel()`
     /// (nothing runs) and `reply(text)` (a line back to the player, the only
@@ -5404,6 +5448,10 @@ experimental = ["scripts"]
                 horizon.on("mob_knockback", function(mob, damage_type, causing, direct, strength, x, z)
                   note(("knockback %s %s %.1f %.1f %.1f"):format(mob.kind, damage_type, strength, x, z)); horizon.set_strength(0.25)
                 end, "minecraft:cow")
+                horizon.on("player_chat", function(player, line)
+                  note("chat " .. player.name .. " " .. line)
+                  if line == "shh" then horizon.cancel() else horizon.reply("heard " .. line) end
+                end)
                 horizon.on("player_command", function(player, line)
                   say("command " .. player.name .. " " .. line)
                   if line == "secret" then horizon.reply("not here"); horizon.cancel() end
@@ -5498,6 +5546,27 @@ experimental = ["scripts"]
         };
         assert_eq!(m.living_knockback(&mut knock), Flow::Continue);
         assert_eq!(knock.strength, 0.25);
+        let mut replies = Vec::new();
+        assert_eq!(
+            m.player_chat(&mut PlayerChatEvent {
+                player: steve.uuid,
+                name: "steve",
+                message: "hello all",
+                replies: &mut replies,
+            }),
+            Flow::Continue
+        );
+        assert_eq!(replies, [crate::mod_api::Text::literal("heard hello all")]);
+        let mut replies = Vec::new();
+        assert_eq!(
+            m.player_chat(&mut PlayerChatEvent {
+                player: steve.uuid,
+                name: "steve",
+                message: "shh",
+                replies: &mut replies,
+            }),
+            Flow::Cancel
+        );
         let mut replies = Vec::new();
         let mut cmd = PlayerCommandEvent {
             player: steve.uuid,
@@ -5757,6 +5826,8 @@ experimental = ["scripts"]
                 "player fall 9",
                 "heal 7 2",
                 "knockback minecraft:cow minecraft:player_attack 0.4 1.0 0.0",
+                "chat steve hello all",
+                "chat steve shh",
             ]
         );
         std::fs::remove_dir_all(&dir).unwrap();
