@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "आपके पास अभी कोई कॉस्मेटिक्स नहीं है।",
   "Claim for free": "मुफ़्त पाएँ",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "दुकान का भुगतान प्रदाता आपके देश में सेवा नहीं देता, इसलिए आप फ़ाउंडर सेट यहाँ मुफ़्त पा सकते हैं।",
-  "The Founder Set is yours.": "फ़ाउंडर सेट अब आपका है।"
+  "The Founder Set is yours.": "फ़ाउंडर सेट अब आपका है।",
+  "Update the launcher automatically": "लॉन्चर को अपने आप अपडेट करें",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "नया लॉन्चर रिलीज़ मिलने पर उसे इंस्टॉल करता है। बंद होने पर लोकल बिल्ड जैसा है वैसा ही रहता है।"
 }

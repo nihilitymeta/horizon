@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Avètz pas encara cap de cosmetic.",
   "Claim for free": "Obténer a gratis",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Lo provesidor de pagament de la botiga opèra pas dins vòstre país, doncas podètz obténer l'Ensemble de fondators aicí a gratis.",
-  "The Founder Set is yours.": "L'Ensemble de fondators es vòstre."
+  "The Founder Set is yours.": "L'Ensemble de fondators es vòstre.",
+  "Update the launcher automatically": "Update the launcher automatically",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installs a newer launcher release when one is found. Off keeps a local build as it is."
 }

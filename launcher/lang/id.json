@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Kamu belum punya kosmetik.",
   "Claim for free": "Klaim gratis",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Penyedia pembayaran toko tidak melayani negaramu, jadi kamu bisa mengklaim Set pendiri di sini secara gratis.",
-  "The Founder Set is yours.": "Set pendiri kini milikmu."
+  "The Founder Set is yours.": "Set pendiri kini milikmu.",
+  "Update the launcher automatically": "Perbarui peluncur secara otomatis",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Memasang rilis peluncur yang lebih baru saat ditemukan. Jika mati, build lokal tetap seperti apa adanya."
 }

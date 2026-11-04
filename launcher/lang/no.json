@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Du eier ingen kosmetikk ennå.",
   "Claim for free": "Hent gratis",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Butikkens betalingsleverandør betjener ikke landet ditt, så du kan hente Grunnleggersettet her gratis.",
-  "The Founder Set is yours.": "Grunnleggersettet er ditt."
+  "The Founder Set is yours.": "Grunnleggersettet er ditt.",
+  "Update the launcher automatically": "Oppdater starteren automatisk",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installerer en nyere starterversjon når en blir funnet. Av beholder en lokal versjon slik den er."
 }

@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Wala ka pang pampaganda.",
   "Claim for free": "Kunin nang libre",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Hindi nagseserbisyo sa bansa mo ang payment provider ng shop, kaya puwede mong kunin dito nang libre ang Set ng founder.",
-  "The Founder Set is yours.": "Sa iyo na ang Set ng founder."
+  "The Founder Set is yours.": "Sa iyo na ang Set ng founder.",
+  "Update the launcher automatically": "Awtomatikong i-update ang launcher",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Nag-i-install ng mas bagong bersyon ng launcher kapag may nahanap. Kapag naka-off, nananatili ang lokal na build kung ano ito."
 }

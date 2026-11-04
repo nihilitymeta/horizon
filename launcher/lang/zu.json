@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Awunazo izimonyo okwamanje.",
   "Claim for free": "Thola mahhala",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Umhlinzeki wezinkokhelo wesitolo akasebenzi ezweni lakho, ngakho ungathola Umsunguli usethiwe lapha mahhala.",
-  "The Founder Set is yours.": "Umsunguli usethiwe ungowakho."
+  "The Founder Set is yours.": "Umsunguli usethiwe ungowakho.",
+  "Update the launcher automatically": "Update the launcher automatically",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installs a newer launcher release when one is found. Off keeps a local build as it is."
 }

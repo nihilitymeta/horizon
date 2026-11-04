@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Încă nu ai produse cosmetice.",
   "Claim for free": "Revendică gratuit",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Furnizorul de plăți al magazinului nu operează în țara ta, așa că poți revendica aici gratuit Setul fondator.",
-  "The Founder Set is yours.": "Setul fondator este al tău."
+  "The Founder Set is yours.": "Setul fondator este al tău.",
+  "Update the launcher automatically": "Actualizează automat lansatorul",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Instalează o versiune mai nouă a lansatorului când găsește una. Dezactivat, păstrează versiunea locală așa cum este."
 }

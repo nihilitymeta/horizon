@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "עדיין אין לך קוסמטיקה.",
   "Claim for free": "קבלו בחינם",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "ספק התשלומים של החנות אינו פועל במדינה שלכם, לכן אפשר לקבל כאן את סט המייסד בחינם.",
-  "The Founder Set is yours.": "סט המייסד שלכם."
+  "The Founder Set is yours.": "סט המייסד שלכם.",
+  "Update the launcher automatically": "עדכון אוטומטי של המשגר",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "מתקין גרסה חדשה יותר של המשגר כשהיא נמצאת. כבוי – גרסה מקומית נשארת כפי שהיא."
 }

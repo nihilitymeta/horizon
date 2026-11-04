@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "ເຈົ້າຍັງບໍ່ມີເຄື່ອງສໍາອາງເທື່ອ.",
   "Claim for free": "ຮັບຟຣີ",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "ຜູ້ໃຫ້ບໍລິການຊຳລະເງິນຂອງຮ້ານບໍ່ໃຫ້ບໍລິການໃນປະເທດຂອງທ່ານ, ສະນັ້ນທ່ານສາມາດຮັບຊຸດຜູ້ກໍ່ຕັ້ງໄດ້ທີ່ນີ້ຟຣີ.",
-  "The Founder Set is yours.": "ຊຸດຜູ້ກໍ່ຕັ້ງເປັນຂອງທ່ານແລ້ວ."
+  "The Founder Set is yours.": "ຊຸດຜູ້ກໍ່ຕັ້ງເປັນຂອງທ່ານແລ້ວ.",
+  "Update the launcher automatically": "Update the launcher automatically",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installs a newer launcher release when one is found. Off keeps a local build as it is."
 }

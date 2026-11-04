@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Még nincs kozmetikumod.",
   "Claim for free": "Igényeld ingyen",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "A bolt fizetési szolgáltatója nem érhető el az országodban, ezért az Alapító készletet itt ingyen igényelheted.",
-  "The Founder Set is yours.": "Az Alapító készlet a tiéd."
+  "The Founder Set is yours.": "Az Alapító készlet a tiéd.",
+  "Update the launcher automatically": "Indító automatikus frissítése",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Telepíti az indító újabb kiadását, ha talál ilyet. Kikapcsolva a helyi build változatlan marad."
 }

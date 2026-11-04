@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Tev vēl nav kosmētikas.",
   "Claim for free": "Saņemt bez maksas",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Veikala maksājumu pakalpojums jūsu valstī nedarbojas, tāpēc Dibinātāja komplektu šeit varat saņemt bez maksas.",
-  "The Founder Set is yours.": "Dibinātāja komplekts ir jūsu."
+  "The Founder Set is yours.": "Dibinātāja komplekts ir jūsu.",
+  "Update the launcher automatically": "Automātiski atjaunināt palaidēju",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Instalē jaunāku palaidēja versiju, kad tā tiek atrasta. Izslēgts saglabā lokālo būvējumu nemainītu."
 }

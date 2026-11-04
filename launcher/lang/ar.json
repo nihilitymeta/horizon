@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "لا تملك أي مظاهر بعد.",
   "Claim for free": "احصل عليه مجانًا",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "مزوّد الدفع في المتجر لا يخدم بلدك، لذا يمكنك الحصول على طقم المؤسسين هنا مجانًا.",
-  "The Founder Set is yours.": "طقم المؤسسين أصبح لك."
+  "The Founder Set is yours.": "طقم المؤسسين أصبح لك.",
+  "Update the launcher automatically": "حدّث المشغّل تلقائيًا",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "يثبّت إصدارًا أحدث من المشغّل عند العثور عليه. عند الإيقاف يبقى الإصدار المحلي كما هو."
 }
