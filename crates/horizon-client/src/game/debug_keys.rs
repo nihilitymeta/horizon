@@ -691,6 +691,9 @@ impl Game<'_> {
             }
             DebugAction::ReloadResourcePacks => {
                 self.debug_translated("debug.reload_resourcepacks.message");
+                // Assets/models/lang (pack reload) and data tables (world
+                // tables): one key refreshes both sides of a content mod.
+                self.reload_server_tables();
                 self.reload_packs();
                 true
             }
@@ -797,6 +800,22 @@ impl Game<'_> {
             | DebugAction::ShowChunkBorders
             | DebugAction::SwitchGameMode
             | DebugAction::CopyLocation => false,
+        }
+    }
+    /// The resource-reload key's server half: the world tables rebuilt (content mods
+    /// re-layered, data packs and scripts read again) where the server runs. A
+    /// single-player window is a remote of its own server thread, so
+    /// `reload_world_tables` on this `Game` would return at once: it runs on that
+    /// thread between two ticks, as the agent's console commands do
+    /// (`owner_console_command`). A world with no server thread reloads here. Another
+    /// machine's server keeps its data, as vanilla's key leaves it alone.
+    fn reload_server_tables(&mut self) {
+        if let Some(server) = &self.integrated {
+            if server.call(|g| g.reload_world_tables()).is_none() {
+                log::warn!("Horizon: the server thread has not reloaded the world tables yet");
+            }
+        } else if self.remote.is_none() && !self.world_root.as_os_str().is_empty() {
+            self.reload_world_tables();
         }
     }
     /// `ServerboundChangeGameModePacket` handled by the integrated server:
