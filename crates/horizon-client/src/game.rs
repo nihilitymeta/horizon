@@ -14582,6 +14582,9 @@ impl Game<'_> {
             self.settings.gui_scale,
             std::sync::atomic::Ordering::Relaxed,
         );
+        if let Some(renderer) = self.renderer.as_mut() {
+            renderer.anti_lag = self.settings.horizon.anti_lag;
+        }
         self.apply_ui_settings();
     }
     /// The sprite layers a shader pack draws in the translucent pass: every section is meshed
@@ -16407,6 +16410,7 @@ impl Game<'_> {
         };
         let result = match self.renderer.as_mut() {
             Some(renderer) => {
+                renderer.anti_lag = self.settings.horizon.anti_lag;
                 renderer.set_pass_timing(self.debug || self.gpu_passes);
                 horizon_client::spans::time("renderer", || renderer.render(&frame))
             }
@@ -18699,6 +18703,9 @@ impl Game<'_> {
                     }
                     self.extras_frame(elapsed);
                     self.extras_retry()?;
+                    if let Some(renderer) = self.renderer.as_ref() {
+                        renderer.anti_lag_input();
+                    }
                     self.apply_mouse_look();
                     self.pad_look(elapsed.as_secs_f32());
                     self.advance_flight();
