@@ -26,6 +26,7 @@ pub mod rsa;
 pub mod secure_chat;
 pub mod servers;
 pub mod text;
+pub mod websocket;
 
 /// SharedConstants.getProtocolVersion().
 pub const PROTOCOL_VERSION: i32 = horizon_core::version::PROTOCOL_VERSION;

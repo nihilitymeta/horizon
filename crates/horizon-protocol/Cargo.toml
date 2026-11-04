@@ -19,6 +19,11 @@ sha1 = "0.10"
 sha2 = "0.10"
 # AES-NI at run time on x86 for the connection cipher (crypto/blocks.rs).
 aes = "0.8.4"
+# WebSocket connections (websocket/): the handshake's key and, for `wss://`, TLS on ring with the Mozilla
+# roots, all already in the lockfile through ureq and horizon-server.
+base64 = "0.22"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
 
 # The name servers of Windows' network adapters, for Minecraft SRV redirects.
 [target.'cfg(windows)'.dependencies]
