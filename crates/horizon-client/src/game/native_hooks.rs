@@ -103,15 +103,15 @@
 //!
 //! API 365 adds the screen_closing screen lifecycle observation (`native_screen_closing`) at most once per frame.
 //!
-//! API 364 adds the render hook point `native_hand_drawn(hand)`: the first-person hand is drawn (`HandDrawn`).
+//! API 404 adds the render hook point `native_hand_drawn(hand)`: the first-person hand is drawn (`HandDrawn`).
 //!
 //! API 363 adds reading the world camera and block collision boxes (`native_camera`, `native_block_collision`).
 //!
-//! API 362 adds a per-tick player FOV modifier hook (`native_compute_fov_modifier`).
+//! API 403 adds a per-tick player FOV modifier hook (`native_compute_fov_modifier`).
 //!
-//! API 361 adds a cancellable item frame item render hook (`native_render_item_in_frame`).
+//! API 402 adds a cancellable item frame item render hook (`native_render_item_in_frame`).
 //!
-//! API 360 adds Local player movement input before application (`native_movement_input`).
+//! API 401 adds Local player movement input before application (`native_movement_input`).
 //!
 //! API 359 adds a living entity jumping (`native_living_jump`).
 //!
@@ -971,7 +971,7 @@
 //! recipe viewer needs.
 //!
 //! Names, parameters and call sites are kept from release to release, and
-//! API 360 adds a mod block entity's saved data read and written from any hook
+//! API 401 adds a mod block entity's saved data read and written from any hook
 //! with a host (`native_mod_block_entity_data`, `native_set_mod_block_entity_data`).
 //!
 //! hook points are only ever added: each addition raises [`NATIVE_HOOKS_API`].
@@ -2670,7 +2670,7 @@ impl Game<'_> {
         mod_api::dispatch_commands(self, mod_api::mods(), commands);
     }
     /// Player FOV scale, after vanilla effects and before zoom and easing.
-    /// Invalid values or values outside 0.01..=10 revert to base. API 362.
+    /// Invalid values or values outside 0.01..=10 revert to base. API 403.
     pub(super) fn native_compute_fov_modifier(
         &self,
         player: &horizon_client::camera::FovPlayer,
@@ -8776,7 +8776,7 @@ impl Game<'_> {
     /// The saved compound of the mod block entity at `pos`
     /// (`ModBlockEntity.nbt`, without `id`, `x`, `y`, `z` and `Items`): none
     /// for no block entity there, a vanilla one, or the one ticking now (out
-    /// of the world: `native_block_entity_tick` has it). API 360.
+    /// of the world: `native_block_entity_tick` has it). API 401.
     pub(super) fn native_mod_block_entity_data(&self, pos: [i32; 3]) -> Option<Compound> {
         match self.world.block_entities.get(&(pos[0], pos[1], pos[2]))? {
             BlockEntity::Mod(m) if !m.id.is_empty() => Some(m.nbt.clone()),
@@ -8787,7 +8787,7 @@ impl Game<'_> {
     /// its chunk to save, as its `setChanged` would (the items and the menu's
     /// data slots are not in it: `native_with_mod_block_entity` changes
     /// those); false for no mod block entity there. Clients get the change
-    /// with `native_block_entity_sync`. API 360.
+    /// with `native_block_entity_sync`. API 401.
     pub(super) fn native_set_mod_block_entity_data(
         &mut self,
         pos: [i32; 3],

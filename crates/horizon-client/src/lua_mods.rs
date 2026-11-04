@@ -4576,6 +4576,7 @@ experimental = ["scripts"]
                 yaw: 0.0,
                 pitch: 0.0,
                 entity_id: 0,
+                address: String::new(),
             })
         }
         fn mob_view(&self, dimension: &str, id: u32) -> Option<MobView> {
@@ -5616,6 +5617,7 @@ experimental = ["scripts"]
                 yaw: 0.0,
                 pitch: 0.0,
                 entity_id: 0,
+                address: String::new(),
             })
         }
         fn held(&self) -> Option<(String, u32, bool)> {

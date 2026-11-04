@@ -227,7 +227,7 @@ impl Game<'_> {
     }
     /// The players of the world this game runs: `native_server_players` and,
     /// in a single-player world, its owner, who is on no hub (a LAN world's
-    /// owner is a hub guest already). Empty on a client. API 362.
+    /// owner is a hub guest already). Empty on a client. API 403.
     pub(super) fn native_level_players(&self) -> Vec<NativeServerPlayer> {
         let mut players = self.native_server_players();
         if self.remote.is_some() {
@@ -256,6 +256,8 @@ impl Game<'_> {
                 yaw: p.yaw,
                 pitch: p.pitch,
                 entity_id: p.entity_id,
+                // The window's own player has no connection.
+                address: String::new(),
             },
         );
         players
@@ -318,7 +320,7 @@ impl Game<'_> {
     /// Plays the sound event `sound` (`minecraft:entity.zombie.ambient`, or a
     /// mod's own) at `pos` in the level in place, `dimension`, for every
     /// player within range (16 blocks, times `volume` past 1), as
-    /// `/playsound` does on the master source: how many heard it. API 364.
+    /// `/playsound` does on the master source: how many heard it. API 404.
     pub(super) fn native_play_sound(
         &mut self,
         dimension: &str,
@@ -374,7 +376,7 @@ impl Game<'_> {
     /// items, are not here) at `pos` in the level in place, spread by
     /// `spread` on each axis and moving up to `speed`, to every player within
     /// 32 blocks, as `/particle` does: how many saw them; 0 for a name the
-    /// game does not know. API 364.
+    /// game does not know. API 404.
     pub(super) fn native_particles(
         &mut self,
         dimension: &str,
@@ -489,7 +491,7 @@ impl Game<'_> {
         false
     }
     /// Sets how the player `uuid`'s next titles fade in, stay and fade out,
-    /// in ticks, as `/title times` does; false when they are not on. API 364.
+    /// in ticks, as `/title times` does; false when they are not on. API 404.
     pub(super) fn native_title_times(
         &mut self,
         uuid: u128,

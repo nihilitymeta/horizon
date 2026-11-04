@@ -479,6 +479,7 @@ impl MobType {
             step_sound: None,
             food: Arc::default(),
             tempt: Arc::default(),
+            item_stack_limits: Default::default(),
         })
     }
     pub fn layer(&self, key: &str) -> Option<&Arc<Part>> {
@@ -4470,51 +4471,6 @@ pub(crate) mod sensor_scan_tests {
     use horizon_core::geometry::Vec3;
 
     pub(crate) fn kind() -> Arc<MobType> {
-        Arc::new(MobType {
-            id: "minecraft:cow".into(),
-            species: Species::Cow,
-            width: 0.9,
-            height: 1.4,
-            eye_height: 1.3,
-            category: "creature".into(),
-            max_health: 10.0,
-            speed: 0.2,
-            flying_speed: 0.4,
-            attack_damage: 0.0,
-            attack_knockback: 0.0,
-            follow_range: 16.0,
-            step_height: 0.6,
-            armor: 0.0,
-            armor_toughness: 0.0,
-            knockback_resistance: 0.0,
-            jump_strength: 0.42,
-            attributes: Arc::default(),
-            item_stack_limits: Default::default(),
-            gravity: 0.08,
-            safe_fall_distance: 3.0,
-            fall_damage_multiplier: 1.0,
-            water_efficiency: 0.0,
-            water_slowdown: 0.8,
-            air_speed: 0.02,
-            baby_scale: 0.5,
-            head_rot_speed: 10.0,
-            max_head_x_rot: 40.0,
-            max_head_y_rot: 75.0,
-            ambient_interval: 120,
-            flags: Flags {
-                animal: true,
-                ..Default::default()
-            },
-            model: Arc::new(Part::parse("root", &json!({}))),
-            layers: Default::default(),
-            texture: String::new(),
-            brain: Brain::Passive,
-            anim: Anim::Rabbit,
-            sounds: [""; 3],
-            step_sound: None,
-            food: Arc::default(),
-            tempt: Arc::default(),
-        })
         MobType::cow_for_tests()
     }
     /// `n` mobs in pens of 20 spread over a square of `side` blocks, as on a

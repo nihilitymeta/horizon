@@ -222,7 +222,7 @@ impl Game<'_> {
     /// The living mob `id`'s view as its goals see it (`MobView`), in the
     /// level in place, `dimension`: none for no such mob or a client's copy.
     /// The fields that need the world (`target_position`, `nearby`) are
-    /// empty. API 361.
+    /// empty. API 402.
     pub(super) fn native_mob_view(&self, dimension: &str, id: u32) -> Option<MobView> {
         if !self.native_mob_level(dimension) {
             return None;
@@ -231,7 +231,7 @@ impl Game<'_> {
         mob.alive().then(|| MobView::of(mob, None))
     }
     /// The views of every living mob in the level in place, `dimension`, as
-    /// `native_mob_view` gives one: none on a client's copy. API 362.
+    /// `native_mob_view` gives one: none on a client's copy. API 403.
     pub(super) fn native_mob_views(&self, dimension: &str) -> Vec<MobView> {
         if !self.native_mob_level(dimension) {
             return Vec::new();
