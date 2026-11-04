@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Þú átt engar snyrtivörur ennþá.",
   "Claim for free": "Sækja ókeypis",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Greiðsluþjónusta verslunarinnar þjónar ekki þínu landi, svo þú getur sótt Stofnandi settið hér ókeypis.",
-  "The Founder Set is yours.": "Stofnandi settið er þitt."
+  "The Founder Set is yours.": "Stofnandi settið er þitt.",
+  "Update the launcher automatically": "Uppfæra ræsiforritið sjálfkrafa",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Setur upp nýrri útgáfu ræsiforritsins þegar hún finnst. Slökkt heldur staðbundinni útgáfu óbreyttri."
 }

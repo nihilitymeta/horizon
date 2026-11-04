@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Sizda hali kosmetika yo'q.",
   "Claim for free": "Bepul olish",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Do‘konning to‘lov xizmati sizning mamlakatingizda ishlamaydi, shuning uchun Ta'sischilar to'plamini bu yerda bepul olishingiz mumkin.",
-  "The Founder Set is yours.": "Ta'sischilar to'plami endi sizniki."
+  "The Founder Set is yours.": "Ta'sischilar to'plami endi sizniki.",
+  "Update the launcher automatically": "Ishga tushirgichni avtomatik yangilash",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Yangiroq ishga tushirgich versiyasi topilganda uni o'rnatadi. O'chirilganda mahalliy yig'ma o'zgarmaydi."
 }

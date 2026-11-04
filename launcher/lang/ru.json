@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "У вас пока нет косметики.",
   "Claim for free": "Получить бесплатно",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Платёжный сервис магазина не работает в вашей стране, поэтому Набор основателя можно получить здесь бесплатно.",
-  "The Founder Set is yours.": "Набор основателя теперь ваш."
+  "The Founder Set is yours.": "Набор основателя теперь ваш.",
+  "Update the launcher automatically": "Обновлять лаунчер автоматически",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Устанавливает новый выпуск лаунчера, как только он найден. Выключено: локальная сборка остаётся как есть."
 }

@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Encara no tens cap cosmètic.",
   "Claim for free": "Aconsegueix-lo gratis",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "El proveïdor de pagaments de la botiga no dona servei al teu país, així que pots aconseguir el Conjunt del fundador aquí gratis.",
-  "The Founder Set is yours.": "El Conjunt del fundador és teu."
+  "The Founder Set is yours.": "El Conjunt del fundador és teu.",
+  "Update the launcher automatically": "Actualitza el llançador automàticament",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Instal·la una versió més nova del llançador quan en troba una. Desactivat, conserva la compilació local tal com és."
 }

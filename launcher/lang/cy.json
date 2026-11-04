@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Does gennych chi ddim colur eto.",
   "Claim for free": "Hawlio am ddim",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Nid yw darparwr talu'r siop yn gwasanaethu eich gwlad, felly gallwch hawlio'r Set sylfaenydd yma am ddim.",
-  "The Founder Set is yours.": "Mae'r Set sylfaenydd yn eiddo i chi."
+  "The Founder Set is yours.": "Mae'r Set sylfaenydd yn eiddo i chi.",
+  "Update the launcher automatically": "Diweddaru'r lansiwr yn awtomatig",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Yn gosod fersiwn newyddach o'r lansiwr pan ddaw o hyd i un. Mae diffodd yn cadw adeiladwaith lleol fel y mae."
 }

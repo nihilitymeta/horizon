@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Ende nuk ke asnjë kozmetikë.",
   "Claim for free": "Merre falas",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Ofruesi i pagesave të dyqanit nuk shërben në vendin tënd, prandaj mund ta marrësh Setin themelues këtu falas.",
-  "The Founder Set is yours.": "Seti themelues është yti."
+  "The Founder Set is yours.": "Seti themelues është yti.",
+  "Update the launcher automatically": "Përditëso automatikisht nisësin",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Instalon një version më të ri të nisësit kur gjendet. Fikur e mban versionin lokal siç është."
 }

@@ -847,7 +847,8 @@ enum Cmd {
     /// minecraft-dir PATH, server-dir PATH ("default" resets a folder), install-new-versions
     /// on|off, prune-old-versions on|off (delete old versions after an install, keeping the
     /// selected one, the ones instances use and the newest few), keep-versions N (how many of the
-    /// newest to keep; "default" is 2), opening-animation on|off, proxy http://host:port
+    /// newest to keep; "default" is 2), opening-animation on|off, auto-update-launcher on|off
+    /// (off keeps a local build of the launcher as it is), proxy http://host:port
     /// ("default" removes it), while-playing stay|minimize|hide (what the window does while the game runs), language
     /// system|en|fr|ru|de|zh|es|uk|pl (the window's language; system follows the computer's), accent
     /// violet|blue|teal|green|amber|red|pink|#rrggbb|DEGREES (a named accent, any colour, or any
@@ -1003,7 +1004,7 @@ pub fn command() -> clap::Command {
 pub const AI_COMMANDS: [&str; 2] = ["mcp", "agent-config"];
 
 /// The keys `settings` sets.
-const SETTING_KEYS: [&str; 14] = [
+const SETTING_KEYS: [&str; 15] = [
     "selected-version",
     "minecraft-dir",
     "server-dir",
@@ -1011,6 +1012,7 @@ const SETTING_KEYS: [&str; 14] = [
     "prune-old-versions",
     "keep-versions",
     "opening-animation",
+    "auto-update-launcher",
     "proxy",
     "while-playing",
     "language",
@@ -1048,6 +1050,7 @@ fn set_setting(s: &mut backend::Settings, key: &str, value: &str) -> Result<(), 
             }
         }
         "opening-animation" => s.skip_opening = !on_off(value)?,
+        "auto-update-launcher" => s.skip_launcher_updates = !on_off(value)?,
         "while-playing" => {
             s.while_playing = backend::WhilePlaying::parse(value)
                 .ok_or_else(|| format!("{value}: say stay, minimize or hide"))?
@@ -1129,6 +1132,7 @@ fn settings_json(s: &backend::Settings) -> serde_json::Value {
         "prune_old_versions": s.auto_prune(),
         "keep_versions": s.keep_newest(),
         "opening_animation": !s.skip_opening,
+        "auto_update_launcher": !s.skip_launcher_updates,
         "game_args": s.game_args,
         "proxy": s.proxy,
         "desktop_entry": s.desktop_entry.unwrap_or(true),

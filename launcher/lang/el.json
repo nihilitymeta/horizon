@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Δεν έχετε ακόμα καλλυντικά.",
   "Claim for free": "Απόκτησέ το δωρεάν",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Ο πάροχος πληρωμών του καταστήματος δεν εξυπηρετεί τη χώρα σου, οπότε μπορείς να αποκτήσεις το Ιδρυτικό σύνολο εδώ δωρεάν.",
-  "The Founder Set is yours.": "Το Ιδρυτικό σύνολο είναι δικό σου."
+  "The Founder Set is yours.": "Το Ιδρυτικό σύνολο είναι δικό σου.",
+  "Update the launcher automatically": "Αυτόματη ενημέρωση του εκκινητή",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Εγκαθιστά νεότερη έκδοση του εκκινητή όταν βρεθεί. Όταν είναι ανενεργό, η τοπική έκδοση μένει ως έχει."
 }

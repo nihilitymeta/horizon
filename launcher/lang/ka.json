@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "ჯერ არ გაქვთ კოსმეტიკა.",
   "Claim for free": "მიიღე უფასოდ",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "მაღაზიის გადახდის პროვაიდერი შენს ქვეყანაში არ მუშაობს, ამიტომ დამფუძნებელი ნაკრების მიღება აქ უფასოდ შეგიძლია.",
-  "The Founder Set is yours.": "დამფუძნებელი ნაკრები შენია."
+  "The Founder Set is yours.": "დამფუძნებელი ნაკრები შენია.",
+  "Update the launcher automatically": "ლაუნჩერის ავტომატური განახლება",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "აყენებს ლაუნჩერის ახალ ვერსიას, როცა პოულობს. გამორთულისას ლოკალური ვერსია უცვლელი რჩება."
 }

@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Vous ne possédez encore aucun cosmétique.",
   "Claim for free": "Obtenir gratuitement",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Le prestataire de paiement de la boutique n'opère pas dans votre pays : vous pouvez donc obtenir le Set fondateur ici gratuitement.",
-  "The Founder Set is yours.": "Le Set fondateur est à vous."
+  "The Founder Set is yours.": "Le Set fondateur est à vous.",
+  "Update the launcher automatically": "Mettre à jour le launcher automatiquement",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installe une version plus récente du launcher dès qu'elle est trouvée. Désactivé, une compilation locale reste telle quelle."
 }

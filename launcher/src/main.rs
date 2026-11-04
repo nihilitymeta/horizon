@@ -888,8 +888,11 @@ impl Launcher {
         });
     }
 
-    fn update_launcher(&mut self, release: Release) {
+    /// Replaces this launcher with `release`'s: on its own only when the player lets it
+    /// (`automatic`), always from the Settings page's Update button.
+    fn update_launcher(&mut self, release: Release, automatic: bool) {
         if !backend::self_update_allowed()
+            || (automatic && self.settings.skip_launcher_updates)
             || matches!(
                 self.self_update,
                 SelfUpdate::Downloading(..) | SelfUpdate::Ready(_) | SelfUpdate::Stuck(_)
@@ -1331,7 +1334,7 @@ impl Launcher {
                         self.install_update();
                     }
                     if let Some(release) = self.updates.launcher.clone() {
-                        self.update_launcher(release);
+                        self.update_launcher(release, true);
                     }
                 }
                 Msg::Updates(Err(e)) => self.update_error = Some(e),
@@ -3689,6 +3692,16 @@ impl Launcher {
                 cx.notify();
             },
         ));
+        let auto_update = switch(
+            "auto-update-launcher",
+            !self.settings.skip_launcher_updates,
+            &t,
+        )
+        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+            this.settings.skip_launcher_updates = !this.settings.skip_launcher_updates;
+            this.save_settings();
+            cx.notify();
+        }));
         // Linux: the launcher's entry in the applications menu (`horizon_launcher::desktop`).
         let menu_entry = switch("desktop-entry", self.settings.desktop_entry(), &t).on_click(
             cx.listener(|this, _: &ClickEvent, _, cx| {
@@ -3787,9 +3800,19 @@ impl Launcher {
                 )
             }
             SelfUpdate::Downloading(..) => None,
-            _ => Some(
+            // With automatic updates off, the release found waits for this button.
+            _ => Some(match &self.updates.launcher {
+                Some(release) if self.settings.skip_launcher_updates => {
+                    let release = release.clone();
+                    button("update-launcher", "Update", Kind::Secondary, &t)
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.update_launcher(release.clone(), false);
+                            cx.notify();
+                        }))
+                        .into_any_element()
+                }
                 // The glass look's About tile has the mockup's filled button.
-                button(
+                _ => button(
                     "check",
                     "Check now",
                     if t.glass {
@@ -3804,7 +3827,7 @@ impl Launcher {
                     cx.notify();
                 }))
                 .into_any_element(),
-            ),
+            }),
         };
         let mono = |s: String| div().font_family(theme::MONO).child(s).into_any_element();
         let plain = |s: &str| div().child(tr(s).to_string()).into_any_element();
@@ -3908,6 +3931,15 @@ impl Launcher {
                         tr("Show the opening"),
                         Some(plain("The wordmark, while the release list loads.")),
                         Some(opening.into_any_element()),
+                        &t,
+                    ))
+                    .child(index_row(
+                        n + 3,
+                        tr("Update the launcher automatically"),
+                        Some(plain(
+                            "Installs a newer launcher release when one is found. Off keeps a local build as it is.",
+                        )),
+                        Some(auto_update.into_any_element()),
                         &t,
                     ))
                     .child(group("Network", "globe"))

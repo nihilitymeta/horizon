@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Dar neturite kosmetikos.",
   "Claim for free": "Gauti nemokamai",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Parduotuvės mokėjimų paslaugos jūsų šalyje neveikia, todėl Steigėjų rinkinį čia galite gauti nemokamai.",
-  "The Founder Set is yours.": "Steigėjų rinkinys jūsų."
+  "The Founder Set is yours.": "Steigėjų rinkinys jūsų.",
+  "Update the launcher automatically": "Automatiškai atnaujinti paleidyklę",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Įdiegia naujesnę paleidyklės versiją, kai ją randa. Išjungus vietinė versija paliekama tokia, kokia yra."
 }

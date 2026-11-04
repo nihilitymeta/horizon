@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Դուք դեռ կոսմետիկա չունեք։",
   "Claim for free": "Ստանալ անվճար",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Խանութի վճարային ծառայությունը ձեր երկրում չի գործում, ուստի Հիմնադիր հավաքածուն կարող եք ստանալ այստեղ անվճար։",
-  "The Founder Set is yours.": "Հիմնադիր հավաքածուն ձերն է։"
+  "The Founder Set is yours.": "Հիմնադիր հավաքածուն ձերն է։",
+  "Update the launcher automatically": "Ավտոմատ թարմացնել գործարկիչը",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Տեղադրում է գործարկիչի ավելի նոր թողարկում, երբ գտնում է։ Անջատված վիճակում տեղական տարբերակը մնում է նույնը։"
 }

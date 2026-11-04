@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Zatím nevlastníte žádnou kosmetiku.",
   "Claim for free": "Získat zdarma",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Platební služba obchodu ve vaší zemi nefunguje, takže si Zakladatelský set můžete vyzvednout zde zdarma.",
-  "The Founder Set is yours.": "Zakladatelský set je váš."
+  "The Founder Set is yours.": "Zakladatelský set je váš.",
+  "Update the launcher automatically": "Automaticky aktualizovat spouštěč",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Nainstaluje novější verzi spouštěče, když ji najde. Vypnuto ponechá místní sestavení beze změny."
 }

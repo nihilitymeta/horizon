@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Jo hawwe noch gjin kosmetika.",
   "Claim for free": "Fergees krije",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "De betellingsprovider fan de winkel betsjinnet dyn lân net, dus kinst de Oprjochter set hjir fergees krije.",
-  "The Founder Set is yours.": "De Oprjochter set is fan dy."
+  "The Founder Set is yours.": "De Oprjochter set is fan dy.",
+  "Update the launcher automatically": "Update the launcher automatically",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installs a newer launcher release when one is found. Off keeps a local build as it is."
 }

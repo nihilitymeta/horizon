@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "آپ کے پاس ابھی تک کوئی کاسمیٹکس نہیں ہے۔",
   "Claim for free": "مفت حاصل کریں",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "دکان کا ادائیگی فراہم کنندہ آپ کے ملک میں خدمات نہیں دیتا، اس لیے آپ بانی سیٹ یہاں مفت حاصل کر سکتے ہیں۔",
-  "The Founder Set is yours.": "بانی سیٹ اب آپ کا ہے۔"
+  "The Founder Set is yours.": "بانی سیٹ اب آپ کا ہے۔",
+  "Update the launcher automatically": "لانچر کو خودکار طور پر اپ ڈیٹ کریں",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "نیا لانچر ریلیز ملنے پر اسے انسٹال کرتا ہے۔ بند ہونے پر مقامی بلڈ جیسا ہے ویسا ہی رہتا ہے۔"
 }

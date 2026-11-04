@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Сездә әле косметика юк.",
   "Claim for free": "Бушлай алу",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Кибетнең түләү хезмәте сезнең илдә эшләми, шуңа күрә Нигез салучы җыелмасын монда бушлай ала аласыз.",
-  "The Founder Set is yours.": "Нигез салучы җыелмасы — сезнеке."
+  "The Founder Set is yours.": "Нигез салучы җыелмасы — сезнеке.",
+  "Update the launcher automatically": "Update the launcher automatically",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installs a newer launcher release when one is found. Off keeps a local build as it is."
 }

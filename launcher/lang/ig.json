@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Ị nweghị ihe ịchọ mma ọ bụla ugbu a.",
   "Claim for free": "Nara ya n'efu",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Onye na-enye ịkwụ ụgwọ nke ụlọ ahịa anaghị arụ ọrụ na mba gị, ya mere ị nwere ike ịnara Ntọala ntọala ebe a n'efu.",
-  "The Founder Set is yours.": "Ntọala ntọala bụ nke gị."
+  "The Founder Set is yours.": "Ntọala ntọala bụ nke gị.",
+  "Update the launcher automatically": "Update the launcher automatically",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installs a newer launcher release when one is found. Off keeps a local build as it is."
 }

@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Níl aon chosmaid agat go fóill.",
   "Claim for free": "Faigh saor in aisce",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Ní fhreastalaíonn soláthraí íocaíochta an tsiopa ar do thír, mar sin is féidir leat an tSraith bunaitheoir a fháil anseo saor in aisce.",
-  "The Founder Set is yours.": "Is leatsa an tSraith bunaitheoir."
+  "The Founder Set is yours.": "Is leatsa an tSraith bunaitheoir.",
+  "Update the launcher automatically": "Nuashonraigh an lainseálaí go huathoibríoch",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Suiteálann sé leagan níos nuaí den lainseálaí nuair a aimsítear ceann. Nuair atá sé múchta, fanann leagan áitiúil mar atá."
 }

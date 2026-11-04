@@ -1120,5 +1120,7 @@
   "You don't own any cosmetics yet.": "Bạn chưa có mỹ phẩm nào.",
   "Claim for free": "Nhận miễn phí",
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Nhà cung cấp thanh toán của cửa hàng không phục vụ quốc gia của bạn, nên bạn có thể nhận Bộ sáng lập tại đây miễn phí.",
-  "The Founder Set is yours.": "Bộ sáng lập giờ là của bạn."
+  "The Founder Set is yours.": "Bộ sáng lập giờ là của bạn.",
+  "Update the launcher automatically": "Tự động cập nhật trình khởi chạy",
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Cài đặt bản phát hành trình khởi chạy mới hơn khi tìm thấy. Khi tắt, bản dựng cục bộ được giữ nguyên."
 }
