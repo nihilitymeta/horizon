@@ -92,6 +92,8 @@ Horizon server settings (docs/server.md). The server writes them into server.pro
 | `simulation_distance` | `10` | `simulation-distance` | chunks around each player where mobs, crops and redstone tick |
 | `max_view_distance` | `0` | `horizon-max-view-distance` | past view_distance, saved chunks only, up to this (never generated; 0: off) |
 | `admin_feedback_to_ops` | `true` | `horizon-admin-feedback-to-ops` | operators see each other's commands ([name: ...], vanilla); false: only the log |
+| `websocket` | `true` | `horizon-websocket` | also take players over a WebSocket on the game port, from a tunnel or proxy (docs/websocket.md) |
+| `trusted_proxies` | `"127.0.0.1, ::1"` | `horizon-trusted-proxies` | proxies whose WebSocket handshake may name the player's address (CF-Connecting-IP...) |
 
 ### `[world]`
 
