@@ -36,12 +36,13 @@ pub const SCHEMA: u32 = 1;
 /// (cores, clocks, VRAM, drive, screen, power, form), 2026-10-23.
 pub const CONSENT_VERSION: u32 = 2;
 
-/// The ingest server (`crates/horizon-telemetry-server`, on Railway). `HORIZON_TELEMETRY_URL`
-/// overrides it (a local server); `HORIZON_TELEMETRY_URL=off` sends nothing at all, no ping
-/// either (tests and automated runs). What is sent still depends on the player's switches.
+/// Horizon's ingest server (`crates/horizon-telemetry-server`, on Railway).
 pub const DEFAULT_ENDPOINT: &str = "https://telemetry.playhorizon.dev";
 
-/// Where items are sent, if anywhere.
+/// Where items are sent, if anywhere. Event Horizon sends nothing, the "I'm playing" ping
+/// included, unless `HORIZON_TELEMETRY_URL` names a server: its builds are not Horizon's, and
+/// Horizon's server would count them as Horizon's players. `off` (or `none`, `0`) sends nothing
+/// too. What is sent still depends on the player's switches.
 pub fn endpoint() -> Option<String> {
     resolve(std::env::var("HORIZON_TELEMETRY_URL").ok().as_deref())
 }
@@ -50,7 +51,7 @@ fn resolve(var: Option<&str>) -> Option<String> {
     match var.map(str::trim) {
         Some("off" | "none" | "0") => None,
         Some(url) if !url.is_empty() => Some(url.trim_end_matches('/').to_owned()),
-        _ => Some(DEFAULT_ENDPOINT.to_owned()),
+        _ => None,
     }
 }
 
@@ -114,9 +115,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_endpoint_defaults_to_the_server_and_can_be_moved_or_turned_off() {
-        assert_eq!(resolve(None).as_deref(), Some(DEFAULT_ENDPOINT));
-        assert_eq!(resolve(Some(" ")).as_deref(), Some(DEFAULT_ENDPOINT));
+    fn nothing_is_sent_unless_a_server_is_named() {
+        // Event Horizon: no server unless one is named, so nothing reaches Horizon's.
+        assert_eq!(resolve(None), None);
+        assert_eq!(resolve(Some(" ")), None);
+        assert_eq!(
+            resolve(Some(DEFAULT_ENDPOINT)).as_deref(),
+            Some(DEFAULT_ENDPOINT)
+        );
         assert_eq!(
             resolve(Some("http://127.0.0.1:8080/")).as_deref(),
             Some("http://127.0.0.1:8080")

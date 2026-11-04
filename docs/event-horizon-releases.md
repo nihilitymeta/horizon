@@ -1,12 +1,12 @@
 # Event Horizon Releases
 
-Event Horizon publishes its builds as GitHub releases of `whos-carmen/horizon`, for Linux x86_64 and Windows x64. A
+Event Horizon publishes its builds as GitHub releases of `whos-carmen/horizon`, for Windows x64. A
 mod developer installs the launcher from a release once; after that, the launcher installs each new release by itself.
 Nobody compiles the engine to play it.
 
 ## What a release holds
 
-Each platform's archive, `event-horizon-<platform>.tar.gz` or `.zip`, holds:
+The archive, `event-horizon-windows-x64.zip`, holds:
 
 | Program | What it is |
 |---|---|
@@ -15,7 +15,8 @@ Each platform's archive, `event-horizon-<platform>.tar.gz` or `.zip`, holds:
 | `horizon-ctl` | drives a running game, for the modkit's in-game checks |
 | `cargo-horizon-mod` | makes, checks and packs mods |
 
-`SHA256SUMS` lists each archive's checksum.
+`SHA256SUMS` lists its checksum. Another platform is another row in the workflow's matrix: Linux x86_64 builds
+on GitHub's runners as it is, with the system libraries the workflow installs for it.
 
 A release holds only programs. The game's data files (the exporters and the data they prepare) come from one of
 Horizon's own releases: they are built with Minecraft's files, which can't be on GitHub's runners.
@@ -30,15 +31,16 @@ Horizon's own releases: they are built with Minecraft's files, which can't be on
    git push origin eh-v0.1.0
    ```
 
-The `event horizon release` workflow builds both platforms and publishes the release. It takes a while: each platform
-compiles the whole workspace. Its progress is on the repository's Actions tab.
+The `event horizon release` workflow builds the release and publishes it. It takes a while: it compiles the whole
+workspace. Its progress is on the repository's Actions tab.
 
 Version tags start with `eh-v`, so they never mix with upstream's `v…` tags. You decide when to release; nothing is
 released on its own.
 
 ## What a developer does
 
-1. Download the archive for their computer from the newest release, unpack it, and start `horizon-launcher`.
+1. Download `event-horizon-windows-x64.zip` from the newest release, unpack it, and start `horizon-launcher.exe`.
+   Windows may warn that the program is unrecognized, since it isn't code-signed: choose More info, then Run anyway.
 2. Sign in with a Microsoft account that owns Minecraft: Java Edition.
 3. Install one Horizon version, for its game files: Versions, the newest Nightly, Install.
 
@@ -53,6 +55,11 @@ Two switches are off in Event Horizon's launcher, so nothing upstream replaces t
 
 The command line does the same as the card: `horizon-launcher sources list`, `sources update`,
 `sources auto <owner>/<repo> on|off`, `sources add <owner>/<repo>`.
+
+## Telemetry
+
+Event Horizon's game and launcher send nothing to Horizon's servers: no telemetry and no "I'm playing" ping, so
+Horizon's counts stay Horizon's. To send to a server of your own, set `HORIZON_TELEMETRY_URL` to its address.
 
 ## Microsoft sign-in
 
