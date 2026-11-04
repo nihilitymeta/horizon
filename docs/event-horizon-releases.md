@@ -63,25 +63,6 @@ Horizon's counts stay Horizon's. To send to a server of your own, set `HORIZON_T
 
 ## Microsoft sign-in
 
-The launcher starts the game only for a signed-in account that owns the game. Sign-in needs an Azure app of Event
-Horizon's own: never another application's client ID, Horizon's included. You register it once:
-
-1. Register an app in Azure, with personal Microsoft accounts only and public client flows allowed. The steps are in
-   [microsoft-account.md](microsoft-account.md#what-ludovic-registers-needs-his-accounts); use your own account and
-   the name Event Horizon.
-2. Ask Mojang to approve the app for Minecraft, with the form that page links. Until Mojang approves it, sign-in stops
-   at the Minecraft step. Approval takes days to weeks.
-3. Give the release builds the app's client ID (a public value, not a secret):
-
-   ```sh
-   gh variable set HORIZON_MSA_CLIENT_ID -R whos-carmen/horizon --body <client id>
-   ```
-
-4. For a launcher you build yourself, set it when you build or when you run it:
-
-   ```sh
-   export HORIZON_MSA_CLIENT_ID=<client id>
-   ```
-
-A launcher built without it says "This build of the launcher has no Microsoft sign-in", and the release workflow
-warns about it.
+The launcher starts the game only for a signed-in account that owns the game, and signing in needs Event Horizon's
+own app registration. [Setting up Microsoft sign-in](event-horizon-sign-in.md) walks through it. Until it is done, a
+release's launcher can't sign in, and the release workflow warns about it.
