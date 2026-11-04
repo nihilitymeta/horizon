@@ -35,13 +35,14 @@ impl Inbound {
 
     /// Reads payload into `out`, reading `source` once its decoded bytes run out: 0 at the end of the
     /// stream (the socket's, or the peer's close). Frames that answer the peer go to `replies`, also when
-    /// this fails; a peer that broke the protocol gets a close that says so.
+    /// this fails; a peer that broke the protocol gets a close that says so. `None` when replies came
+    /// before any payload: they are to be sent now, not after the next payload, then this called again.
     fn read(
         &mut self,
         source: &mut impl Read,
         out: &mut [u8],
         replies: &mut Vec<u8>,
-    ) -> io::Result<usize> {
+    ) -> io::Result<Option<usize>> {
         let mut chunk = [0u8; 16 * 1024];
         loop {
             if self.at < self.data.len() {
@@ -52,16 +53,19 @@ impl Inbound {
                     self.data.clear();
                     self.at = 0;
                 }
-                return Ok(n);
+                return Ok(Some(n));
+            }
+            if !replies.is_empty() {
+                return Ok(None);
             }
             if self.decoder.closed() || out.is_empty() {
-                return Ok(0);
+                return Ok(Some(0));
             }
             let leftovers;
             let raw = if self.raw.is_empty() {
                 let n = source.read(&mut chunk)?;
                 if n == 0 {
-                    return Ok(0);
+                    return Ok(Some(0));
                 }
                 &chunk[..n]
             } else {
@@ -233,13 +237,19 @@ impl Read for WsStream {
         let mut reader = self.shared.reader.lock().unwrap_or_else(|e| e.into_inner());
         let (source, inbound) = &mut *reader;
         let mut replies = Vec::new();
-        let read = inbound.read(source, out, &mut replies);
-        drop(reader);
-        if !replies.is_empty() {
-            // A pong that can't go out now fails the next write the same way.
-            let _ = self.send(&replies);
+        loop {
+            let read = inbound.read(source, out, &mut replies);
+            if !replies.is_empty() {
+                // A pong that can't go out now fails the next write the same way.
+                let _ = self.send(&replies);
+                replies.clear();
+            }
+            match read {
+                Ok(None) => continue,
+                Ok(Some(n)) => return Ok(n),
+                Err(e) => return Err(e),
+            }
         }
-        read
     }
 }
 
@@ -316,13 +326,19 @@ impl<S: Read + Write> Framed<S> {
 impl<S: Read + Write> Read for Framed<S> {
     fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
         let mut replies = Vec::new();
-        let read = self.inbound.read(&mut self.socket, out, &mut replies);
-        if !replies.is_empty() {
-            self.out.extend_from_slice(&replies);
-            // What the socket won't take now goes with the next flush.
-            let _ = self.drain();
+        loop {
+            let read = self.inbound.read(&mut self.socket, out, &mut replies);
+            if !replies.is_empty() {
+                self.out.append(&mut replies);
+                // What the socket won't take now goes with the next flush.
+                let _ = self.drain();
+            }
+            match read {
+                Ok(None) => continue,
+                Ok(Some(n)) => return Ok(n),
+                Err(e) => return Err(e),
+            }
         }
-        read
     }
 }
 
@@ -376,5 +392,44 @@ impl Read for Deadline {
         }
         self.socket.set_read_timeout(Some(left))?;
         self.socket.read(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A read that waits for payload still answers the pings that arrive meanwhile: clients and
+    /// proxies that ping an idle connection close it when no pong comes.
+    #[test]
+    fn a_waiting_read_answers_pings() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        client.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        client
+            .write_all(
+                b"GET / HTTP/1.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
+                  Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n",
+            )
+            .unwrap();
+        let (server, _) =
+            WsStream::accept(listener.accept().unwrap().0, Duration::from_secs(5), &[]).unwrap();
+        let reading = std::thread::spawn(move || {
+            let mut server = server;
+            let mut byte = [0u8; 1];
+            server.read_exact(&mut byte).map(|()| byte[0])
+        });
+        let (head, rest) = handshake::read_head(&mut client).unwrap();
+        assert!(head.starts_with("HTTP/1.1 101 ") && rest.is_empty());
+        let mut ping = Vec::new();
+        codec::encode(&mut ping, codec::PING, b"hi", Role::Client);
+        client.write_all(&ping).unwrap();
+        let mut pong = [0u8; 4];
+        client.read_exact(&mut pong).unwrap();
+        assert_eq!(pong, [0x8a, 2, b'h', b'i']);
+        let mut data = Vec::new();
+        codec::encode(&mut data, codec::BINARY, &[9], Role::Client);
+        client.write_all(&data).unwrap();
+        assert_eq!(reading.join().unwrap().unwrap(), 9);
     }
 }
