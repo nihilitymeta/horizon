@@ -306,6 +306,27 @@ const LUA_HELPERS: &[(&str, &str)] = &[
 #[cfg(test)]
 const LUA_HELPERS_INDIRECT: &[&str] = &["attachments", "config_dir"];
 
+/// The helpers listed by the pending hook fragments, in file order.
+fn fragment_helpers(root: &Path) -> Result<Vec<serde_json::Value>, String> {
+    let dir = root.join("tools/native-hook-fragments");
+    let mut paths: Vec<_> = fs::read_dir(&dir)
+        .map_err(|e| format!("{}: {e}", dir.display()))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .collect();
+    paths.sort();
+    let mut helpers = Vec::new();
+    for path in paths {
+        let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let fragment: serde_json::Value =
+            serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+        if let Some(list) = fragment["helpers"].as_array() {
+            helpers.extend(list.iter().cloned());
+        }
+    }
+    Ok(helpers)
+}
+
 pub fn run(check: bool) -> Result<(), String> {
     generate(&Path::new(env!("CARGO_MANIFEST_DIR")).join(".."), check)
 }
@@ -463,6 +484,9 @@ The full doc of each is on its `native_<name>` function.\n\n");
         .as_array()
         .ok_or("catalog helpers must be an array")?
         .clone();
+    // Helpers in pending fragments (tools/native-hook-fragments/) are the host's too, with no API
+    // number yet, as `catalog_hooks` adds pending hooks.
+    helpers.extend(fragment_helpers(root)?);
     helpers.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
     for helper in &helpers {
         let name = helper["name"].as_str().ok_or("helper name missing")?;
@@ -577,6 +601,7 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
+            .chain(&super::fragment_helpers(&root).unwrap())
             .map(|h| h["name"].as_str().unwrap().to_owned())
             .collect();
         let mut called: std::collections::BTreeSet<String> =

@@ -141,7 +141,7 @@ impl Game<'_> {
     /// The first block within `distance` (at most `RAYCAST_MAX`) along the
     /// look of the server player `uuid`, from their eyes: what they point at.
     /// None for a player who is not on, or nothing within the loaded chunks.
-    /// API 403.
+    /// API @API:mob_views@.
     pub(super) fn native_player_raycast(&self, uuid: u128, distance: f32) -> Option<NativeHit> {
         let player = self
             .native_level_players()
