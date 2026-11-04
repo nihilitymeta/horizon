@@ -20,8 +20,13 @@ Mods are **off by default**. A fresh install has no `horizon-mods` folder and pl
    ([native-mods.md](native-mods.md)).
 2. Options > **Mods** lists them with what each may do ("May add blocks, items, mob effects and entity types to your
    worlds") and a switch. They start off. The choice is kept in `horizon-mods.txt` (`mod.<id>:true`).
-3. A content mod's blocks, items, mob effects and entity types load once, when the game starts: restart the game after
-   a switch.
+3. A content mod's blocks, items, mob effects, entity types and menu types load once, when the game starts: restart
+   the game after a switch. When the game builds its content root again while running (a resource pack reload, or a
+   `/reload` on builds that re-layer the mods' data), every mod's data and assets are layered as they are now, and
+   each mod's declarations as they were at start: a mod that declares the same things is taken silently, while a
+   changed declaration, a new mod with declarations or a mod that is gone is noted in the log
+   (`Horizon: mod <id>: ...`) with the restart that applies it. A root that cannot be built again leaves the game on
+   the root it has.
 4. A mod that can't load shows why, in red, on its row.
 
 Two turned-on content mods never own the same namespace: the first by file name loads, and the other stays out with

@@ -19047,6 +19047,9 @@ impl<'a> Game<'a> {
         prepared: Option<GameCpuResources>,
     ) -> Result<Self> {
         let root = options.resources.clone();
+        // This game reads its registries from `root`: the content mods'
+        // declarations in it are the process's until restart.
+        mods::fix_declarations();
         let registry = pack.assets.registry;
         // Until a world is opened the streamer is idle.
         let mut streaming = Streaming::new(

@@ -4426,3 +4426,123 @@ fn a_symlink_file_is_copied_through() {
     assert_eq!(fs::read(&at).unwrap(), b"real");
     let _ = fs::remove_dir_all(&scratch);
 }
+
+/// A built root given as the base (a server reloading from the root it plays
+/// on) stands for its base: the mods are layered over that again, so the
+/// second build neither refuses the mod's block as already a block nor loses
+/// its data, and a changed data file still reaches the rebuilt root.
+#[test]
+fn a_root_built_over_itself_is_built_over_its_base() {
+    let (base, mut mods) = block_base("twice", &[r#"{"template":"minecraft:test","item":false}"#]);
+    // What a build reads beyond the plan's tables: the base's manifest for the
+    // stamp, and the template's blockstates for the block's own.
+    fs::write(base.join("horizon-resources.json"), b"{}").unwrap();
+    fs::create_dir_all(base.join("assets/minecraft/blockstates")).unwrap();
+    fs::write(
+        base.join("assets/minecraft/blockstates/test.json"),
+        r#"{"variants": {"": {"model": "minecraft:block/test"}}}"#,
+    )
+    .unwrap();
+    let scratch = base.parent().unwrap().to_path_buf();
+    let loot = "data/datamod/loot_table/probe.json";
+    mods.push(folder_mod(
+        &scratch.join("datamod"),
+        &[
+            ("horizon-mod.toml", &manifest("datamod", "")),
+            (loot, r#"{"pools": []}"#),
+        ],
+    ));
+    let cache = scratch.join("cache");
+    let root = resource_root(&base, &mods, &cache).unwrap();
+    assert_ne!(root, base);
+    assert!(root.join(loot).exists());
+    let states = |root: &Path| -> usize {
+        let facts: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.join("facts.json")).unwrap()).unwrap();
+        assert_eq!(facts["defaults"]["testmod:test"], serde_json::json!(2));
+        facts["states"].as_array().unwrap().len()
+    };
+    assert_eq!(states(&root), 4);
+    // Over itself, the root already has the block.
+    assert!(build(&root, &mods, &scratch.join("direct")).is_err());
+    let sentinel = root.join("sentinel");
+    fs::write(&sentinel, b"").unwrap();
+    assert_eq!(resource_root(&root, &mods, &cache).unwrap(), root);
+    assert!(sentinel.exists(), "an unchanged mod rebuilt the root");
+    assert!(root.join(loot).exists());
+    assert_eq!(states(&root), 4);
+    // The mod's data changed: rebuilt from the base, with the new data.
+    let file = scratch.join("datamod").join(loot);
+    fs::write(&file, r#"{"pools": [{"rolls": 1, "entries": []}]}"#).unwrap();
+    fs::File::options()
+        .write(true)
+        .open(&file)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(5))
+        .unwrap();
+    assert_eq!(resource_root(&root, &mods, &cache).unwrap(), root);
+    assert!(!sentinel.exists(), "a changed mod kept the old root");
+    assert!(
+        fs::read_to_string(root.join(loot))
+            .unwrap()
+            .contains("rolls")
+    );
+    assert_eq!(states(&root), 4);
+    let _ = fs::remove_dir_all(&scratch);
+}
+
+/// Built again while the game runs, the root carries the declarations the
+/// game started with, mod by mod, and the data the mods have now.
+#[test]
+fn a_rebuild_keeps_the_startup_declarations() {
+    use horizon_mods::content::{Block, Item};
+    let block = |id: &str| Block {
+        id: id.into(),
+        template: "minecraft:test".into(),
+        ..Default::default()
+    };
+    let item = |id: &str| Item {
+        id: id.into(),
+        template: "minecraft:test".into(),
+        ..Default::default()
+    };
+    let with = |id: &str, blocks: &[Block], items: &[Item]| {
+        let mut content = Content::declared(id);
+        content.blocks = blocks.to_vec();
+        content.items = items.to_vec();
+        ContentMod {
+            id: id.into(),
+            content,
+        }
+    };
+    let startup = startup_declarations(&[
+        with("a", &[block("a:x")], &[]),
+        with("b", &[], &[item("b:y")]),
+        with("d", &[], &[]),
+    ]);
+    // a changed, b is gone, c is new with a block, d and e declare nothing.
+    let mut now = vec![
+        with("a", &[block("a:x"), block("a:z")], &[]),
+        with("c", &[block("c:w")], &[]),
+        with("d", &[], &[]),
+        with("e", &[], &[]),
+    ];
+    let notices = keep_startup_declarations(&mut now, &startup);
+    let ids: Vec<&str> = now.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(ids, ["a", "d", "e", "b"]);
+    assert_eq!(now[0].content.blocks, [block("a:x")]);
+    assert_eq!(now[3].content.items, [item("b:y")]);
+    assert!(now[3].content.is_empty());
+    assert_eq!(notices.len(), 3, "{notices:?}");
+    for (notice, id) in notices.iter().zip(["a", "c", "b"]) {
+        assert!(notice.starts_with(&format!("mod {id}:")), "{notice}");
+        assert!(notice.contains("restart"), "{notice}");
+    }
+    // The same declarations again: nothing to say.
+    let mut same = vec![
+        with("a", &[block("a:x")], &[]),
+        with("b", &[], &[item("b:y")]),
+    ];
+    assert!(keep_startup_declarations(&mut same, &startup).is_empty());
+    assert_eq!(same.len(), 2);
+}
