@@ -52,8 +52,8 @@ cargo horizon-mod check target/horizon-mod/my_mod.hmod   # the registry's checks
   manifest without capability `registries`.
 - `run` builds, then starts `horizon-client` (on `PATH`, or `--game PATH`, or `HORIZON_CLIENT`) with
   `--dev-mod target/horizon-mod/<id>.hmod`, always on. Arguments after `--` go to the game. After an edit, `/reload`
-  or the resource-reload key (F3+T) reads the mod's data tables and assets again, in single player on the world's
-  server thread; the block and item registries are read once at start, so reopen the world for those.
+  or the resource-reload key (F3+T) reads the mod's data tables and assets again; in single player, this happens on
+  the world's server thread. The block and item registries are read once, at start, so reopen the world for those.
 - `check <file>` runs what the registry runs: the file's size and SHA-256, its manifest and content, and a signature
   with `--key <public key> --signature <file>.minisig`. It reads `.hmod`, `.hnmod`, `.hpack`, resource pack `.zip`
   and `.hshader` files.
