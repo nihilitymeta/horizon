@@ -13,7 +13,10 @@ use horizon_client::{
     text::{ClickEvent, Style, Text},
 };
 use horizon_core::geometry::{Axis, Vec3};
-use horizon_protocol::packets::play::{BlockEntityTagQuery, EntityTagQuery, Serverbound};
+use horizon_protocol::{
+    connection::Transport,
+    packets::play::{BlockEntityTagQuery, EntityTagQuery, Serverbound},
+};
 use horizon_world::nbt::Tag;
 use winit::keyboard::KeyCode;
 
@@ -514,6 +517,19 @@ impl Game<'_> {
                     "\"{}\" server{status}, {tx} tx, {rx} rx",
                     remote.brand
                 ));
+                // Horizon's own, only for a WebSocket (docs/websocket.md): over TCP the screen
+                // stays vanilla's.
+                let transport = remote
+                    .session
+                    .counters
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .and_then(|c| c.transport.get().copied());
+                if let Some(Transport::WebSocket { secure }) = transport {
+                    let scheme = if secure { "wss" } else { "ws" };
+                    d.line(format!("WebSocket ({scheme}): {}", remote.session.address));
+                }
             }
         }
     }

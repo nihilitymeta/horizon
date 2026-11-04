@@ -6,8 +6,13 @@
 //! encryption, the socket writes, reading and the keep-alives happen here. A
 //! connection stays on one thread, so its bytes keep their order. The
 //! integrated server's own player, over an in-memory pipe, is served the same
-//! way: the pipe tells the thread when bytes arrive.
-use horizon_protocol::connection::{ConnReader, ConnWriter, Pipe, Socket};
+//! way: the pipe tells the thread when bytes arrive. A WebSocket player's
+//! socket is polled like a TCP one, its frames made and read on the way
+//! ([`horizon_protocol::websocket::Framed`]).
+use horizon_protocol::{
+    connection::{ConnReader, ConnWriter, Pipe, Socket},
+    websocket::Framed,
+};
 use mio::{Events, Interest, Poll, Registry, Token, Waker};
 use std::{
     io::{ErrorKind, Read, Write},
@@ -349,12 +354,14 @@ fn run(mut poll: Poll, worker: &Arc<Worker>) {
 enum Io {
     Tcp(mio::net::TcpStream),
     Memory(Pipe),
+    WebSocket(Framed<mio::net::TcpStream>),
 }
 impl Read for Io {
     fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
         match self {
             Self::Tcp(s) => s.read(out),
             Self::Memory(p) => p.read(out),
+            Self::WebSocket(f) => f.read(out),
         }
     }
 }
@@ -363,10 +370,15 @@ impl Write for Io {
         match self {
             Self::Tcp(s) => s.write(data),
             Self::Memory(p) => p.write(data),
+            Self::WebSocket(f) => f.write(data),
         }
     }
+    /// A WebSocket's frames wait in it until the socket takes them: `WouldBlock` until then.
     fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
+        match self {
+            Self::WebSocket(f) => f.flush(),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -407,26 +419,19 @@ impl Conn {
         i: usize,
         now: Instant,
     ) -> Result<Self, ()> {
-        let io = match a.socket {
-            Socket::Tcp(stream) => {
-                let registered = stream.set_nonblocking(true).and_then(|()| {
-                    let mut stream = mio::net::TcpStream::from_std(stream);
-                    let interest = Interest::READABLE | Interest::WRITABLE;
-                    registry.register(&mut stream, Token(i), interest)?;
-                    Ok(stream)
-                });
-                match registered {
-                    Ok(stream) => Io::Tcp(stream),
-                    Err(e) => {
-                        let mut session = a.session;
-                        a.outbox.closed();
-                        session.left(e.to_string());
-                        session.closed();
-                        worker.load.fetch_sub(1, Ordering::Relaxed);
-                        return Err(());
-                    }
-                }
-            }
+        let poll = |stream: std::net::TcpStream| {
+            stream.set_nonblocking(true)?;
+            let mut stream = mio::net::TcpStream::from_std(stream);
+            let interest = Interest::READABLE | Interest::WRITABLE;
+            registry.register(&mut stream, Token(i), interest)?;
+            Ok::<_, std::io::Error>(stream)
+        };
+        let registered = match a.socket {
+            Socket::Tcp(stream) => poll(stream).map(Io::Tcp),
+            Socket::WebSocket(ws) => ws
+                .take_parts()
+                .and_then(|(stream, inbound)| Ok(Framed::new(poll(stream)?, inbound)))
+                .map(Io::WebSocket),
             Socket::Memory(mut pipe) => {
                 pipe.set_nonblocking(true);
                 let worker = worker.clone();
@@ -435,7 +440,18 @@ impl Conn {
                         worker.wake();
                     }
                 });
-                Io::Memory(pipe)
+                Ok(Io::Memory(pipe))
+            }
+        };
+        let io = match registered {
+            Ok(io) => io,
+            Err(e) => {
+                let mut session = a.session;
+                a.outbox.closed();
+                session.left(e.to_string());
+                session.closed();
+                worker.load.fetch_sub(1, Ordering::Relaxed);
+                return Err(());
             }
         };
         Ok(Self {
@@ -554,7 +570,12 @@ impl Conn {
             }
             self.draining = end == Some(End::Disconnect);
         }
-        if self.draining && self.written == self.out.len() && self.close_at.is_none() {
+        // Written means taken by the socket: a WebSocket's frames may still wait in it (`stalled`).
+        if self.draining
+            && self.written == self.out.len()
+            && self.stalled.is_none()
+            && self.close_at.is_none()
+        {
             self.close_at = Some(now + LINGER);
         }
     }
@@ -588,9 +609,18 @@ impl Conn {
         }
         self.out.clear();
         self.written = 0;
-        self.stalled = None;
         if self.out.capacity() > 4 * AHEAD {
             self.out.shrink_to(AHEAD);
+        }
+        match self.io.flush() {
+            Ok(()) => self.stalled = None,
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                self.stalled.get_or_insert(now);
+            }
+            Err(_) => {
+                self.end(now, "Disconnected");
+                return false;
+            }
         }
         true
     }
@@ -624,6 +654,11 @@ impl Conn {
                 let _ = registry.deregister(stream);
                 let _ = stream.shutdown(std::net::Shutdown::Both);
             }
+            Io::WebSocket(framed) => {
+                framed.close();
+                let _ = registry.deregister(framed.socket());
+                let _ = framed.socket().shutdown(std::net::Shutdown::Both);
+            }
             Io::Memory(pipe) => {
                 pipe.on_ready(|| {});
                 pipe.shutdown();
@@ -639,7 +674,13 @@ impl Conn {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use horizon_protocol::connection::Connection;
+    use horizon_protocol::{
+        connection::Connection,
+        websocket::{
+            WsStream,
+            codec::{self, Role},
+        },
+    };
     use std::sync::mpsc::{Receiver, Sender, channel};
 
     #[derive(Debug, PartialEq)]
@@ -767,6 +808,163 @@ mod tests {
         served.send(vec![body(0x1d, 5)], Some(End::Disconnect));
         assert_eq!(client.recv().unwrap(), packet(&body(0x1d, 5)));
         assert!(client.recv().unwrap_err().is_end_of_stream());
+        assert_eq!(served.next(), Seen::Left("Disconnected".into()));
+        assert_eq!(served.next(), Seen::Closed);
+    }
+
+    /// The client's end of a WebSocket, read frame by frame: what the server's frames say, not
+    /// only their payload.
+    struct WsClient {
+        socket: std::net::TcpStream,
+        raw: Vec<u8>,
+        /// Binary payload not yet taken as Minecraft frames.
+        data: Vec<u8>,
+    }
+    impl WsClient {
+        fn send(&mut self, opcode: u8, payload: &[u8]) {
+            let mut frame = Vec::new();
+            codec::encode(&mut frame, opcode, payload, Role::Client);
+            self.socket.write_all(&frame).unwrap();
+        }
+        /// A packet body framed as Minecraft frames it, uncompressed.
+        fn frame(body: &[u8]) -> Vec<u8> {
+            let mut framed = Vec::new();
+            horizon_protocol::buf::write_varint(&mut framed, body.len() as i32);
+            framed.extend_from_slice(body);
+            framed
+        }
+        /// The next server frame: its opcode and payload; `None` at the end of the stream.
+        fn next_frame(&mut self) -> Option<(u8, Vec<u8>)> {
+            loop {
+                if self.raw.len() >= 2 {
+                    assert_eq!(self.raw[1] & 0x80, 0, "a server's frames are not masked");
+                    let (len, at) = match self.raw[1] {
+                        126 if self.raw.len() >= 4 => (
+                            usize::from(u16::from_be_bytes([self.raw[2], self.raw[3]])),
+                            4,
+                        ),
+                        127 if self.raw.len() >= 10 => (
+                            u64::from_be_bytes(self.raw[2..10].try_into().unwrap()) as usize,
+                            10,
+                        ),
+                        126 | 127 => (usize::MAX, 0),
+                        n => (usize::from(n), 2),
+                    };
+                    if len != usize::MAX && self.raw.len() >= at + len {
+                        let opcode = self.raw[0] & 0x0f;
+                        let payload = self.raw[at..at + len].to_vec();
+                        self.raw.drain(..at + len);
+                        return Some((opcode, payload));
+                    }
+                }
+                let mut chunk = [0u8; 65536];
+                let n = self.socket.read(&mut chunk).unwrap();
+                if n == 0 {
+                    return None;
+                }
+                self.raw.extend_from_slice(&chunk[..n]);
+            }
+        }
+        /// The next packet in the binary messages: control frames on the way go to `control`.
+        fn next_packet(&mut self, control: &mut Vec<(u8, Vec<u8>)>) -> Option<(i32, Vec<u8>)> {
+            loop {
+                if let Some((prefix, len)) = horizon_protocol::frame::header(&self.data).unwrap()
+                    && self.data.len() >= prefix + len
+                {
+                    let body: Vec<u8> = self.data.drain(..prefix + len).skip(prefix).collect();
+                    return Some(packet(&body));
+                }
+                match self.next_frame()? {
+                    (codec::BINARY | codec::CONTINUATION, payload) => self.data.extend(payload),
+                    other => control.push(other),
+                }
+            }
+        }
+    }
+
+    /// A WebSocket player in play: the packets sent with the upgrade arrive, a burst far past
+    /// what the WebSocket buffers arrives whole and in order to a client that reads late, a ping
+    /// gets its pong, and a disconnect ends with a close frame.
+    #[test]
+    fn a_websocket_carries_packets_and_answers_pings() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let socket = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        let mut client = WsClient {
+            socket,
+            raw: Vec::new(),
+            data: Vec::new(),
+        };
+        let mut opening =
+            b"GET / HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
+            Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"
+                .to_vec();
+        for i in 1..=2 {
+            codec::encode(
+                &mut opening,
+                codec::BINARY,
+                &WsClient::frame(&body(i, 10)),
+                Role::Client,
+            );
+        }
+        client.socket.write_all(&opening).unwrap();
+        let (ws, _) =
+            WsStream::accept(listener.accept().unwrap().0, Duration::from_secs(5), &[]).unwrap();
+        let served = serve(
+            Connection::from_websocket(ws).unwrap(),
+            quiet,
+            Duration::from_secs(30),
+        );
+        assert_eq!(served.next(), Seen::Packet(1, body(1, 10)[1..].to_vec()));
+        assert_eq!(served.next(), Seen::Packet(2, body(2, 10)[1..].to_vec()));
+        let (head, _) =
+            horizon_protocol::websocket::handshake::read_head(&mut client.socket).unwrap();
+        assert!(head.starts_with("HTTP/1.1 101 "));
+
+        // About 4 MiB: the client reads nothing for a while, so most of it waits.
+        let bodies: Vec<Vec<u8>> = (0..120)
+            .map(|i| body(i as u8, [0, 63, 300, 9000, 70_000, 100_000][i % 6]))
+            .collect();
+        served.send(bodies.clone(), None);
+        std::thread::sleep(Duration::from_millis(300));
+        client.send(codec::PING, b"still there?");
+        let mut control = Vec::new();
+        for b in &bodies {
+            assert_eq!(client.next_packet(&mut control), Some(packet(b)));
+        }
+        assert_eq!(served.pending.load(Ordering::Relaxed), 0);
+        // The pong comes once the pool reads the ping: it may trail the burst.
+        while control.is_empty() {
+            served.send(vec![body(0x30, 1)], None);
+            assert_eq!(
+                client.next_packet(&mut control),
+                Some(packet(&body(0x30, 1)))
+            );
+        }
+        assert_eq!(control, [(codec::PONG, b"still there?".to_vec())]);
+
+        client
+            .socket
+            .write_all(&{
+                let mut f = Vec::new();
+                codec::encode(
+                    &mut f,
+                    codec::BINARY,
+                    &WsClient::frame(&body(7, 3)),
+                    Role::Client,
+                );
+                f
+            })
+            .unwrap();
+        assert_eq!(served.next(), Seen::Packet(7, body(7, 3)[1..].to_vec()));
+        served.send(vec![body(0x1d, 5)], Some(End::Disconnect));
+        assert_eq!(
+            client.next_packet(&mut control),
+            Some(packet(&body(0x1d, 5)))
+        );
+        assert_eq!(client.next_frame().map(|f| f.0), Some(codec::CLOSE));
         assert_eq!(served.next(), Seen::Left("Disconnected".into()));
         assert_eq!(served.next(), Seen::Closed);
     }

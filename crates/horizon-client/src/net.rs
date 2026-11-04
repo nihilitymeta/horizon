@@ -1119,7 +1119,7 @@ pub fn ping(address: &str, timeout: Duration) -> Result<(serde_json::Value, u128
     c.send(
         &handshake::Serverbound::Intention(handshake::Intention {
             protocol: PROTOCOL_VERSION,
-            host: host.clone(),
+            host: horizon_protocol::servers::handshake_host(&host),
             port,
             intent: handshake::STATUS,
         })
@@ -1205,7 +1205,10 @@ pub fn ping_legacy(address: &str, timeout: Duration) -> Result<LegacyStatus, Str
         .map_err(|e| e.to_string())?;
     let e = |e: horizon_protocol::Error| e.to_string();
     c.writer
-        .write_raw(&legacy_ping_request(&host, port))
+        .write_raw(&legacy_ping_request(
+            &horizon_protocol::servers::handshake_host(&host),
+            port,
+        ))
         .map_err(e)?;
     let head = c.reader.read_raw(3).map_err(e)?;
     if head[0] != 255 {

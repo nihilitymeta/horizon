@@ -437,7 +437,54 @@ pub(super) fn serve(
     // its writer in a full send buffer for good, or until TCP gives up minutes later, and
     // its thread and its place among the server's connections with it.
     let _ = stream.set_write_timeout(Some(WRITE_TIMEOUT));
+    if let Some(trusted) = shared.config.websocket.clone()
+        && opens_upgrade(&stream)
+    {
+        return serve_websocket(stream, address, shared, counted, &trusted);
+    }
     let c = Connection::from_stream(stream).map_err(e)?;
+    serve_connection(c, address, shared, Some(counted))
+}
+
+/// Whether the connection opens with an HTTP request (a WebSocket upgrade) rather than
+/// Minecraft's handshake. The first bytes are looked at, not taken; a peer that sends too few
+/// of them within [`LOGIN_TIMEOUT`] is served as Minecraft, whose read times out the same.
+fn opens_upgrade(stream: &TcpStream) -> bool {
+    let until = std::time::Instant::now() + LOGIN_TIMEOUT;
+    let mut first = [0u8; 4];
+    loop {
+        let left = until.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() || stream.set_read_timeout(Some(left)).is_err() {
+            return false;
+        }
+        let n = match stream.peek(&mut first) {
+            Ok(n) if n > 0 => n,
+            _ => return false,
+        };
+        if let Some(upgrade) = horizon_protocol::websocket::is_upgrade(&first[..n]) {
+            return upgrade;
+        }
+        // "G" or "GE" so far: the rest is on its way.
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// A connection through a tunnel or a proxy that carries only HTTP (docs/websocket.md): the
+/// WebSocket's upgrade, then Minecraft inside it as over TCP. A trusted proxy's report of the
+/// player's address stands for the proxy's own, for bans and the log.
+fn serve_websocket(
+    stream: TcpStream,
+    address: std::net::SocketAddr,
+    shared: Arc<Shared>,
+    counted: super::Counted,
+    trusted: &[horizon_protocol::websocket::Trusted],
+) -> Result<(), String> {
+    let (ws, forwarded) =
+        horizon_protocol::websocket::WsStream::accept(stream, LOGIN_TIMEOUT, trusted)
+            .map_err(|e| format!("WebSocket handshake: {e}"))?;
+    let _ = ws.set_write_timeout(Some(WRITE_TIMEOUT));
+    let address = forwarded.map_or(address, |ip| std::net::SocketAddr::new(ip, address.port()));
+    let c = Connection::from_websocket(ws).map_err(|e| e.to_string())?;
     serve_connection(c, address, shared, Some(counted))
 }
 

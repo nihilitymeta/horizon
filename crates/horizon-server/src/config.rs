@@ -30,6 +30,8 @@ view_distance = 10           # chunks sent around each player
 simulation_distance = 10     # chunks around each player where mobs, crops and redstone tick
 max_view_distance = 0        # past view_distance, saved chunks only, up to this (never generated; 0: off)
 admin_feedback_to_ops = true # operators see each other's commands ([name: ...], vanilla); false: only the log
+websocket = true             # also take players over a WebSocket on the game port, from a tunnel or proxy (docs/websocket.md)
+trusted_proxies = "127.0.0.1, ::1" # proxies whose WebSocket handshake may name the player's address (CF-Connecting-IP...)
 
 [world]
 name = "world"               # the world folder
@@ -95,7 +97,7 @@ enabled = true               # false pauses it and keeps the webhook
 "##;
 
 /// Each typed setting: its section, its name, and the vanilla key it writes.
-pub(crate) const TYPED: [(&str, &str, &str); 16] = [
+pub(crate) const TYPED: [(&str, &str, &str); 18] = [
     ("server", "motd", "motd"),
     ("server", "port", "server-port"),
     ("server", "bind", "server-ip"),
@@ -111,6 +113,8 @@ pub(crate) const TYPED: [(&str, &str, &str); 16] = [
         "admin_feedback_to_ops",
         "horizon-admin-feedback-to-ops",
     ),
+    ("server", "websocket", "horizon-websocket"),
+    ("server", "trusted_proxies", "horizon-trusted-proxies"),
     ("world", "name", "level-name"),
     ("world", "seed", "level-seed"),
     ("world", "game_mode", "gamemode"),
@@ -174,6 +178,12 @@ pub struct Server {
     /// Whether operators get each other's command feedback (`[name: ...]`, vanilla's broadcastToAdmins);
     /// false leaves it to the console's log, so nobody in game sees an operator's commands.
     pub admin_feedback_to_ops: bool,
+    /// Horizon's WebSocket door (docs/websocket.md): a connection to the game port that opens with an HTTP
+    /// upgrade is served as Minecraft inside a WebSocket, for tunnels and proxies that carry only HTTP.
+    pub websocket: bool,
+    /// The addresses and networks (`10.0.0.0/8`) whose WebSocket handshakes may name the player's address,
+    /// comma-separated; the player's own word is never taken.
+    pub trusted_proxies: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -322,6 +332,8 @@ impl Default for Server {
             simulation_distance: 10,
             max_view_distance: 0,
             admin_feedback_to_ops: true,
+            websocket: true,
+            trusted_proxies: "127.0.0.1, ::1".to_owned(),
         }
     }
 }
@@ -717,12 +729,13 @@ mod tests {
             ServerProperties::new(Properties::default(), &mut SystemEntropy::default()).unwrap();
         for (key, value) in Config::default().vanilla() {
             // Horizon's own, which vanilla doesn't have: their defaults behave as vanilla does
-            // (the far ring off, operators told of each other's commands).
+            // (the far ring off, operators told of each other's commands; the WebSocket door
+            // takes only connections that open with an HTTP upgrade, which vanilla refuses).
             if key.starts_with("horizon-") {
-                let vanilla_like = if key == "horizon-admin-feedback-to-ops" {
-                    "true"
-                } else {
-                    "0"
+                let vanilla_like = match key.as_str() {
+                    "horizon-admin-feedback-to-ops" | "horizon-websocket" => "true",
+                    "horizon-trusted-proxies" => "127.0.0.1, ::1",
+                    _ => "0",
                 };
                 assert_eq!(value, vanilla_like, "{key}");
                 continue;

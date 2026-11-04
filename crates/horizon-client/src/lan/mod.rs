@@ -35,6 +35,7 @@ pub mod waypoints;
 
 pub use conn::{Holding, PlayerSender, flush_all};
 use horizon_protocol::packets::play;
+use horizon_protocol::websocket::Trusted;
 use horizon_protocol::{
     GAME_VERSION, PROTOCOL_VERSION, crypto::uuid_string, packets::configuration::ClientInformation,
     text::translatable,
@@ -145,6 +146,37 @@ pub const HORIZON_CLIENTS_ONLY: &str = "horizon-clients-only";
 pub const HORIZON_CLIENTS_ONLY_REASON: &str =
     "This server is for the Horizon client: playhorizon.dev";
 
+/// server.toml's `websocket` (Horizon's own server.properties key, on unless "false"): players are
+/// also taken over a WebSocket on the game port (docs/websocket.md).
+pub const WEBSOCKET: &str = "horizon-websocket";
+/// server.toml's `trusted_proxies`: the addresses and networks whose WebSocket handshakes may
+/// report the player's address; this computer when the key is absent.
+pub const TRUSTED_PROXIES: &str = "horizon-trusted-proxies";
+
+/// [`NetConfig::websocket`] from the [`WEBSOCKET`] and [`TRUSTED_PROXIES`] properties, and the
+/// entries of the second that aren't addresses or networks (left out).
+pub fn websocket_properties(
+    on: Option<&str>,
+    trusted: Option<&str>,
+) -> (Option<Arc<[Trusted]>>, Vec<String>) {
+    if on.is_some_and(|v| v.trim().eq_ignore_ascii_case("false")) {
+        return (None, Vec::new());
+    }
+    let (trusted, bad) = match trusted.map(Trusted::parse_list) {
+        None => (Trusted::loopback(), Vec::new()),
+        Some(Ok(list)) => (list, Vec::new()),
+        Some(Err(bad)) => {
+            let good = trusted
+                .unwrap_or_default()
+                .split([',', ' '])
+                .filter_map(Trusted::parse)
+                .collect();
+            (good, bad)
+        }
+    };
+    (Some(trusted.into()), bad)
+}
+
 /// How the server side of the network behaves: an integrated server's LAN
 /// uses the defaults, a dedicated server takes them from server.properties.
 #[derive(Clone)]
@@ -207,6 +239,10 @@ pub struct NetConfig {
     /// The shapes of the world's levels: their dimension types go to
     /// clients when the world's data packs changed them.
     pub levels: crate::chunk::LevelShapes,
+    /// Horizon's WebSocket door ([`WEBSOCKET`]): a connection that opens with an HTTP upgrade
+    /// is served as a WebSocket, and these proxies are trusted with the player's address. `None`
+    /// is off.
+    pub websocket: Option<Arc<[Trusted]>>,
 }
 impl NetConfig {
     /// MinecraftServer.enforceSecureProfile.
@@ -241,6 +277,7 @@ impl NetConfig {
             lod_distance: crate::lod_net::DEFAULT_DISTANCE,
             levels: crate::chunk::LevelShapes::VANILLA,
             owner_profile: None,
+            websocket: Some(Trusted::loopback().into()),
         }
     }
 }
@@ -993,6 +1030,110 @@ mod tests {
         let hidden = lan.shared.status_json();
         assert!(!hidden.contains("\"sample\""));
         assert!(!hidden.contains("Player"));
+    }
+
+    /// A WebSocket client's first bytes: the upgrade, with `extra` headers, then `packets`
+    /// framed as Minecraft frames them and sent in client frames.
+    fn websocket_opening(extra: &str, packets: &[Vec<u8>]) -> Vec<u8> {
+        use horizon_protocol::websocket::codec::{self, Role};
+        let mut sent = format!(
+            "GET /play HTTP/1.1\r\nHost: example.net\r\nUpgrade: websocket\r\n\
+             Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
+             Sec-WebSocket-Version: 13\r\n{extra}\r\n"
+        )
+        .into_bytes();
+        for body in packets {
+            let mut framed = Vec::new();
+            horizon_protocol::buf::write_varint(&mut framed, body.len() as i32);
+            framed.extend_from_slice(body);
+            codec::encode_binary(&mut sent, &framed, Role::Client);
+        }
+        sent
+    }
+
+    /// Behind a proxy that this server trusts, the player's address is the one the proxy's
+    /// handshake names, and the login's gate (bans, the whitelist) sees it; trusting nobody,
+    /// the address is the proxy's own.
+    #[test]
+    fn a_trusted_proxy_names_the_player_behind_it() {
+        use horizon_protocol::packets::{handshake, login};
+        use std::io::{Read, Write};
+        let opening = websocket_opening(
+            "X-Forwarded-For: 198.51.100.1, 203.0.113.5\r\n",
+            &[
+                handshake::Serverbound::Intention(handshake::Intention {
+                    protocol: PROTOCOL_VERSION,
+                    host: "example.net".into(),
+                    port: 443,
+                    intent: handshake::LOGIN,
+                })
+                .encode(),
+                login::Serverbound::Hello(login::ServerHello {
+                    name: "Alex".into(),
+                    uuid: 7,
+                })
+                .encode(),
+            ],
+        );
+        for (trusted, player) in [
+            (Trusted::loopback(), "203.0.113.5"),
+            (Vec::new(), "127.0.0.1"),
+        ] {
+            let seen = Arc::new(Mutex::new(None));
+            let into = seen.clone();
+            let config = NetConfig {
+                announce: false,
+                websocket: Some(trusted.into()),
+                gate: Some(Arc::new(move |address: SocketAddr, _, _| {
+                    *into.lock().unwrap() = Some(address.ip().to_string());
+                    Some(horizon_protocol::text::translatable(
+                        "multiplayer.disconnect.banned",
+                        &[],
+                    ))
+                })),
+                ..NetConfig::lan(0, "Proxy".into(), 8)
+            };
+            let lan = Lan::start_with(Arc::new(data::SyncData::empty()), config).unwrap();
+            let mut s = TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, lan.port)).unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+            s.write_all(&opening).unwrap();
+            let mut answer = Vec::new();
+            let _ = s.read_to_end(&mut answer);
+            assert!(answer.starts_with(b"HTTP/1.1 101 "), "{answer:?}");
+            // The refusal comes back inside a server frame: binary, unmasked.
+            let head = answer.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+            assert_eq!(answer[head], 0x82);
+            assert_eq!(seen.lock().unwrap().as_deref(), Some(player));
+        }
+    }
+
+    /// A browser or a health check that asks for a page is told this is no website; with the
+    /// door off, an HTTP request is a broken Minecraft handshake and is closed unanswered.
+    #[test]
+    fn an_http_request_that_isnt_an_upgrade_is_refused() {
+        use std::io::{Read, Write};
+        for (websocket, answered) in [(Some(Trusted::loopback().into()), true), (None, false)] {
+            let config = NetConfig {
+                announce: false,
+                websocket,
+                ..NetConfig::lan(0, "Page".into(), 8)
+            };
+            let lan = Lan::start_with(Arc::new(data::SyncData::empty()), config).unwrap();
+            let mut s = TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, lan.port)).unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(15))).unwrap();
+            // Longer than the 71-byte frame its "G" reads as, so that the door being off doesn't
+            // wait for the rest.
+            let page = "GET / HTTP/1.1\r\nHost: example.net\r\nUser-Agent: Mozilla/5.0 (Macintosh)\r\n\
+                        Accept: text/html\r\n\r\n";
+            assert!(page.len() > 72);
+            s.write_all(page.as_bytes()).unwrap();
+            let mut answer = Vec::new();
+            let _ = s.read_to_end(&mut answer);
+            assert_eq!(answer.starts_with(b"HTTP/1.1 426 "), answered, "{answer:?}");
+            if !answered {
+                assert!(answer.is_empty(), "{answer:?}");
+            }
+        }
     }
 
     /// One public address takes at most [`PER_ADDRESS`] places, its own coming back as they end;

@@ -159,11 +159,17 @@ fn write(path: &Path, root: &NamedTag) -> std::io::Result<()> {
     std::fs::rename(tmp, path)
 }
 
-/// ServerAddress.parseString: `host`, `host:port` or `[v6]:port`; default 25565.
+/// ServerAddress.parseString: `host`, `host:port` or `[v6]:port`; default 25565. Horizon also takes
+/// a `ws://` or `wss://` address ([`crate::websocket::Url`]), kept whole as the host so that
+/// [`crate::connection::Connection`] opens a WebSocket to it; any other scheme is refused.
 pub fn parse_address(text: &str) -> Option<(String, u16)> {
     let text = text.trim();
     if text.is_empty() {
         return None;
+    }
+    if text.contains("://") {
+        let url = crate::websocket::Url::parse(text)?;
+        return Some((text.to_owned(), url.port));
     }
     if let Some(rest) = text.strip_prefix('[') {
         let (host, tail) = rest.split_once(']')?;
@@ -181,9 +187,33 @@ pub fn parse_address(text: &str) -> Option<(String, u16)> {
     }
 }
 
+/// The host a handshake names for `host` from [`parse_address`]: a WebSocket address's host name.
+pub fn handshake_host(host: &str) -> String {
+    crate::websocket::Url::parse(host).map_or_else(|| host.to_owned(), |url| url.host)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn websocket_addresses_are_kept_whole() {
+        assert_eq!(
+            parse_address(" wss://mc.example.com/play "),
+            Some(("wss://mc.example.com/play".into(), 443))
+        );
+        assert_eq!(
+            parse_address("ws://127.0.0.1:25579"),
+            Some(("ws://127.0.0.1:25579".into(), 25579))
+        );
+        assert_eq!(parse_address("http://mc.example.com"), None);
+        assert_eq!(parse_address("wss://"), None);
+        assert_eq!(
+            handshake_host("wss://mc.example.com:8443/x"),
+            "mc.example.com"
+        );
+        assert_eq!(handshake_host("mc.example.com"), "mc.example.com");
+    }
 
     #[test]
     fn servers_dat_round_trips() {

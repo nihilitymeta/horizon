@@ -83,8 +83,13 @@ impl Bot {
 }
 
 fn connect(port: u16, name: &str, known_pack: bool) -> Result<Bot, String> {
+    connect_at("127.0.0.1", port, name, known_pack)
+}
+
+/// [`connect`] to `address`: a host, or a `ws://` address.
+fn connect_at(address: &str, port: u16, name: &str, known_pack: bool) -> Result<Bot, String> {
     let e = |e: horizon_protocol::Error| e.to_string();
-    let mut c = Connection::connect("127.0.0.1", port, Duration::from_secs(5)).map_err(e)?;
+    let mut c = Connection::connect(address, port, Duration::from_secs(5)).map_err(e)?;
     c.reader
         .set_read_timeout(Some(Duration::from_secs(20)))
         .map_err(e)?;
@@ -1011,6 +1016,120 @@ fn status_and_join() {
     });
     assert_eq!(report, "Steve");
     assert_eq!(s.placed.len(), 1);
+}
+
+/// A player through a tunnel: the same port takes a WebSocket, whose status, login, configuration
+/// and play (chunks, a placed block) go as over TCP, the play state through the network threads'
+/// poller. A TCP player's status on the same port is unchanged.
+#[test]
+fn a_websocket_player_joins_on_the_game_port() {
+    let Some(resources) = resources() else {
+        return;
+    };
+    let mut s = server(&resources);
+    let port = s.hub.lan.port;
+    let address = format!("ws://127.0.0.1:{port}/any/path");
+    let ws = address.clone();
+    let json = run(&mut s, move || {
+        let mut c =
+            Connection::connect(&ws, port, Duration::from_secs(5)).map_err(|e| e.to_string())?;
+        assert_eq!(
+            c.transport(),
+            horizon_protocol::connection::Transport::WebSocket { secure: false }
+        );
+        c.send(
+            &handshake::Serverbound::Intention(handshake::Intention {
+                protocol: PROTOCOL_VERSION,
+                host: "127.0.0.1".into(),
+                port,
+                intent: handshake::STATUS,
+            })
+            .encode(),
+        )
+        .unwrap();
+        c.send(&status::Serverbound::StatusRequest(Empty).encode())
+            .unwrap();
+        let (id, payload) = c.recv().map_err(|e| e.to_string())?;
+        let status::Clientbound::StatusResponse(r) =
+            status::Clientbound::decode(id, &payload).map_err(|e| e.to_string())?
+        else {
+            return Err("no status".into());
+        };
+        Ok(r.json)
+    });
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(v["description"], "Test - World");
+
+    let ws = address.clone();
+    let (chunks, placed) = run(&mut s, move || {
+        let mut bot = connect_at(&ws, port, "Alex", true)?;
+        let (mut chunks, mut loaded, mut placed) = (0, false, None);
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline {
+            match bot.recv_play()? {
+                C::PlayerPosition(p) => {
+                    bot.send(S::AcceptTeleportation(play::AcceptTeleportation {
+                        id: p.teleport,
+                        x: p.position[0],
+                        y: p.position[1],
+                        z: p.position[2],
+                        yaw: 0.0,
+                        pitch: 0.0,
+                    }))
+                }
+                C::LevelChunkWithLight(l) => {
+                    let sections = l.chunk.sections(24, 16, 7).map_err(|e| e.to_string())?;
+                    assert_eq!(sections[0].states.get(4 * 256), STONE as i32);
+                    chunks += 1;
+                }
+                C::ChunkBatchFinished(_) => {
+                    bot.send(S::ChunkBatchReceived(play::ChunkBatchReceived {
+                        chunks_per_tick: 20.0,
+                    }));
+                    if !loaded && chunks >= 9 {
+                        loaded = true;
+                        bot.send(S::PlayerLoaded(Empty));
+                        bot.send(S::UseItemOn(play::UseItemOn {
+                            hand: 0,
+                            pos: [9, MIN_Y + 4, 9],
+                            face: 1,
+                            cursor: [0.5, 1.0, 0.5],
+                            inside: false,
+                            world_border: false,
+                            sequence: 5,
+                        }));
+                    }
+                }
+                C::BlockUpdate(u) => placed = Some((u.pos, u.state)),
+                C::BlockChangedAck(a) if a.sequence == 5 && placed.is_some() => break,
+                _ => {}
+            }
+        }
+        Ok((chunks, placed))
+    });
+    assert!(chunks >= 9, "only {chunks} chunks");
+    assert_eq!(placed, Some(([9, MIN_Y + 5, 9], STONE as i32)));
+    assert_eq!(s.placed.len(), 1);
+
+    // Plain TCP on the same port, while the WebSocket player plays.
+    let tcp = run(&mut s, move || {
+        let mut c = Connection::connect("127.0.0.1", port, Duration::from_secs(5))
+            .map_err(|e| e.to_string())?;
+        c.send(
+            &handshake::Serverbound::Intention(handshake::Intention {
+                protocol: PROTOCOL_VERSION,
+                host: "127.0.0.1".into(),
+                port,
+                intent: handshake::STATUS,
+            })
+            .encode(),
+        )
+        .unwrap();
+        c.send(&status::Serverbound::StatusRequest(Empty).encode())
+            .unwrap();
+        c.recv().map(|(id, _)| id).map_err(|e| e.to_string())
+    });
+    assert_eq!(tcp, 0);
 }
 
 #[test]

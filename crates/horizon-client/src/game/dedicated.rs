@@ -1025,7 +1025,21 @@ impl Game<'_> {
             .filter(|b| png_size(b) == Some((64, 64)));
         // Behind a Velocity proxy: `forwarding.secret` in the server folder, like the proxy's own file.
         let forwarding_secret = forwarding_secret(online.is_some())?;
+        let (websocket, untrusted) = horizon_client::lan::websocket_properties(
+            props.raw.get(horizon_client::lan::WEBSOCKET),
+            props.raw.get(horizon_client::lan::TRUSTED_PROXIES),
+        );
+        if !untrusted.is_empty() {
+            log(
+                "WARN",
+                &format!(
+                    "trusted_proxies: left out what isn't an address or a network: {}",
+                    untrusted.join(", ")
+                ),
+            );
+        }
         let net = NetConfig {
+            websocket,
             bind: (!props.server_ip.is_empty())
                 .then(|| props.server_ip.parse().ok())
                 .flatten(),
