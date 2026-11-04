@@ -849,6 +849,7 @@ Add a repository (https://github.com/<owner>/<repo>, or <owner>/<repo>).
     horizon-launcher sources add <REPO>
 
 - `REPO`
+- `--mod`: Its releases are a content mod (.hmod), installed into every Horizon instance
 - `--no-auto-update`: Don't install its new releases when the launcher checks for updates
 
 MCP: `sources_add`.

@@ -44,9 +44,16 @@ released on its own.
 2. Sign in with a Microsoft account that owns Minecraft: Java Edition.
 3. Install one Horizon version, for its game files: Versions, the newest Nightly, Install.
 
-The launcher's Versions page has a **GitHub sources** card with Event Horizon's repository on it, set to
-**Update automatically**. At each update check, the launcher installs a new release there on the Horizon version's game
-files, and plays it. To install the newest release at once, press **Update**.
+The launcher's Versions page has a **GitHub sources** card with two sources on it, both set to **Update
+automatically**:
+
+- **Event Horizon** (`whos-carmen/horizon`): at each update check, the launcher installs a new release on the Horizon
+  version's game files, and plays it.
+- **The modkit** (`whos-carmen/horizon-modkit`): its newest `horizon_modkit.hmod` goes into every Horizon instance and
+  is turned on, so a mod that depends on it runs with no `--dev-mod`. An instance made later gets it at the next check.
+
+To install a source's newest release at once, press **Update**. The modkit publishes a release when its own `v…` tag
+is pushed (the modkit's `.github/workflows/release.yml`).
 
 Two switches are off in Event Horizon's launcher, so nothing upstream replaces the developer's build:
 
@@ -54,7 +61,8 @@ Two switches are off in Event Horizon's launcher, so nothing upstream replaces t
 - **Update the launcher automatically** (Settings): on, Horizon's launcher would replace this one.
 
 The command line does the same as the card: `horizon-launcher sources list`, `sources update`,
-`sources auto <owner>/<repo> on|off`, `sources add <owner>/<repo>`.
+`sources auto <owner>/<repo> on|off`, `sources add <owner>/<repo>` (with `--mod` for a repository that
+publishes a `.hmod`).
 
 ## Telemetry
 

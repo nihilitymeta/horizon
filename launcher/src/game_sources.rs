@@ -5,8 +5,12 @@
 //! imported build (`build_import`). A source the player lets update itself installs each new
 //! release when the launcher checks for updates: a download, never a compile.
 //!
+//! A source can also publish a content mod (`.hmod`), such as the modkit: its release goes into
+//! every Horizon instance's `horizon-mods/` and is turned on there.
+//!
 //! The list lives in `game-sources.json` in the launcher's data folder. With no file, it is
-//! [`DEFAULT`], updating itself, so a new launcher plays Event Horizon's newest release.
+//! [`DEFAULT`] and [`MODKIT`], both updating themselves, so a new launcher plays Event Horizon's
+//! newest release with the modkit installed.
 use crate::backend;
 use crate::build_import;
 use crate::github_mods::{self, Api, Target};
@@ -16,8 +20,9 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 
-/// The source a launcher starts with: Event Horizon's releases.
+/// The sources a launcher starts with: Event Horizon's releases, and the modkit's.
 pub const DEFAULT: &str = "whos-carmen/horizon";
+pub const MODKIT: &str = "whos-carmen/horizon-modkit";
 const FILE: &str = "game-sources.json";
 /// The most a release archive may be: a game build is ~100 MB, packed.
 const MAX_ARCHIVE: u64 = 512 << 20;
@@ -27,12 +32,25 @@ const MAX_ARCHIVE: u64 = 512 << 20;
 pub struct Source {
     /// `owner/repo`.
     pub repo: String,
+    #[serde(default)]
+    pub kind: Kind,
     /// Install each new release when the launcher checks for updates.
     #[serde(default)]
     pub auto_update: bool,
     /// The release installed last, and the version it made.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub installed: Option<Installed>,
+}
+
+/// What a source's releases are.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    /// Game builds, `<name>-<platform>.tar.gz` or `.zip`: installed as a version.
+    #[default]
+    Game,
+    /// A content mod, `<id>.hmod`: installed into every Horizon instance and turned on.
+    Mod,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,6 +63,7 @@ pub struct Installed {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Release {
     pub repo: String,
+    pub kind: Kind,
     pub tag: String,
     /// The archive for this platform.
     pub asset: String,
@@ -75,11 +94,15 @@ fn path() -> PathBuf {
 }
 
 fn default_list() -> Vec<Source> {
-    vec![Source {
-        repo: DEFAULT.into(),
-        auto_update: true,
-        installed: None,
-    }]
+    [(DEFAULT, Kind::Game), (MODKIT, Kind::Mod)]
+        .into_iter()
+        .map(|(repo, kind)| Source {
+            repo: repo.into(),
+            kind,
+            auto_update: true,
+            installed: None,
+        })
+        .collect()
 }
 
 /// The sources in `text`, or [`DEFAULT`] when there is no list yet.
@@ -123,8 +146,8 @@ fn edit(change: impl FnOnce(&mut Vec<Source>) -> Result<(), String>) -> Result<(
     save(&sources)
 }
 
-/// Adds the repository `text` names, updating itself when `auto_update`.
-pub fn add(text: &str, auto_update: bool) -> Result<String, String> {
+/// Adds the repository `text` names, of `kind`, updating itself when `auto_update`.
+pub fn add(text: &str, kind: Kind, auto_update: bool) -> Result<String, String> {
     let repo = repo_of(text)?;
     edit(|sources| {
         if sources.iter().any(|s| s.repo.eq_ignore_ascii_case(&repo)) {
@@ -132,6 +155,7 @@ pub fn add(text: &str, auto_update: bool) -> Result<String, String> {
         }
         sources.push(Source {
             repo: repo.clone(),
+            kind,
             auto_update,
             installed: None,
         });
@@ -164,15 +188,23 @@ pub fn set_auto_update(repo: &str, on: bool) -> Result<(), String> {
     })
 }
 
-/// The archive for `platform` in a release's JSON: `<name>-<platform>.tar.gz` or `.zip`, one of
-/// this repository's own files.
-fn pick(repo: &str, release: &serde_json::Value, platform: &str) -> Result<Release, String> {
+/// The file to install in a release's JSON, one of this repository's own: for a game source the
+/// archive for `platform`, `<name>-<platform>.tar.gz` or `.zip`; for a mod source its `.hmod`.
+fn pick(
+    repo: &str,
+    kind: Kind,
+    release: &serde_json::Value,
+    platform: &str,
+) -> Result<Release, String> {
     let tag = release["tag_name"]
         .as_str()
         .ok_or("GitHub did not name the release's tag.")?
         .to_owned();
     let own = format!("https://github.com/{repo}/releases/download/");
-    let ends = [format!("-{platform}.tar.gz"), format!("-{platform}.zip")];
+    let ends = match kind {
+        Kind::Game => vec![format!("-{platform}.tar.gz"), format!("-{platform}.zip")],
+        Kind::Mod => vec![".hmod".to_owned()],
+    };
     let assets = release["assets"]
         .as_array()
         .map(Vec::as_slice)
@@ -185,6 +217,7 @@ fn pick(repo: &str, release: &serde_json::Value, platform: &str) -> Result<Relea
             (ends.iter().any(|e| name.ends_with(e.as_str())) && url.starts_with(&own)).then(|| {
                 Release {
                     repo: repo.to_owned(),
+                    kind,
                     tag: tag.clone(),
                     asset: name.to_owned(),
                     url: url.to_owned(),
@@ -196,18 +229,25 @@ fn pick(repo: &str, release: &serde_json::Value, platform: &str) -> Result<Relea
                 }
             })
         })
-        .ok_or_else(|| format!("{repo} {tag} has no build for this computer ({platform})."))
+        .ok_or_else(|| match kind {
+            Kind::Game => format!("{repo} {tag} has no build for this computer ({platform})."),
+            Kind::Mod => format!("{repo} {tag} has no .hmod."),
+        })
 }
 
 /// `repo`'s newest release for this computer, through `api`; None when it has no build for this
-/// computer (Event Horizon publishes Linux and Windows builds only).
-pub fn latest(repo: &str, api: Api) -> Result<Option<Release>, String> {
-    let Some(platform) = platform() else {
-        return Ok(None);
+/// computer (Event Horizon publishes Windows builds only). A mod is the same everywhere.
+pub fn latest(repo: &str, kind: Kind, api: Api) -> Result<Option<Release>, String> {
+    let platform = match (kind, platform()) {
+        (Kind::Game, None) => return Ok(None),
+        (_, p) => p.unwrap_or_default(),
     };
     let release = api(&format!("repos/{repo}/releases/latest"))?
         .ok_or_else(|| format!("{repo} has no releases yet, or is private."))?;
-    Ok(pick(repo, &release, platform).ok())
+    match kind {
+        Kind::Game => Ok(pick(repo, kind, &release, platform).ok()),
+        Kind::Mod => pick(repo, kind, &release, platform).map(Some),
+    }
 }
 
 fn sha256(bytes: &[u8]) -> String {
@@ -258,6 +298,9 @@ fn selects(selected: Option<&str>, before: Option<&Installed>) -> bool {
 /// when `select`. Horizon's newest release is installed first when there are no game files yet.
 /// Returns the version it made.
 pub fn install(release: &Release, select: bool) -> Result<String, String> {
+    if release.kind == Kind::Mod {
+        return install_mod(release);
+    }
     let before = load()
         .into_iter()
         .find(|s| s.repo.eq_ignore_ascii_case(&release.repo))
@@ -304,12 +347,98 @@ pub fn install(release: &Release, select: bool) -> Result<String, String> {
     Ok(version)
 }
 
+/// Where a mod source keeps the `.hmod` it installed, for instances made after it.
+fn kept(repo: &str) -> PathBuf {
+    backend::data_dir()
+        .join("game-sources")
+        .join(repo.replace('/', "-"))
+}
+
+/// The Horizon instances' game folders, where content mods go.
+fn horizon_homes() -> Vec<PathBuf> {
+    crate::instances::list()
+        .into_iter()
+        .filter(|i| i.java.is_none())
+        .map(|i| i.home)
+        .collect()
+}
+
+/// Puts `hmod` into `home`'s `horizon-mods/` as `<id>.hmod` and turns it on.
+fn place(hmod: &std::path::Path, id: &str, home: &std::path::Path) -> Result<(), String> {
+    let dir = home.join("horizon-mods");
+    fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let partial = dir.join(format!(".{id}.hmod.partial"));
+    fs::copy(hmod, &partial).map_err(|e| format!("{}: {e}", partial.display()))?;
+    fs::rename(&partial, dir.join(format!("{id}.hmod"))).map_err(|e| e.to_string())?;
+    crate::browser::java::set_enabled(home, id, true)
+}
+
+/// Installs a mod source's release into every Horizon instance, turned on, and keeps a copy for
+/// instances made later ([`fill_new_instances`]).
+fn install_mod(release: &Release) -> Result<String, String> {
+    let file = download(release)?;
+    let id = horizon_mods::Package::read(&file).map(|p| p.manifest.id);
+    let made = id.and_then(|id| {
+        let keep = kept(&release.repo);
+        fs::create_dir_all(&keep).map_err(|e| e.to_string())?;
+        let copy = keep.join(format!("{id}.hmod"));
+        fs::copy(&file, &copy).map_err(|e| e.to_string())?;
+        let homes = horizon_homes();
+        for home in &homes {
+            place(&copy, &id, home)?;
+        }
+        Ok((id, homes.len()))
+    });
+    let _ = fs::remove_dir_all(file.parent().unwrap_or(&file));
+    let (id, instances) = made?;
+    edit(|sources| {
+        if let Some(source) = sources
+            .iter_mut()
+            .find(|s| s.repo.eq_ignore_ascii_case(&release.repo))
+        {
+            source.installed = Some(Installed {
+                tag: release.tag.clone(),
+                version: id.clone(),
+            });
+        }
+        Ok(())
+    })?;
+    Ok(format!("{id} in {instances} instance(s)"))
+}
+
+/// Gives each Horizon instance that lacks it the mod a mod source installed: an instance made
+/// after the release has it at the next check, without waiting for the next release.
+fn fill_new_instances(sources: &[Source]) -> Vec<Result<String, String>> {
+    let mut done = Vec::new();
+    for source in sources.iter().filter(|s| s.kind == Kind::Mod) {
+        let Some(installed) = &source.installed else {
+            continue;
+        };
+        let copy = kept(&source.repo).join(format!("{}.hmod", installed.version));
+        if !copy.is_file() {
+            continue;
+        }
+        for home in horizon_homes() {
+            let there = home
+                .join("horizon-mods")
+                .join(format!("{}.hmod", installed.version));
+            if !there.is_file() {
+                done.push(
+                    place(&copy, &installed.version, &home)
+                        .map(|()| format!("{} into {}", installed.version, home.display())),
+                );
+            }
+        }
+    }
+    done
+}
+
 /// The sources with a release newer than the one installed (or none installed), with it. A
 /// source with no build for this computer has nothing to install.
 pub fn updates(sources: &[Source], api: Api) -> Vec<(Source, Result<Release, String>)> {
     sources
         .iter()
-        .filter_map(|s| match latest(&s.repo, api) {
+        .filter_map(|s| match latest(&s.repo, s.kind, api) {
             Ok(None) => None,
             Ok(Some(r)) if s.installed.as_ref().is_some_and(|i| i.tag == r.tag) => None,
             Ok(Some(r)) => Some((s.clone(), Ok(r))),
@@ -335,15 +464,18 @@ pub fn update_automatic() -> Vec<Result<String, String>> {
     }
     let _done = Done;
     let sources: Vec<Source> = load().into_iter().filter(|s| s.auto_update).collect();
-    updates(&sources, &github_mods::api)
-        .into_iter()
-        .map(|(source, latest)| {
-            let release = latest.map_err(|e| format!("{}: {e}", source.repo))?;
-            install(&release, false)
-                .map(|v| format!("{} → {v}", release.label()))
-                .map_err(|e| format!("{}: {e}", release.label()))
-        })
-        .collect()
+    let mut done = fill_new_instances(&sources);
+    done.extend(
+        updates(&sources, &github_mods::api)
+            .into_iter()
+            .map(|(source, latest)| {
+                let release = latest.map_err(|e| format!("{}: {e}", source.repo))?;
+                install(&release, false)
+                    .map(|v| format!("{} → {v}", release.label()))
+                    .map_err(|e| format!("{}: {e}", release.label()))
+            }),
+    );
+    done
 }
 
 #[cfg(test)]
@@ -353,13 +485,16 @@ mod tests {
     #[test]
     fn a_new_launcher_follows_event_horizon_by_itself() {
         let list = parse(None);
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].repo, DEFAULT);
-        assert!(list[0].auto_update);
+        assert_eq!(list.len(), 2);
+        assert_eq!((list[0].repo.as_str(), list[0].kind), (DEFAULT, Kind::Game));
+        assert_eq!((list[1].repo.as_str(), list[1].kind), (MODKIT, Kind::Mod));
+        assert!(list.iter().all(|s| s.auto_update));
         // A list the player saved, even an empty one, is theirs.
         assert!(parse(Some("[]")).is_empty());
+        // A list saved before sources had kinds holds game sources.
         let saved = r#"[{"repo": "a/b", "auto_update": false}]"#;
         assert!(!parse(Some(saved))[0].auto_update);
+        assert_eq!(parse(Some(saved))[0].kind, Kind::Game);
     }
 
     #[test]
@@ -391,15 +526,32 @@ mod tests {
             { "name": "event-horizon-linux-x86_64.tar.gz",
               "browser_download_url": "https://github.com/a/b/releases/download/eh-v0.1.0/event-horizon-linux-x86_64.tar.gz" },
         ]));
-        let windows = pick("a/b", &json, "windows-x64").unwrap();
+        let windows = pick("a/b", Kind::Game, &json, "windows-x64").unwrap();
         assert_eq!(windows.asset, "event-horizon-windows-x64.zip");
         assert_eq!(windows.sha256.as_deref(), Some(digest.as_str()));
         assert_eq!(windows.label(), "a/b eh-v0.1.0");
-        let linux = pick("a/b", &json, "linux-x86_64").unwrap();
+        let linux = pick("a/b", Kind::Game, &json, "linux-x86_64").unwrap();
         assert_eq!(linux.sha256, None);
-        assert!(pick("a/b", &json, "macos-arm64")
+        assert!(pick("a/b", Kind::Game, &json, "macos-arm64")
             .unwrap_err()
             .contains("no build for this computer"));
+    }
+
+    #[test]
+    fn a_mod_sources_release_is_its_hmod() {
+        let json = release(serde_json::json!([
+            { "name": "SHA256SUMS", "browser_download_url": "https://github.com/a/m/releases/download/v0.7.1/SHA256SUMS" },
+            { "name": "horizon_modkit.hmod", "browser_download_url": "https://github.com/a/m/releases/download/v0.7.1/horizon_modkit.hmod" },
+        ]));
+        let found = pick("a/m", Kind::Mod, &json, "").unwrap();
+        assert_eq!(
+            (found.asset.as_str(), found.kind),
+            ("horizon_modkit.hmod", Kind::Mod)
+        );
+        let none = release(serde_json::json!([]));
+        assert!(pick("a/m", Kind::Mod, &none, "")
+            .unwrap_err()
+            .contains("no .hmod"));
     }
 
     #[test]
@@ -408,7 +560,7 @@ mod tests {
             { "name": "event-horizon-linux-x86_64.tar.gz",
               "browser_download_url": "https://github.com/someone/else/releases/download/x/event-horizon-linux-x86_64.tar.gz" },
         ]));
-        assert!(pick("a/b", &json, "linux-x86_64").is_err());
+        assert!(pick("a/b", Kind::Game, &json, "linux-x86_64").is_err());
     }
 
     #[test]
@@ -431,6 +583,7 @@ mod tests {
     fn a_source_with_the_newest_release_has_no_update() {
         let installed = Source {
             repo: "a/b".into(),
+            kind: Kind::Game,
             auto_update: true,
             installed: Some(Installed {
                 tag: "eh-v0.1.0".into(),
@@ -439,6 +592,7 @@ mod tests {
         };
         let new = Source {
             repo: "c/d".into(),
+            kind: Kind::Game,
             auto_update: true,
             installed: None,
         };

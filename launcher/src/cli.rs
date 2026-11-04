@@ -201,6 +201,9 @@ enum SourcesCmd {
     /// Add a repository (https://github.com/<owner>/<repo>, or <owner>/<repo>)
     Add {
         repo: String,
+        /// Its releases are a content mod (.hmod), installed into every Horizon instance
+        #[arg(long = "mod")]
+        is_mod: bool,
         /// Don't install its new releases when the launcher checks for updates
         #[arg(long)]
         no_auto_update: bool,
@@ -3657,15 +3660,24 @@ fn sources(action: SourcesCmd, as_json: bool) -> Result<(), String> {
                     } else {
                         "updates by hand"
                     };
-                    println!("{}: {installed}, {auto}", s.repo);
+                    let kind = match s.kind {
+                        game_sources::Kind::Game => "game builds",
+                        game_sources::Kind::Mod => "a mod",
+                    };
+                    println!("{} ({kind}): {installed}, {auto}", s.repo);
                 }
             }
         }
         SourcesCmd::Add {
             repo,
+            is_mod,
             no_auto_update,
         } => {
-            let repo = game_sources::add(&repo, !no_auto_update)?;
+            let kind = match is_mod {
+                true => game_sources::Kind::Mod,
+                false => game_sources::Kind::Game,
+            };
+            let repo = game_sources::add(&repo, kind, !no_auto_update)?;
             println!(
                 "Added {repo}. Install its newest release: horizon-launcher sources update {repo}"
             );
