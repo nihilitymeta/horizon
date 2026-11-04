@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "상점의 결제 서비스가 회원님의 국가를 지원하지 않으므로 창립자 세트를 여기에서 무료로 받을 수 있습니다.",
   "The Founder Set is yours.": "창립자 세트를 받았습니다.",
   "Update the launcher automatically": "런처 자동 업데이트",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "새 런처 릴리스를 찾으면 설치합니다. 끄면 로컬 빌드를 그대로 유지합니다."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "새 런처 릴리스를 찾으면 설치합니다. 끄면 로컬 빌드를 그대로 유지합니다.",
+  "Added {repo}.": "{repo}을(를) 추가했습니다.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "저장소가 GitHub 릴리스로 게시하는 게임 빌드(Event Horizon의 빌드 등). 각 빌드는 설치된 버전의 게임 파일 위에 설치됩니다.",
+  "GitHub sources": "GitHub 소스",
+  "Installed {tag}": "{tag} 설치됨",
+  "Nothing installed yet": "아직 설치된 것이 없음",
+  "Update automatically": "자동 업데이트"
 }

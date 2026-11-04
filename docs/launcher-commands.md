@@ -834,6 +834,56 @@ Remove an imported pack: its jars, ports and the profile's saves.
 
 MCP: `modpack_remove`, needs `confirm: true`.
 
+## `horizon-launcher sources list`
+
+The sources, what each installed, and whether it updates itself (the default).
+
+    horizon-launcher sources list
+
+MCP: `sources_list`.
+
+## `horizon-launcher sources add`
+
+Add a repository (https://github.com/<owner>/<repo>, or <owner>/<repo>).
+
+    horizon-launcher sources add <REPO>
+
+- `REPO`
+- `--no-auto-update`: Don't install its new releases when the launcher checks for updates
+
+MCP: `sources_add`.
+
+## `horizon-launcher sources remove`
+
+Forget a source; the versions it installed stay.
+
+    horizon-launcher sources remove <REPO>
+
+- `REPO`
+
+MCP: `sources_remove`.
+
+## `horizon-launcher sources auto`
+
+Turn a source's automatic updates on or off.
+
+    horizon-launcher sources auto <REPO> <STATE>
+
+- `REPO`
+- `STATE`
+
+MCP: `sources_auto`.
+
+## `horizon-launcher sources update`
+
+Install the newest release of a source now (of every source with none named).
+
+    horizon-launcher sources update [REPO]
+
+- `REPO`
+
+MCP: `sources_update`.
+
 ## `horizon-launcher mods list`
 
 What the browser installed in an instance (the default).

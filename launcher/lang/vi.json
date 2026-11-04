@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Nhà cung cấp thanh toán của cửa hàng không phục vụ quốc gia của bạn, nên bạn có thể nhận Bộ sáng lập tại đây miễn phí.",
   "The Founder Set is yours.": "Bộ sáng lập giờ là của bạn.",
   "Update the launcher automatically": "Tự động cập nhật trình khởi chạy",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Cài đặt bản phát hành trình khởi chạy mới hơn khi tìm thấy. Khi tắt, bản dựng cục bộ được giữ nguyên."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Cài đặt bản phát hành trình khởi chạy mới hơn khi tìm thấy. Khi tắt, bản dựng cục bộ được giữ nguyên.",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }

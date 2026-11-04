@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "De betaalprovider van de winkel is niet actief in jouw land, dus je kunt de Oprichtersset hier gratis ophalen.",
   "The Founder Set is yours.": "De Oprichtersset is van jou.",
   "Update the launcher automatically": "Launcher automatisch bijwerken",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installeert een nieuwere launcherversie zodra die gevonden wordt. Uit laat een lokale build zoals hij is."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installeert een nieuwere launcherversie zodra die gevonden wordt. Uit laat een lokale build zoals hij is.",
+  "Added {repo}.": "{repo} toegevoegd.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Spelbuilds die een repository als GitHub-releases publiceert, zoals die van Event Horizon. Elke build wordt geïnstalleerd op de spelbestanden van een geïnstalleerde versie.",
+  "GitHub sources": "GitHub-bronnen",
+  "Installed {tag}": "{tag} geïnstalleerd",
+  "Nothing installed yet": "Nog niets geïnstalleerd",
+  "Update automatically": "Automatisch bijwerken"
 }

@@ -89,9 +89,14 @@ player's forwarded address, and F3 shows the transport and path. Reference: [web
 
 ## For the launcher
 
-**Launcher additions** (`archive/launcher`). Upstream's launcher with two additions:
+**Launcher additions** (`archive/launcher`, and since 2026-11-04 on `engine-work`). Upstream's launcher with these
+additions:
 
-- a switch that stops launcher self-updates, so a locally built launcher is not replaced by a release
-  (Settings > Launcher, or `horizon-launcher settings auto-update-launcher off`)
+- **GitHub sources**: the Versions page installs game builds a repository publishes as GitHub releases, such as
+  Event Horizon's own ([event-horizon-releases.md](event-horizon-releases.md)), each with an **Update
+  automatically** switch. Code: `launcher/src/game_sources.rs`, `sources_page.rs`; `horizon-launcher sources`.
+- **Nothing updates itself unless turned on**: installing new Horizon versions and the launcher's own self-update
+  are off by default, so nothing upstream replaces an Event Horizon build (Settings > Launcher, or
+  `horizon-launcher settings auto-update-launcher on`)
 - `tools/deploy_local_mac.sh`, which installs a working tree's game as a launcher version on macOS (`--launcher`
   installs the launcher itself as `~/Applications/Horizon.app`)

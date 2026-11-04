@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Platební služba obchodu ve vaší zemi nefunguje, takže si Zakladatelský set můžete vyzvednout zde zdarma.",
   "The Founder Set is yours.": "Zakladatelský set je váš.",
   "Update the launcher automatically": "Automaticky aktualizovat spouštěč",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Nainstaluje novější verzi spouštěče, když ji najde. Vypnuto ponechá místní sestavení beze změny."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Nainstaluje novější verzi spouštěče, když ji najde. Vypnuto ponechá místní sestavení beze změny.",
+  "Added {repo}.": "{repo} přidáno.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Sestavení hry, která repozitář vydává jako vydání na GitHubu, například sestavení Event Horizon. Každé se instaluje na herní soubory nainstalované verze.",
+  "GitHub sources": "Zdroje z GitHubu",
+  "Installed {tag}": "Nainstalováno {tag}",
+  "Nothing installed yet": "Zatím nic nenainstalováno",
+  "Update automatically": "Aktualizovat automaticky"
 }

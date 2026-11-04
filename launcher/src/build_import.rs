@@ -95,10 +95,26 @@ pub fn import(path: &Path, requested: Option<&str>) -> Result<String, String> {
         || path.display().to_string(),
         |n| n.to_string_lossy().into_owned(),
     );
+    import_as(path, requested, &file, true)
+}
+
+/// [`import`], with `from` as what the Versions page says it was made from (a GitHub source names
+/// its release, `game_sources`), selected only when `select`.
+pub fn import_as(
+    path: &Path,
+    requested: Option<&str>,
+    from: &str,
+    select: bool,
+) -> Result<String, String> {
+    let file = path.file_name().map_or_else(
+        || path.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    );
     let program = read_program(path, &file)?;
     if !is_game(&program) {
         return Err(not_a_game(&file));
     }
+    let file = from.to_owned();
     let selected = backend::Settings::load().selected;
     let base = base_for(&backend::installed(), requested, selected.as_deref())?;
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
@@ -111,10 +127,12 @@ pub fn import(path: &Path, requested: Option<&str>) -> Result<String, String> {
         ));
     }
     backend::reuse_prepared_for(&tag);
-    // Read again: the window may have saved other settings during the copy.
-    let mut settings = backend::Settings::load();
-    settings.selected = Some(tag.clone());
-    settings.save()?;
+    if select {
+        // Read again: the window may have saved other settings during the copy.
+        let mut settings = backend::Settings::load();
+        settings.selected = Some(tag.clone());
+        settings.save()?;
+    }
     Ok(tag)
 }
 

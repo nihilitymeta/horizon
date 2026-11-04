@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Greiðsluþjónusta verslunarinnar þjónar ekki þínu landi, svo þú getur sótt Stofnandi settið hér ókeypis.",
   "The Founder Set is yours.": "Stofnandi settið er þitt.",
   "Update the launcher automatically": "Uppfæra ræsiforritið sjálfkrafa",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Setur upp nýrri útgáfu ræsiforritsins þegar hún finnst. Slökkt heldur staðbundinni útgáfu óbreyttri."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Setur upp nýrri útgáfu ræsiforritsins þegar hún finnst. Slökkt heldur staðbundinni útgáfu óbreyttri.",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }

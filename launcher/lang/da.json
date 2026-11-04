@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Butikkens betalingsudbyder betjener ikke dit land, så du kan hente Stifter sæt her gratis.",
   "The Founder Set is yours.": "Stifter sæt er dit.",
   "Update the launcher automatically": "Opdater launcheren automatisk",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installerer en nyere launcher-version, når der findes en. Slået fra beholder et lokalt build, som det er."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installerer en nyere launcher-version, når der findes en. Slået fra beholder et lokalt build, som det er.",
+  "Added {repo}.": "{repo} er tilføjet.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Spilbuilds, som et repository udgiver som GitHub-udgivelser, fx Event Horizons. Hver installeres på en installeret versions spilfiler.",
+  "GitHub sources": "GitHub-kilder",
+  "Installed {tag}": "{tag} installeret",
+  "Nothing installed yet": "Intet installeret endnu",
+  "Update automatically": "Opdater automatisk"
 }

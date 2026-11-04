@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Kaupan maksupalvelu ei toimi maassasi, joten voit lunastaa Perustaja-setin täältä ilmaiseksi.",
   "The Founder Set is yours.": "Perustaja-setti on sinun.",
   "Update the launcher automatically": "Päivitä käynnistin automaattisesti",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Asentaa uudemman käynnistinversion, kun sellainen löytyy. Pois päältä paikallinen koontiversio pysyy ennallaan."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Asentaa uudemman käynnistinversion, kun sellainen löytyy. Pois päältä paikallinen koontiversio pysyy ennallaan.",
+  "Added {repo}.": "{repo} lisätty.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Pelin koontiversiot, jotka repository julkaisee GitHub-julkaisuina, kuten Event Horizonin. Kukin asennetaan asennetun version pelitiedostojen päälle.",
+  "GitHub sources": "GitHub-lähteet",
+  "Installed {tag}": "{tag} asennettu",
+  "Nothing installed yet": "Mitään ei ole vielä asennettu",
+  "Update automatically": "Päivitä automaattisesti"
 }

@@ -71,6 +71,7 @@ mod shell;
 mod shortcut_page;
 mod skin_page;
 mod sky;
+mod sources_page;
 mod specimen;
 mod sticky;
 mod switch_page;
@@ -463,6 +464,7 @@ struct Launcher {
     /// The Mods page: the browser's search, installs and updates (`mods_page.rs`).
     mods: mods_page::Mods,
     github: github_mods_page::Github,
+    sources: sources_page::Sources,
     /// The instances, for the sidebar and Play, and their dialog (`instances_page.rs`).
     instances: instances_page::Instances,
     /// Home's Worlds section, of the selected instance (`worlds_page.rs`).
@@ -722,6 +724,7 @@ impl Launcher {
             starting_pack: None,
             mods: mods_page::Mods::new(cx),
             github: github_mods_page::Github::new(cx),
+            sources: sources_page::Sources::new(cx),
             instances: instances_page::Instances::default(),
             worlds: worlds_page::Worlds::default(),
             multiplayer: multiplayer_page::Multiplayer::default(),
@@ -1327,12 +1330,32 @@ impl Launcher {
                         self.installed = backend::installed();
                     }
                 }
+                Msg::SourcesUpdated(results) => {
+                    if results.iter().any(Result::is_ok) {
+                        self.installed = backend::installed();
+                        // `game_sources::install` may have moved the selection to the new build.
+                        self.settings.selected = backend::Settings::load().selected;
+                    }
+                    for result in results {
+                        match result {
+                            Ok(done) => eprintln!("GitHub source updated: {done}"),
+                            Err(e) => eprintln!("GitHub source not updated: {e}"),
+                        }
+                    }
+                }
                 Msg::Updates(Ok(updates)) => {
                     self.update_error = None;
                     self.updates = *updates;
                     if self.settings.auto_install() {
                         self.install_update();
                     }
+                    // GitHub sources that update themselves: downloads, never compiles.
+                    let tx = self.tx.clone();
+                    std::thread::spawn(move || {
+                        let _ = tx.send(Msg::SourcesUpdated(
+                            horizon_launcher::game_sources::update_automatic(),
+                        ));
+                    });
                     if let Some(release) = self.updates.launcher.clone() {
                         self.update_launcher(release, true);
                     }
@@ -1495,6 +1518,7 @@ impl Launcher {
         changed |= self.servers_tick();
         changed |= self.mods_tick();
         changed |= self.github_tick();
+        changed |= self.sources_tick();
         changed |= self.native_log_read(cx);
         changed |= self.toast_tick();
         if let Some(sign_in) = &self.sign_in {
@@ -4721,6 +4745,8 @@ impl Launcher {
                 let _ = tx.send(Msg::DiskUse(disk.collect()));
             });
         }
+        // Event Horizon's GitHub sources, above the releases on either look.
+        let sources = self.sources_card(cx);
         let on_disk = |tag: &String| {
             let found = self.disk.iter().find(|(t, _)| t == tag);
             found
@@ -4729,7 +4755,7 @@ impl Launcher {
         };
         let used: u64 = self.installed.iter().filter_map(on_disk).sum();
         if t.glass {
-            return self.glass_versions(&on_disk, used, cx);
+            return self.glass_versions(&on_disk, used, Some(sources), cx);
         }
         // The list's own action at the end of the line above it: a build the player has.
         let import: AnyElement = if self.importing_build {
@@ -4769,7 +4795,8 @@ impl Launcher {
                     }))
                     .child(import),
             )
-            .children(self.import_error.clone().map(|e| notice(e, &t)));
+            .children(self.import_error.clone().map(|e| notice(e, &t)))
+            .child(sources);
         // Builds made here, not downloaded, are listed apart from the releases.
         let page = page
             .children(self.local_builds(
@@ -5168,6 +5195,7 @@ impl Render for Launcher {
         self.friend_focused = self.friend_focus.is_focused(window);
         self.mods.note_focus(window);
         self.github.note_focus(window);
+        self.sources.note_focus(window);
         self.args_focused = self.args_focus.is_focused(window);
         self.proxy_focused = self.proxy_focus.is_focused(window);
         let size = window.viewport_size();

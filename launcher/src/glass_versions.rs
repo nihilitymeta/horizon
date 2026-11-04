@@ -56,6 +56,7 @@ impl Launcher {
         &self,
         on_disk: &dyn Fn(&String) -> Option<u64>,
         used: u64,
+        sources: Option<Div>,
         cx: &mut Context<Self>,
     ) -> Div {
         let t = self.theme;
@@ -132,6 +133,7 @@ impl Launcher {
         );
         page = page
             .children(self.import_error.clone().map(|e| notice(e, &t).mb(px(10.))))
+            .children(sources)
             .children(self.glass_local_builds(
                 "Native mod builds",
                 native_mods::is_native,

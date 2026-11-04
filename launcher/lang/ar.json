@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "مزوّد الدفع في المتجر لا يخدم بلدك، لذا يمكنك الحصول على طقم المؤسسين هنا مجانًا.",
   "The Founder Set is yours.": "طقم المؤسسين أصبح لك.",
   "Update the launcher automatically": "حدّث المشغّل تلقائيًا",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "يثبّت إصدارًا أحدث من المشغّل عند العثور عليه. عند الإيقاف يبقى الإصدار المحلي كما هو."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "يثبّت إصدارًا أحدث من المشغّل عند العثور عليه. عند الإيقاف يبقى الإصدار المحلي كما هو.",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }

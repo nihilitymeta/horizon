@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Onye na-enye ịkwụ ụgwọ nke ụlọ ahịa anaghị arụ ọrụ na mba gị, ya mere ị nwere ike ịnara Ntọala ntọala ebe a n'efu.",
   "The Founder Set is yours.": "Ntọala ntọala bụ nke gị.",
   "Update the launcher automatically": "Update the launcher automatically",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installs a newer launcher release when one is found. Off keeps a local build as it is."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installs a newer launcher release when one is found. Off keeps a local build as it is.",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }

@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "商店的支付服务商不在你所在的国家提供服务，因此你可以在这里免费领取创始者套装。",
   "The Founder Set is yours.": "创始者套装已归你所有。",
   "Update the launcher automatically": "自动更新启动器",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "找到更新的启动器版本时自动安装。关闭后本地构建保持不变。"
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "找到更新的启动器版本时自动安装。关闭后本地构建保持不变。",
+  "Added {repo}.": "已添加 {repo}。",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "仓库以 GitHub 发布版发布的游戏构建，例如 Event Horizon 的构建。每个构建都安装在某个已安装版本的游戏文件之上。",
+  "GitHub sources": "GitHub 来源",
+  "Installed {tag}": "已安装 {tag}",
+  "Nothing installed yet": "尚未安装任何内容",
+  "Update automatically": "自动更新"
 }

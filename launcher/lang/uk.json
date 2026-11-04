@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Платіжний сервіс крамниці не працює у вашій країні, тож Набір засновника можна отримати тут безкоштовно.",
   "The Founder Set is yours.": "Набір засновника тепер ваш.",
   "Update the launcher automatically": "Оновлювати лаунчер автоматично",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Встановлює новіший випуск лаунчера, щойно його знайдено. Вимкнено: локальна збірка лишається як є."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Встановлює новіший випуск лаунчера, щойно його знайдено. Вимкнено: локальна збірка лишається як є.",
+  "Added {repo}.": "{repo} додано.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Збірки гри, які репозиторій публікує як релізи GitHub, наприклад збірки Event Horizon. Кожна встановлюється поверх файлів гри встановленої версії.",
+  "GitHub sources": "Джерела GitHub",
+  "Installed {tag}": "Встановлено: {tag}",
+  "Nothing installed yet": "Ще нічого не встановлено",
+  "Update automatically": "Оновлювати автоматично"
 }

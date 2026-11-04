@@ -17,6 +17,7 @@ Horizon follows upstream when upstream has something it wants: upstream is merge
 
 | To… | Read |
 |---|---|
+| play it, or publish a release for other developers | [docs/event-horizon-releases.md](docs/event-horizon-releases.md) |
 | build the game and play or test it | [docs/building.md](docs/building.md) |
 | set up a machine the same way as the others | [docs/dev-setup.md](docs/dev-setup.md) |
 | see what Event Horizon adds, and where each part lives | [docs/fork-branches.md](docs/fork-branches.md) |

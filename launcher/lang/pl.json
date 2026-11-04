@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Operator płatności sklepu nie działa w Twoim kraju, więc Zestaw założyciela możesz odebrać tutaj za darmo.",
   "The Founder Set is yours.": "Zestaw założyciela jest Twój.",
   "Update the launcher automatically": "Aktualizuj launcher automatycznie",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Instaluje nowsze wydanie launchera, gdy zostanie znalezione. Wyłączone zachowuje lokalną kompilację bez zmian."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Instaluje nowsze wydanie launchera, gdy zostanie znalezione. Wyłączone zachowuje lokalną kompilację bez zmian.",
+  "Added {repo}.": "Dodano {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Kompilacje gry, które repozytorium publikuje jako wydania GitHub, np. Event Horizon. Każda instaluje się na plikach gry zainstalowanej wersji.",
+  "GitHub sources": "Źródła GitHub",
+  "Installed {tag}": "Zainstalowano {tag}",
+  "Nothing installed yet": "Jeszcze nic nie zainstalowano",
+  "Update automatically": "Aktualizuj automatycznie"
 }

@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Ní fhreastalaíonn soláthraí íocaíochta an tsiopa ar do thír, mar sin is féidir leat an tSraith bunaitheoir a fháil anseo saor in aisce.",
   "The Founder Set is yours.": "Is leatsa an tSraith bunaitheoir.",
   "Update the launcher automatically": "Nuashonraigh an lainseálaí go huathoibríoch",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Suiteálann sé leagan níos nuaí den lainseálaí nuair a aimsítear ceann. Nuair atá sé múchta, fanann leagan áitiúil mar atá."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Suiteálann sé leagan níos nuaí den lainseálaí nuair a aimsítear ceann. Nuair atá sé múchta, fanann leagan áitiúil mar atá.",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }

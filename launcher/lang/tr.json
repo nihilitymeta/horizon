@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Mağazanın ödeme sağlayıcısı ülkende hizmet vermiyor, bu yüzden Kurucu setini burada ücretsiz alabilirsin.",
   "The Founder Set is yours.": "Kurucu seti artık senin.",
   "Update the launcher automatically": "Başlatıcıyı otomatik güncelle",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Bulunduğunda daha yeni bir başlatıcı sürümünü yükler. Kapalıyken yerel derleme olduğu gibi kalır."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Bulunduğunda daha yeni bir başlatıcı sürümünü yükler. Kapalıyken yerel derleme olduğu gibi kalır.",
+  "Added {repo}.": "{repo} eklendi.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Bir deponun GitHub sürümleri olarak yayımladığı oyun derlemeleri, örneğin Event Horizon'ınkiler. Her biri yüklü bir sürümün oyun dosyalarına kurulur.",
+  "GitHub sources": "GitHub kaynakları",
+  "Installed {tag}": "{tag} kuruldu",
+  "Nothing installed yet": "Henüz bir şey kurulmadı",
+  "Update automatically": "Otomatik güncelle"
 }

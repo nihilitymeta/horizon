@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Nid yw darparwr talu'r siop yn gwasanaethu eich gwlad, felly gallwch hawlio'r Set sylfaenydd yma am ddim.",
   "The Founder Set is yours.": "Mae'r Set sylfaenydd yn eiddo i chi.",
   "Update the launcher automatically": "Diweddaru'r lansiwr yn awtomatig",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Yn gosod fersiwn newyddach o'r lansiwr pan ddaw o hyd i un. Mae diffodd yn cadw adeiladwaith lleol fel y mae."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Yn gosod fersiwn newyddach o'r lansiwr pan ddaw o hyd i un. Mae diffodd yn cadw adeiladwaith lleol fel y mae.",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }

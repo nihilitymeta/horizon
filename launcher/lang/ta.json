@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "கடையின் கட்டணச் சேவை உங்கள் நாட்டில் இயங்காததால், நிறுவனர் தொகுப்பை இங்கே இலவசமாகப் பெறலாம்.",
   "The Founder Set is yours.": "நிறுவனர் தொகுப்பு இப்போது உங்களுடையது.",
   "Update the launcher automatically": "லாஞ்சரைத் தானாகப் புதுப்பி",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "புதிய லாஞ்சர் வெளியீடு கிடைக்கும்போது அதை நிறுவும். அணைத்தால் உள்ளூர் பில்ட் அப்படியே இருக்கும்."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "புதிய லாஞ்சர் வெளியீடு கிடைக்கும்போது அதை நிறுவும். அணைத்தால் உள்ளூர் பில்ட் அப்படியே இருக்கும்.",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }

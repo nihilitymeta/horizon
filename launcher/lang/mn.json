@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Дэлгүүрийн төлбөрийн үйлчилгээ таны улсад ажилладаггүй тул Үүсгэн байгуулагчийн багцыг эндээс үнэгүй авч болно.",
   "The Founder Set is yours.": "Үүсгэн байгуулагчийн багц таных боллоо.",
   "Update the launcher automatically": "Эхлүүлэгчийг автоматаар шинэчлэх",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Шинэ хувилбар олдвол эхлүүлэгчийг суулгана. Унтраалттай үед дотоод хувилбар хэвээр үлдэнэ."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Шинэ хувилбар олдвол эхлүүлэгчийг суулгана. Унтраалттай үед дотоод хувилбар хэвээр үлдэнэ.",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }

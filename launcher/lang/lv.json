@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Veikala maksājumu pakalpojums jūsu valstī nedarbojas, tāpēc Dibinātāja komplektu šeit varat saņemt bez maksas.",
   "The Founder Set is yours.": "Dibinātāja komplekts ir jūsu.",
   "Update the launcher automatically": "Automātiski atjaunināt palaidēju",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Instalē jaunāku palaidēja versiju, kad tā tiek atrasta. Izslēgts saglabā lokālo būvējumu nemainītu."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Instalē jaunāku palaidēja versiju, kad tā tiek atrasta. Izslēgts saglabā lokālo būvējumu nemainītu.",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }

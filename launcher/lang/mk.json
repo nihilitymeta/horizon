@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Давателот на плаќања на продавницата не работи во вашата земја, па Основачкиот сет можете да го земете тука бесплатно.",
   "The Founder Set is yours.": "Основачкиот сет е ваш.",
   "Update the launcher automatically": "Автоматски ажурирај го лаунчерот",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Инсталира понова верзија на лаунчерот кога ќе ја најде. Исклучено ја задржува локалната верзија каква што е."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Инсталира понова верзија на лаунчерот кога ќе ја најде. Исклучено ја задржува локалната верзија каква што е.",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }

@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Furnizorul de plăți al magazinului nu operează în țara ta, așa că poți revendica aici gratuit Setul fondator.",
   "The Founder Set is yours.": "Setul fondator este al tău.",
   "Update the launcher automatically": "Actualizează automat lansatorul",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Instalează o versiune mai nouă a lansatorului când găsește una. Dezactivat, păstrează versiunea locală așa cum este."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Instalează o versiune mai nouă a lansatorului când găsește una. Dezactivat, păstrează versiunea locală așa cum este.",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }

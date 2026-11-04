@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "A bolt fizetési szolgáltatója nem érhető el az országodban, ezért az Alapító készletet itt ingyen igényelheted.",
   "The Founder Set is yours.": "Az Alapító készlet a tiéd.",
   "Update the launcher automatically": "Indító automatikus frissítése",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Telepíti az indító újabb kiadását, ha talál ilyet. Kikapcsolva a helyi build változatlan marad."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Telepíti az indító újabb kiadását, ha talál ilyet. Kikapcsolva a helyi build változatlan marad.",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }

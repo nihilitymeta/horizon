@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Penyedia pembayaran kedai tidak berkhidmat di negara anda, jadi anda boleh menuntut Set pengasas di sini secara percuma.",
   "The Founder Set is yours.": "Set pengasas kini milik anda.",
   "Update the launcher automatically": "Kemas kini pelancar secara automatik",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Memasang keluaran pelancar yang lebih baharu apabila ditemui. Mati mengekalkan binaan tempatan seperti sedia ada."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Memasang keluaran pelancar yang lebih baharu apabila ditemui. Mati mengekalkan binaan tempatan seperti sedia ada.",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }

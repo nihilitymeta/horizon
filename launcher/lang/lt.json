@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Parduotuvės mokėjimų paslaugos jūsų šalyje neveikia, todėl Steigėjų rinkinį čia galite gauti nemokamai.",
   "The Founder Set is yours.": "Steigėjų rinkinys jūsų.",
   "Update the launcher automatically": "Automatiškai atnaujinti paleidyklę",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Įdiegia naujesnę paleidyklės versiją, kai ją randa. Išjungus vietinė versija paliekama tokia, kokia yra."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Įdiegia naujesnę paleidyklės versiją, kai ją randa. Išjungus vietinė versija paliekama tokia, kokia yra.",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }

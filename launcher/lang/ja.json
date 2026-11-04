@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "ショップの決済サービスはお住まいの国に対応していないため、ファウンダーセットをここで無料で受け取れます。",
   "The Founder Set is yours.": "ファウンダーセットはあなたのものです。",
   "Update the launcher automatically": "ランチャーを自動的に更新する",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "新しいランチャーのリリースが見つかるとインストールします。オフにするとローカルビルドはそのまま残ります。"
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "新しいランチャーのリリースが見つかるとインストールします。オフにするとローカルビルドはそのまま残ります。",
+  "Added {repo}.": "{repo} を追加しました。",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "リポジトリが GitHub リリースとして公開するゲームのビルド（Event Horizon のものなど）。それぞれ、インストール済みバージョンのゲームファイルの上にインストールされます。",
+  "GitHub sources": "GitHub ソース",
+  "Installed {tag}": "{tag} をインストール済み",
+  "Nothing installed yet": "まだ何もインストールされていません",
+  "Update automatically": "自動的に更新"
 }

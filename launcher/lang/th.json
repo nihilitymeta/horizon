@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "ผู้ให้บริการชำระเงินของร้านค้าไม่ให้บริการในประเทศของคุณ คุณจึงรับชุดผู้ก่อตั้งได้ที่นี่ฟรี",
   "The Founder Set is yours.": "ชุดผู้ก่อตั้งเป็นของคุณแล้ว",
   "Update the launcher automatically": "อัปเดตตัวเปิดเกมโดยอัตโนมัติ",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "ติดตั้งตัวเปิดเกมรุ่นใหม่กว่าเมื่อพบ หากปิดไว้ บิลด์ในเครื่องจะคงเดิม"
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "ติดตั้งตัวเปิดเกมรุ่นใหม่กว่าเมื่อพบ หากปิดไว้ บิลด์ในเครื่องจะคงเดิม",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }

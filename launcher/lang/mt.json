@@ -1122,5 +1122,11 @@
   "The shop's payment provider doesn't serve your country, so you can claim the Founder Set here for free.": "Il-fornitur tal-ħlas tal-ħanut ma jaqdix lil pajjiżek, għalhekk tista' tieħu s-Sett tal-fundatur hawn b'xejn.",
   "The Founder Set is yours.": "Is-Sett tal-fundatur huwa tiegħek.",
   "Update the launcher automatically": "Aġġorna l-launcher awtomatikament",
-  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Jinstalla verżjoni ġdida tal-launcher meta tinstab. Mitfi jżomm il-build lokali kif inhu."
+  "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Jinstalla verżjoni ġdida tal-launcher meta tinstab. Mitfi jżomm il-build lokali kif inhu.",
+  "Added {repo}.": "Added {repo}.",
+  "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
+  "GitHub sources": "GitHub sources",
+  "Installed {tag}": "Installed {tag}",
+  "Nothing installed yet": "Nothing installed yet",
+  "Update automatically": "Update automatically"
 }
