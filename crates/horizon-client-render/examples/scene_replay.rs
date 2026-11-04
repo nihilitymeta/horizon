@@ -243,6 +243,9 @@ fn replay(window: Arc<Window>) -> Result<(), Box<dyn std::error::Error>> {
         settings.fxaa,
         settings.taa,
         settings.upscale,
+        // A recorded scene carries no CAS setting: replay it as recorded.
+        horizon_client_render::graphics::CasMode::Off,
+        0.0,
     );
     let mut notes = Vec::new();
     let mut note = |what: &str, result: horizon_client_render::Result<()>| {
