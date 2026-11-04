@@ -382,8 +382,10 @@ mod tests {
     #[test]
     fn the_fence_knows_every_animation_set_and_no_other() {
         let game: std::collections::BTreeSet<&str> = ANIMS.iter().map(|(n, _)| *n).collect();
-        let fence: std::collections::BTreeSet<&str> =
-            horizon_mods::content::MOB_ANIMATIONS.iter().copied().collect();
+        let fence: std::collections::BTreeSet<&str> = horizon_mods::content::MOB_ANIMATIONS
+            .iter()
+            .copied()
+            .collect();
         assert_eq!(game, fence);
         assert_eq!(game.len(), ANIMS.len(), "a name twice");
         assert!(

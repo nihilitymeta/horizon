@@ -661,13 +661,23 @@ mod tests {
         let m = mob();
         // Cows one block apart east of the mob, nearest id 101.
         let seen: Vec<Seen> = (1..=40)
-            .map(|i| Mob::new(100 + i, kind(), Vec3::new(0.5 + f64::from(i), 64.0, 0.5), 0.0))
+            .map(|i| {
+                Mob::new(
+                    100 + i,
+                    kind(),
+                    Vec3::new(0.5 + f64::from(i), 64.0, 0.5),
+                    0.0,
+                )
+            })
             .map(|c| c.seen(None))
             .chain([m.seen(None)])
             .collect();
         let near = nearby_of(&m, 16.0, seen.iter());
         assert_eq!(near.len(), 16);
-        assert_eq!(near.iter().map(|n| n.id).collect::<Vec<_>>(), (101..=116).collect::<Vec<_>>());
+        assert_eq!(
+            near.iter().map(|n| n.id).collect::<Vec<_>>(),
+            (101..=116).collect::<Vec<_>>()
+        );
         assert_eq!((near[0].distance, near[15].distance), (1.0, 16.0));
         assert!(near.iter().all(|n| n.id != m.id));
         // The type is the snapshot's own, not a copy of its name.
@@ -707,10 +717,16 @@ mod tests {
         out.look_at([1.0, f64::NEG_INFINITY, 0.0]);
         out.heal(f32::NAN);
         for a in out.as_slice() {
-            assert!(a.refused(None).is_some_and(|w| w.contains("not finite")), "{a:?}");
+            assert!(
+                a.refused(None).is_some_and(|w| w.contains("not finite")),
+                "{a:?}"
+            );
         }
         out.apply(&mut m, None);
-        assert_eq!((m.ai.mov.wanted, m.ai.mov.speed_modifier, m.ai.look.wanted), before);
+        assert_eq!(
+            (m.ai.mov.wanted, m.ai.mov.speed_modifier, m.ai.look.wanted),
+            before
+        );
         assert_eq!(m.health, 4.0);
         // The same shapes with finite numbers pass.
         let mut fine = Actions::default();
@@ -743,8 +759,14 @@ mod tests {
                 .filter_map(|a| a.refused(Some(w)))
                 .collect();
             assert_eq!(refused.len(), 3, "{refused:?}");
-            assert!(refused[0].contains("no mob type \"ruby:crawlr\""), "{refused:?}");
-            assert!(refused[1].contains("no effect \"ruby:nope\""), "{refused:?}");
+            assert!(
+                refused[0].contains("no mob type \"ruby:crawlr\""),
+                "{refused:?}"
+            );
+            assert!(
+                refused[1].contains("no effect \"ruby:nope\""),
+                "{refused:?}"
+            );
             out.apply(&mut m, Some(&mut cx));
             // Nothing happened: the mob is still there, with no phantom effect.
             assert!(!m.removed);
@@ -759,7 +781,10 @@ mod tests {
             assert!(m.removed);
             assert!(matches!(
                 cx.events.as_slice(),
-                [super::super::MobEvent::Convert { kind: "minecraft:drowned", .. }]
+                [super::super::MobEvent::Convert {
+                    kind: "minecraft:drowned",
+                    ..
+                }]
             ));
         });
         if !ran {

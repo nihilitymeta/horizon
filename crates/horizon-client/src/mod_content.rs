@@ -911,9 +911,9 @@ impl Plan<'_> {
                     };
                 }
                 if !t.attributes.is_empty() {
-                    let attrs = v["attributes"]
-                        .as_object_mut()
-                        .ok_or_else(|| format!("{}: the template's row has no attributes", t.template))?;
+                    let attrs = v["attributes"].as_object_mut().ok_or_else(|| {
+                        format!("{}: the template's row has no attributes", t.template)
+                    })?;
                     for (key, value) in &t.attributes {
                         attrs.insert(format!("minecraft:{key}"), (*value).into());
                     }
@@ -947,7 +947,10 @@ impl Plan<'_> {
         let mut by_ns: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
         for t in self.entity_types.iter().filter(|t| t.is_mob()) {
             if let Some((ns, _)) = t.texture.as_deref().and_then(|tex| tex.split_once(':')) {
-                by_ns.entry(ns).or_default().push(t.texture.as_deref().unwrap_or_default());
+                by_ns
+                    .entry(ns)
+                    .or_default()
+                    .push(t.texture.as_deref().unwrap_or_default());
             }
         }
         by_ns
@@ -959,7 +962,8 @@ impl Plan<'_> {
                     .collect();
                 (
                     format!("assets/{ns}/atlases/horizon_entities.json"),
-                    serde_json::to_vec(&serde_json::json!({ "sources": sources })).unwrap_or_default(),
+                    serde_json::to_vec(&serde_json::json!({ "sources": sources }))
+                        .unwrap_or_default(),
                 )
             })
             .collect()

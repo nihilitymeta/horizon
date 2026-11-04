@@ -556,68 +556,66 @@ impl MobTypes {
             let category = t["category"].as_str().unwrap_or("creature").to_owned();
             let speed = attr("movement_speed").unwrap_or(0.25);
             let flags = def.flags(t["fire_immune"].as_bool().unwrap_or(false));
-            Some(
-                MobType {
-                    species: def.species,
-                    item_stack_limits: item_stack_limits.clone(),
-                    width: t["width"].as_f64().unwrap_or(0.6),
-                    height: t["height"].as_f64().unwrap_or(1.8),
-                    eye_height: t["eye_height"].as_f64().unwrap_or(1.6),
-                    max_health: attr("max_health").unwrap_or(10.0) as f32,
-                    speed,
-                    flying_speed: attr("flying_speed").unwrap_or(0.4),
-                    attack_damage: attr("attack_damage").unwrap_or(0.0) as f32,
-                    attack_knockback: attr("attack_knockback").unwrap_or(0.0),
-                    follow_range: attr("follow_range").unwrap_or(16.0),
-                    step_height: attr("step_height").unwrap_or(0.6),
-                    armor: attr("armor").unwrap_or(0.0) as f32,
-                    armor_toughness: attr("armor_toughness").unwrap_or(0.0) as f32,
-                    knockback_resistance: attr("knockback_resistance").unwrap_or(0.0),
-                    jump_strength: attr("jump_strength").unwrap_or(0.42),
-                    attributes: Arc::new(defaults.clone()),
-                    gravity: attr("gravity").unwrap_or(0.08),
-                    safe_fall_distance: attr("safe_fall_distance").unwrap_or(3.0),
-                    fall_damage_multiplier: attr("fall_damage_multiplier").unwrap_or(1.0),
-                    water_efficiency: attr("water_movement_efficiency").unwrap_or(0.0),
-                    water_slowdown: def.water_slowdown(),
-                    air_speed: def.air_speed(),
-                    baby_scale: def.baby_scale(),
-                    head_rot_speed: def.head_rot_speed(),
-                    max_head_x_rot: def.max_head_x_rot(),
-                    max_head_y_rot: def.max_head_y_rot(),
-                    ambient_interval: def.ambient_interval(),
-                    flags,
-                    model: model.map_or_else(
-                        || empty_model.clone(),
-                        |model| {
-                            Arc::new({
-                                let mut part = Part::parse("root", model);
-                                if culls_back_faces(&model_key) {
-                                    part.set_cull_back();
-                                }
-                                part
-                            })
-                        },
-                    ),
-                    layers,
-                    texture: def.texture.to_owned(),
-                    brain: def.brain(),
-                    anim: def.anim,
-                    sounds: def.sounds,
-                    step_sound: def.step_sound,
-                    food: def
-                        .food_tag()
-                        .map(tag)
-                        .unwrap_or_else(|| Arc::from(Vec::new())),
-                    tempt: def
-                        .tempt_tag()
-                        .or(def.food_tag())
-                        .map(tag)
-                        .unwrap_or_else(|| Arc::from(Vec::new())),
-                    category,
-                    id,
-                },
-            )
+            Some(MobType {
+                species: def.species,
+                item_stack_limits: item_stack_limits.clone(),
+                width: t["width"].as_f64().unwrap_or(0.6),
+                height: t["height"].as_f64().unwrap_or(1.8),
+                eye_height: t["eye_height"].as_f64().unwrap_or(1.6),
+                max_health: attr("max_health").unwrap_or(10.0) as f32,
+                speed,
+                flying_speed: attr("flying_speed").unwrap_or(0.4),
+                attack_damage: attr("attack_damage").unwrap_or(0.0) as f32,
+                attack_knockback: attr("attack_knockback").unwrap_or(0.0),
+                follow_range: attr("follow_range").unwrap_or(16.0),
+                step_height: attr("step_height").unwrap_or(0.6),
+                armor: attr("armor").unwrap_or(0.0) as f32,
+                armor_toughness: attr("armor_toughness").unwrap_or(0.0) as f32,
+                knockback_resistance: attr("knockback_resistance").unwrap_or(0.0),
+                jump_strength: attr("jump_strength").unwrap_or(0.42),
+                attributes: Arc::new(defaults.clone()),
+                gravity: attr("gravity").unwrap_or(0.08),
+                safe_fall_distance: attr("safe_fall_distance").unwrap_or(3.0),
+                fall_damage_multiplier: attr("fall_damage_multiplier").unwrap_or(1.0),
+                water_efficiency: attr("water_movement_efficiency").unwrap_or(0.0),
+                water_slowdown: def.water_slowdown(),
+                air_speed: def.air_speed(),
+                baby_scale: def.baby_scale(),
+                head_rot_speed: def.head_rot_speed(),
+                max_head_x_rot: def.max_head_x_rot(),
+                max_head_y_rot: def.max_head_y_rot(),
+                ambient_interval: def.ambient_interval(),
+                flags,
+                model: model.map_or_else(
+                    || empty_model.clone(),
+                    |model| {
+                        Arc::new({
+                            let mut part = Part::parse("root", model);
+                            if culls_back_faces(&model_key) {
+                                part.set_cull_back();
+                            }
+                            part
+                        })
+                    },
+                ),
+                layers,
+                texture: def.texture.to_owned(),
+                brain: def.brain(),
+                anim: def.anim,
+                sounds: def.sounds,
+                step_sound: def.step_sound,
+                food: def
+                    .food_tag()
+                    .map(tag)
+                    .unwrap_or_else(|| Arc::from(Vec::new())),
+                tempt: def
+                    .tempt_tag()
+                    .or(def.food_tag())
+                    .map(tag)
+                    .unwrap_or_else(|| Arc::from(Vec::new())),
+                category,
+                id,
+            })
         };
         for def in species::ALL {
             let id = format!("minecraft:{}", def.name);
