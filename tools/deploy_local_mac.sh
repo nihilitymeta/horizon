@@ -10,6 +10,13 @@ set -euo pipefail
 # tools/deploy_test_launcher.sh is that script.
 #
 #   tools/deploy_local_mac.sh [--no-build] [--no-select] [--profile fast|release]
+#   tools/deploy_local_mac.sh --launcher [--version X.Y.Z]
+#
+# --launcher builds the launcher (launcher/, release) and installs it as
+# ~/Applications/Horizon.app, signed ad hoc, swapping the bundle in one rename
+# so a running launcher keeps its files. Its version is the newest upstream
+# launcher@X.Y.Z tag (fetched if missing), so Settings says "up to date" rather
+# than offering the release of the same code; --version overrides it.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -17,11 +24,15 @@ cd "$ROOT"
 BUILD=true
 SELECT=true
 PROFILE=fast
+LAUNCHER=false
+VERSION=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --no-build) BUILD=false; shift ;;
         --no-select) SELECT=false; shift ;;
         --profile) PROFILE=$2; shift 2 ;;
+        --launcher) LAUNCHER=true; shift ;;
+        --version) VERSION=$2; shift 2 ;;
         -h|--help)
             sed -n '3,12p' "$0"
             exit 0 ;;
@@ -31,6 +42,38 @@ done
 
 [[ "$(uname -s)" == Darwin ]] || { echo "macOS only (see tools/deploy_test_launcher.sh)" >&2; exit 1; }
 export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
+
+if [[ "$LAUNCHER" == true ]]; then
+    if [[ -z "$VERSION" ]]; then
+        [[ -n "$(git tag -l 'launcher@*')" ]] || git fetch -q upstream --tags || true
+        VERSION="$(git tag -l 'launcher@*' --sort=-v:refname | head -1)"
+        VERSION="${VERSION#launcher@}"
+    fi
+    [[ -n "$VERSION" ]] || { echo "Error: no launcher@X.Y.Z tag found; pass --version" >&2; exit 1; }
+    APP="$HOME/Applications/Horizon.app"
+    STAGING="$APP.staging"
+    echo "==> Building the launcher as $VERSION (release)..."
+    (cd "$ROOT/launcher" && HORIZON_LAUNCHER_VERSION="$VERSION" cargo build --release)
+    BIN="$ROOT/launcher/target/release/horizon-launcher"
+    echo "==> Staging $STAGING..."
+    rm -rf "$STAGING"
+    mkdir -p "$STAGING/Contents/MacOS" "$STAGING/Contents/Resources"
+    cp "$BIN" "$STAGING/Contents/MacOS/horizon-launcher"
+    chmod 755 "$STAGING/Contents/MacOS/horizon-launcher"
+    cp "$ROOT/packaging/icons/horizon.icns" "$STAGING/Contents/Resources/horizon.icns"
+    sed "s/@VERSION@/$VERSION/g" "$ROOT/packaging/macos/Info.plist" > "$STAGING/Contents/Info.plist"
+    printf 'APPL????' > "$STAGING/Contents/PkgInfo"
+    plutil -lint "$STAGING/Contents/Info.plist" >/dev/null
+    codesign --force --sign - "$STAGING"
+    codesign --verify --strict "$STAGING"
+    "$STAGING/Contents/MacOS/horizon-launcher" --version
+    # One rename each way: a launcher running from the old bundle keeps its files.
+    [[ -e "$APP" ]] && mv "$APP" "$APP.old"
+    mv "$STAGING" "$APP"
+    rm -rf "$APP.old"
+    echo "==> Installed $APP. Restart the launcher if it is open."
+    exit 0
+fi
 
 if [[ "$BUILD" == true ]]; then
     echo "==> Building horizon-client, horizon-ctl, horizon-prepare and horizon-server ($PROFILE)..."
