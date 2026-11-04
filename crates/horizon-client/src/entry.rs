@@ -173,6 +173,9 @@ pub fn main_with(mods: crate::mod_api::Mods) {
                 accept,
             );
         },
+        mob_ai_register: |mob| {
+            crate::mod_api::dispatch_mob_ai_register(crate::mod_api::mods(), mob);
+        },
     })
     .is_err()
     {

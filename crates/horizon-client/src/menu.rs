@@ -3612,24 +3612,7 @@ pub(crate) mod tests {
 
     #[test]
     fn installed_slot_rules_change_mod_menu_placement() {
-        let installed =
-            crate::native_client_hooks::install(crate::native_client_hooks::NativeClientHooks {
-                menu_slot_rules: |menu, slot, _, may_place, max_stack| {
-                    if menu == "test:rules" && slot == 0 {
-                        *may_place = false;
-                        *max_stack = 7;
-                    }
-                },
-                player_chat: |_, _, _, _, _| {},
-                living_heal: |_, _, _| {},
-                living_breathe: |_, _, _, _, _| {},
-                living_drown: |_, _, _, _, _, _| {},
-                living_fall: |_, _, _, _, _| {},
-                living_jump: |_, _| {},
-                ingredient: |_, _, _| {},
-                ingredient_test: |_, _, _, _| {},
-            });
-        assert!(installed.is_ok());
+        crate::native_client_hooks::test_hooks::install();
         let kind = Kind::Mod(Box::leak(Box::new(crate::containers::ModMenuType {
             id: "test:rules",
             slots: 1,

@@ -23,6 +23,8 @@ mod tests {
         pub(super) struct Direction;
         #[derive(Clone, Copy)]
         pub(super) struct LevelDimension;
+        /// `mob_ai_register`'s mob.
+        pub(super) struct Mob;
         pub(super) struct Ticks;
         pub(super) trait LevelHost {}
         pub(super) trait LevelTicksHost: LevelHost {}

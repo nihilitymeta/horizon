@@ -24,6 +24,7 @@ pub mod caravan;
 pub mod cem;
 pub mod cem_anim;
 pub mod combat;
+pub mod content_model;
 pub mod control;
 pub mod conversion;
 pub mod copper_golem;
@@ -57,6 +58,7 @@ pub mod leash;
 pub mod living;
 pub mod llama;
 pub mod monster_brain;
+pub mod native_goal;
 pub mod nautilus;
 pub mod nav;
 pub mod nether;
@@ -356,6 +358,9 @@ pub struct Flags {
     /// Hurt by water (endermen, blazes, striders out of lava, snow golems).
     pub water_sensitive: bool,
     pub animal: bool,
+    /// A mod's mob whose goal selectors start empty, for its scripts to
+    /// fill (`"goals": "none"` in its entity type; docs/mob-ai-hooks.md).
+    pub scripted_goals: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -519,18 +524,18 @@ impl MobTypes {
                 .collect(),
         );
         let mut out = HashMap::new();
-        for def in species::ALL {
-            let id = format!("minecraft:{}", def.name);
-            let t = &types[&id];
-            if t.is_null() {
-                continue;
-            }
+        // One kind from a species' definition and its row of the table: the
+        // species' own, or a mod's copy of it (`horizon` in the row).
+        let build = |def: &species::Def,
+                     id: String,
+                     t: &Value,
+                     defaults: HashMap<String, f64>|
+         -> Option<MobType> {
             let model_key = format!("minecraft:{}", def.model);
             let model = models.as_ref().and_then(|models| models.get(&model_key));
             if models_needed && model.is_none() {
-                continue;
+                return None;
             }
-            let defaults = exact.get(&id).cloned().unwrap_or_default();
             let attr = |k: &str| defaults.get(&format!("minecraft:{k}")).copied();
             let mut layers = crate::fast_hash::FxHashMap::default();
             if let Some(all) = models.as_ref().and_then(Value::as_object) {
@@ -551,69 +556,161 @@ impl MobTypes {
             let category = t["category"].as_str().unwrap_or("creature").to_owned();
             let speed = attr("movement_speed").unwrap_or(0.25);
             let flags = def.flags(t["fire_immune"].as_bool().unwrap_or(false));
-            out.insert(
-                id.clone(),
-                MobType {
-                    species: def.species,
-                    item_stack_limits: item_stack_limits.clone(),
-                    width: t["width"].as_f64().unwrap_or(0.6),
-                    height: t["height"].as_f64().unwrap_or(1.8),
-                    eye_height: t["eye_height"].as_f64().unwrap_or(1.6),
-                    max_health: attr("max_health").unwrap_or(10.0) as f32,
-                    speed,
-                    flying_speed: attr("flying_speed").unwrap_or(0.4),
-                    attack_damage: attr("attack_damage").unwrap_or(0.0) as f32,
-                    attack_knockback: attr("attack_knockback").unwrap_or(0.0),
-                    follow_range: attr("follow_range").unwrap_or(16.0),
-                    step_height: attr("step_height").unwrap_or(0.6),
-                    armor: attr("armor").unwrap_or(0.0) as f32,
-                    armor_toughness: attr("armor_toughness").unwrap_or(0.0) as f32,
-                    knockback_resistance: attr("knockback_resistance").unwrap_or(0.0),
-                    jump_strength: attr("jump_strength").unwrap_or(0.42),
-                    attributes: Arc::new(defaults.clone()),
-                    gravity: attr("gravity").unwrap_or(0.08),
-                    safe_fall_distance: attr("safe_fall_distance").unwrap_or(3.0),
-                    fall_damage_multiplier: attr("fall_damage_multiplier").unwrap_or(1.0),
-                    water_efficiency: attr("water_movement_efficiency").unwrap_or(0.0),
-                    water_slowdown: def.water_slowdown(),
-                    air_speed: def.air_speed(),
-                    baby_scale: def.baby_scale(),
-                    head_rot_speed: def.head_rot_speed(),
-                    max_head_x_rot: def.max_head_x_rot(),
-                    max_head_y_rot: def.max_head_y_rot(),
-                    ambient_interval: def.ambient_interval(),
-                    flags,
-                    model: model.map_or_else(
-                        || empty_model.clone(),
-                        |model| {
-                            Arc::new({
-                                let mut part = Part::parse("root", model);
-                                if culls_back_faces(&model_key) {
-                                    part.set_cull_back();
-                                }
-                                part
-                            })
-                        },
-                    ),
-                    layers,
-                    texture: def.texture.to_owned(),
-                    brain: def.brain(),
-                    anim: def.anim,
-                    sounds: def.sounds,
-                    step_sound: def.step_sound,
-                    food: def
-                        .food_tag()
-                        .map(tag)
-                        .unwrap_or_else(|| Arc::from(Vec::new())),
-                    tempt: def
-                        .tempt_tag()
-                        .or(def.food_tag())
-                        .map(tag)
-                        .unwrap_or_else(|| Arc::from(Vec::new())),
-                    category,
-                    id,
-                },
-            );
+            Some(MobType {
+                species: def.species,
+                item_stack_limits: item_stack_limits.clone(),
+                width: t["width"].as_f64().unwrap_or(0.6),
+                height: t["height"].as_f64().unwrap_or(1.8),
+                eye_height: t["eye_height"].as_f64().unwrap_or(1.6),
+                max_health: attr("max_health").unwrap_or(10.0) as f32,
+                speed,
+                flying_speed: attr("flying_speed").unwrap_or(0.4),
+                attack_damage: attr("attack_damage").unwrap_or(0.0) as f32,
+                attack_knockback: attr("attack_knockback").unwrap_or(0.0),
+                follow_range: attr("follow_range").unwrap_or(16.0),
+                step_height: attr("step_height").unwrap_or(0.6),
+                armor: attr("armor").unwrap_or(0.0) as f32,
+                armor_toughness: attr("armor_toughness").unwrap_or(0.0) as f32,
+                knockback_resistance: attr("knockback_resistance").unwrap_or(0.0),
+                jump_strength: attr("jump_strength").unwrap_or(0.42),
+                attributes: Arc::new(defaults.clone()),
+                gravity: attr("gravity").unwrap_or(0.08),
+                safe_fall_distance: attr("safe_fall_distance").unwrap_or(3.0),
+                fall_damage_multiplier: attr("fall_damage_multiplier").unwrap_or(1.0),
+                water_efficiency: attr("water_movement_efficiency").unwrap_or(0.0),
+                water_slowdown: def.water_slowdown(),
+                air_speed: def.air_speed(),
+                baby_scale: def.baby_scale(),
+                head_rot_speed: def.head_rot_speed(),
+                max_head_x_rot: def.max_head_x_rot(),
+                max_head_y_rot: def.max_head_y_rot(),
+                ambient_interval: def.ambient_interval(),
+                flags,
+                model: model.map_or_else(
+                    || empty_model.clone(),
+                    |model| {
+                        Arc::new({
+                            let mut part = Part::parse("root", model);
+                            if culls_back_faces(&model_key) {
+                                part.set_cull_back();
+                            }
+                            part
+                        })
+                    },
+                ),
+                layers,
+                texture: def.texture.to_owned(),
+                brain: def.brain(),
+                anim: def.anim,
+                sounds: def.sounds,
+                step_sound: def.step_sound,
+                food: def
+                    .food_tag()
+                    .map(tag)
+                    .unwrap_or_else(|| Arc::from(Vec::new())),
+                tempt: def
+                    .tempt_tag()
+                    .or(def.food_tag())
+                    .map(tag)
+                    .unwrap_or_else(|| Arc::from(Vec::new())),
+                category,
+                id,
+            })
+        };
+        for def in species::ALL {
+            let id = format!("minecraft:{}", def.name);
+            let t = &types[&id];
+            if t.is_null() {
+                continue;
+            }
+            let defaults = exact.get(&id).cloned().unwrap_or_default();
+            if let Some(kind) = build(def, id.clone(), t, defaults) {
+                out.insert(id, kind);
+            }
+        }
+        // The mods' mobs (`mod_content::entity_types_json`): each row a
+        // template's with the mod's values, and `horizon` naming the template.
+        if let Some(rows) = types.as_object() {
+            for (id, t) in rows {
+                let Some(template) = t["horizon"]["template"].as_str() else {
+                    continue;
+                };
+                let Some(def) = species::ALL
+                    .iter()
+                    .find(|d| template.strip_prefix("minecraft:") == Some(d.name))
+                else {
+                    log::warn!(
+                        "Horizon: entity type {id}: template {template} is not a mob; skipped"
+                    );
+                    continue;
+                };
+                let defaults = exact.get(id).cloned().unwrap_or_default();
+                let Some(mut kind) = build(def, id.clone(), t, defaults) else {
+                    continue;
+                };
+                if let Some(texture) = t["horizon"]["texture"].as_str() {
+                    kind.texture = texture.to_owned();
+                }
+                // Its own model (`assets/<ns>/models/entity/<name>.json`),
+                // animation set and sounds, when the type names them.
+                if let Some(model) = t["horizon"]["model"].as_str() {
+                    // The same check the content fence makes: a plain
+                    // `assets/<ns>/models/entity/<name>.json`, nothing else.
+                    match horizon_mods::content::mob_model_file(model)
+                        .and_then(|(_, file)| {
+                            fs::read(root.join(&file))
+                                .map_err(|e| format!("{file}: {e}"))
+                                .and_then(|b| {
+                                    serde_json::from_slice::<Value>(&b)
+                                        .map_err(|e| format!("{file}: {e}"))
+                                })
+                        })
+                        .and_then(|v| content_model::parse(&v))
+                    {
+                        Ok(part) => kind.model = Arc::new(part),
+                        Err(e) => log::warn!("Horizon: entity type {id}: model {model}: {e}"),
+                    }
+                }
+                if let Some(name) = t["horizon"]["animation"].as_str() {
+                    match content_model::anim_by_name(name) {
+                        Some(anim) => kind.anim = anim,
+                        None => log::warn!("Horizon: entity type {id}: no animation set {name:?}"),
+                    }
+                }
+                if let Some(sounds) = t["horizon"]["sounds"].as_object() {
+                    let own = |key: &str| sounds.get(key).and_then(Value::as_str);
+                    let [mut ambient, mut hurt, mut death] = kind.sounds;
+                    if let Some(s) = own("ambient") {
+                        ambient = native_goal::intern(s);
+                    }
+                    if let Some(s) = own("hurt") {
+                        hurt = native_goal::intern(s);
+                    }
+                    if let Some(s) = own("death") {
+                        death = native_goal::intern(s);
+                    }
+                    kind.sounds = [ambient, hurt, death];
+                    if let Some(s) = own("step") {
+                        kind.step_sound = Some(native_goal::intern(s));
+                    }
+                }
+                kind.flags.scripted_goals = t["horizon"]["goals"].as_str() == Some("none");
+                if let Some(flags) = t["horizon"]["flags"].as_object() {
+                    for (name, value) in flags {
+                        let Some(value) = value.as_bool() else {
+                            continue;
+                        };
+                        match name.as_str() {
+                            "burns_in_day" => kind.flags.burns_in_day = value,
+                            "fire_immune" => kind.flags.fire_immune = value,
+                            "fall_immune" => kind.flags.fall_immune = value,
+                            "water_sensitive" => kind.flags.water_sensitive = value,
+                            _ => {}
+                        }
+                    }
+                }
+                out.insert(id.clone(), kind);
+            }
         }
         Ok(Self { types: out })
     }
@@ -2204,6 +2301,8 @@ pub struct Seen {
     pub last_damage: Option<Damage>,
     pub id: u32,
     pub species: Species,
+    /// Its type: `kind.id` tells a mod's mob from its template's species.
+    pub kind: Arc<MobType>,
     pub position: Vec3,
     pub bounds: Aabb,
     pub eye_y: f64,
@@ -2416,6 +2515,7 @@ impl Mob {
             last_damage: self.last_damage.map(|(d, _)| d),
             id: m.id,
             species: m.species(),
+            kind: m.kind.clone(),
             position: m.position,
             bounds: m.bounds(),
             eye_y: m.eye_y(),
@@ -2764,6 +2864,10 @@ pub struct MobWorld<'a> {
     /// keeps them (the mob ticks: a slot keeps its mob, and its species, all
     /// tick). Each zombie looking for a village read every slot.
     pub others_villagers: Option<&'a [u32]>,
+    /// The level's mob types by id, for the kinds a goal from outside the
+    /// crate names (`GoalAction::Convert`, `Summon`): None in a harness
+    /// without them, which then takes any kind.
+    pub kinds: Option<&'a HashMap<String, Arc<MobType>>>,
     pub daylight: bool,
     /// The `gameplay/monsters_burn` attribute: the overworld day timeline's
     /// step track, false in every other dimension.
@@ -2828,7 +2932,22 @@ impl<'a> Teams<'a> {
     }
 }
 impl Mob {
+    /// A mob the game simulates: its species' goals are registered and
+    /// every mod's `mob_ai_register` is told, once, here. Every server
+    /// path (a spawn, a conversion, a chunk's NBT, a raid, `summon`, a
+    /// mod's spawn) builds its mobs with this.
     pub fn new(id: u32, kind: Arc<MobType>, position: Vec3, yaw: f32) -> Self {
+        let mut mob = Self::new_client(id, kind, position, yaw);
+        ai::native_mob_ai_register(&mut mob);
+        mob
+    }
+    /// A mob this process never simulates: a server's mob as a client
+    /// sees it over the network, the first-person player model, a
+    /// spawner's display. Built as any mob is, controls and goal lists
+    /// included (its renderer and its client-side motion read them), but
+    /// no mod's `mob_ai_register` is told: that hook runs once a mob, on
+    /// the side that runs its AI.
+    pub fn new_client(id: u32, kind: Arc<MobType>, position: Vec3, yaw: f32) -> Self {
         let mut random = LegacyRandom::new(
             i64::from(id).wrapping_mul(0x5DEE_CE66D)
                 ^ (position.x.to_bits() as i64)
@@ -2945,6 +3064,12 @@ impl Mob {
         // The PathNavigation constructor: the base follow range.
         mob.ai.nav.max_visited_nodes = (mob.kind.follow_range * 16.0).floor() as i32;
         ai::register(&mut mob);
+        // A mod's mob that leaves its goals to scripts: the species' goals
+        // go, its controls and the rest of its nature stay.
+        if mob.kind.flags.scripted_goals {
+            mob.ai.goals.clear();
+            mob.ai.targets.clear();
+        }
         mob
     }
     /// `Mob.canPickUpLoot`, with the overrides: an allay that holds
@@ -4166,6 +4291,26 @@ mod elytra_tests {
         for (angle, resting) in wings.angles.iter().zip(ElytraAnimation::RESTING) {
             assert!((angle - resting).abs() < 0.00001);
         }
+    }
+}
+#[cfg(test)]
+mod construction_tests {
+    use super::sensor_scan_tests::kind;
+    use super::*;
+    use horizon_core::geometry::Vec3;
+
+    /// `Mob::new` tells the mods' `mob_ai_register` once a mob; the
+    /// client's copies of a server's mobs (`Mob::new_client`) never do.
+    #[test]
+    fn a_client_built_mob_does_not_register_its_ai_with_mods() {
+        crate::native_client_hooks::test_hooks::install();
+        // Ids no other test builds a mob with.
+        let (server, client) = (0x0C11_E171, 0x0C11_E172);
+        let _ = Mob::new(server, kind(), Vec3::ZERO, 0.0);
+        let _ = Mob::new_client(client, kind(), Vec3::ZERO, 0.0);
+        let told = crate::native_client_hooks::test_hooks::ai_registered();
+        assert!(told.contains(&server), "{told:?}");
+        assert!(!told.contains(&client), "{told:?}");
     }
 }
 #[cfg(test)]

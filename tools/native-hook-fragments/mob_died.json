@@ -1,0 +1,13 @@
+{
+  "hooks": [
+    {
+      "name": "mob_died",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_mob_died",
+      "mod_api": {
+        "contract": "listen"
+      }
+    }
+  ],
+  "rust_summary": "a mob's death by any cause (`native_mob_died`: the killing damage's type, the mob behind it and the player credited), where `native_mob_killed` told of a player's melee blow only.",
+  "doc_summary": "a mob's death by any cause (`native_mob_died`: the killing damage's type, the mob behind it and the player credited), where `native_mob_killed` told of a player's melee blow only. Bundles need \"hooks\": @API:mob_died@."
+}

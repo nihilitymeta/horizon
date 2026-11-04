@@ -387,7 +387,7 @@ impl Game<'_> {
             let Some(t) = self.res.mob_types().get(&kind).cloned() else {
                 return false;
             };
-            let mob = Mob::new(u32::MAX, t, Vec3::ZERO, 0.0);
+            let mob = Mob::new_client(u32::MAX, t, Vec3::ZERO, 0.0);
             self.spawners.displays.insert(key, (kind, mob));
         }
         true

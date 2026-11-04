@@ -298,10 +298,11 @@ as vanilla's; without one it draws as the missing texture). It does nothing on i
 attribute modifiers. A world opened without the mod drops the effect from its players and mobs. Clients join a server
 only with the same mods' effects, as with its blocks.
 
-A mod entity type is declared in `data/<id>/horizon/entity_type/<name>.json`. It copies a vanilla type: for now only
-`minecraft:snowball`, a thrown item projectile. `item` is one of the mod's own items (one type per item), and `damage`
-(0 by default) is what a hit deals to anything it hits, as `thrown` damage from the thrower (the snowball's 3 to blazes
-is not copied):
+A mod entity type is declared in `data/<id>/horizon/entity_type/<name>.json`. It copies a vanilla type: a thrown item
+projectile (`minecraft:snowball`) or a mob (any vanilla mob: `minecraft:zombie`, `minecraft:pig`, `minecraft:spider`…).
+
+A thrown type names `item`, one of the mod's own items (one type per item), and `damage` (0 by default), what a hit
+deals to anything it hits, as `thrown` damage from the thrower (the snowball's 3 to blazes is not copied):
 
 ```json
 { "template": "minecraft:snowball", "item": "ruby:ember", "damage": 2.0 }
@@ -315,6 +316,41 @@ untested so far. Clients join a server only with the same mods' entity types, as
 chunk, `/summon <id>:<name>` makes one, and it has its template's row in `entity-types.json`. A world opened without the
 mod keeps the saved ones as they are, frozen in place. Not yet: a dispenser doesn't throw it, and a vanilla client on a
 server with it may be disconnected when one spawns.
+
+A mob type is its template with the mod's own values. Each field falls back to the template's when it is left out
+([mob-ai-hooks.md](mob-ai-hooks.md)):
+
+- `attributes`: the attributes that differ, by name, such as `max_health`, `movement_speed`, `attack_damage`,
+  `follow_range`, `armor`, `knockback_resistance` and `scale`
+- `size`: `width`, `height`, and `eye_height`; without an eye height, the template's is used at the same fraction of
+  the height
+- `texture`: `<id>:entity/<name>`, the mod's `assets/<id>/textures/entity/<name>.png`, laid out as the template's
+  texture
+- `goals`: `"template"`, the default, gives it the species' goals; `"none"` leaves both goal selectors empty for the
+  mod's scripts to fill ([lua-bindings.md](lua-bindings.md), `mob_ai_register`)
+- `flags`: the parts of its nature that differ from the template's: `burns_in_day`, `fire_immune`, `fall_immune`
+  and `water_sensitive`
+- `model`: `<id>:entity/<name>`, the mod's `assets/<id>/models/entity/<name>.json`, with parts holding cubes as a
+  vanilla layer is written
+- `animation`: the set that moves the parts, by name, such as `zombie`, `quadruped` or `iron_golem`
+- `sounds`: sound events by `ambient`, `hurt`, `death` and `step`
+
+```json
+{ "template": "minecraft:zombie",
+  "attributes": { "max_health": 30, "movement_speed": 0.3, "attack_damage": 4 },
+  "size": { "width": 0.6, "height": 1.95 },
+  "texture": "ruby:entity/crawler",
+  "goals": "none",
+  "flags": { "burns_in_day": false } }
+```
+
+It moves, fights, sounds, animates and is drawn as its template. The model is the template's, so the texture follows
+the template's layout. It burns, drowns, converts and breeds as the template's species does, and
+`/summon <id>:<name>` makes one. Its name is the translation `entity.<id>.<name>`.
+
+It drops its own loot table, `data/<id>/loot_table/entities/<name>.json`, or the template's without one. It spawns
+on its own where a `neoforge:add_spawns` biome modifier puts it, and `<id>:<name>_spawn_egg`, an item of the mod's,
+is its spawn egg ([mob-ai-hooks.md](mob-ai-hooks.md)).
 
 #### Menu types
 

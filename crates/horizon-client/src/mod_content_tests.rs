@@ -1496,6 +1496,93 @@ fn content_root_with_only_an_item_checks_its_identity() {
 /// commands accept it, and it changes the content identity.
 #[test]
 #[ignore = "full content root: CI and pr_ready run it"]
+fn content_root_builds_a_mob_entity_type_from_its_template() {
+    let Some(base) = prepared() else {
+        return;
+    };
+    let scratch = std::env::temp_dir().join(format!("horizon-mod-mob-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&scratch);
+    let dir = scratch.join("example");
+    let m = folder_mod(
+        &dir,
+        &[
+            ("horizon-mod.toml", &manifest("example", "")),
+            (
+                "data/example/horizon/entity_type/crawler.json",
+                r#"{"template": "minecraft:zombie", "attributes": {"max_health": 30, "movement_speed": 0.3},
+                    "size": {"width": 0.7, "height": 2.1}, "texture": "example:entity/crawler", "goals": "none",
+                    "flags": {"burns_in_day": false}}"#,
+            ),
+            (
+                "data/example/horizon/entity_type/boar.json",
+                r#"{"template": "minecraft:pig"}"#,
+            ),
+            // The texture is a file of the mod; its bytes are not read here.
+            ("assets/example/textures/entity/crawler.png", "png"),
+        ],
+    );
+    let root = resource_root(&base, std::slice::from_ref(&m), &scratch.join("cache")).unwrap();
+    let types: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("entity-types.json")).unwrap()).unwrap();
+    let crawler = &types["example:crawler"];
+    assert_eq!(crawler["horizon"]["template"], "minecraft:zombie");
+    assert_eq!(crawler["horizon"]["texture"], "example:entity/crawler");
+    assert_eq!(crawler["horizon"]["goals"], "none");
+    assert_eq!(
+        (crawler["width"].as_f64(), crawler["height"].as_f64()),
+        (Some(0.7), Some(2.1))
+    );
+    // The eyes keep the zombie's fraction of the height.
+    let zombie = &types["minecraft:zombie"];
+    let fraction = zombie["eye_height"].as_f64().unwrap() / zombie["height"].as_f64().unwrap();
+    assert!((crawler["eye_height"].as_f64().unwrap() - fraction * 2.1).abs() < 1e-9);
+    assert_eq!(crawler["attributes"]["minecraft:max_health"], 30.0);
+    assert_eq!(
+        crawler["attributes"]["minecraft:armor"],
+        zombie["attributes"]["minecraft:armor"]
+    );
+    assert_eq!(types["example:boar"]["horizon"]["goals"], "template");
+    assert!(types["example:boar"]["horizon"]["texture"].is_null());
+    // Its texture is an atlas source of its own.
+    let atlases: serde_json::Value = serde_json::from_slice(
+        &fs::read(root.join("assets/example/atlases/horizon_entities.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(atlases["sources"][0]["resource"], "example:entity/crawler");
+    // The mob table builds the kinds from their templates' species.
+    let kinds = horizon_client::mobs::MobTypes::load(&root).unwrap();
+    let crawler = &kinds.types["example:crawler"];
+    assert_eq!(crawler.species, horizon_client::mobs::Species::Zombie);
+    assert_eq!(
+        (
+            crawler.max_health,
+            crawler.speed,
+            crawler.width,
+            crawler.height
+        ),
+        (30.0, 0.3, 0.7, 2.1)
+    );
+    assert_eq!(crawler.texture, "example:entity/crawler");
+    assert!(crawler.flags.scripted_goals && crawler.flags.undead && !crawler.flags.burns_in_day);
+    assert!(kinds.types["minecraft:zombie"].flags.burns_in_day);
+    let boar = &kinds.types["example:boar"];
+    assert_eq!(
+        (
+            boar.species,
+            boar.texture.as_str(),
+            boar.flags.scripted_goals
+        ),
+        (
+            horizon_client::mobs::Species::Pig,
+            kinds.types["minecraft:pig"].texture.as_str(),
+            false
+        )
+    );
+    assert_eq!(boar.max_health, kinds.types["minecraft:pig"].max_health);
+    let _ = fs::remove_dir_all(&scratch);
+}
+
+#[test]
 fn content_root_registers_a_mod_entity_type() {
     let Some(base) = prepared() else {
         return;

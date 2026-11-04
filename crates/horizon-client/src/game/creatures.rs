@@ -837,6 +837,7 @@ impl Game<'_> {
             others_grid: None,
             others_index: None,
             others_villagers: None,
+            kinds: Some(self.res.mob_types()),
             daylight: self.dim != Dim::Nether && self.sky_darken() < 4,
             // day.json: false from tick 12542, true from 23460 (a step track).
             monsters_burn: self.dim == Dim::Overworld
@@ -1419,6 +1420,17 @@ impl Game<'_> {
         if let Some(player) = player.filter(|_| m.extra.leash.is_some()) {
             self.lead_killers.insert(m.id, (player, self.dim));
         }
+        {
+            use horizon_client::mobs::Who;
+            let damage = m.last_damage.map(|(d, _)| d);
+            let damage_type = damage.map_or("minecraft:generic", source_damage_type);
+            let causing = match damage.and_then(|d| d.attacker) {
+                Some(Who::Mob(id)) => id as i32,
+                _ => 0,
+            };
+            let kind = super::native_hooks::mob_kind(m);
+            self.native_mob_died(self.dim.id(), m.id, &kind, damage_type, causing, player);
+        }
         self.drop_death_loot(&mut dying, player, by_player, killer_entity, consumed, pos);
         self.create_wither_rose(m);
         if m.species() == Species::CopperGolem {
@@ -1689,7 +1701,9 @@ impl Game<'_> {
             }
         }
         let kind = super::native_hooks::mob_kind(m);
-        let table = drops::death_loot_table(m, death.mob_drops).filter(|t| loot.has_table(t));
+        let table = drops::death_loot_table(m, death.mob_drops)
+            .into_iter()
+            .find(|t| loot.has_table(t));
         let context = NativeLootDrops {
             table: table.as_deref().unwrap_or_default(),
             dimension: self.dim.id(),
@@ -8067,6 +8081,7 @@ mod pearl_tests {
             others_grid: None,
             others_index: None,
             others_villagers: None,
+            kinds: None,
             daylight: true,
             monsters_burn: false,
             game_time: 1000,

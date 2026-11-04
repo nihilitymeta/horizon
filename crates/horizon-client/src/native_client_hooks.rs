@@ -1,5 +1,6 @@
 //! Callbacks into the executable for native trait mods' client-library hooks.
 use crate::items::ItemStack;
+use crate::mobs::Mob;
 use serde_json::{Map, Value};
 use std::sync::OnceLock;
 
@@ -14,6 +15,7 @@ pub struct NativeClientHooks {
     pub living_jump: fn(u32, &str),
     pub ingredient: fn(&str, &Map<String, Value>, &mut Vec<String>),
     pub ingredient_test: fn(&str, &Map<String, Value>, &ItemStack, &mut bool),
+    pub mob_ai_register: fn(&mut Mob),
 }
 
 static HOOKS: OnceLock<NativeClientHooks> = OnceLock::new();
@@ -97,6 +99,12 @@ pub(crate) fn living_fall(
     }
 }
 
+pub(crate) fn mob_ai_register(mob: &mut Mob) {
+    if let Some(hooks) = HOOKS.get() {
+        (hooks.mob_ai_register)(mob);
+    }
+}
+
 pub(crate) fn living_jump(entity: u32, kind: &str) {
     if let Some(hooks) = HOOKS.get() {
         (hooks.living_jump)(entity, kind);
@@ -117,5 +125,51 @@ pub(crate) fn ingredient_test(
 ) {
     if let Some(hooks) = HOOKS.get() {
         (hooks.ingredient_test)(kind, data, stack, accept);
+    }
+}
+
+/// The hooks the crate's tests install: one set for the process, so every
+/// test that needs a hook installs the same one (a second `install` would
+/// find the first).
+#[cfg(test)]
+pub(crate) mod test_hooks {
+    use super::*;
+    use std::sync::Mutex;
+
+    static AI_REGISTERED: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+    /// Installs the test hooks, or finds them installed: the slot rules of
+    /// the `test:rules` menu (slot 0 takes nothing, stacks of 7) and a
+    /// record of the mobs whose AI `mob_ai_register` built.
+    pub(crate) fn install() {
+        let _ = super::install(NativeClientHooks {
+            menu_slot_rules: |menu, slot, _, may_place, max_stack| {
+                if menu == "test:rules" && slot == 0 {
+                    *may_place = false;
+                    *max_stack = 7;
+                }
+            },
+            player_chat: |_, _, _, _, _| {},
+            living_heal: |_, _, _| {},
+            living_breathe: |_, _, _, _, _| {},
+            living_drown: |_, _, _, _, _, _| {},
+            living_fall: |_, _, _, _, _| {},
+            living_jump: |_, _| {},
+            ingredient: |_, _, _| {},
+            ingredient_test: |_, _, _, _| {},
+            mob_ai_register: |mob| {
+                AI_REGISTERED
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(mob.id)
+            },
+        });
+    }
+    /// The ids of every mob `mob_ai_register` was told of so far.
+    pub(crate) fn ai_registered() -> Vec<u32> {
+        AI_REGISTERED
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 }

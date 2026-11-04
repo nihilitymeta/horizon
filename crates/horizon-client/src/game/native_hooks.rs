@@ -7437,6 +7437,34 @@ impl Game<'_> {
     pub(super) fn native_mob_killed(&mut self, player: u128, entity: u32, kind: &str) {
         mod_api::dispatch_mob_killed(self, mod_api::mods(), player, entity, kind);
     }
+    /// The mob `entity` of `kind` died in `dimension`, by any cause (a blow,
+    /// an arrow, fire, a fall, `/kill`): `damage_type` the killing damage's
+    /// type (`minecraft:player_attack`, `minecraft:on_fire`...;
+    /// `minecraft:generic` when none is known), `causing` the mob behind it
+    /// (0: none or a player), and `player` the player credited with the kill
+    /// (the one who last hurt it, while that memory lasts). Told before its
+    /// loot drops; the mob is already gone from the game's lists. It only
+    /// hears. Server-side. API @API:mob_died@.
+    pub(super) fn native_mob_died(
+        &mut self,
+        dimension: &str,
+        entity: u32,
+        kind: &str,
+        damage_type: &str,
+        causing: i32,
+        player: Option<u128>,
+    ) {
+        mod_api::dispatch_mob_died(
+            self,
+            mod_api::mods(),
+            dimension,
+            entity,
+            kind,
+            damage_type,
+            causing,
+            player,
+        );
+    }
     /// A block broke or a mob died, and `drops` are the items about to drop, in
     /// the order they drop: what the loot tables rolled (after
     /// `native_loot_table_load`'s changes), and for a mob what it wore, held or
@@ -9352,7 +9380,8 @@ impl Game<'_> {
 
 /// A mob's kind as the hook points name it (`minecraft:zombie`).
 pub(super) fn mob_kind(mob: &horizon_client::mobs::Mob) -> String {
-    ["minecraft:", mob.kind.id.trim_start_matches("minecraft:")].concat()
+    // A content mod's mob keeps its own namespace.
+    horizon_client::command::args::normalize(&mob.kind.id)
 }
 
 /// Where the game calls the hook points.
@@ -10965,6 +10994,8 @@ mod tests {
         let motion_hooks = free_hooks(include_str!("../motion.rs"));
         // The chat relay's (`horizon_client_lib::lan::hub::chat`).
         let chat_hooks = free_hooks(include_str!("../lan/hub/chat.rs"));
+        // The mob AI's (`horizon_client_lib::mobs::ai`, docs/mob-ai-hooks.md).
+        let mob_ai_hooks = free_hooks(include_str!("../mobs/ai.rs"));
         let declared: BTreeSet<_> = section
             .lines()
             .chain(level_section.lines())
@@ -10984,6 +11015,7 @@ mod tests {
             .chain(landing_hooks.iter().copied())
             .chain(motion_hooks.iter().copied())
             .chain(chat_hooks.iter().copied())
+            .chain(mob_ai_hooks.iter().copied())
             .collect();
         let mut names = BTreeSet::new();
         let mut contracts = BTreeSet::new();
@@ -11013,6 +11045,8 @@ mod tests {
                 format!("horizon_client_lib::motion::native_{name}")
             } else if chat_hooks.contains(name) {
                 format!("horizon_client_lib::lan::hub::chat::native_{name}")
+            } else if mob_ai_hooks.contains(name) {
+                format!("horizon_client_lib::mobs::ai::native_{name}")
             } else if menu_hooks.contains(name) {
                 // menu.rs compiles into horizon-client-lib (#5446's
                 // split): horizon-mixins resolves the crate by its package.

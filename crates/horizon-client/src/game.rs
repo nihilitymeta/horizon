@@ -960,6 +960,9 @@ struct GameLevel<'w> {
     /// The lightning bolts here: none ignores block triggers
     /// (`Entity.isIgnoringBlockTriggers`).
     trigger_extras: Vec<Aabb>,
+    /// Mobs the hook points asked for during the pass
+    /// (`LevelWriteHost::summon`: kind, position, NBT), made after it.
+    summons: Vec<(String, [f64; 3], horizon_world::nbt::Compound)>,
     biomes: &'w Biomes,
     seed: i64,
     behaviours: &'w Behaviours,
@@ -4651,6 +4654,7 @@ impl Game<'_> {
             crystals: &self.crystals,
             trigger_hooks,
             trigger_extras,
+            summons: Vec::new(),
             world: &mut self.world,
             facts: self.res.facts(),
             collision: self.collision,
@@ -4703,10 +4707,18 @@ impl Game<'_> {
             drop_into: None,
         };
         let result = f(self.res.behaviours(), &mut level, &mut self.block_ticks);
+        let summons = std::mem::take(&mut level.summons);
         self.flush_spill();
         if self.lan.is_some() {
             self.flush_lan_particles();
             self.flush_native_sounds();
+        }
+        // What the hook points asked for while the level was borrowed.
+        let dimension = self.dim.id();
+        for (kind, pos, nbt) in summons {
+            if self.native_summon(dimension, &kind, pos, nbt).is_none() {
+                log::warn!("Horizon: a hook's summon of {kind} at {pos:?} made nothing");
+            }
         }
         result
     }

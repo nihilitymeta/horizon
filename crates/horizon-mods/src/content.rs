@@ -377,21 +377,278 @@ pub struct MobEffect {
 /// projectiles (`ThrowableItemProjectile`).
 pub const ENTITY_TEMPLATES: [&str; 1] = ["minecraft:snowball"];
 
-/// an entity type the mod adds: a copy of a vanilla template's, thrown
-/// from `item` and drawn as it.
+/// the vanilla mobs a mod entity type may copy (`template`): the game's
+/// species, each with its model, sounds, movement and goals.
+pub const MOB_TEMPLATES: &[&str] = &[
+    "minecraft:pig",
+    "minecraft:cow",
+    "minecraft:mooshroom",
+    "minecraft:sheep",
+    "minecraft:chicken",
+    "minecraft:rabbit",
+    "minecraft:zombie_horse",
+    "minecraft:skeleton_horse",
+    "minecraft:giant",
+    "minecraft:horse",
+    "minecraft:donkey",
+    "minecraft:mule",
+    "minecraft:llama",
+    "minecraft:trader_llama",
+    "minecraft:goat",
+    "minecraft:panda",
+    "minecraft:polar_bear",
+    "minecraft:fox",
+    "minecraft:wolf",
+    "minecraft:cat",
+    "minecraft:ocelot",
+    "minecraft:parrot",
+    "minecraft:bee",
+    "minecraft:turtle",
+    "minecraft:armadillo",
+    "minecraft:frog",
+    "minecraft:axolotl",
+    "minecraft:squid",
+    "minecraft:glow_squid",
+    "minecraft:tadpole",
+    "minecraft:cod",
+    "minecraft:salmon",
+    "minecraft:tropical_fish",
+    "minecraft:pufferfish",
+    "minecraft:dolphin",
+    "minecraft:bat",
+    "minecraft:villager",
+    "minecraft:wandering_trader",
+    "minecraft:iron_golem",
+    "minecraft:snow_golem",
+    "minecraft:copper_golem",
+    "minecraft:zombie",
+    "minecraft:husk",
+    "minecraft:drowned",
+    "minecraft:zombie_villager",
+    "minecraft:skeleton",
+    "minecraft:stray",
+    "minecraft:parched",
+    "minecraft:bogged",
+    "minecraft:wither_skeleton",
+    "minecraft:creeper",
+    "minecraft:spider",
+    "minecraft:cave_spider",
+    "minecraft:enderman",
+    "minecraft:endermite",
+    "minecraft:silverfish",
+    "minecraft:slime",
+    "minecraft:magma_cube",
+    "minecraft:witch",
+    "minecraft:phantom",
+    "minecraft:evoker",
+    "minecraft:illusioner",
+    "minecraft:allay",
+    "minecraft:creaking",
+    "minecraft:camel",
+    "minecraft:happy_ghast",
+    "minecraft:sniffer",
+    "minecraft:breeze",
+    "minecraft:wither",
+    "minecraft:ravager",
+    "minecraft:vex",
+    "minecraft:shulker",
+    "minecraft:guardian",
+    "minecraft:elder_guardian",
+    "minecraft:pillager",
+    "minecraft:vindicator",
+    "minecraft:piglin",
+    "minecraft:piglin_brute",
+    "minecraft:zombified_piglin",
+    "minecraft:hoglin",
+    "minecraft:zoglin",
+    "minecraft:ghast",
+    "minecraft:blaze",
+    "minecraft:strider",
+    "minecraft:warden",
+    "minecraft:camel_husk",
+    "minecraft:nautilus",
+    "minecraft:zombie_nautilus",
+    "minecraft:sulfur_cube",
+    "minecraft:mannequin",
+];
+
+/// an entity type the mod adds: a copy of a vanilla template's. A thrown
+/// one ([`ENTITY_TEMPLATES`]) is thrown from `item` and drawn as it. A mob
+/// one ([`MOB_TEMPLATES`]) moves, fights, sounds and is drawn as its
+/// template, with its own `attributes`, `size` and `texture`, and either
+/// the template's goals or none (for a mod's scripts to fill).
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct EntityType {
     /// `<mod id>:<path>`.
     #[serde(skip)]
     pub id: String,
-    /// one of [`ENTITY_TEMPLATES`].
+    /// one of [`ENTITY_TEMPLATES`] or [`MOB_TEMPLATES`].
     pub template: String,
-    /// one of the mod's own items, which throws it.
-    pub item: String,
-    /// what a hit deals to an entity, as `thrown` damage.
+    /// thrown: one of the mod's own items, which throws it.
+    #[serde(default)]
+    pub item: Option<String>,
+    /// thrown: what a hit deals to an entity, as `thrown` damage.
     #[serde(default)]
     pub damage: f32,
+    /// mob: attribute values that differ from the template's, by their
+    /// name without `minecraft:` (`max_health`, `movement_speed`,
+    /// `attack_damage`, `follow_range`, `armor`, `knockback_resistance`...).
+    #[serde(default)]
+    pub attributes: BTreeMap<String, f64>,
+    /// mob: its hitbox, when it differs from the template's.
+    #[serde(default)]
+    pub size: Option<Size>,
+    /// mob: `<namespace>:entity/<name>`, the mod's
+    /// `assets/<namespace>/textures/entity/<name>.png`, laid out as the
+    /// template's texture; the template's own without one.
+    #[serde(default)]
+    pub texture: Option<String>,
+    /// mob: whether it starts with its template's goals (the default) or
+    /// with empty goal selectors for scripts to fill (`"none"`).
+    #[serde(default)]
+    pub goals: Goals,
+    /// mob: nature flags that differ from the template's, by name
+    /// ([`MOB_FLAGS`]): `burns_in_day`, `fire_immune`, `fall_immune`,
+    /// `water_sensitive`.
+    #[serde(default)]
+    pub flags: BTreeMap<String, bool>,
+    /// mob: `<namespace>:entity/<name>`, the mod's
+    /// `assets/<namespace>/models/entity/<name>.json`, a model of its own
+    /// (parts holding cubes, named as the animation set moves them);
+    /// the template's model without one.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// mob: the animation set that moves the model's parts (`zombie`,
+    /// `quadruped`, `iron_golem`...); the template's without one.
+    #[serde(default)]
+    pub animation: Option<String>,
+    /// mob: sound events of its own, by `ambient`, `hurt`, `death` and
+    /// `step`; the template's for the ones left out.
+    #[serde(default)]
+    pub sounds: BTreeMap<String, String>,
+}
+
+/// the nature flags a mob entity type may set (`flags`).
+pub const MOB_FLAGS: [&str; 4] = [
+    "burns_in_day",
+    "fire_immune",
+    "fall_immune",
+    "water_sensitive",
+];
+
+/// The animation sets a mob entity type may name (`animation`): the game's
+/// own, by name (`mobs::content_model::ANIMS` lists the same names, and a
+/// test keeps the two together).
+pub const MOB_ANIMATIONS: &[&str] = &[
+    "nautilus",
+    "happy_ghast",
+    "sniffer",
+    "breeze",
+    "warden",
+    "allay",
+    "creaking",
+    "camel",
+    "wither",
+    "vex",
+    "ravager",
+    "guardian",
+    "shulker",
+    "quadruped",
+    "sheep",
+    "chicken",
+    "zombie",
+    "drowned",
+    "zombie_villager",
+    "skeleton",
+    "creeper",
+    "spider",
+    "enderman",
+    "silverfish",
+    "slime",
+    "magma_cube",
+    "witch",
+    "villager",
+    "iron_golem",
+    "snow_golem",
+    "copper_golem",
+    "illager",
+    "piglin",
+    "zombified_piglin",
+    "hoglin",
+    "wolf",
+    "feline",
+    "fox",
+    "rabbit",
+    "horse",
+    "llama",
+    "goat",
+    "panda",
+    "polar_bear",
+    "parrot",
+    "bee",
+    "turtle",
+    "armadillo",
+    "frog",
+    "axolotl",
+    "squid",
+    "fish",
+    "pufferfish",
+    "dolphin",
+    "bat",
+    "phantom",
+    "ghast",
+    "blaze",
+    "strider",
+];
+
+/// The sound events a mob entity type may give (`sounds`), by key.
+pub const MOB_SOUNDS: [&str; 4] = ["ambient", "hurt", "death", "step"];
+
+/// The file a mob entity type's `model` names: `<namespace>:entity/<name>`
+/// is `assets/<namespace>/models/entity/<name>.json`, a plain path
+/// ([`check_path`]). The namespace comes back too, for the owner check.
+/// The game's loader reads a model through this as well, so a mob never
+/// opens a file outside that folder.
+pub fn mob_model_file(model: &str) -> Result<(&str, String), String> {
+    let shape = || format!("model {model:?} is <namespace>:entity/<name>, a file of this mod");
+    let (ns, path) = model.split_once(':').ok_or_else(shape)?;
+    let name = path.strip_prefix("entity/").ok_or_else(shape)?;
+    if ns.is_empty() || name.is_empty() || name.contains('/') {
+        return Err(shape());
+    }
+    // The name on its own passes the path check (so `..` does not).
+    check_path(&format!("assets/{ns}/models/entity/{name}")).map_err(|_| shape())?;
+    Ok((ns, format!("assets/{ns}/models/entity/{name}.json")))
+}
+
+impl EntityType {
+    /// Whether the type copies a mob rather than a thrown item.
+    pub fn is_mob(&self) -> bool {
+        !ENTITY_TEMPLATES.contains(&self.template.as_str())
+    }
+}
+
+/// a mob entity type's hitbox.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Size {
+    pub width: f64,
+    pub height: f64,
+    /// where it looks from; the template's, scaled to the height, without one.
+    #[serde(default)]
+    pub eye_height: Option<f64>,
+}
+
+/// what goals a mob entity type starts with.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Goals {
+    /// the template's, as vanilla registers them for the species.
+    #[default]
+    Template,
+    /// none: the selectors are empty until a script fills them.
+    None,
 }
 
 /// a menu type the mod adds (vanilla's `MenuType`, NeoForge's
@@ -831,27 +1088,114 @@ impl Content {
         for (kind, name) in types {
             let file: EntityType =
                 serde_json::from_slice(&reader.read(&name)?).map_err(|e| format!("{name}: {e}"))?;
-            if !ENTITY_TEMPLATES.contains(&file.template.as_str()) {
+            let thrown = ENTITY_TEMPLATES.contains(&file.template.as_str());
+            if !thrown && !MOB_TEMPLATES.contains(&file.template.as_str()) {
                 return Err(format!(
-                    "{name}: template {:?} is not one of {ENTITY_TEMPLATES:?}",
+                    "{name}: template {:?} is not one of {ENTITY_TEMPLATES:?} or a vanilla mob (minecraft:zombie, minecraft:pig...)",
                     file.template
                 ));
             }
-            // its own item, so no vanilla item loses its use to it.
-            if !ids.contains(&file.item) {
-                return Err(format!(
-                    "{name}: item {:?} is not one of this mod's items",
-                    file.item
-                ));
-            }
-            if self.entity_types.iter().any(|t| t.item == file.item) {
-                return Err(format!(
-                    "{name}: item {:?} already throws another entity type",
-                    file.item
-                ));
-            }
-            if !(file.damage.is_finite() && file.damage >= 0.0) {
-                return Err(format!("{name}: damage is 0 or more"));
+            if thrown {
+                // its own item, so no vanilla item loses its use to it.
+                let Some(item) = &file.item else {
+                    return Err(format!(
+                        "{name}: item names one of this mod's items, which throws it"
+                    ));
+                };
+                if !ids.contains(item) {
+                    return Err(format!(
+                        "{name}: item {item:?} is not one of this mod's items"
+                    ));
+                }
+                if self
+                    .entity_types
+                    .iter()
+                    .any(|t| t.item.as_ref() == Some(item))
+                {
+                    return Err(format!(
+                        "{name}: item {item:?} already throws another entity type"
+                    ));
+                }
+                if !(file.damage.is_finite() && file.damage >= 0.0) {
+                    return Err(format!("{name}: damage is 0 or more"));
+                }
+                if !file.attributes.is_empty()
+                    || file.size.is_some()
+                    || file.texture.is_some()
+                    || file.goals != Goals::Template
+                    || !file.flags.is_empty()
+                {
+                    return Err(format!(
+                        "{name}: attributes, size, texture, goals and flags are for a mob template"
+                    ));
+                }
+            } else {
+                if file.item.is_some() || file.damage != 0.0 {
+                    return Err(format!("{name}: item and damage are for a thrown template"));
+                }
+                for (key, value) in &file.attributes {
+                    if key.is_empty() || key.contains(':') || !value.is_finite() {
+                        return Err(format!(
+                            "{name}: attribute {key:?} is a name without a namespace (max_health, movement_speed...) and a finite number"
+                        ));
+                    }
+                }
+                if let Some(size) = &file.size
+                    && !(size.width.is_finite()
+                        && size.width > 0.0
+                        && size.height.is_finite()
+                        && size.height > 0.0
+                        && size.eye_height.is_none_or(|e| e.is_finite() && e >= 0.0))
+                {
+                    return Err(format!("{name}: size has a positive width and height"));
+                }
+                if let Some(flag) = file.flags.keys().find(|f| !MOB_FLAGS.contains(&f.as_str())) {
+                    return Err(format!("{name}: flag {flag:?} is not one of {MOB_FLAGS:?}"));
+                }
+                if let Some(texture) = &file.texture {
+                    let Some((ns, path)) = texture.split_once(':') else {
+                        return Err(format!(
+                            "{name}: texture is <namespace>:entity/<name>, a file of this mod"
+                        ));
+                    };
+                    let file_name = format!("assets/{ns}/textures/{path}.png");
+                    if !self.namespaces.iter().any(|n| n == ns) || !self.files.contains(&file_name)
+                    {
+                        return Err(format!(
+                            "{name}: texture {texture:?} is not a file of this mod ({file_name})"
+                        ));
+                    }
+                }
+                if let Some(model) = &file.model {
+                    let (ns, file_name) =
+                        mob_model_file(model).map_err(|e| format!("{name}: {e}"))?;
+                    if !self.namespaces.iter().any(|n| n == ns) || !self.files.contains(&file_name)
+                    {
+                        return Err(format!(
+                            "{name}: model {model:?} is not a file of this mod ({file_name})"
+                        ));
+                    }
+                }
+                if let Some(animation) = &file.animation
+                    && !MOB_ANIMATIONS.contains(&animation.as_str())
+                {
+                    return Err(format!(
+                        "{name}: animation {animation:?} is not one of the game's sets ({})",
+                        MOB_ANIMATIONS.join(", ")
+                    ));
+                }
+                for (key, sound) in &file.sounds {
+                    if !MOB_SOUNDS.contains(&key.as_str()) {
+                        return Err(format!(
+                            "{name}: sounds has {key:?}; the keys are {MOB_SOUNDS:?}"
+                        ));
+                    }
+                    if !namespaced_id(sound) {
+                        return Err(format!(
+                            "{name}: sound {sound:?} is a namespaced sound event (minecraft:entity.zombie.ambient)"
+                        ));
+                    }
+                }
             }
             self.entity_types.push(EntityType { id: kind, ..file });
         }
@@ -1520,6 +1864,154 @@ capabilities = ["registries"]
     }
 
     #[test]
+    fn a_mob_entity_type_copies_a_vanilla_mob_with_its_own_values() {
+        let png: &[u8] = b"\x89PNG";
+        let parasite = br#"{"template": "minecraft:zombie", "attributes": {"max_health": 30, "movement_speed": 0.3},
+            "size": {"width": 0.7, "height": 2.1}, "texture": "ruby:entity/parasite", "goals": "none",
+            "flags": {"burns_in_day": false}}"#;
+        let files: &[(&str, &[u8])] = &[
+            ("assets/ruby/textures/entity/parasite.png", png),
+            ("data/ruby/horizon/entity_type/parasite.json", parasite),
+            (
+                "data/ruby/horizon/entity_type/boar.json",
+                br#"{"template": "minecraft:pig"}"#,
+            ),
+        ];
+        let content = hmod("mobs", MANIFEST_TEXT, files).unwrap();
+        // Types come sorted by name.
+        let [boar, parasite] = content.entity_types.as_slice() else {
+            panic!("{:?}", content.entity_types);
+        };
+        assert!(parasite.is_mob() && boar.is_mob());
+        assert_eq!(
+            (parasite.id.as_str(), parasite.template.as_str()),
+            ("ruby:parasite", "minecraft:zombie")
+        );
+        assert_eq!(parasite.attributes["max_health"], 30.0);
+        assert_eq!(
+            parasite.size.map(|s| (s.width, s.height, s.eye_height)),
+            Some((0.7, 2.1, None))
+        );
+        assert_eq!(parasite.texture.as_deref(), Some("ruby:entity/parasite"));
+        assert_eq!(parasite.goals, Goals::None);
+        assert_eq!(parasite.flags.get("burns_in_day"), Some(&false));
+        assert_eq!(
+            (boar.goals, boar.texture.as_deref(), boar.item.as_deref()),
+            (Goals::Template, None, None)
+        );
+        for (case, file, why) in [
+            (
+                "mob-item",
+                r#"{"template": "minecraft:zombie", "item": "ruby:gem"}"#,
+                "item and damage are for a thrown template",
+            ),
+            (
+                "mob-attribute-namespace",
+                r#"{"template": "minecraft:zombie", "attributes": {"minecraft:max_health": 1}}"#,
+                "without a namespace",
+            ),
+            (
+                "mob-size",
+                r#"{"template": "minecraft:zombie", "size": {"width": 0, "height": 1}}"#,
+                "positive width and height",
+            ),
+            (
+                "mob-texture-missing",
+                r#"{"template": "minecraft:zombie", "texture": "ruby:entity/ghost"}"#,
+                "is not a file of this mod",
+            ),
+            (
+                "mob-texture-namespace",
+                r#"{"template": "minecraft:zombie", "texture": "entity/parasite"}"#,
+                "<namespace>:entity/<name>",
+            ),
+            (
+                "mob-goals",
+                r#"{"template": "minecraft:zombie", "goals": "mine"}"#,
+                "unknown variant",
+            ),
+            (
+                "mob-model-missing",
+                r#"{"template": "minecraft:zombie", "model": "ruby:entity/ghost"}"#,
+                "is not a file of this mod",
+            ),
+            (
+                "mob-model-other-namespace",
+                r#"{"template": "minecraft:zombie", "model": "minecraft:entity/zombie"}"#,
+                "is not a file of this mod",
+            ),
+            (
+                "mob-model-not-entity",
+                r#"{"template": "minecraft:zombie", "model": "ruby:block/crawler"}"#,
+                "<namespace>:entity/<name>",
+            ),
+            (
+                "mob-model-escapes",
+                r#"{"template": "minecraft:zombie", "model": "ruby:entity/../../x"}"#,
+                "<namespace>:entity/<name>",
+            ),
+            (
+                "mob-animation",
+                r#"{"template": "minecraft:zombie", "animation": "Zombie"}"#,
+                "is not one of the game's sets",
+            ),
+            (
+                "mob-sound-key",
+                r#"{"template": "minecraft:zombie", "sounds": {"roar": "minecraft:entity.zombie.ambient"}}"#,
+                "the keys are",
+            ),
+            (
+                "mob-sound-id",
+                r#"{"template": "minecraft:zombie", "sounds": {"hurt": "entity.zombie.hurt"}}"#,
+                "namespaced sound event",
+            ),
+            (
+                "mob-flag",
+                r#"{"template": "minecraft:zombie", "flags": {"flies": true}}"#,
+                "is not one of",
+            ),
+        ] {
+            let files: &[(&str, &[u8])] = &[
+                ("assets/ruby/textures/entity/parasite.png", png),
+                ("data/ruby/horizon/entity_type/a.json", file.as_bytes()),
+            ];
+            let e = hmod(case, MANIFEST_TEXT, files).unwrap_err();
+            assert!(e.contains(why), "{case}: {e}");
+        }
+    }
+
+    #[test]
+    fn a_mob_entity_type_names_a_model_animation_and_sounds_of_its_own() {
+        let files: &[(&str, &[u8])] = &[
+            ("assets/ruby/models/entity/crawler.json", br#"{"parts": {}}"#),
+            (
+                "data/ruby/horizon/entity_type/crawler.json",
+                br#"{"template": "minecraft:zombie", "model": "ruby:entity/crawler", "animation": "spider",
+                    "sounds": {"ambient": "minecraft:entity.spider.ambient", "step": "ruby:crawler.step"}}"#,
+            ),
+        ];
+        let content = hmod("mob-look", MANIFEST_TEXT, files).unwrap();
+        let crawler = &content.entity_types[0];
+        assert_eq!(crawler.model.as_deref(), Some("ruby:entity/crawler"));
+        assert_eq!(crawler.animation.as_deref(), Some("spider"));
+        assert_eq!(crawler.sounds["step"], "ruby:crawler.step");
+        assert_eq!(
+            mob_model_file("ruby:entity/crawler"),
+            Ok(("ruby", "assets/ruby/models/entity/crawler.json".to_owned()))
+        );
+        for bad in [
+            "entity/crawler",
+            "ruby:crawler",
+            "ruby:entity/",
+            "ruby:entity/a/b",
+            "ruby:entity/Big",
+            "ruby:entity/..",
+        ] {
+            assert!(mob_model_file(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
     fn entity_types_copy_a_throwable_and_name_its_item() {
         let files: &[(&str, &[u8])] = &[
             ("data/ruby/horizon/item/gem.json", ITEM),
@@ -1537,13 +2029,13 @@ capabilities = ["registries"]
         let types: Vec<_> = content
             .entity_types
             .iter()
-            .map(|t| (t.id.as_str(), t.item.as_str(), t.damage))
+            .map(|t| (t.id.as_str(), t.item.as_deref(), t.damage, t.is_mob()))
             .collect();
         assert_eq!(
             types,
             [
-                ("ruby:bolt", "ruby:gem", 2.5),
-                ("ruby:puff", "ruby:dust", 0.0)
+                ("ruby:bolt", Some("ruby:gem"), 2.5, false),
+                ("ruby:puff", Some("ruby:dust"), 0.0, false)
             ]
         );
         let snowball = |rest: &str| format!(r#"{{"template": "minecraft:snowball"{rest}}}"#);
@@ -1570,8 +2062,18 @@ capabilities = ["registries"]
             ),
             (
                 "type-key",
-                snowball(r#", "item": "ruby:gem", "size": 1"#),
+                snowball(r#", "item": "ruby:gem", "sizes": 1"#),
                 "unknown field",
+            ),
+            (
+                "type-mob-fields-on-a-throwable",
+                snowball(r#", "item": "ruby:gem", "goals": "none""#),
+                "are for a mob template",
+            ),
+            (
+                "type-no-item",
+                snowball(""),
+                "item names one of this mod's items",
             ),
         ] {
             let files: &[(&str, &[u8])] = &[

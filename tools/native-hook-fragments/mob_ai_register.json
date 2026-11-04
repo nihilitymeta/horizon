@@ -1,0 +1,16 @@
+{
+  "hooks": [
+    {
+      "name": "mob_ai_register",
+      "target": "horizon_client_lib::mobs::ai::native_mob_ai_register",
+      "side": "server",
+      "cancellable": false,
+      "mod_api": {
+        "contract": "listen"
+      }
+    }
+  ],
+  "rust_summary": "a mob's AI as it is set up (`native_mob_ai_register`, a free function in `horizon_client_lib::mobs::ai`): add, replace or drop goals and target goals of any mob, vanilla's or a mod's.",
+  "doc_summary": "a mob's AI as it is set up (`native_mob_ai_register`, a free function in `horizon_client_lib::mobs::ai`): add, replace or drop goals and target goals of any mob, vanilla's or a mod's. Bundles need \"hooks\": @API:mob_ai_register@.",
+  "comments": ["crates/horizon-client/src/mobs/ai.rs"]
+}
