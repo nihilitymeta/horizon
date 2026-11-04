@@ -69,13 +69,13 @@ depends on it runs with no `--dev-mod`. The card shows the version installed and
 `.github/workflows/release.yml`). From the command line: `horizon-launcher modkit`, `modkit update`,
 `modkit auto on|off`, and `modkit install <file>` for a `horizon_modkit.hmod` you built yourself.
 
-Two switches are off by default in Event Horizon's launcher:
+Two switches decide what updates by itself:
 
-- **Install new versions automatically** (Versions page): leave it off. On, it would install and select Horizon's own
-  new releases over Event Horizon's.
-- **Update the launcher automatically** (Settings): the launcher updates itself from Event Horizon's releases, never
-  Horizon's, when a newer `eh-v` release is out. Turn it on to have that happen by itself; off, the Settings page offers
-  the Update button. A launcher you built yourself never updates itself.
+- **Update the launcher automatically** (Settings): on by default. The launcher updates itself from Event Horizon's
+  releases, never Horizon's, when one was published after it was built. Off, the Settings page offers an Update
+  button instead. A launcher you built yourself never updates itself.
+- **Install new versions automatically** (Versions page): off by default, and leave it off. On, it would install and
+  select Horizon's own new releases over Event Horizon's.
 
 The command line does the same as the card: `horizon-launcher sources list`, `sources update`,
 `sources auto <owner>/<repo> on|off`, `sources add <owner>/<repo>`.

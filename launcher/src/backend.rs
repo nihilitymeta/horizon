@@ -3512,9 +3512,9 @@ pub struct Settings {
     /// Off by default, so the opening animation shows unless the player turns it off.
     #[serde(default)]
     pub skip_opening: bool,
-    /// Whether this launcher replaces itself when a newer release is out. Unset means off on Event
-    /// Horizon: upstream's launcher would otherwise replace this one at the next check. With it off,
-    /// the release found waits for the Settings page's Update button.
+    /// Whether this launcher replaces itself when a newer Event Horizon release is out (it never takes
+    /// Horizon's: `game_sources::launcher_update`). Unset means on; with it off, the release found
+    /// waits for the Settings page's Update button. A launcher built by hand never updates itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_update_launcher: Option<bool>,
     /// Linux: whether the launcher keeps its entry in the applications menu (`desktop`). Unset
@@ -3653,9 +3653,10 @@ impl Settings {
     pub fn auto_install(&self) -> bool {
         self.install_new_versions.unwrap_or(false)
     }
-    /// Whether the launcher updates itself: off unless the player turned it on.
+    /// Whether the launcher updates itself from Event Horizon's releases: on unless the player
+    /// turned it off.
     pub fn launcher_updates(&self) -> bool {
-        self.auto_update_launcher.unwrap_or(false)
+        self.auto_update_launcher.unwrap_or(true)
     }
     /// Whether old versions are deleted after an install.
     pub fn auto_prune(&self) -> bool {
@@ -4899,7 +4900,7 @@ pub fn {f}("
     }
 
     #[test]
-    fn nothing_updates_itself_unless_turned_on() {
+    fn horizon_versions_install_only_when_turned_on_and_the_launcher_updates_itself() {
         // Event Horizon: a new upstream release must not replace the player's own build or
         // launcher. No settings file, an old one that never mentioned it, and 0.1.1's key.
         assert!(!Settings::parse("").auto_install());
@@ -4909,10 +4910,9 @@ pub fn {f}("
         );
         assert!(Settings::parse(r#"{"install_new_versions": true}"#).auto_install());
         assert!(!Settings::parse(r#"{"install_new_versions": false}"#).auto_install());
-        assert!(!Settings::parse("{}").launcher_updates());
-        // The older switch, `skip_launcher_updates`, kept the launcher too: it still does.
-        assert!(!Settings::parse(r#"{"skip_launcher_updates": true}"#).launcher_updates());
-        assert!(Settings::parse(r#"{"auto_update_launcher": true}"#).launcher_updates());
+        // The launcher updates itself (from Event Horizon's releases only) unless turned off.
+        assert!(Settings::parse("{}").launcher_updates());
+        assert!(!Settings::parse(r#"{"auto_update_launcher": false}"#).launcher_updates());
         // Saving after the player turned them on keeps them on.
         let on = Settings {
             install_new_versions: Some(true),
