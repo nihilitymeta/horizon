@@ -457,5 +457,7 @@
   "Particle Culling": "Відсікання частинок",
   "Draws every particle.": "Малює всі частинки.",
   "Skips offscreen, subpixel and terrain-hidden particles.": "Пропускає частинки поза екраном, менші за піксель і закриті місцевістю.",
-  "Skips offscreen, subpixel and terrain-hidden particles with less render-thread work.": "Пропускає частинки поза екраном, менші за піксель і закриті місцевістю, зменшуючи роботу потоку рендерингу."
+  "Skips offscreen, subpixel and terrain-hidden particles with less render-thread work.": "Пропускає частинки поза екраном, менші за піксель і закриті місцевістю, зменшуючи роботу потоку рендерингу.",
+  "key.zoom": "Наближення",
+  "key.minimap": "Мінікарта"
 }

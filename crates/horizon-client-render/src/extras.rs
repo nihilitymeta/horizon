@@ -10,6 +10,8 @@ pub const FILE: &str = "horizon-extras.txt";
 pub const SORT_KEY: &str = "horizon.sort";
 /// The 3D skin layers line, here and in the `options.txt` that held it first.
 const SKIN_LAYERS_KEY: &str = "threeDSkinLayers";
+/// The name the options screen uses while the zoom key waits for a key.
+pub const ZOOM_KEY: &str = "horizon.zoom";
 
 /// The minimap's sizes in GUI pixels, and its zooms in blocks per pixel.
 pub const MINIMAP_SIZES: [(u8, &str); 3] = [(64, "Small"), (96, "Medium"), (128, "Large")];
@@ -423,11 +425,12 @@ impl Extras {
             self.three_d_skin_layers = value == "true";
         }
     }
-    /// Binds the extra key `name` (`SORT_KEY`); false for
+    /// Binds the extra key `name` (`SORT_KEY`, `ZOOM_KEY`); false for
     /// another name (a vanilla mapping).
     pub fn set_key(&mut self, name: &str, value: String) -> bool {
         match name {
             SORT_KEY => self.sort_key = value,
+            ZOOM_KEY => self.zoom_key = value,
             _ => return false,
         }
         true
@@ -539,9 +542,37 @@ pub const SPLIT_TWO: [&str; 3] = ["Auto", "Side by side", "Top and bottom"];
 /// Three players sharing a window (`splitscreen_three`).
 pub const SPLIT_THREE: [&str; 3] = ["One wide on top", "One tall on the left", "Side by side"];
 
+fn cycle_corner(c: Corner, back: bool) -> Corner {
+    let all = Corner::ALL;
+    let idx = all.iter().position(|&x| x == c).unwrap_or(0);
+    let next = if back {
+        (idx + all.len() - 1) % all.len()
+    } else {
+        (idx + 1) % all.len()
+    };
+    all[next]
+}
+
 /// The settings the Extras page shows, one per row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Item {
+    Zoom,
+    ZoomKey,
+    ZoomLevel,
+    ZoomSmooth,
+    ZoomSensitivity,
+    Minimap,
+    MinimapCorner,
+    MinimapSize,
+    MinimapShape,
+    MinimapZoom,
+    MinimapRotate,
+    Fps,
+    FpsCorner,
+    FpsLows,
+    Keystrokes,
+    KeystrokesCorner,
+    KeystrokesCps,
     Fullbright,
     DynamicLights,
     OwnNameTag,
@@ -604,6 +635,25 @@ pub fn rows() -> Vec<Result<Item, &'static str>> {
         Err("horizon.extras.header.menus"),
         Ok(WheelCyclesSettings),
         Ok(PackBrowser),
+        Err("horizon.extras.header.zoom"),
+        Ok(Zoom),
+        Ok(ZoomLevel),
+        Ok(ZoomSmooth),
+        Ok(ZoomSensitivity),
+        Err("horizon.extras.header.minimap"),
+        Ok(Minimap),
+        Ok(MinimapCorner),
+        Ok(MinimapSize),
+        Ok(MinimapShape),
+        Ok(MinimapZoom),
+        Ok(MinimapRotate),
+        Err("horizon.extras.header.hud"),
+        Ok(Fps),
+        Ok(FpsCorner),
+        Ok(FpsLows),
+        Ok(Keystrokes),
+        Ok(KeystrokesCorner),
+        Ok(KeystrokesCps),
     ];
     if horizon_cosmetics::enabled() {
         rows.extend([
@@ -619,6 +669,23 @@ impl Item {
     /// The language key of the caption (`horizon.*`, assets/horizon/lang).
     pub fn caption_key(self) -> &'static str {
         match self {
+            Item::Zoom => "horizon.extras.zoom",
+            Item::ZoomKey => "horizon.extras.zoom_key",
+            Item::ZoomLevel => "horizon.extras.zoom_level",
+            Item::ZoomSmooth => "horizon.extras.zoom_smooth",
+            Item::ZoomSensitivity => "horizon.extras.zoom_sensitivity",
+            Item::Minimap => "horizon.extras.minimap",
+            Item::MinimapCorner => "horizon.extras.minimap_corner",
+            Item::MinimapSize => "horizon.extras.minimap_size",
+            Item::MinimapShape => "horizon.extras.minimap_shape",
+            Item::MinimapZoom => "horizon.extras.minimap_zoom",
+            Item::MinimapRotate => "horizon.extras.minimap_rotate",
+            Item::Fps => "horizon.extras.fps",
+            Item::FpsCorner => "horizon.extras.fps_corner",
+            Item::FpsLows => "horizon.extras.fps_lows",
+            Item::Keystrokes => "horizon.extras.keystrokes",
+            Item::KeystrokesCorner => "horizon.extras.keystrokes_corner",
+            Item::KeystrokesCps => "horizon.extras.keystrokes_cps",
             Item::Fullbright => "horizon.extras.fullbright",
             Item::DynamicLights => "horizon.extras.dynamic_lights",
             Item::OwnNameTag => "horizon.extras.own_name_tag",
@@ -648,6 +715,23 @@ impl Item {
     /// The language key of the description shown as the row's tooltip.
     pub fn description_key(self) -> &'static str {
         match self {
+            Item::Zoom => "horizon.extras.zoom.tooltip",
+            Item::ZoomKey => "horizon.extras.zoom_key.tooltip",
+            Item::ZoomLevel => "horizon.extras.zoom_level.tooltip",
+            Item::ZoomSmooth => "horizon.extras.zoom_smooth.tooltip",
+            Item::ZoomSensitivity => "horizon.extras.zoom_sensitivity.tooltip",
+            Item::Minimap => "horizon.extras.minimap.tooltip",
+            Item::MinimapCorner => "horizon.extras.minimap_corner.tooltip",
+            Item::MinimapSize => "horizon.extras.minimap_size.tooltip",
+            Item::MinimapShape => "horizon.extras.minimap_shape.tooltip",
+            Item::MinimapZoom => "horizon.extras.minimap_zoom.tooltip",
+            Item::MinimapRotate => "horizon.extras.minimap_rotate.tooltip",
+            Item::Fps => "horizon.extras.fps.tooltip",
+            Item::FpsCorner => "horizon.extras.fps_corner.tooltip",
+            Item::FpsLows => "horizon.extras.fps_lows.tooltip",
+            Item::Keystrokes => "horizon.extras.keystrokes.tooltip",
+            Item::KeystrokesCorner => "horizon.extras.keystrokes_corner.tooltip",
+            Item::KeystrokesCps => "horizon.extras.keystrokes_cps.tooltip",
             Item::Fullbright => "horizon.extras.fullbright.tooltip",
             Item::DynamicLights => "horizon.extras.dynamic_lights.tooltip",
             Item::OwnNameTag => "horizon.extras.own_name_tag.tooltip",
@@ -686,6 +770,23 @@ impl Item {
     /// `horizon.extras.*` in en_us.json.
     pub fn caption(self) -> &'static str {
         match self {
+            Item::Zoom => "Zoom",
+            Item::ZoomKey => "Zoom key",
+            Item::ZoomLevel => "Zoom level",
+            Item::ZoomSmooth => "Smooth zoom",
+            Item::ZoomSensitivity => "Dampen mouse",
+            Item::Minimap => "Minimap",
+            Item::MinimapCorner => "Minimap corner",
+            Item::MinimapSize => "Minimap size",
+            Item::MinimapShape => "Minimap shape",
+            Item::MinimapZoom => "Minimap zoom",
+            Item::MinimapRotate => "Rotate with player",
+            Item::Fps => "FPS counter",
+            Item::FpsCorner => "FPS corner",
+            Item::FpsLows => "FPS minimum & 1% low",
+            Item::Keystrokes => "Keystrokes",
+            Item::KeystrokesCorner => "Keystrokes corner",
+            Item::KeystrokesCps => "Mouse CPS",
             Item::Fullbright => "Fullbright",
             Item::DynamicLights => "Dynamic lights",
             Item::OwnNameTag => "Own name tag",
@@ -721,10 +822,14 @@ impl Item {
             SortKey => Sort,
             ChatIndicator => ChatAnimation,
             Pvp(o) => return o.parent().map(Pvp),
+            ZoomKey | ZoomLevel | ZoomSmooth | ZoomSensitivity => Zoom,
+            MinimapCorner | MinimapSize | MinimapShape | MinimapZoom | MinimapRotate => Minimap,
+            FpsCorner | FpsLows => Fps,
+            KeystrokesCorner | KeystrokesCps => Keystrokes,
             Fullbright | DynamicLights | OwnNameTag | HideBlockParticles | MouseTweaks | Sort
             | AutoReconnect | NoAi | AgentControl | ReproKeys | DiscordPresence | Splitscreen
             | ChatAnimation | WheelCyclesSettings | MusicPage | PackBrowser | CosmeticsMine
-            | CosmeticsOthers | CosmeticsAuras => {
+            | CosmeticsOthers | CosmeticsAuras | Zoom | Minimap | Fps | Keystrokes => {
                 return None;
             }
         })
@@ -732,6 +837,27 @@ impl Item {
     /// The English description: the fallback of [`Item::description_text`].
     pub fn description(self) -> &'static str {
         match self {
+            Item::Zoom => "Hold a key while playing to zoom the camera in.",
+            Item::ZoomKey => {
+                "The key to hold for zoom. Click, then press a key; Escape unbinds it."
+            }
+            Item::ZoomLevel => "How many times to magnify the view (2x to 10x).",
+            Item::ZoomSmooth => "Smoothly ease FOV in and out like spyglass.",
+            Item::ZoomSensitivity => {
+                "Scale down mouse sensitivity proportionally to zoom magnification."
+            }
+            Item::Minimap => "A live top-down terrain minimap in the corner of your screen.",
+            Item::MinimapCorner => "Which corner of the screen the minimap sits in.",
+            Item::MinimapSize => "The width and height of the minimap in GUI pixels.",
+            Item::MinimapShape => "Square or round circular minimap frame.",
+            Item::MinimapZoom => "Blocks per minimap pixel.",
+            Item::MinimapRotate => "Rotate the map with player yaw instead of locking North up.",
+            Item::Fps => "Show real-time frames per second in a corner.",
+            Item::FpsCorner => "Which corner to show the FPS counter in.",
+            Item::FpsLows => "Display minimum and 1% low FPS readings.",
+            Item::Keystrokes => "Show active movement keys and mouse clicks in a corner.",
+            Item::KeystrokesCorner => "Which corner to display keystrokes in.",
+            Item::KeystrokesCps => "Display clicks per second under mouse buttons.",
             Item::Fullbright => "Show blocks and entities at full light, even in dark areas.",
             Item::DynamicLights => {
                 "Torches and other light sources held, dropped or on fire light the blocks around them."
@@ -802,6 +928,8 @@ impl Item {
     pub fn cost(self) -> Option<crate::graphics_style::Cost> {
         use crate::graphics_style::Cost;
         match self {
+            Item::Zoom | Item::Fps | Item::Keystrokes => Some(Cost::None),
+            Item::Minimap => Some(Cost::Low),
             Item::Fullbright => Some(Cost::None),
             Item::UiSoundReserve => Some(Cost::None),
             Item::MusicPage => Some(Cost::None),
@@ -822,6 +950,15 @@ impl Item {
     /// On/off items and their value.
     pub fn switch(self, e: &Extras) -> Option<bool> {
         Some(match self {
+            Item::Zoom => e.zoom,
+            Item::ZoomSmooth => e.zoom_smooth,
+            Item::ZoomSensitivity => e.zoom_sensitivity,
+            Item::Minimap => e.minimap,
+            Item::MinimapRotate => e.minimap_rotate,
+            Item::Fps => e.fps,
+            Item::FpsLows => e.fps_lows,
+            Item::Keystrokes => e.keystrokes,
+            Item::KeystrokesCps => e.keystrokes_cps,
             Item::Fullbright => e.fullbright,
             Item::DynamicLights => e.dynamic_lights,
             Item::OwnNameTag => e.own_name_tag,
@@ -867,16 +1004,94 @@ impl Item {
                     }
                 }
             }
+            Item::ZoomKey => crate::keybinds::display_name(&e.zoom_key).plain(),
+            Item::ZoomLevel => format!("{}x", e.zoom_level),
+            Item::MinimapCorner => e.minimap_corner.label().into(),
+            Item::MinimapSize => MINIMAP_SIZES
+                .iter()
+                .find(|s| s.0 == e.minimap_size)
+                .map_or("Custom", |s| s.1)
+                .into(),
+            Item::MinimapShape => {
+                if e.minimap_round {
+                    "Round".into()
+                } else {
+                    "Square".into()
+                }
+            }
+            Item::MinimapZoom => format!("{} b/px", e.minimap_zoom),
+            Item::FpsCorner => e.fps_corner.label().into(),
+            Item::KeystrokesCorner => e.keystrokes_corner.label().into(),
             other => match other.switch(e) {
                 Some(true) => crate::lang::get_or("On", "On"),
                 _ => crate::lang::get_or("Off", "Off"),
             },
         }
     }
-    /// A click (`back` for the right button: it turns the three-way cosmetics button the other
-    /// way; every other item left is a switch, so both flip it). The sort key binds instead.
+    /// A click (`back` for the right button: it turns the three-way cosmetics button and the
+    /// zoom, minimap and corner pickers the other way; every other item left is a switch, so both
+    /// flip it). The sort and zoom keys bind instead.
     pub fn cycle(self, e: &mut Extras, back: bool) {
         match self {
+            Item::Zoom => e.zoom = !e.zoom,
+            Item::ZoomKey | Item::SortKey => {}
+            Item::ZoomLevel => {
+                e.zoom_level = if back {
+                    if e.zoom_level <= 2 {
+                        10
+                    } else {
+                        e.zoom_level - 1
+                    }
+                } else {
+                    if e.zoom_level >= 10 {
+                        2
+                    } else {
+                        e.zoom_level + 1
+                    }
+                };
+            }
+            Item::ZoomSmooth => e.zoom_smooth = !e.zoom_smooth,
+            Item::ZoomSensitivity => e.zoom_sensitivity = !e.zoom_sensitivity,
+            Item::Minimap => e.minimap = !e.minimap,
+            Item::MinimapCorner => {
+                e.minimap_corner = cycle_corner(e.minimap_corner, back);
+            }
+            Item::MinimapSize => {
+                let idx = MINIMAP_SIZES
+                    .iter()
+                    .position(|s| s.0 == e.minimap_size)
+                    .unwrap_or(1);
+                let next = if back {
+                    (idx + MINIMAP_SIZES.len() - 1) % MINIMAP_SIZES.len()
+                } else {
+                    (idx + 1) % MINIMAP_SIZES.len()
+                };
+                e.minimap_size = MINIMAP_SIZES[next].0;
+            }
+            Item::MinimapShape => e.minimap_round = !e.minimap_round,
+            Item::MinimapZoom => {
+                let idx = MINIMAP_ZOOMS
+                    .iter()
+                    .position(|&z| (z - e.minimap_zoom).abs() < 0.01)
+                    .unwrap_or(1);
+                let next = if back {
+                    (idx + MINIMAP_ZOOMS.len() - 1) % MINIMAP_ZOOMS.len()
+                } else {
+                    (idx + 1) % MINIMAP_ZOOMS.len()
+                };
+                e.minimap_zoom = MINIMAP_ZOOMS[next];
+            }
+            Item::MinimapRotate => e.minimap_rotate = !e.minimap_rotate,
+            Item::Fps => e.fps = !e.fps,
+            Item::FpsCorner => {
+                e.fps_corner = cycle_corner(e.fps_corner, back);
+            }
+            Item::FpsLows => e.fps_lows = !e.fps_lows,
+            Item::Keystrokes => e.keystrokes = !e.keystrokes,
+            Item::KeystrokesCorner => {
+                e.keystrokes_corner = cycle_corner(e.keystrokes_corner, back);
+            }
+            Item::KeystrokesCps => e.keystrokes_cps = !e.keystrokes_cps,
             Item::Fullbright => e.fullbright = !e.fullbright,
             Item::DynamicLights => e.dynamic_lights = !e.dynamic_lights,
             Item::OwnNameTag => e.own_name_tag = !e.own_name_tag,
@@ -904,13 +1119,13 @@ impl Item {
             }
             Item::CosmeticsAuras => e.cosmetics_auras = !e.cosmetics_auras,
             Item::Pvp(o) => o.cycle(&mut e.pvp, back),
-            Item::SortKey => {}
         }
     }
     /// The key name the options screen waits on for a key item.
     pub fn key_name(self) -> Option<&'static str> {
         match self {
             Item::SortKey => Some(SORT_KEY),
+            Item::ZoomKey => Some(ZOOM_KEY),
             _ => None,
         }
     }
@@ -1137,6 +1352,25 @@ mod tests {
         let mut e = Extras::default();
         Item::Sort.cycle(&mut e, true);
         assert_eq!(Item::Sort.value(&e), "On");
+        Item::Zoom.cycle(&mut e, false);
+        assert!(e.zoom);
+        Item::ZoomLevel.cycle(&mut e, false);
+        assert_eq!(e.zoom_level, 5);
+        Item::ZoomSmooth.cycle(&mut e, false);
+        assert!(!e.zoom_smooth);
+        Item::ZoomSensitivity.cycle(&mut e, false);
+        assert!(!e.zoom_sensitivity);
+        assert!(e.set_key(ZOOM_KEY, "key.keyboard.c".into()));
+        assert_eq!(e.zoom_key, "key.keyboard.c");
+        Item::Minimap.cycle(&mut e, false);
+        assert!(e.minimap);
+        Item::MinimapCorner.cycle(&mut e, false);
+        Item::MinimapShape.cycle(&mut e, false);
+        assert!(e.minimap_round);
+        Item::Fps.cycle(&mut e, false);
+        assert!(e.fps);
+        Item::Keystrokes.cycle(&mut e, false);
+        assert!(e.keystrokes);
         // The minimap's old keys still parse, for the move to its mod.
         assert_eq!(
             Extras::parse("minimapSize:7\nminimapZoom:3").minimap_zoom,

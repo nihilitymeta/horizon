@@ -357,5 +357,7 @@
   "Particle Culling": "Pomijanie cząsteczek",
   "Draws every particle.": "Rysuje wszystkie cząsteczki.",
   "Skips offscreen, subpixel and terrain-hidden particles.": "Pomija cząsteczki poza ekranem, mniejsze niż piksel i zasłonięte przez teren.",
-  "Skips offscreen, subpixel and terrain-hidden particles with less render-thread work.": "Pomija cząsteczki poza ekranem, mniejsze niż piksel i zasłonięte przez teren, odciążając wątek renderowania."
+  "Skips offscreen, subpixel and terrain-hidden particles with less render-thread work.": "Pomija cząsteczki poza ekranem, mniejsze niż piksel i zasłonięte przez teren, odciążając wątek renderowania.",
+  "key.zoom": "Przybliżenie",
+  "key.minimap": "Minimapa"
 }

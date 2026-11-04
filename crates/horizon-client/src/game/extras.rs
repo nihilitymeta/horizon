@@ -17,6 +17,7 @@ use winit::event::MouseButton;
 
 #[derive(Default)]
 pub(super) struct ExtrasState {
+    pub(super) zoom_held: bool,
     fps: FpsCounter,
     /// Left and right mouse buttons: held, and their clicks.
     mouse: [bool; 2],
@@ -56,6 +57,7 @@ impl Game<'_> {
         let playing = self.screen == Screen::Playing && self.title.is_none() && focused;
         if !playing {
             self.extras.mouse = [false; 2];
+            self.extras.zoom_held = false;
         }
         self.update_minimap();
         // For mods (`render.frame-stats`, `native_frame_rate`).
@@ -152,9 +154,22 @@ impl Game<'_> {
         };
         Some((m.corner, m.size, view))
     }
-    /// The minimap shown: a native mod's (`native_minimap`).
+    /// The minimap shown: a native mod's (`native_minimap`) or Horizon's own extra.
     fn minimap_wanted(&self) -> Option<NativeMinimap> {
-        self.native_minimap_now()
+        if let Some(m) = self.native_minimap_now() {
+            return Some(m);
+        }
+        if self.settings.extras.minimap {
+            Some(NativeMinimap {
+                corner: self.settings.extras.minimap_corner,
+                size: self.settings.extras.minimap_size as f32,
+                blocks_per_pixel: self.settings.extras.minimap_zoom,
+                rotate: self.settings.extras.minimap_rotate,
+                round: self.settings.extras.minimap_round,
+            })
+        } else {
+            None
+        }
     }
     /// Refresh the minimap's tiles within the frame budget, recompose its
     /// image when the view or a tile changed, and queue the upload.
@@ -208,12 +223,24 @@ impl Game<'_> {
             rgba: self.extras.minimap.image.clone(),
         });
     }
-    /// A mod's zoom in effect (`native_zoom`): (factor, smooth, turning
+    /// A mod's zoom in effect (`native_zoom`) or Horizon's own extra: (factor, smooth, turning
     /// scale); none is 1.
     fn zoom_now(&self) -> (f32, bool, f64) {
-        self.native_zoom_now().map_or((1.0, true, 1.0), |z| {
-            (z.factor, z.smooth, f64::from(z.turn))
-        })
+        if let Some(z) = self.native_zoom_now() {
+            return (z.factor, z.smooth, f64::from(z.turn));
+        }
+        if self.settings.extras.zoom && self.extras.zoom_held && self.screen == Screen::Playing {
+            let factor = (self.settings.extras.zoom_level as f32).max(1.0);
+            let smooth = self.settings.extras.zoom_smooth;
+            let turn = if self.settings.extras.zoom_sensitivity {
+                1.0 / factor as f64
+            } else {
+                1.0
+            };
+            (factor, smooth, turn)
+        } else {
+            (1.0, true, 1.0)
+        }
     }
     /// The field-of-view modifier target, divided by a smooth zoom.
     pub(super) fn zoomed_fov_target(&self, vanilla: f32) -> f32 {
@@ -236,6 +263,8 @@ impl Game<'_> {
     /// The minimap and mods' corner panels, in the HUD layer (hidden with F1
     /// by the caller). The top left corner gives way to the debug screen.
     pub(super) fn draw_extras(&mut self, batch: &mut HudBatch) {
+        let (fps, min, low) = self.frame_reading();
+        let ((l_cps, r_cps), [l_down, r_down]) = self.mouse_reading();
         let map = self.minimap_shown();
         let visible = |corner| !(self.debug && corner == Corner::TopLeft);
         let mut corners = Corners::new(batch.width, batch.height, self.effect_rows_height());
@@ -258,6 +287,74 @@ impl Game<'_> {
                 north,
             };
             extras_hud::draw_minimap(batch, atlas, &mut corners, &look);
+        }
+        if self.settings.extras.fps && visible(self.settings.extras.fps_corner) {
+            let fps_text = format!("FPS: {fps}");
+            let min_text = format!("Min: {min}");
+            let low_text = format!("1% Low: {low}");
+            let mut lines = vec![(fps_text.as_str(), 0xFFFFFF)];
+            if self.settings.extras.fps_lows {
+                lines.push((min_text.as_str(), 0xAAAAAA));
+                lines.push((low_text.as_str(), 0xAAAAAA));
+            }
+            extras_hud::draw_lines(
+                batch,
+                atlas,
+                &mut corners,
+                self.settings.extras.fps_corner,
+                &lines,
+            );
+        }
+        if self.settings.extras.keystrokes && visible(self.settings.extras.keystrokes_corner) {
+            let playing = self.screen == Screen::Playing;
+            let held = |k| playing && self.keys.contains(&k);
+            let w = if held(winit::keyboard::KeyCode::KeyW) {
+                "W"
+            } else {
+                "_"
+            };
+            let a = if held(winit::keyboard::KeyCode::KeyA) {
+                "A"
+            } else {
+                "_"
+            };
+            let s = if held(winit::keyboard::KeyCode::KeyS) {
+                "S"
+            } else {
+                "_"
+            };
+            let d = if held(winit::keyboard::KeyCode::KeyD) {
+                "D"
+            } else {
+                "_"
+            };
+            let space = if held(winit::keyboard::KeyCode::Space) {
+                "[ === ]"
+            } else {
+                "[ --- ]"
+            };
+            let line1 = format!("  {w}  ");
+            let line2 = format!("{a} {s} {d}");
+            let l_lbl = if l_down { "LMB*" } else { "LMB" };
+            let r_lbl = if r_down { "RMB*" } else { "RMB" };
+            let line3 = if self.settings.extras.keystrokes_cps {
+                format!("{l_lbl}:{l_cps} {r_lbl}:{r_cps}")
+            } else {
+                format!("{l_lbl} {r_lbl}")
+            };
+            let lines = [
+                (line1.as_str(), 0xFFFFFF),
+                (line2.as_str(), 0xFFFFFF),
+                (space, 0xCCCCCC),
+                (line3.as_str(), 0xAAAAAA),
+            ];
+            extras_hud::draw_lines(
+                batch,
+                atlas,
+                &mut corners,
+                self.settings.extras.keystrokes_corner,
+                &lines,
+            );
         }
         self.native_hud(batch, &mut corners);
     }
