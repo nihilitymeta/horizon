@@ -3481,8 +3481,9 @@ pub struct Settings {
     pub instance: Option<String>,
     pub minecraft_dir: Option<PathBuf>,
     pub server_dir: Option<PathBuf>,
-    /// Unset means on: only a player who turned it off has `false` here. 0.1.1 wrote its
-    /// `auto_install` (off by default) for everyone, so this is a new key and that one is ignored.
+    /// Unset means off on Event Horizon: a new upstream release would otherwise be installed and
+    /// selected over the player's own build. Only a player who turned it on has `true` here. 0.1.1
+    /// wrote its `auto_install` for everyone, so this is a new key and that one is ignored.
     #[serde(default)]
     pub install_new_versions: Option<bool>,
     /// Unset means on: after an install the launcher deletes the release versions nothing needs
@@ -3495,10 +3496,11 @@ pub struct Settings {
     /// Off by default, so the opening animation shows unless the player turns it off.
     #[serde(default)]
     pub skip_opening: bool,
-    /// Keeps this launcher as it is when a newer release is out: a local build (`Local · <branch>`)
-    /// would otherwise be replaced by the release's launcher at the next check.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub skip_launcher_updates: bool,
+    /// Whether this launcher replaces itself when a newer release is out. Unset means off on Event
+    /// Horizon: upstream's launcher would otherwise replace this one at the next check. With it off,
+    /// the release found waits for the Settings page's Update button.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_update_launcher: Option<bool>,
     /// Linux: whether the launcher keeps its entry in the applications menu (`desktop`). Unset
     /// means yes; removing the entry stores `false`, so it doesn't come back on the next start.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3631,9 +3633,13 @@ impl Settings {
     pub fn language(&self) -> crate::i18n::Language {
         self.language.unwrap_or_else(crate::i18n::Language::system)
     }
-    /// Whether new Horizon versions are installed automatically.
+    /// Whether new Horizon versions are installed automatically: off unless the player turned it on.
     pub fn auto_install(&self) -> bool {
-        self.install_new_versions.unwrap_or(true)
+        self.install_new_versions.unwrap_or(false)
+    }
+    /// Whether the launcher updates itself: off unless the player turned it on.
+    pub fn launcher_updates(&self) -> bool {
+        self.auto_update_launcher.unwrap_or(false)
     }
     /// Whether old versions are deleted after an install.
     pub fn auto_prune(&self) -> bool {
@@ -4877,21 +4883,28 @@ pub fn {f}("
     }
 
     #[test]
-    fn new_versions_install_automatically_unless_turned_off() {
-        // No settings file, an old one that never mentioned it, and 0.1.1's default `false`.
-        assert!(Settings::parse("").auto_install());
-        assert!(Settings::parse("{}").auto_install());
+    fn nothing_updates_itself_unless_turned_on() {
+        // Event Horizon: a new upstream release must not replace the player's own build or
+        // launcher. No settings file, an old one that never mentioned it, and 0.1.1's key.
+        assert!(!Settings::parse("").auto_install());
+        assert!(!Settings::parse("{}").auto_install());
         assert!(
-            Settings::parse(r#"{"selected": "v2026.10.13", "auto_install": false}"#).auto_install()
+            !Settings::parse(r#"{"selected": "v2026.10.13", "auto_install": true}"#).auto_install()
         );
         assert!(Settings::parse(r#"{"install_new_versions": true}"#).auto_install());
         assert!(!Settings::parse(r#"{"install_new_versions": false}"#).auto_install());
-        // Saving after the player turned it off keeps it off.
-        let off = Settings {
-            install_new_versions: Some(false),
+        assert!(!Settings::parse("{}").launcher_updates());
+        // The older switch, `skip_launcher_updates`, kept the launcher too: it still does.
+        assert!(!Settings::parse(r#"{"skip_launcher_updates": true}"#).launcher_updates());
+        assert!(Settings::parse(r#"{"auto_update_launcher": true}"#).launcher_updates());
+        // Saving after the player turned them on keeps them on.
+        let on = Settings {
+            install_new_versions: Some(true),
+            auto_update_launcher: Some(true),
             ..Settings::default()
         };
-        assert!(!Settings::parse(&serde_json::to_string(&off).unwrap()).auto_install());
+        let saved = Settings::parse(&serde_json::to_string(&on).unwrap());
+        assert!(saved.auto_install() && saved.launcher_updates());
         // The selection rule is unchanged: the new version is selected only from the newest.
         let installed = ["v2026.10.12".to_string(), "v2026.10.1".to_string()];
         assert!(select_after_update(Some("v2026.10.12"), &installed));

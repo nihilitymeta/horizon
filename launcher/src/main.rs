@@ -892,7 +892,7 @@ impl Launcher {
     /// (`automatic`), always from the Settings page's Update button.
     fn update_launcher(&mut self, release: Release, automatic: bool) {
         if !backend::self_update_allowed()
-            || (automatic && self.settings.skip_launcher_updates)
+            || (automatic && !self.settings.launcher_updates())
             || matches!(
                 self.self_update,
                 SelfUpdate::Downloading(..) | SelfUpdate::Ready(_) | SelfUpdate::Stuck(_)
@@ -3692,16 +3692,12 @@ impl Launcher {
                 cx.notify();
             },
         ));
-        let auto_update = switch(
-            "auto-update-launcher",
-            !self.settings.skip_launcher_updates,
-            &t,
-        )
-        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-            this.settings.skip_launcher_updates = !this.settings.skip_launcher_updates;
-            this.save_settings();
-            cx.notify();
-        }));
+        let auto_update = switch("auto-update-launcher", self.settings.launcher_updates(), &t)
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                this.settings.auto_update_launcher = Some(!this.settings.launcher_updates());
+                this.save_settings();
+                cx.notify();
+            }));
         // Linux: the launcher's entry in the applications menu (`horizon_launcher::desktop`).
         let menu_entry = switch("desktop-entry", self.settings.desktop_entry(), &t).on_click(
             cx.listener(|this, _: &ClickEvent, _, cx| {
@@ -3802,7 +3798,7 @@ impl Launcher {
             SelfUpdate::Downloading(..) => None,
             // With automatic updates off, the release found waits for this button.
             _ => Some(match &self.updates.launcher {
-                Some(release) if self.settings.skip_launcher_updates => {
+                Some(release) if !self.settings.launcher_updates() => {
                     let release = release.clone();
                     button("update-launcher", "Update", Kind::Secondary, &t)
                         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
