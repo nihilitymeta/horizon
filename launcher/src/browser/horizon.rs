@@ -621,13 +621,15 @@ const NEEDS_NEWER: &str = "needs a newer Horizon than the game you play";
 const NEEDS_PORT: &str = "needs a native port: Horizon doesn't run WebAssembly mods any more";
 
 /// Whether version `v` is a WebAssembly mod with code: a `.hmod` that may do more than add
-/// content. The registry keeps it for the modpacks that need it; a modpack installs it with its
-/// code left out (the game doesn't run it), and the browser neither lists nor installs it.
+/// content and scripts. The registry keeps it for the modpacks that need it; a modpack installs
+/// it with its code left out (the game doesn't run it), and the browser neither lists nor
+/// installs it. A content mod with Lua (`registries`, `scripts`) is content: the game runs it.
 pub fn needs_port(v: &index::Version) -> bool {
+    use horizon_mods::Capability;
     v.file.name.ends_with(".hmod")
         && v.capabilities
             .iter()
-            .any(|c| *c != horizon_mods::Capability::Registries)
+            .any(|c| !matches!(c, Capability::Registries | Capability::Scripts))
 }
 
 /// Whether version `v` calls mod API functions a game serving `level` doesn't have.

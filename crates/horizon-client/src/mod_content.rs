@@ -73,6 +73,112 @@ pub fn drop_dangling_remainders(mods: &mut Vec<ContentMod>) -> Vec<String> {
     dropped
 }
 
+/// The registry half of a mod's content: what the block states, the item
+/// table and the mob effect, entity type and menu type registries are built
+/// from. Those load once, when the game starts (`Resources` and the
+/// set-once registries read them), so a root built again while the game runs
+/// has to carry the same ones, in the same mods: [`keep_startup_declarations`].
+/// Its data and assets (loot, recipes, tags, models, lang) are free to change.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Declarations {
+    blocks: Vec<Block>,
+    items: Vec<horizon_mods::content::Item>,
+    effects: Vec<MobEffect>,
+    entity_types: Vec<EntityType>,
+    menu_types: Vec<MenuType>,
+}
+impl Declarations {
+    fn of(content: &Content) -> Self {
+        Self {
+            blocks: content.blocks.clone(),
+            items: content.items.clone(),
+            effects: content.effects.clone(),
+            entity_types: content.entity_types.clone(),
+            menu_types: content.menu_types.clone(),
+        }
+    }
+    fn is_empty(&self) -> bool {
+        self.blocks.is_empty()
+            && self.items.is_empty()
+            && self.effects.is_empty()
+            && self.entity_types.is_empty()
+            && self.menu_types.is_empty()
+    }
+    fn put(&self, content: &mut Content) {
+        content.blocks.clone_from(&self.blocks);
+        content.items.clone_from(&self.items);
+        content.effects.clone_from(&self.effects);
+        content.entity_types.clone_from(&self.entity_types);
+        content.menu_types.clone_from(&self.menu_types);
+    }
+}
+
+/// Each mod's declarations, by mod id: what the root the game started on was
+/// built from, kept for [`keep_startup_declarations`].
+pub fn startup_declarations(mods: &[ContentMod]) -> BTreeMap<String, Declarations> {
+    mods.iter()
+        .map(|m| (m.id.clone(), Declarations::of(&m.content)))
+        .collect()
+}
+
+/// Makes `mods`, read again while the game runs (a `/reload`, a pack reload),
+/// declare what they did at start (`startup`), so the root built from them
+/// has the block states and registry ids the running game has:
+/// - a mod declaring the same things keeps them, and its data and assets are
+///   what it has now;
+/// - a mod whose declarations changed is layered with its startup ones, its
+///   data and assets as they are now;
+/// - a mod of the startup set that is not among `mods` (turned off, or its
+///   content failed to read this time) is layered with its startup
+///   declarations and no files;
+/// - a mod not in the startup set is left out, unless it declares nothing.
+///
+/// Returns one notice per mod that is not taken as it is, each saying a
+/// restart applies the change.
+pub fn keep_startup_declarations(
+    mods: &mut Vec<ContentMod>,
+    startup: &BTreeMap<String, Declarations>,
+) -> Vec<String> {
+    let mut notices = Vec::new();
+    mods.retain_mut(|m| {
+        let now = Declarations::of(&m.content);
+        match startup.get(&m.id) {
+            Some(first) if *first == now => true,
+            Some(first) => {
+                first.put(&mut m.content);
+                notices.push(format!(
+                    "mod {}: its blocks, items, mob effects, entity types or menu types changed since the game started; they stay as they were until a restart, its data and assets are reloaded",
+                    m.id
+                ));
+                true
+            }
+            None if now.is_empty() => true,
+            None => {
+                notices.push(format!(
+                    "mod {}: a mod's blocks, items, mob effects, entity types and menu types load when the game starts; restart the game to load it",
+                    m.id
+                ));
+                false
+            }
+        }
+    });
+    for (id, first) in startup {
+        if mods.iter().any(|m| &m.id == id) || first.is_empty() {
+            continue;
+        }
+        let mut content = Content::declared(id);
+        first.put(&mut content);
+        notices.push(format!(
+            "mod {id}: its content is not read this time; its blocks, items, mob effects, entity types and menu types stay registered until a restart"
+        ));
+        mods.push(ContentMod {
+            id: id.clone(),
+            content,
+        });
+    }
+    notices
+}
+
 /// The mods' mob effects in registry order: by id, as items are. Their
 /// network ids follow vanilla's in this order.
 pub fn mob_effects(mods: &[ContentMod]) -> Vec<&MobEffect> {
@@ -1017,7 +1123,11 @@ impl<'a> Plan<'a> {
             declared.sort_by(|a, b| a.id.cmp(&b.id));
             for decl in declared {
                 if defaults.contains_key(&decl.id) {
-                    return Err(format!("{}: {} is already a block", m.id, decl.id).into());
+                    return Err(format!(
+                        "{}: {} is already a block of the base root",
+                        m.id, decl.id
+                    )
+                    .into());
                 }
                 let states = range(&decl.template).ok_or_else(|| {
                     format!("{}: template {} is not a block", decl.id, decl.template)
@@ -2495,6 +2605,7 @@ pub fn build(base: &Path, mods: &[ContentMod], out: &Path) -> Result<Vec<String>
     let base = &std::path::absolute(base)?;
     let plan = Plan::new(base, mods)?;
     let overlay = Overlay::new(base, out)?;
+    overlay.write(BASE, base.to_string_lossy().as_bytes())?;
     tables(base, &plan, &overlay)?;
     for (name, bytes) in plan.entity_atlases() {
         overlay.write(&name, &bytes)?;
@@ -2748,6 +2859,9 @@ pub fn build(base: &Path, mods: &[ContentMod], out: &Path) -> Result<Vec<String>
 /// and mod files reuse it. With ATM10's carried mods a build takes about
 /// 25 s and peaks above 3 GB, more than everything the game keeps.
 pub fn resource_root(base: &Path, mods: &[ContentMod], cache: &Path) -> Result<PathBuf> {
+    // A built root passed as the base stands for the base it was built from
+    // (`base_of`): the mods are layered over that again, not over themselves.
+    let base = &base_of(base);
     if mods
         .iter()
         .all(|m| m.content.is_empty() && m.content.blocks.is_empty() && m.content.items.is_empty())
@@ -2755,6 +2869,15 @@ pub fn resource_root(base: &Path, mods: &[ContentMod], cache: &Path) -> Result<P
         return Ok(base.to_owned());
     }
     let out = cache.join("mod-content");
+    if std::path::absolute(base)? == std::path::absolute(&out)? {
+        // Building would start by emptying the base: a root built before its base
+        // was recorded, now the base of its own rebuild.
+        return Err(format!(
+            "{} is the content root itself, with no record of what it was built from",
+            base.display()
+        )
+        .into());
+    }
     let stamp = stamp(base, mods)?;
     if fs::read(out.join(STAMP)).is_ok_and(|s| s == stamp.as_bytes()) {
         // A reused root warns as the build did.
@@ -2774,6 +2897,26 @@ const WARNINGS: &str = "horizon-mod-content-warnings.txt";
 
 /// In a root built by [`resource_root`]: what it was built from.
 const STAMP: &str = "horizon-mod-content.stamp";
+
+/// In a root built by [`build`]: the absolute path of the base it was built
+/// over, for [`base_of`].
+const BASE: &str = "horizon-mod-content-base.txt";
+
+/// The base root `root` stands for: the base a root built by [`build`] was
+/// built over, when it still exists, else `root` itself. A server reloading
+/// its content starts from the root it plays on, which is the built root
+/// when content mods are on: the mods are layered over its base again, not
+/// over a root that already has their blocks.
+pub fn base_of(root: &Path) -> PathBuf {
+    let Ok(recorded) = fs::read_to_string(root.join(BASE)) else {
+        return root.to_owned();
+    };
+    let base = PathBuf::from(recorded.trim_end());
+    if base.as_os_str().is_empty() || !base.join("facts.json").is_file() {
+        return root.to_owned();
+    }
+    base
+}
 
 /// What a content root is built from: this build of the game, the base's
 /// manifest and the tables [`build`] rewrites, and every file of every mod
@@ -2813,7 +2956,11 @@ fn stamp(base: &Path, mods: &[ContentMod]) -> Result<String> {
             // Declared in code only: nothing to read.
         } else if source.is_dir() {
             for file in &m.content.files {
-                parts.push(meta(&source.join(file))?);
+                // A registered file has no path: its bytes stand for it.
+                match m.content.registered(file) {
+                    Some(bytes) => parts.push(String::from_utf8_lossy(bytes).into_owned()),
+                    None => parts.push(meta(&source.join(file))?),
+                }
             }
         } else {
             parts.push(meta(source)?);

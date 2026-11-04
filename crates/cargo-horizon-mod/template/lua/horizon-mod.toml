@@ -1,0 +1,15 @@
+id = "{id}"
+name = "{name}"
+version = "0.1.0"
+description = ""
+authors = []
+# A scripted mod: what it adds in scripts/registry.lua (or data/ and assets/),
+# what it does in scripts/init.lua, written with Horizon Modkit (API 0.2).
+api = "0.2"
+side = "both"
+# registries: "May add blocks, items, mob effects and entity types to your worlds";
+# scripts: "May run its own scripts in your worlds" (experimental).
+capabilities = ["registries", "scripts"]
+experimental = ["scripts"]
+# The modkit beside this mod (`--dev-mod /path/to/horizon-modkit`, or its .hmod installed and on).
+depends = ["horizon_modkit >= 0.7"]

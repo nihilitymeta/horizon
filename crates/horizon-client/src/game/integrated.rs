@@ -409,6 +409,7 @@ impl Game<'_> {
         ));
         self.world_biomes_base = self.world_biomes.clone();
         let (res, pack, settings) = (self.res.clone(), self.pack.clone(), self.settings.clone());
+        let vanilla_root = self.vanilla_root();
         let flags = Arc::new(Flags::default());
         flags
             .render_distance
@@ -432,6 +433,7 @@ impl Game<'_> {
                     pack,
                     options,
                     settings,
+                    vanilla_root,
                     launch,
                     server_flags.clone(),
                     server_tasks,
@@ -1161,6 +1163,7 @@ fn serve(
     pack: PackResources,
     options: Options,
     settings: Settings,
+    vanilla_root: std::path::PathBuf,
     launch: Launch,
     flags: Arc<Flags>,
     tasks: Receiver<Task>,
@@ -1202,6 +1205,10 @@ fn serve(
             return Err(e);
         }
     };
+    // The server reloads its resources from the vanilla root, as the window
+    // does: `options.resources` is the root with the packs and content mods
+    // layered on it, not where a reload starts.
+    server.ui.vanilla_root = vanilla_root;
     server.run_integrated(launch, flags, tasks, ready, opening)
 }
 

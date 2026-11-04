@@ -1,0 +1,22 @@
+{
+  "hooks": [],
+  "helpers": [
+    {
+      "name": "particles",
+      "target": "horizon_client::game::native_server::Game<'_>::native_particles"
+    },
+    {
+      "name": "title",
+      "target": "horizon_client::game::native_server::Game<'_>::native_title"
+    },
+    {
+      "name": "title_times",
+      "target": "horizon_client::game::native_server::Game<'_>::native_title_times"
+    }
+  ],
+  "rust_summary": "simple particles shown to the players near a position (`native_particles`), and a player's title, subtitle, action bar and title times (`native_title`, `native_title_times`), as `/particle` and `/title` do.",
+  "doc_summary": "simple particles shown to the players near a position (`native_particles`), and a player's title, subtitle, action bar and title times (`native_title`, `native_title_times`), as `/particle` and `/title` do. Bundles need \"hooks\": @API:particles_titles@.",
+  "comments": [
+    "crates/horizon-client/src/game/native_server.rs"
+  ]
+}

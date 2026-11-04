@@ -6,6 +6,7 @@
 //! mobs they are out of the level: a mob a hook spawns then joins it after the
 //! tick, and the others read as gone.
 use super::{Game, commands::Target};
+use horizon_client::mod_api::MobView;
 use horizon_core::geometry::Vec3;
 
 /// The `EquipmentSlot` names of `Mob::equipment_stacks`, in its order.
@@ -218,6 +219,29 @@ impl Game<'_> {
         let mob = self.mobs.iter().find(|m| m.id == id && !m.removed)?;
         mob.alive().then(|| self.native_mob_of(mob))
     }
+    /// The living mob `id`'s view as its goals see it (`MobView`), in the
+    /// level in place, `dimension`: none for no such mob or a client's copy.
+    /// The fields that need the world (`target_position`, `nearby`) are
+    /// empty. API @API:mob_view@.
+    pub(super) fn native_mob_view(&self, dimension: &str, id: u32) -> Option<MobView> {
+        if !self.native_mob_level(dimension) {
+            return None;
+        }
+        let mob = self.mobs.iter().find(|m| m.id == id && !m.removed)?;
+        mob.alive().then(|| MobView::of(mob, None))
+    }
+    /// The views of every living mob in the level in place, `dimension`, as
+    /// `native_mob_view` gives one: none on a client's copy. API @API:mob_views@.
+    pub(super) fn native_mob_views(&self, dimension: &str) -> Vec<MobView> {
+        if !self.native_mob_level(dimension) {
+            return Vec::new();
+        }
+        self.mobs
+            .iter()
+            .filter(|m| !m.removed && m.alive())
+            .map(|m| MobView::of(m, None))
+            .collect()
+    }
     /// The living mobs in the level in place, `dimension`; none on a client's
     /// copy. API 37.
     pub(super) fn native_mobs(&self, dimension: &str) -> Vec<NativeMob> {
@@ -286,6 +310,40 @@ impl Game<'_> {
         };
         m.health = health.min(m.attrs.max_health);
         m.needs_sync = true;
+        true
+    }
+    /// Gives the living mob `id` the effect `effect` (`minecraft:speed`) for
+    /// `ticks` ticks (-1: forever) at `amplifier`, as `/effect give` does on
+    /// a mob (`LivingEntity.addEffect`): a stronger one replaces what it
+    /// has, an equal one extends it, a weaker one is kept hidden. False for
+    /// no such living mob, another dimension, or an effect the game doesn't
+    /// have. API 366.
+    pub(super) fn native_mob_effect(
+        &mut self,
+        dimension: &str,
+        id: u32,
+        effect: &str,
+        ticks: i32,
+        amplifier: i32,
+    ) -> bool {
+        if !self.native_mob_level(dimension) {
+            return false;
+        }
+        let Some(def) = horizon_client::brewing::effect(effect) else {
+            return false;
+        };
+        let name = horizon_client::brewing::namespaced(def.id);
+        let Some(m) = self
+            .mobs
+            .iter_mut()
+            .find(|m| m.id == id && !m.removed && m.alive())
+        else {
+            return false;
+        };
+        let new = !m.has_effect(name);
+        m.add_effect_with(name, ticks, amplifier, false, true);
+        m.needs_sync = true;
+        self.mod_effect_added(name, Some(id as i32), amplifier, new);
         true
     }
     /// Kills mob `id` as `/kill` does: it falls and drops its loot. False for

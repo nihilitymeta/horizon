@@ -1,0 +1,14 @@
+{
+  "hooks": [],
+  "helpers": [
+    {
+      "name": "mob_view",
+      "target": "horizon_client::game::native_mobs::Game<'_>::native_mob_view"
+    }
+  ],
+  "rust_summary": "a living mob's view as its goals see it, from any hook with a host (`native_mob_view`: a `MobView` without the fields that need the world), so a hook that hears of a mob by id can read its health, position and target.",
+  "doc_summary": "a living mob's view as its goals see it, from any hook with a host (`native_mob_view`: a `MobView` without the fields that need the world), so a hook that hears of a mob by id can read its health, position and target. Bundles need \"hooks\": @API:mob_view@.",
+  "comments": [
+    "crates/horizon-client/src/game/native_mobs.rs"
+  ]
+}

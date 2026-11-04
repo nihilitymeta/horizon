@@ -1,0 +1,15 @@
+{
+  "hooks": [],
+  "helpers": [
+    {
+      "name": "mod_block_entity_data",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_mod_block_entity_data"
+    },
+    {
+      "name": "set_mod_block_entity_data",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_set_mod_block_entity_data"
+    }
+  ],
+  "rust_summary": "a mod block entity's saved compound read and written from any hook with a host (`native_mod_block_entity_data`, `native_set_mod_block_entity_data`; `LevelHost::mod_block_entity_data` and `LevelWriteHost::set_mod_block_entity_data` on the level hooks), so a block's random tick or a click on it keeps a counter in it.",
+  "doc_summary": "a mod block entity's saved compound read and written from any hook with a host (`native_mod_block_entity_data`, `native_set_mod_block_entity_data`; `LevelHost::mod_block_entity_data` and `LevelWriteHost::set_mod_block_entity_data` on the level hooks), so a block's random tick or a click on it keeps a counter in it. Bundles need \"hooks\": @API:mod_block_entity_data@."
+}

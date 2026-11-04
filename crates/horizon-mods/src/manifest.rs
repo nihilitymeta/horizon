@@ -58,6 +58,11 @@ pub struct Manifest {
     /// accepted here, so the manifest keeps loading once it is promoted.
     #[serde(default)]
     pub experimental: Vec<Capability>,
+    /// Mods this one needs installed and on (`["horizon_modkit"]`): a
+    /// library whose scripts it `require`s, or content it builds on. The
+    /// game loads them first and refuses to run this mod without them.
+    #[serde(default)]
+    pub depends: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -103,9 +108,13 @@ pub enum Capability {
     /// The recipes and items the game knows, for recipe viewers
     /// (interface `recipes`).
     Recipes,
+    /// Lua scripts in the mod's `scripts/` (`scripts/init.lua` first), run by
+    /// the game on its hook points: behaviour for the mod's blocks and mobs
+    /// (docs/lua-bindings.md). No WIT interface.
+    Scripts,
 }
 impl Capability {
-    pub const ALL: [Capability; 12] = [
+    pub const ALL: [Capability; 13] = [
         Capability::GameRead,
         Capability::Chat,
         Capability::Hud,
@@ -118,12 +127,13 @@ impl Capability {
         Capability::Players,
         Capability::World,
         Capability::Recipes,
+        Capability::Scripts,
     ];
     /// Whether a server mod may have it: the others act on a local player.
     pub fn on_server(self) -> bool {
         matches!(
             self,
-            Capability::Storage | Capability::Players | Capability::World
+            Capability::Storage | Capability::Players | Capability::World | Capability::Scripts
         )
     }
     /// The WIT interface it grants, in `horizon:mods`.
@@ -141,6 +151,7 @@ impl Capability {
             Capability::Players => "players",
             Capability::World => "world",
             Capability::Recipes => "recipes",
+            Capability::Scripts => "scripts",
         }
     }
     /// May change in any release: a mod uses it only with
@@ -148,7 +159,11 @@ impl Capability {
     pub fn is_experimental(self) -> bool {
         matches!(
             self,
-            Capability::Ui | Capability::Render | Capability::Input | Capability::Recipes
+            Capability::Ui
+                | Capability::Render
+                | Capability::Input
+                | Capability::Recipes
+                | Capability::Scripts
         )
     }
     /// What the player reads before turning the mod on: "May <this>".
@@ -171,6 +186,9 @@ impl Capability {
             Capability::World => "read and change the world's blocks",
             Capability::Recipes => {
                 "read the game's recipes and items and which recipes you know, place recipes in your crafting grid and, in creative mode, give you items"
+            }
+            Capability::Scripts => {
+                "run its own scripts in your worlds: behaviour for its blocks and mobs"
             }
         }
     }
@@ -213,6 +231,7 @@ impl fmt::Display for Capability {
             Capability::Players => "players",
             Capability::World => "world",
             Capability::Recipes => "recipes",
+            Capability::Scripts => "scripts",
         };
         f.write_str(name)
     }
@@ -238,10 +257,12 @@ impl Manifest {
                 APIS.join(" and ")
             ));
         }
-        if m.capabilities.contains(&Capability::Registries) && m.api == API {
-            return Err(format!(
-                "{MANIFEST}: capability registries needs api = \"0.2\""
-            ));
+        if let Some(c) = m
+            .capabilities
+            .iter()
+            .find(|c| matches!(c, Capability::Registries | Capability::Scripts) && m.api == API)
+        {
+            return Err(format!("{MANIFEST}: capability {c} needs api = \"0.2\""));
         }
         let server = m.side == Side::Server;
         if server != (m.api == SERVER_API) {
@@ -249,11 +270,9 @@ impl Manifest {
                 "{MANIFEST}: a server mod is side = \"server\" with api = \"{SERVER_API}\", and only it"
             ));
         }
-        if let Some(c) = m
-            .capabilities
-            .iter()
-            .find(|c| c.on_server() != server && **c != Capability::Storage)
-        {
+        if let Some(c) = m.capabilities.iter().find(|c| {
+            c.on_server() != server && !matches!(c, Capability::Storage | Capability::Scripts)
+        }) {
             let side = if server { "client" } else { "server" };
             return Err(format!("{MANIFEST}: capability {c} is for {side} mods"));
         }
@@ -266,6 +285,17 @@ impl Manifest {
                 "{MANIFEST}: capability {c} is experimental and may change in any release: \
                  add experimental = [\"{c}\"] to use it"
             ));
+        }
+        let mut seen: Vec<String> = Vec::new();
+        for dep in &m.depends {
+            let (id, _) = parse_dependency(dep).map_err(|e| format!("{MANIFEST}: {e}"))?;
+            if id == m.id {
+                return Err(format!("{MANIFEST}: a mod does not depend on itself"));
+            }
+            if seen.contains(&id) {
+                return Err(format!("{MANIFEST}: depends lists {id:?} twice"));
+            }
+            seen.push(id);
         }
         if !m.namespaces.is_empty() && !m.capabilities.contains(&Capability::Registries) {
             return Err(format!(
@@ -355,9 +385,14 @@ impl Package {
             return Err(format!("{WASM} is over {} MiB", MAX_WASM >> 20));
         }
         let manifest = Manifest::parse(&toml)?;
-        if wasm.is_none() && !manifest.capabilities.contains(&Capability::Registries) {
+        if wasm.is_none()
+            && !manifest
+                .capabilities
+                .iter()
+                .any(|c| matches!(c, Capability::Registries | Capability::Scripts))
+        {
             return Err(format!(
-                "{WASM}: missing (only a content mod, with capability registries, may have no code)"
+                "{WASM}: missing (only a content mod, with capability registries or scripts, may have no code)"
             ));
         }
         Ok(Package { manifest, wasm })
@@ -539,5 +574,82 @@ capabilities = ["game-read", "hud"]
             "{base}capabilities = [\"hud\"]\nexperimental = [\"hud\"]\n"
         ))
         .unwrap();
+    }
+}
+
+/// A `depends` entry: a mod id (`horizon_modkit`), or an id with the least
+/// version that will do (`horizon_modkit >= 0.6`, `>= 0.6.2`), as the game
+/// checks it at load. The id and the minimum, when there is one.
+pub fn parse_dependency(spec: &str) -> Result<(String, Option<[u32; 3]>), String> {
+    let (id, min) = match spec.split_once(">=") {
+        Some((id, min)) => (id.trim(), Some(min.trim())),
+        None => (spec.trim(), None),
+    };
+    let id_ok = (1..=64).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+    if !id_ok {
+        return Err(format!(
+            "depends {spec:?} is not a mod id, [a-z0-9_]{{1,64}}, with at most \">= <version>\" after it"
+        ));
+    }
+    let min = match min {
+        Some(min) => Some(parse_version(min).ok_or_else(|| {
+            format!("depends {spec:?}: the version after >= is numbers with dots, as 0.6 or 0.6.2")
+        })?),
+        None => None,
+    };
+    Ok((id.to_owned(), min))
+}
+
+/// The numbers of a version (`0.6.2` is `[0, 6, 2]`, `0.6` is `[0, 6, 0]`,
+/// `1.2.3-beta` is `[1, 2, 3]`): none when it does not start with one.
+pub fn parse_version(version: &str) -> Option<[u32; 3]> {
+    let core = version.split(['-', '+']).next()?;
+    let mut out = [0u32; 3];
+    let mut parts = core.split('.');
+    for n in &mut out {
+        match parts.next() {
+            Some(p) => *n = p.parse().ok()?,
+            None => break,
+        }
+    }
+    if parts.next().is_some() || core.is_empty() {
+        return None;
+    }
+    Some(out)
+}
+
+/// Whether `version` is at least `min`, as the game decides a dependency's version does.
+pub fn version_at_least(version: &str, min: [u32; 3]) -> bool {
+    parse_version(version).is_some_and(|v| v >= min)
+}
+
+#[cfg(test)]
+mod dependency_tests {
+    use super::*;
+
+    #[test]
+    fn a_dependency_names_a_mod_and_may_name_the_least_version() {
+        assert_eq!(
+            parse_dependency("horizon_modkit").unwrap(),
+            ("horizon_modkit".into(), None)
+        );
+        assert_eq!(
+            parse_dependency("horizon_modkit >= 0.6").unwrap(),
+            ("horizon_modkit".into(), Some([0, 6, 0]))
+        );
+        assert_eq!(
+            parse_dependency("horizon_modkit>=1.2.3").unwrap(),
+            ("horizon_modkit".into(), Some([1, 2, 3]))
+        );
+        assert!(parse_dependency("Horizon-Modkit").is_err());
+        assert!(parse_dependency("horizon_modkit >= soon").is_err());
+        assert!(parse_dependency("horizon_modkit > 0.6").is_err());
+        assert!(version_at_least("0.6.0", [0, 6, 0]));
+        assert!(version_at_least("0.7.1-beta", [0, 6, 2]));
+        assert!(!version_at_least("0.5.9", [0, 6, 0]));
+        assert!(!version_at_least("dev", [0, 1, 0]));
     }
 }

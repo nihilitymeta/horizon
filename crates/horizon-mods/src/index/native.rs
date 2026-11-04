@@ -24,10 +24,13 @@ pub fn holds(path: &Path) -> bool {
         .is_some_and(|mut zip| zip.by_name(MANIFEST).is_ok())
 }
 
-/// Whether a `.hmod`'s entry `name` is its content's (`horizon-mod.toml`, `assets/`, `data/`),
-/// which [`crate::Content`] reads and checks, not the native build.
+/// Whether a `.hmod`'s entry `name` is its content's (`horizon-mod.toml`, `assets/`, `data/`,
+/// `scripts/`), which [`crate::Content`] reads and checks, not the native build.
 fn content(name: &str) -> bool {
-    name == crate::manifest::MANIFEST || name.starts_with("assets/") || name.starts_with("data/")
+    name == crate::manifest::MANIFEST
+        || ["assets/", "data/", "scripts/"]
+            .iter()
+            .any(|top| name.starts_with(top))
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

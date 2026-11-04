@@ -20,8 +20,13 @@ Mods are **off by default**. A fresh install has no `horizon-mods` folder and pl
    ([native-mods.md](native-mods.md)).
 2. Options > **Mods** lists them with what each may do ("May add blocks, items, mob effects and entity types to your
    worlds") and a switch. They start off. The choice is kept in `horizon-mods.txt` (`mod.<id>:true`).
-3. A content mod's blocks, items, mob effects and entity types load once, when the game starts: restart the game after
-   a switch.
+3. A content mod's blocks, items, mob effects, entity types and menu types load once, when the game starts: restart
+   the game after a switch. The game can build its content root again while it runs, on a resource pack reload, or on
+   a `/reload` in builds that layer the mods' data again. Then it layers every mod's data and assets as they are now,
+   and each mod's declarations as they were at start. A mod that declares the same things is taken without a
+   message. A changed declaration, a new mod with declarations, or a mod that is gone is noted in the log
+   (`Horizon: mod <id>: ...`), with the restart that applies it. If the root can't be built again, the game stays on
+   the root it has.
 4. A mod that can't load shows why, in red, on its row.
 
 Two turned-on content mods never own the same namespace: the first by file name loads, and the other stays out with
@@ -37,10 +42,12 @@ cargo binstall --git https://github.com/horizon-rust/horizon cargo-horizon-mod
 # Or build it from source, without cargo-binstall:
 cargo install --git https://github.com/horizon-rust/horizon cargo-horizon-mod
 cargo horizon-mod new my-mod        # a content mod: manifest, one block with its model, loot and recipe
+cargo horizon-mod new my-mod --template lua   # a scripted mod on the modkit: a wand with an on_use (lua-bindings.md)
 cd my-mod
 cargo horizon-mod run               # build my-mod.hmod, then start the game with it turned on
 cargo horizon-mod build             # only build: target/horizon-mod/my_mod.hmod
 cargo horizon-mod check target/horizon-mod/my_mod.hmod   # the registry's checks; --json for JSON
+cargo horizon-mod check . --game <horizon-client>        # a folder too; loads a scripted mod's scripts without a game (lua-bindings.md)
 ```
 
 - `new <path> [--name "Name"]` writes the template. `--template native [--horizon <commit>]` writes a native trait
@@ -70,13 +77,16 @@ api = "0.2"                  # content mods
 side = "both"
 capabilities = ["registries"]
 namespaces = []              # optional: more namespaces the mod's files use (below)
+depends = []                 # optional: mods this one needs installed and turned on, such as a scripts library; "id >= 0.7" asks for an oldest version
 ```
 
 Unknown keys are refused, so a typo is an error, not a silently ignored permission.
 
 ### Content mods (API 0.2)
 
-A content mod has capability `registries` and carries `assets/` and `data/` in the `.hmod`. It adds blocks and items
+A content mod has capability `registries` and carries `assets/` and `data/` in the `.hmod`. With capability `scripts`
+(experimental), it also carries `scripts/`: Lua that the game runs on its hook points. Such a mod can declare its
+content in `scripts/registry.lua` instead of files ([lua-bindings.md](lua-bindings.md)). It adds blocks and items
 by declaring them in `data/<id>/horizon/block/*.json` and `data/<id>/horizon/item/*.json`, each copying a vanilla
 template ([modpacks.md](modpacks.md#registries-02-data-driven-blocks-items-and-mob-effects)), and creative tabs, mob
 effects, entity types and menu types (each below) in `creative_tab/`, `mob_effect/`, `entity_type/` and `menu/` beside

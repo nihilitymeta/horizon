@@ -1,6 +1,7 @@
 //! Bulk block edits for server mods: a helper on the level being ticked, as `native_set_block` is, that makes many
 //! runs of blocks up columns at once, straight into the chunks.
 use super::Game;
+use horizon_world::registry::BlockStateId;
 
 /// Which of a column's heights (`Heightmap.Types`) a run's `y` counts from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,6 +62,43 @@ impl Game<'_> {
         Ok(changed)
     }
     /// Whether `dimension` is the authoritative level being ticked: where a server mod's world helpers act.
+    /// The block state `name` names, as a command reads one
+    /// (`minecraft:oak_log[axis=x]`; the properties left out are the
+    /// block's defaults): what `native_set_block` and
+    /// `native_spawn_falling_block` take. None for a block the game doesn't
+    /// have, a property it hasn't, or block NBT (`{...}`, not read here).
+    /// API 365.
+    pub(super) fn native_state_named(&self, name: &str) -> Option<BlockStateId> {
+        use horizon_client::command::{Reader, block};
+        let mut reader = Reader::new(name);
+        let b = block::parse(&mut reader, &self.ui.registries, false).ok()?;
+        if reader.can_read() || b.nbt.is_some() {
+            return None;
+        }
+        self.block_state(&b).ok()
+    }
+    /// The block state `state` names, as a command writes one
+    /// (`minecraft:oak_log[axis=x]`; `minecraft:air` for a state the game
+    /// doesn't have): the reverse of `native_state_named`, for a hook that
+    /// hands a state (`native_loot_drops`'s block). API 369.
+    pub(super) fn native_state_name(&self, state: BlockStateId) -> String {
+        let Some(s) = self.pack.assets.registry.state(state) else {
+            return "minecraft:air".to_owned();
+        };
+        let mut name = s.name.to_string();
+        if !s.properties.is_empty() {
+            let mut props: Vec<String> = s
+                .properties
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect();
+            props.sort();
+            name.push('[');
+            name.push_str(&props.join(","));
+            name.push(']');
+        }
+        name
+    }
     pub(super) fn native_level_open(&self, dimension: &str) -> bool {
         (self.serving.is_some() || self.options.dedicated.is_some()) && dimension == self.dim.id()
     }

@@ -19,11 +19,12 @@ What a file holds decides what it is (#5865):
 | --- | --- | --- |
 | `horizon-mod.toml` | a content mod's manifest ([mods.md](../mods.md#the-manifest)) | `Package`, `Content` |
 | `assets/…`, `data/…` | the content mod's resources and data | `Content` |
+| `scripts/…` | the content mod's Lua scripts, `scripts/init.lua` first (capability `scripts`, [lua-bindings.md](../lua-bindings.md)) | `Content` |
 | `horizon-native.json` | native code: the manifest below | `Bundle` |
 | `mixins/<id>/…` | the native bundle's sources ([native-mods.md](../native-mods.md#a-bundle)) | `Bundle` |
 | `mod.wasm` | a legacy WebAssembly mod: it doesn't run any more | refused in a file with native code |
 
-- **Content only:** `horizon-mod.toml` with `assets/` and `data/`. Nothing compiles.
+- **Content only:** `horizon-mod.toml` with `assets/`, `data/` and `scripts/`. Nothing compiles.
 - **Native code:** `horizon-native.json` and `mixins/<id>/`. The launcher builds it into the game.
 - **Both, in one `.hmod`:** the two manifests name the same mod id. Content entries are checked as content and left
   out of the build. Any other top-level entry refuses the file.
@@ -57,7 +58,9 @@ A JSON object. Unknown fields refuse the file.
 
 ## Content paths
 
-`assets/` or `data/`, then at least two parts of `[a-z0-9_.-]` (vanilla's resource-location characters).
+`assets/` or `data/`, then at least two parts of `[a-z0-9_.-]` (vanilla's resource-location characters); or
+`scripts/`, then at least one such part, the last a `.lua` file. `scripts/` needs capability `scripts` in the manifest,
+and that capability needs `scripts/init.lua`.
 
 ## Limits
 

@@ -63,10 +63,42 @@ pub(super) fn register_standalone_models() {
     horizon_client::models::register_standalone(names);
 }
 
+/// What the content root the game runs on was built from, by mod: set when a
+/// `Game` first starts on it (`fix_declarations`), and from then on every
+/// root `content_root` builds carries the same (`keep_startup_declarations`),
+/// since the block states, the item table and the mob effect, entity type and
+/// menu type registries were read from it once and stay until restart.
+static FIXED_DECLARATIONS: std::sync::OnceLock<
+    std::collections::BTreeMap<String, horizon_client::mod_content::Declarations>,
+> = std::sync::OnceLock::new();
+/// What the last root `content_root` built was built from: the startup menu
+/// may build several (a Mods switch reloads everything) before a game starts.
+static LAST_DECLARATIONS: std::sync::Mutex<
+    std::collections::BTreeMap<String, horizon_client::mod_content::Declarations>,
+> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+/// A `Game` starts on the last content root built: its mods' blocks, items,
+/// mob effects, entity types and menu types are the process's until restart.
+pub(super) fn fix_declarations() {
+    let last = LAST_DECLARATIONS
+        .lock()
+        .map(|last| last.clone())
+        .unwrap_or_default();
+    let _ = FIXED_DECLARATIONS.set(last);
+}
+
 /// `root` with the content mods that are on layered over it
-/// (docs/modpacks.md): their blocks, items, data and assets. Read once at
-/// start, before the resources load; a mod whose content is refused is left
-/// out here and its row on the Mods page says why.
+/// (docs/modpacks.md): their blocks, items, data and assets. Read at start,
+/// before the resources load; a mod whose content is refused is left out
+/// here and its row on the Mods page says why.
+///
+/// Built again while the game runs (a pack reload; a server reloading its
+/// data from the root it plays on, which is then the built root itself and
+/// stands for its base, `mod_content::base_of`): the mods' data and assets
+/// are layered as they are now, their declarations as they were at start
+/// (`fix_declarations`), each departure noted in the log with the restart it
+/// takes. When no root can be built, `root` is returned as given: the one
+/// the game runs on, not its base.
 pub(super) fn content_root(
     root: &std::path::Path,
     enabled: &std::collections::BTreeSet<String>,
@@ -74,6 +106,7 @@ pub(super) fn content_root(
 ) -> std::path::PathBuf {
     use horizon_client::mod_content::{self, ContentMod};
     use horizon_mods::{Capability, Content, Package};
+    let base = &mod_content::base_of(root);
     let here = std::env::current_dir().unwrap_or_default();
     let mut paths = horizon_mods::find(&here.join(mod_list::DIR));
     paths.retain(|p| !dev.contains(p));
@@ -111,10 +144,13 @@ pub(super) fn content_root(
         };
         let known = match &mut known {
             Some(types) => types,
-            None => match mod_content::known_components(root) {
+            None => match mod_content::known_components(base) {
                 Ok(types) => known.insert(types),
                 Err(e) => {
-                    log::warn!("Horizon: content mods not loaded: {e}");
+                    log::warn!(
+                        "Horizon: no content mod is loaded, {} is used as it is: {e}",
+                        root.display()
+                    );
                     register_mob_effects(&[]);
                     return root.to_owned();
                 }
@@ -133,7 +169,7 @@ pub(super) fn content_root(
     let (blocks, items) = native_declared();
     if !blocks.is_empty() || !items.is_empty() {
         if known.is_none() {
-            match mod_content::known_components(root) {
+            match mod_content::known_components(base) {
                 Ok(types) => known = Some(types),
                 Err(e) => log::warn!("Horizon: native mods' blocks and items not loaded: {e}"),
             }
@@ -149,7 +185,22 @@ pub(super) fn content_root(
             }
         }
     }
-    match mod_content::resource_root(root, &mods, &here.join(".horizon-cache")) {
+    // A game runs: its registries were read from the root it started on.
+    if let Some(fixed) = FIXED_DECLARATIONS.get() {
+        for notice in mod_content::keep_startup_declarations(&mut mods, fixed) {
+            log::warn!("Horizon: {notice}");
+        }
+    }
+    let built = mod_content::resource_root(base, &mods, &here.join(".horizon-cache"));
+    if let Ok(mut last) = LAST_DECLARATIONS.lock() {
+        *last = match &built {
+            // A built root given as the base keeps serving with what it has (below).
+            Ok(_) => mod_content::startup_declarations(&mods),
+            Err(_) if base != root => mod_content::startup_declarations(&mods),
+            Err(_) => Default::default(),
+        };
+    }
+    match built {
         Ok(out) => {
             if announce {
                 horizon_protocol::mod_list::set_local(announced);
@@ -166,8 +217,22 @@ pub(super) fn content_root(
             register_menu_types(&mods);
             out
         }
+        Err(e) if base != root => {
+            // A built root given as the base keeps serving, with what it had.
+            log::warn!(
+                "Horizon: the content mods' root was not built again, the game keeps {}: {e}",
+                root.display()
+            );
+            register_mob_effects(&mods);
+            register_entity_types(&mods);
+            register_menu_types(&mods);
+            root.to_owned()
+        }
         Err(e) => {
-            log::warn!("Horizon: content mods not loaded: {e}");
+            log::warn!(
+                "Horizon: no content mod is loaded, {} is used as it is: {e}",
+                root.display()
+            );
             register_mob_effects(&[]);
             register_entity_types(&[]);
             register_menu_types(&[]);

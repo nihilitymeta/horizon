@@ -8,6 +8,7 @@
 //! players (the hub's: a dedicated server's, a LAN host's, single player's
 //! server thread's), never on a client's.
 use super::{Dim, Game, commands::execute, lan::LanHost};
+use horizon_core::random::RandomSource;
 // Their old home, for mixin code that names them here.
 pub(crate) use horizon_client::mod_api::{NativeCommand, NativeServerPlayer};
 use horizon_client::{items::ItemStack, lan::data::component_nbt, text::Text};
@@ -223,6 +224,240 @@ impl Game<'_> {
                 address: g.address.ip().to_string(),
             })
             .collect()
+    }
+    /// The players of the world this game runs: `native_server_players` and,
+    /// in a single-player world, its owner, who is on no hub (a LAN world's
+    /// owner is a hub guest already). Empty on a client. API @API:mob_views@.
+    pub(super) fn native_level_players(&self) -> Vec<NativeServerPlayer> {
+        let mut players = self.native_server_players();
+        if self.remote.is_some() {
+            return players;
+        }
+        let Some(p) = self.player.as_ref() else {
+            return players;
+        };
+        let name = self.options.player_name();
+        let uuid = self.owner_uuid();
+        // On a hub the owner is a guest of its own, under the hub's uuid for
+        // them: that record is the one the hooks name.
+        if players.iter().any(|g| g.uuid == uuid || g.name == name) {
+            return players;
+        }
+        players.insert(
+            0,
+            NativeServerPlayer {
+                uuid,
+                name,
+                permission: 4,
+                dimension: self.dim.id().to_owned(),
+                position: [p.position.x, p.position.y, p.position.z],
+                game_mode: self.mode_id(),
+                health: p.health.health(),
+                yaw: p.yaw,
+                pitch: p.pitch,
+                entity_id: p.entity_id,
+                // The window's own player has no connection.
+                address: String::new(),
+            },
+        );
+        players
+    }
+    /// The eye height of the server player `uuid`, from their pose
+    /// (`Avatar.POSES`: standing 1.62, crouching 1.27, swimming, gliding or
+    /// spinning 0.4, scaled by their scale attribute): a hub guest's from
+    /// the hub, the window's own player's (or the guest whose state is
+    /// swapped in for their action) from their box, a standing player's for
+    /// one not known.
+    pub(super) fn native_player_eye_height(&self, uuid: u128) -> f64 {
+        if let Some(g) = self
+            .lan
+            .as_ref()
+            .and_then(|host| host.hub.guests.iter().find(|g| g.uuid == uuid))
+        {
+            return g.eye_height();
+        }
+        let own = self.native_acting_player().is_some_and(|p| p.uuid == uuid)
+            || (self.remote.is_none() && self.serving.is_none() && uuid == self.owner_uuid());
+        match &self.player {
+            Some(p) if own => f64::from(p.dimensions.eye_height),
+            _ => 1.62,
+        }
+    }
+    /// The owner of a single-player world, by the uuid the hooks name them
+    /// with: the integrated server's owner (the hub's guest for them; read
+    /// from the serving state, as the hub is out of reach while a guest's
+    /// action is handled), else, before it starts, the one
+    /// `ensure_player_uuid` makes (the saved uuid, else the offline one of
+    /// "Player").
+    fn owner_uuid(&self) -> u128 {
+        if let Some(owner) = self.serving.as_ref().map(|s| s.owner) {
+            return owner;
+        }
+        self.level
+            .player_uuid
+            .map(horizon_client::lan::playerdata::ints_uuid)
+            .unwrap_or_else(|| horizon_protocol::crypto::offline_uuid("Player"))
+    }
+    /// The mods hear the window's own player's command before it runs, as a
+    /// guest's (`native_player_command`): true when one stopped it. The
+    /// replies go to the chat as command feedback does.
+    pub(super) fn owner_command_stopped(&mut self, command: &str) -> bool {
+        let mut canceled = false;
+        let mut replies = Vec::new();
+        let (uuid, name) = (self.owner_uuid(), self.options.player_name());
+        self.native_player_command(
+            uuid,
+            &name,
+            command.trim_start_matches('/'),
+            &mut canceled,
+            &mut replies,
+        );
+        for line in replies {
+            self.feedback(line);
+        }
+        canceled
+    }
+    /// Shows `count` particles of the simple type `name` (`minecraft:flame`,
+    /// `minecraft:happy_villager`; those with data of their own, dust and
+    /// items, are not here) at `pos` in the level in place, spread by
+    /// `spread` on each axis and moving up to `speed`, to every player within
+    /// 32 blocks, as `/particle` does: how many saw them; 0 for a name the
+    /// game does not know. API @API:particles_titles@.
+    pub(super) fn native_particles(
+        &mut self,
+        dimension: &str,
+        name: &str,
+        pos: [f64; 3],
+        count: u32,
+        spread: [f64; 3],
+        speed: f32,
+    ) -> u32 {
+        use horizon_client::particles::{ParticleOptions, ParticleType};
+        if self.remote.is_some() || dimension != self.dim.id() || !pos.iter().all(|v| v.is_finite())
+        {
+            return 0;
+        }
+        let Some(ty) = ParticleType::from_name(name.trim_start_matches("minecraft:")) else {
+            return 0;
+        };
+        let options = ParticleOptions::simple(ty);
+        let count = count.min(16384) as i32;
+        let speed = speed.clamp(0.0, 64.0);
+        let spread = spread.map(|s| s.clamp(0.0, 64.0));
+        let within = |p: [f64; 3]| {
+            let c = p.map(|v| v.floor() + 0.5);
+            (c[0] - pos[0]).powi(2) + (c[1] - pos[1]).powi(2) + (c[2] - pos[2]).powi(2)
+                < 32.0 * 32.0
+        };
+        let packet = self.network_particle(&options, None).map(|particle| {
+            C::LevelParticles(play::LevelParticles {
+                particle,
+                override_limiter: false,
+                always_show: false,
+                pos,
+                dist: spread.map(|d| d as f32),
+                max_speed: [speed; 3],
+                count,
+                randomization: 0,
+            })
+        });
+        let mut seen = 0;
+        let mut local = false;
+        if let Some(p) = self.player.as_ref()
+            && within([p.position.x, p.position.y, p.position.z])
+        {
+            seen += 1;
+            match (self.lan_acting, &packet) {
+                (Some(_), Some(packet)) => self.guest_packets.push(packet.clone()),
+                _ => local = true,
+            }
+        }
+        if let (Some(host), Some(packet)) = (self.lan.as_ref(), &packet) {
+            let acting = self.lan_acting;
+            for g in host.hub.guests.iter() {
+                if g.placed
+                    && Some(g.conn) != acting
+                    && g.dimension == dimension
+                    && within(g.position)
+                {
+                    host.hub.send_to(g.conn, packet);
+                    seen += 1;
+                }
+            }
+        }
+        if local {
+            if count <= 0 {
+                self.particles
+                    .create(&options, pos, spread.map(|d| f64::from(speed) * d));
+            } else {
+                for _ in 0..count {
+                    let r = self.particles.random();
+                    let p = [
+                        pos[0] + r.next_gaussian() * spread[0],
+                        pos[1] + r.next_gaussian() * spread[1],
+                        pos[2] + r.next_gaussian() * spread[2],
+                    ];
+                    let v = [
+                        r.next_gaussian() * f64::from(speed),
+                        r.next_gaussian() * f64::from(speed),
+                        r.next_gaussian() * f64::from(speed),
+                    ];
+                    self.particles.create(&options, p, v);
+                }
+            }
+        }
+        seen
+    }
+    /// Shows `text` to the player `uuid` as `kind` says: `title`, `subtitle`
+    /// (shown with the next title) or `actionbar` (over the hotbar), as
+    /// `/title` does; false when they are not on, or for another kind. API
+    /// 364.
+    pub(super) fn native_title(&mut self, uuid: u128, kind: &str, text: &str) -> bool {
+        let text = Text::literal(text);
+        let sent = play::Text {
+            text: component_nbt(&text.component()),
+        };
+        let packet = match kind {
+            "title" => C::SetTitleText(sent),
+            "subtitle" => C::SetSubtitleText(sent),
+            "actionbar" => C::SetActionBarText(sent),
+            _ => return false,
+        };
+        if self.native_send(uuid, packet) {
+            return true;
+        }
+        if self.remote.is_none() && self.player.is_some() && uuid == self.owner_uuid() {
+            match kind {
+                "title" => self.titles.set_title(text),
+                "subtitle" => self.titles.set_subtitle(text),
+                _ => self.titles.set_overlay(text, false),
+            }
+            return true;
+        }
+        false
+    }
+    /// Sets how the player `uuid`'s next titles fade in, stay and fade out,
+    /// in ticks, as `/title times` does; false when they are not on. API @API:particles_titles@.
+    pub(super) fn native_title_times(
+        &mut self,
+        uuid: u128,
+        fade_in: i32,
+        stay: i32,
+        fade_out: i32,
+    ) -> bool {
+        let packet = C::SetTitlesAnimation(play::TitlesAnimation {
+            fade_in,
+            stay,
+            fade_out,
+        });
+        if self.native_send(uuid, packet) {
+            return true;
+        }
+        if self.remote.is_none() && self.player.is_some() && uuid == self.owner_uuid() {
+            self.titles.set_times(fade_in, stay, fade_out);
+            return true;
+        }
+        false
     }
     /// A system line in that player's chat, also inside a player's hook for
     /// the acting player; false when they aren't on.
@@ -870,6 +1105,37 @@ impl Game<'_> {
     pub(super) fn native_give_levels(&mut self, uuid: u128, levels: i32) -> bool {
         self.native_as_player(uuid, |game| game.give_levels(levels))
     }
+    /// Gives the player `uuid` the effect `effect` (`minecraft:regeneration`)
+    /// for `ticks` ticks (-1: forever) at `amplifier`, as `/effect give`
+    /// does: a stronger one replaces what they have, an equal one extends it.
+    /// False, and nothing given, for an effect the game doesn't have, a
+    /// player who isn't here or is dead, and for another player inside a
+    /// player's hook, as for `native_give_experience`. API 367.
+    pub(super) fn native_player_effect(
+        &mut self,
+        uuid: u128,
+        effect: &str,
+        ticks: i32,
+        amplifier: i32,
+    ) -> bool {
+        let Some(def) = horizon_client::brewing::effect(effect) else {
+            return false;
+        };
+        let instance = horizon_client::effects::EffectInstance::new(def.id, ticks, amplifier);
+        self.native_as_player(uuid, |game| {
+            game.add_player_effect(instance);
+        })
+    }
+    /// Takes up to `count` plain `item` from the player `uuid`'s inventory,
+    /// their main hand first, as `native_take_items` takes from the acting
+    /// player: what it took. 0 for a player who isn't here or is dead, and
+    /// for another player inside a player's hook, as for
+    /// `native_give_stack`. API 368.
+    pub(super) fn native_take_from(&mut self, uuid: u128, item: &str, count: u32) -> u32 {
+        let mut taken = 0;
+        self.native_as_player(uuid, |game| taken = game.native_take_items(item, count));
+        taken
+    }
     /// Runs `f` with the player `uuid`'s state in place: theirs already when
     /// they are the acting player (the host, or a guest swapped in), else a
     /// guest's through `as_guest`, only where no other player is swapped in.
@@ -915,8 +1181,9 @@ fn system_chat(line: &Text) -> C {
 
 /// Where the game calls the server hook points.
 impl Game<'_> {
-    /// Asks the mods for their commands once per hub, and puts them in every
-    /// player's command tree.
+    /// Asks the mods for their commands once per hub (and again after
+    /// [`Game::refresh_native_commands`]), and puts them in every player's
+    /// command tree.
     pub(super) fn register_native_commands(&mut self, host: &mut LanHost) {
         if host.native_commands.is_some() {
             return;
@@ -928,8 +1195,22 @@ impl Game<'_> {
         for p in problems {
             log::warn!("Horizon: a native mod's command was left out: {p}");
         }
+        // The hub sends every placed player their tree again when it changed.
         host.hub.set_mod_commands(0, tree);
         host.native_commands = Some(levels);
+    }
+
+    /// The mods' commands may have changed (`/reload` ran the scripted mods'
+    /// `init.lua` again): asks for them anew, so a command a reloaded script
+    /// declares is known and one it dropped is gone, and the players whose
+    /// tree changed get it again.
+    pub(super) fn refresh_native_commands(&mut self) {
+        let Some(mut host) = self.lan.take() else {
+            return;
+        };
+        host.native_commands = None;
+        self.register_native_commands(&mut host);
+        self.lan = Some(host);
     }
 
     /// Asks the mods what root commands each player's tree keeps

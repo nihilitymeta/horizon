@@ -1,0 +1,24 @@
+{
+  "hooks": [],
+  "helpers": [
+    {
+      "name": "mob_views",
+      "target": "horizon_client::game::native_mobs::Game<'_>::native_mob_views"
+    },
+    {
+      "name": "player_raycast",
+      "target": "horizon_client::game::native_claimed_items::Game<'_>::native_player_raycast"
+    },
+    {
+      "name": "level_players",
+      "target": "horizon_client::game::native_server::Game<'_>::native_level_players"
+    }
+  ],
+  "rust_summary": "the views of every living mob of a level (`native_mob_views`), the players of the world this game runs with a single-player world's owner among them (`native_level_players`), and a player's block raycast from their eyes (`native_player_raycast`), what a script asks of the world between its actions.",
+  "doc_summary": "the views of every living mob of a level (`native_mob_views`), the players of the world this game runs with a single-player world's owner among them (`native_level_players`), and a player's block raycast from their eyes (`native_player_raycast`), what a script asks of the world between its actions. Bundles need \"hooks\": @API:mob_views@.",
+  "comments": [
+    "crates/horizon-client/src/game/native_server.rs",
+    "crates/horizon-client/src/game/native_claimed_items.rs",
+    "crates/horizon-client/src/game/native_mobs.rs"
+  ]
+}
