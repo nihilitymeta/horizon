@@ -62,6 +62,7 @@ pub mod native_goal;
 pub mod nautilus;
 pub mod nav;
 pub mod nether;
+pub mod observe;
 pub mod panda;
 pub mod parrot;
 pub mod path;

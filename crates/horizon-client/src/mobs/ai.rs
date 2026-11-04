@@ -1571,6 +1571,8 @@ fn ai_step(m: &mut Mob, w: &MobWorld, level_random: &mut LegacyRandom, events: &
         m.ai.xxa = 0.0;
         m.ai.zza = 0.0;
     }
+    // The developer tools' brain panel reads the mob after its goals ticked (docs/dev-tools.md).
+    super::observe::observe(m, w);
     m.handle_jumping(w);
     let input = Vec3::new(
         f64::from(m.ai.xxa),

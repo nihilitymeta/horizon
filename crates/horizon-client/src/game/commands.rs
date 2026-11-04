@@ -3,6 +3,8 @@
 mod admin;
 pub(super) mod compute;
 mod data;
+mod inspect;
+mod lua_console;
 pub(super) use data::place_summoned;
 mod effects;
 pub(super) mod execute;
@@ -1122,6 +1124,27 @@ impl Game<'_> {
             "publish" => self.cmd_publish(ctx),
             "unpublish" => self.cmd_unpublish(),
             "debug" => self.cmd_debug(ctx),
+            "inspect" => self.cmd_view(ctx, horizon_client::mobs::observe::View::Data, false),
+            "inspect.clear" => self.cmd_view(ctx, horizon_client::mobs::observe::View::Data, true),
+            "inspect.list" => self.cmd_inspect_list(),
+            "goals" => self.cmd_view(ctx, horizon_client::mobs::observe::View::Goals, false),
+            "goals.clear" => self.cmd_view(ctx, horizon_client::mobs::observe::View::Goals, true),
+            "senses" => self.cmd_view(ctx, horizon_client::mobs::observe::View::Senses, false),
+            "senses.clear" => self.cmd_view(ctx, horizon_client::mobs::observe::View::Senses, true),
+            "nav" => self.cmd_view(ctx, horizon_client::mobs::observe::View::Nav, false),
+            "nav.clear" => self.cmd_view(ctx, horizon_client::mobs::observe::View::Nav, true),
+            "watch" => self.cmd_watch(ctx, false),
+            "watch.clear" => self.cmd_watch(ctx, true),
+            "mobai.log" => self.cmd_mobai_log(ctx, false),
+            "mobai.log.stop" => self.cmd_mobai_log(ctx, true),
+            "lua.toggle" => self.cmd_lua(None),
+            "lua.run" => {
+                let code = match ctx.get("code") {
+                    Some(Arg::Str(s)) => s.clone(),
+                    _ => String::new(),
+                };
+                self.cmd_lua(Some(code))
+            }
             "jfr" => self.cmd_jfr(ctx),
             "version" => self.cmd_version(),
             id if id.starts_with("test.") => self.cmd_test(id, ctx),

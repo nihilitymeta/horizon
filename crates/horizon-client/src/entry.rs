@@ -34,7 +34,26 @@ pub fn main() {
             }
         }
     }
-    main_with(crate::lua_mods::discover(std::env::args().skip(1)));
+    // `--list-mods` asks for the build's feature registry and nothing else
+    // (`main_with` prints it and returns): the launcher runs it at every
+    // version selection, so no mod is discovered or loaded for it, no
+    // `mods` folder scanned, and the developer tools stay off.
+    if list_mods_only(&args) {
+        main_with(Default::default());
+        return;
+    }
+    // Built in first: the developer tools, then the Lua mods found on the command line and in the mods folder.
+    let mut mods = crate::dev_tools::mods();
+    mods.extend(crate::lua_mods::discover(std::env::args().skip(1)));
+    main_with(mods.into());
+}
+
+/// Whether the command line is a `--list-mods` query, as `main_with` reads
+/// it: among the game's arguments, before any `--dedicated`.
+fn list_mods_only(args: &[String]) -> bool {
+    args.iter()
+        .take_while(|a| *a != "--dedicated")
+        .any(|a| a == "--list-mods")
 }
 
 /// Start the game with trait mods in dispatch order.
@@ -271,5 +290,30 @@ fn raise_open_file_limit() {
                 Err(e) => log::warn!("Open file limit stays at {:?}: {e}", limit.current),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::list_mods_only;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn list_mods_is_answered_before_any_mod_is_discovered() {
+        // The launcher's query, alone or with the game's other arguments.
+        assert!(list_mods_only(&args(&["--list-mods"])));
+        assert!(list_mods_only(&args(&[
+            "--game-dir",
+            "x",
+            "--list-mods",
+            "--dev-tools"
+        ])));
+        // A plain start, a mod check and a server start discover their mods.
+        assert!(!list_mods_only(&args(&[])));
+        assert!(!list_mods_only(&args(&["--dev-tools", "--dev-mod", "m"])));
+        assert!(!list_mods_only(&args(&["--dedicated", "--list-mods"])));
     }
 }

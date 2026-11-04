@@ -102,6 +102,13 @@ impl GoalSelector {
         self.goals.clear();
         self.locked = [None; 4];
     }
+    /// Every goal in order, for a read-only view (the developer tools'
+    /// brain panel): its priority, name, whether it is running and its flags.
+    pub fn entries(&self) -> impl Iterator<Item = (i32, &'static str, bool, u8)> + '_ {
+        self.goals
+            .iter()
+            .map(|g| (g.priority, g.goal.name(), g.running, g.goal.flags()))
+    }
     pub fn running_names(&self) -> Vec<&'static str> {
         self.goals
             .iter()

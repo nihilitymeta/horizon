@@ -727,13 +727,35 @@ fn mod_commands_join_the_tree_for_every_player() {
 }
 
 #[test]
+fn dev_tools_commands_come_only_with_the_tools() {
+    // A game without the tools has no /lua, whoever asks; with them, the
+    // console and the inspectors are gamemasters' commands.
+    for (horizon, dedicated) in [(false, false), (true, false), (false, true)] {
+        let plain = vanilla::game_tree(false, horizon, dedicated, false);
+        assert!(plain.find("lua").is_none() && plain.find("inspect").is_none());
+        let tools = vanilla::game_tree(false, horizon, dedicated, true);
+        let parse = tools.parse("lua print(1)", &reg());
+        assert_eq!(parse.executable().unwrap().1, "lua.run");
+        assert_eq!(
+            tools.parse("inspect clear", &reg()).executable().unwrap().1,
+            "inspect.clear"
+        );
+        assert_eq!(tools.nodes[tools.find("lua").unwrap()].permission, 2);
+        assert_eq!(
+            tools.nodes[0].children.len(),
+            plain.nodes[0].children.len() + 7
+        );
+    }
+}
+
+#[test]
 fn horizon_commands_are_off_unless_the_server_turns_them_on() {
     // By default the game runs vanilla's tree: /help lists no /pregen.
     assert!(vanilla::game_dispatcher().find("pregen").is_none());
     for dev in [false, true] {
-        let vanilla_tree = vanilla::game_tree(dev, false, false);
+        let vanilla_tree = vanilla::game_tree(dev, false, false, false);
         assert!(vanilla_tree.find("pregen").is_none());
-        let d = vanilla::game_tree(dev, true, false);
+        let d = vanilla::game_tree(dev, true, false, false);
         let parse = d.parse("pregen start 100 circle", &reg());
         assert_eq!(parse.executable().unwrap().1, "pregen.start");
         // Vanilla's commands are the same with or without it.
@@ -746,7 +768,7 @@ fn horizon_commands_are_off_unless_the_server_turns_them_on() {
 /// `run` on a dedicated server's tree.
 fn run_dedicated(input: &str) -> CmdResult<(String, Vec<String>)> {
     let reg = reg();
-    let parse = vanilla::game_tree(true, false, true).parse(input, &reg);
+    let parse = vanilla::game_tree(true, false, true, false).parse(input, &reg);
     let (ctx, id) = parse.executable()?;
     Ok((
         id.to_owned(),
@@ -784,7 +806,7 @@ fn profile_commands_parse_like_vanilla() {
         permission: 2,
         ..reg()
     };
-    let d = vanilla::game_tree(false, false, true);
+    let d = vanilla::game_tree(false, false, true, false);
     for line in ["op Steve", "ban Steve", "whitelist on"] {
         let e = d.parse(line, &reg).executable().unwrap_err();
         assert_eq!(e.message.plain(), "command.unknown.command", "{line}");
@@ -804,7 +826,7 @@ fn the_dedicated_commands_complete_from_the_servers_lists() {
         whitelisted: vec!["Alex".into(), "Old".into()],
         ..reg()
     };
-    let d = vanilla::game_tree(false, false, true);
+    let d = vanilla::game_tree(false, false, true, false);
     let suggest = |input: &str| -> Vec<String> {
         let parse = d.parse(input, &reg);
         d.suggestions(&parse, input.len(), &reg)
@@ -849,8 +871,8 @@ fn only_a_dedicated_server_has_the_dedicated_commands() {
     ];
     for dev in [false, true] {
         for horizon in [false, true] {
-            let integrated = vanilla::game_tree(dev, horizon, false);
-            let server = vanilla::game_tree(dev, horizon, true);
+            let integrated = vanilla::game_tree(dev, horizon, false, false);
+            let server = vanilla::game_tree(dev, horizon, true, false);
             for name in dedicated {
                 assert!(integrated.find(name).is_none(), "{name}");
                 assert!(server.find(name).is_some(), "{name}");
@@ -943,8 +965,8 @@ fn a_dedicated_server_keeps_seed_and_version_for_game_masters() {
     // without op gets neither (a seed cracker's input on an SMP).
     for dev in [false, true] {
         for horizon in [false, true] {
-            let integrated = vanilla::game_tree(dev, horizon, false);
-            let server = vanilla::game_tree(dev, horizon, true);
+            let integrated = vanilla::game_tree(dev, horizon, false, false);
+            let server = vanilla::game_tree(dev, horizon, true, false);
             let open = root_commands(integrated, 0);
             assert!(open.contains(&"seed".to_owned()), "{open:?}");
             assert!(open.contains(&"version".to_owned()), "{open:?}");
