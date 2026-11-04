@@ -122,7 +122,12 @@ impl Launcher {
                 shell::text(night::UI, c(n.ink_soft)).child(instances_page::played_line(i))
             }));
         // A Java instance (no Horizon tag) isn't offered Horizon's updates.
-        if let Some(release) = self.updates.horizon.as_ref().filter(|_| !tag.is_empty()) {
+        // Horizon's newer Nightly is no update of an Event Horizon build.
+        if let Some(release) =
+            self.updates.horizon.as_ref().filter(|_| {
+                !tag.is_empty() && !horizon_launcher::game_sources::is_event_horizon(tag)
+            })
+        {
             let installing = self.installing.as_ref().filter(|(t, _)| *t == release.tag);
             let line = shell::text(night::CAPTION, c(n.muted))
                 .flex()

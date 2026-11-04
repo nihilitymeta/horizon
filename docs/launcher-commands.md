@@ -894,11 +894,21 @@ MCP: `modkit_status`.
 
 ## `horizon-launcher modkit update`
 
-Install the newest release into every Horizon instance now.
+Install the newest release now, into every instance that plays an Event Horizon build.
 
     horizon-launcher modkit update
 
 MCP: `modkit_update`.
+
+## `horizon-launcher modkit install`
+
+Install a horizon_modkit.hmod you have, such as one you built with cargo horizon-mod build.
+
+    horizon-launcher modkit install <FILE>
+
+- `FILE`
+
+MCP: `modkit_install`.
 
 ## `horizon-launcher modkit auto`
 

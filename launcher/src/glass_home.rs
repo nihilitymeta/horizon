@@ -242,12 +242,26 @@ impl Launcher {
         let follows = self
             .selected_instance()
             .is_some_and(|i| i.version.is_none());
-        let update = self
-            .updates
-            .horizon
-            .as_ref()
-            .filter(|_| follows && !tag.is_empty())
-            .map(|r| r.tag.clone());
+        // Event Horizon: a build a GitHub source installed is updated by that source's newer
+        // release; any other Event Horizon build (a local one) by nothing. Horizon's newer Nightly
+        // is an update only of Horizon's own versions.
+        let from_source = self
+            .source_updates
+            .iter()
+            .find(|(v, _)| *v == tag)
+            .map(|(_, r)| r.tag.clone());
+        let update = if from_source.is_some() {
+            from_source.filter(|_| follows)
+        } else if horizon_launcher::game_sources::is_event_horizon(tag) {
+            None
+        } else {
+            self.updates
+                .horizon
+                .as_ref()
+                .filter(|_| follows && !tag.is_empty())
+                .map(|r| r.tag.clone())
+        };
+        let source_update = self.source_updates.iter().any(|(v, _)| *v == tag);
         let installing = update
             .as_ref()
             .and_then(|u| self.installing.as_ref().filter(|(t, _)| t == u))
@@ -379,6 +393,13 @@ impl Launcher {
                 let press = play_press(ready, self.owner, false);
                 let main = body(label.into(), icon).id("play").cursor_pointer();
                 let main = match (&update, press) {
+                    (Some(_), _) if source_update => {
+                        let version = tag.to_string();
+                        main.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.install_source_update(&version);
+                            cx.notify();
+                        }))
+                    }
                     (Some(_), _) => main.on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                         this.install_update();
                         cx.notify();

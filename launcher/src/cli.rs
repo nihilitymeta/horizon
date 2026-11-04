@@ -218,8 +218,10 @@ enum SourcesCmd {
 enum ModkitCmd {
     /// The installed version, the newest release, and whether it updates itself (the default)
     Status,
-    /// Install the newest release into every Horizon instance now
+    /// Install the newest release now, into every instance that plays an Event Horizon build
     Update,
+    /// Install a horizon_modkit.hmod you have, such as one you built with cargo horizon-mod build
+    Install { file: PathBuf },
     /// Turn its automatic updates on or off
     Auto { state: String },
 }
@@ -983,8 +985,8 @@ enum Cmd {
         #[command(subcommand)]
         action: Option<SourcesCmd>,
     },
-    /// The modkit, the Lua library Event Horizon's mods need: installed into every Horizon
-    /// instance, its version tracked (docs/event-horizon-releases.md)
+    /// The modkit, the Lua library Event Horizon's mods need: installed into every instance that
+    /// plays an Event Horizon build, its version tracked (docs/event-horizon-releases.md)
     Modkit {
         #[command(subcommand)]
         action: Option<ModkitCmd>,
@@ -3690,7 +3692,13 @@ fn modkit_cmd(action: ModkitCmd, as_json: bool) -> Result<(), String> {
         ModkitCmd::Update => {
             let release = modkit::latest(&github_mods::api)?;
             let version = modkit::install(&release)?;
-            println!("Installed the modkit {version} into every Horizon instance.");
+            println!(
+                "Installed the modkit {version} into every instance that plays Event Horizon."
+            );
+        }
+        ModkitCmd::Install { file } => {
+            let (version, instances) = modkit::install_file(&file, "local")?;
+            println!("Installed the modkit {version} from {} into {instances} instance(s) that play Event Horizon.", file.display());
         }
         ModkitCmd::Auto { state } => {
             let on = on_off(&state)?;

@@ -127,35 +127,41 @@ fn place(hmod: &Path, home: &Path) -> Result<(), String> {
     crate::browser::java::set_enabled(home, ID, true)
 }
 
-/// Installs `release` into every Horizon instance, turned on, and keeps a copy for instances made
-/// later. Returns the version installed.
+/// Installs `release` into every instance that plays an Event Horizon build, turned on, and keeps
+/// a copy for instances that start playing one later. Returns the version installed.
 pub fn install(release: &Release) -> Result<String, String> {
     let file = game_sources::fetch(release, MAX_HMOD)?;
-    let made = (|| {
-        let manifest = horizon_mods::Package::read(&file)?.manifest;
-        if manifest.id != ID {
-            return Err(format!(
-                "{} is the mod {}, not the modkit.",
-                release.asset, manifest.id
-            ));
-        }
-        let keep = kept();
-        fs::create_dir_all(keep.parent().unwrap_or(&keep)).map_err(|e| e.to_string())?;
-        fs::copy(&file, &keep).map_err(|e| e.to_string())?;
-        for home in homes() {
-            place(&keep, &home)?;
-        }
-        Ok(manifest.version)
-    })();
+    let made = install_file(&file, &release.tag);
     let _ = fs::remove_dir_all(file.parent().unwrap_or(&file));
-    let version = made?;
+    made.map(|(version, _)| version)
+}
+
+/// [`install`] from a `.hmod` on this computer (`horizon-launcher modkit install <file>`), recorded
+/// as from `tag` (`local` for one you built). Returns the version and how many instances it went
+/// into. The next release replaces it when the modkit updates itself.
+pub fn install_file(file: &Path, tag: &str) -> Result<(String, usize), String> {
+    let manifest = horizon_mods::Package::read(file)?.manifest;
+    if manifest.id != ID {
+        return Err(format!(
+            "{} is the mod {}, not the modkit.",
+            file.display(),
+            manifest.id
+        ));
+    }
+    let keep = kept();
+    fs::create_dir_all(keep.parent().unwrap_or(&keep)).map_err(|e| e.to_string())?;
+    fs::copy(file, &keep).map_err(|e| e.to_string())?;
+    let homes = homes();
+    for home in &homes {
+        place(&keep, home)?;
+    }
     let mut state = load();
     state.installed = Some(Installed {
-        version: version.clone(),
-        tag: release.tag.clone(),
+        version: manifest.version.clone(),
+        tag: tag.to_owned(),
     });
     save(&state)?;
-    Ok(version)
+    Ok((manifest.version, homes.len()))
 }
 
 /// Gives each Horizon instance that lacks it the modkit installed: an instance made after the

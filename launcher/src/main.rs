@@ -467,6 +467,8 @@ struct Launcher {
     github: github_mods_page::Github,
     sources: sources_page::Sources,
     modkit: modkit_page::Modkit,
+    /// Installed versions a newer release of their GitHub source would replace (`game_sources::pending`).
+    source_updates: Vec<(String, horizon_launcher::game_sources::Release)>,
     /// The instances, for the sidebar and Play, and their dialog (`instances_page.rs`).
     instances: instances_page::Instances,
     /// Home's Worlds section, of the selected instance (`worlds_page.rs`).
@@ -728,6 +730,7 @@ impl Launcher {
             github: github_mods_page::Github::new(cx),
             sources: sources_page::Sources::new(cx),
             modkit: modkit_page::Modkit::new(),
+            source_updates: Vec::new(),
             instances: instances_page::Instances::default(),
             worlds: worlds_page::Worlds::default(),
             multiplayer: multiplayer_page::Multiplayer::default(),
@@ -937,6 +940,26 @@ impl Launcher {
 
     /// Installs the Horizon version the last check found, keeping the player's choice of
     /// version unless they were on the newest one.
+    /// Installs the newer release of the GitHub source that installed `version`, and plays it.
+    fn install_source_update(&mut self, version: &str) {
+        let Some((_, release)) = self
+            .source_updates
+            .iter()
+            .find(|(v, _)| v == version)
+            .cloned()
+        else {
+            return;
+        };
+        self.source_updates.retain(|(v, _)| v != version);
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            let done = horizon_launcher::game_sources::install(&release, true)
+                .map(|v| format!("{} → {v}", release.label()));
+            let pending = horizon_launcher::game_sources::pending();
+            let _ = tx.send(Msg::SourcesUpdated(vec![done], pending));
+        });
+    }
+
     fn install_update(&mut self) {
         let Some(release) = self.updates.horizon.clone() else {
             return;
@@ -1333,7 +1356,8 @@ impl Launcher {
                         self.installed = backend::installed();
                     }
                 }
-                Msg::SourcesUpdated(results) => {
+                Msg::SourcesUpdated(results, pending) => {
+                    self.source_updates = pending;
                     // The same check updates the modkit (`modkit::update_automatic`).
                     self.modkit = modkit_page::Modkit::new();
                     if results.iter().any(Result::is_ok) {
@@ -1357,9 +1381,9 @@ impl Launcher {
                     // GitHub sources that update themselves: downloads, never compiles.
                     let tx = self.tx.clone();
                     std::thread::spawn(move || {
-                        let _ = tx.send(Msg::SourcesUpdated(
-                            horizon_launcher::game_sources::update_automatic(),
-                        ));
+                        let done = horizon_launcher::game_sources::update_automatic();
+                        let pending = horizon_launcher::game_sources::pending();
+                        let _ = tx.send(Msg::SourcesUpdated(done, pending));
                     });
                     if let Some(release) = self.updates.launcher.clone() {
                         self.update_launcher(release, true);

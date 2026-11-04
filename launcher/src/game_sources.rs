@@ -439,6 +439,20 @@ pub fn launcher_digest(tag: &str, api: Api) -> Result<String, String> {
         .ok_or_else(|| format!("GitHub lists no checksum for Event Horizon {tag}: not installed."))
 }
 
+/// The installed versions that a newer release of their source would replace, with that release:
+/// what the Play button offers as an update for a version a source installed. A version no source
+/// installed (a local build, one of Horizon's) has none here.
+pub fn pending() -> Vec<(String, Release)> {
+    let sources: Vec<Source> = load()
+        .into_iter()
+        .filter(|s| s.installed.is_some())
+        .collect();
+    updates(&sources, &github_mods::api)
+        .into_iter()
+        .filter_map(|(source, latest)| Some((source.installed?.version, latest.ok()?)))
+        .collect()
+}
+
 /// What the launcher's update check does: installs each new release of a source that updates
 /// itself. Returns what it installed, and what failed.
 pub fn update_automatic() -> Vec<Result<String, String>> {
