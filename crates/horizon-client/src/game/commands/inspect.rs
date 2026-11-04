@@ -72,7 +72,8 @@ fn forget_unwatched() {
         .iter()
         .map(|(id, _)| *id)
         .collect();
-    WATCH.lock()
+    WATCH
+        .lock()
         .unwrap_or_else(|e| e.into_inner())
         .retain(|t| id_of(*t).is_some_and(|id| watched.contains(&id) || logged.contains(&id)));
 }
@@ -146,7 +147,11 @@ impl Game<'_> {
         let mut line = counted(key, n, &[&what, &n]);
         if skipped > 0 {
             line.push(" ");
-            line.push(counted("horizon.dev_tools.players_left_out", skipped, &[&skipped]));
+            line.push(counted(
+                "horizon.dev_tools.players_left_out",
+                skipped,
+                &[&skipped],
+            ));
         }
         self.with_tools_note(line)
     }
@@ -236,7 +241,11 @@ impl Game<'_> {
     pub(super) fn cmd_mobai_log(&mut self, ctx: &Context, stop: bool) -> R<i32> {
         self.dev_tools_owner_only()?;
         if stop {
-            let n = LOGS.lock().unwrap_or_else(|e| e.into_inner()).drain(..).count();
+            let n = LOGS
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .drain(..)
+                .count();
             observe::clear_logs();
             forget_unwatched();
             self.feedback(counted("horizon.dev_tools.logs_closed", n, &[&n]));
@@ -254,8 +263,9 @@ impl Game<'_> {
             return Err(err("argument.entity.notfound.entity", &[]));
         }
         let dir = std::path::Path::new(DIR).join("logs");
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| super::CommandError::new(Text::literal(format!("{}: {e}", dir.display()))))?;
+        std::fs::create_dir_all(&dir).map_err(|e| {
+            super::CommandError::new(Text::literal(format!("{}: {e}", dir.display())))
+        })?;
         let stamp = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
         let mut opened = Vec::new();
         {

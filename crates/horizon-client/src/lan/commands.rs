@@ -536,15 +536,25 @@ mod tests {
         .unwrap();
         let tree = CommandTree { root: report };
         let names = |level: u8, extra: &Value| -> Vec<String> {
-            tree.packet_with(level, false, &Builtin::default(), &with_horizon_commands(extra, true))
-                .nodes
-                .iter()
-                .map(|n| n.name.clone())
-                .collect()
+            tree.packet_with(
+                level,
+                false,
+                &Builtin::default(),
+                &with_horizon_commands(extra, true),
+            )
+            .nodes
+            .iter()
+            .map(|n| n.name.clone())
+            .collect()
         };
         // A gamemaster gets the tools' commands with their arguments; a player does not.
         let ops = names(2, &Value::Null);
-        assert_eq!(&ops[..9], ["", "me", "goals", "inspect", "lua", "mobai", "nav", "senses", "watch"]);
+        assert_eq!(
+            &ops[..9],
+            [
+                "", "me", "goals", "inspect", "lua", "mobai", "nav", "senses", "watch"
+            ]
+        );
         assert!(ops.iter().filter(|n| *n == "targets").count() >= 6);
         assert!(ops.contains(&"path".to_string()) && ops.contains(&"log".to_string()));
         assert_eq!(names(0, &Value::Null), ["", "me"]);

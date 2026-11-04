@@ -129,41 +129,143 @@ pub fn call_context(text: &str, cursor: usize) -> Option<CallContext> {
 
 /// The `mc` functions, their signatures and an example each.
 pub const SIGNATURES: &[(&str, &str, &str)] = &[
-    ("mc.cmd", "mc.cmd(line) -> ok, lines", "mc.cmd(\"time set day\")"),
-    ("mc.select", "mc.select(selector) -> {id, ...}", "mc.select(\"@e[type=pig,distance=..10]\")"),
-    ("mc.get", "mc.get(entity[, path]) -> table or value", "mc.get(\"@e[type=pig,limit=1]\", \"Pos\")"),
-    ("mc.snbt", "mc.snbt(entity[, path]) -> SNBT text", "mc.snbt(\"@e[type=pig,limit=1]\", \"Health\")"),
-    ("mc.set", "mc.set(entity, path, value) -> changed", "mc.set(\"@e[type=pig,limit=1]\", \"Health\", \"20.0f\")"),
-    ("mc.merge", "mc.merge(entity, value) -> changed", "mc.merge(\"@e[type=pig,limit=1]\", \"{NoAI:1b}\")"),
-    ("mc.pos", "mc.pos(entity) -> x, y, z", "local x, y, z = mc.pos(\"@p\")"),
-    ("mc.name", "mc.name(entity) -> string", "mc.name(\"@e[type=pig,limit=1]\")"),
-    ("mc.inspect", "mc.inspect(entity[, view])  view: \"data\" \"goals\" \"senses\" \"nav\"", "mc.inspect(\"@e[type=pig,limit=1]\", \"nav\")"),
-    ("mc.watch", "mc.watch(entity, path)  a chart of a numeric path", "mc.watch(\"@e[type=pig,limit=1]\", \"Health\")"),
-    ("mc.on_tick", "mc.on_tick(function() ... end)  every server tick", "mc.on_tick(function() print(mc.pos(\"@p\")) end)"),
+    (
+        "mc.cmd",
+        "mc.cmd(line) -> ok, lines",
+        "mc.cmd(\"time set day\")",
+    ),
+    (
+        "mc.select",
+        "mc.select(selector) -> {id, ...}",
+        "mc.select(\"@e[type=pig,distance=..10]\")",
+    ),
+    (
+        "mc.get",
+        "mc.get(entity[, path]) -> table or value",
+        "mc.get(\"@e[type=pig,limit=1]\", \"Pos\")",
+    ),
+    (
+        "mc.snbt",
+        "mc.snbt(entity[, path]) -> SNBT text",
+        "mc.snbt(\"@e[type=pig,limit=1]\", \"Health\")",
+    ),
+    (
+        "mc.set",
+        "mc.set(entity, path, value) -> changed",
+        "mc.set(\"@e[type=pig,limit=1]\", \"Health\", \"20.0f\")",
+    ),
+    (
+        "mc.merge",
+        "mc.merge(entity, value) -> changed",
+        "mc.merge(\"@e[type=pig,limit=1]\", \"{NoAI:1b}\")",
+    ),
+    (
+        "mc.pos",
+        "mc.pos(entity) -> x, y, z",
+        "local x, y, z = mc.pos(\"@p\")",
+    ),
+    (
+        "mc.name",
+        "mc.name(entity) -> string",
+        "mc.name(\"@e[type=pig,limit=1]\")",
+    ),
+    (
+        "mc.inspect",
+        "mc.inspect(entity[, view])  view: \"data\" \"goals\" \"senses\" \"nav\"",
+        "mc.inspect(\"@e[type=pig,limit=1]\", \"nav\")",
+    ),
+    (
+        "mc.watch",
+        "mc.watch(entity, path)  a chart of a numeric path",
+        "mc.watch(\"@e[type=pig,limit=1]\", \"Health\")",
+    ),
+    (
+        "mc.on_tick",
+        "mc.on_tick(function() ... end)  every server tick",
+        "mc.on_tick(function() print(mc.pos(\"@p\")) end)",
+    ),
     ("mc.off_tick", "mc.off_tick()", "mc.off_tick()"),
-    ("mc.run", "mc.run(file)  a script of the scripts folder", "mc.run(\"hello.lua\")"),
-    ("mc.scripts_dir", "mc.scripts_dir() -> path", "print(mc.scripts_dir())"),
-    ("mc.log", "mc.log(message)  the window and the game log", "mc.log(\"hi\")"),
-    ("mc.mods", "mc.mods() -> {{id, source, scripts, reloads, handlers, goals, error}, ...}", "for _, m in ipairs(mc.mods()) do print(m.id, m.error) end"),
-    ("mc.reload_mods", "mc.reload_mods([id])  the scripted mods read their scripts again next tick", "mc.reload_mods(\"horizon_parasite_mod\")"),
-    ("print", "print(...)  the window", "print(mc.snbt(\"@p\", \"Pos\"))"),
+    (
+        "mc.run",
+        "mc.run(file)  a script of the scripts folder",
+        "mc.run(\"hello.lua\")",
+    ),
+    (
+        "mc.scripts_dir",
+        "mc.scripts_dir() -> path",
+        "print(mc.scripts_dir())",
+    ),
+    (
+        "mc.log",
+        "mc.log(message)  the window and the game log",
+        "mc.log(\"hi\")",
+    ),
+    (
+        "mc.mods",
+        "mc.mods() -> {{id, source, scripts, reloads, handlers, goals, error}, ...}",
+        "for _, m in ipairs(mc.mods()) do print(m.id, m.error) end",
+    ),
+    (
+        "mc.reload_mods",
+        "mc.reload_mods([id])  the scripted mods read their scripts again next tick",
+        "mc.reload_mods(\"horizon_parasite_mod\")",
+    ),
+    (
+        "print",
+        "print(...)  the window",
+        "print(mc.snbt(\"@p\", \"Pos\"))",
+    ),
 ];
 
 /// The functions whose first argument names an entity: a selector string
 /// there completes as the chat box completes `/tp`'s.
 pub const ENTITY_FIRST: &[&str] = &[
-    "mc.select", "mc.get", "mc.snbt", "mc.set", "mc.merge", "mc.pos", "mc.name", "mc.inspect",
+    "mc.select",
+    "mc.get",
+    "mc.snbt",
+    "mc.set",
+    "mc.merge",
+    "mc.pos",
+    "mc.name",
+    "mc.inspect",
     "mc.watch",
 ];
 /// The functions whose second argument is an NBT path.
 pub const PATH_SECOND: &[&str] = &["mc.get", "mc.snbt", "mc.set", "mc.watch"];
 /// NBT keys most entities have, offered for a path argument.
 const PATH_KEYS: &[&str] = &[
-    "Health", "Pos", "Motion", "Rotation", "NoAI", "NoGravity", "Silent", "Invulnerable",
-    "CustomName", "CustomNameVisible", "Glowing", "Fire", "Air", "OnGround", "FallDistance",
-    "PersistenceRequired", "Age", "InLove", "Brain", "attributes", "Tags", "UUID",
-    "HurtTime", "DeathTime", "AbsorptionAmount", "LeftHanded", "CanPickUpLoot", "equipment",
-    "active_effects", "Pos[0]", "Pos[1]", "Pos[2]",
+    "Health",
+    "Pos",
+    "Motion",
+    "Rotation",
+    "NoAI",
+    "NoGravity",
+    "Silent",
+    "Invulnerable",
+    "CustomName",
+    "CustomNameVisible",
+    "Glowing",
+    "Fire",
+    "Air",
+    "OnGround",
+    "FallDistance",
+    "PersistenceRequired",
+    "Age",
+    "InLove",
+    "Brain",
+    "attributes",
+    "Tags",
+    "UUID",
+    "HurtTime",
+    "DeathTime",
+    "AbsorptionAmount",
+    "LeftHanded",
+    "CanPickUpLoot",
+    "equipment",
+    "active_effects",
+    "Pos[0]",
+    "Pos[1]",
+    "Pos[2]",
 ];
 
 /// The hint for a call: its signature and example.
@@ -223,15 +325,24 @@ const LUA_NAMES: &[(&str, &str)] = &[
     ("mc.merge(", "/data merge entity: entity, value"),
     ("mc.pos(", "x, y, z of an entity"),
     ("mc.name(", "an entity's display name"),
-    ("mc.inspect(", "open a window: entity, \"data\"|\"goals\"|\"senses\"|\"nav\""),
+    (
+        "mc.inspect(",
+        "open a window: entity, \"data\"|\"goals\"|\"senses\"|\"nav\"",
+    ),
     ("mc.watch(", "open a /watch chart: entity, path"),
     ("mc.on_tick(", "run a function every server tick"),
     ("mc.off_tick()", "stop the tick functions"),
     ("mc.run(", "run a script of the scripts folder"),
     ("mc.scripts_dir()", "the scripts folder"),
     ("mc.log(", "to the window and the game log"),
-    ("mc.mods()", "the scripted mods: id, source, scripts, reloads, handlers, goals, error"),
-    ("mc.reload_mods(", "reload the scripted mods' scripts next tick: all, or one by id"),
+    (
+        "mc.mods()",
+        "the scripted mods: id, source, scripts, reloads, handlers, goals, error",
+    ),
+    (
+        "mc.reload_mods(",
+        "reload the scripted mods' scripts next tick: all, or one by id",
+    ),
     ("print(", "to the window"),
     ("string.format(", ""),
     ("tostring(", ""),
@@ -326,7 +437,11 @@ pub fn command_context(text: &str, cursor: usize) -> Option<(usize, String)> {
         return None;
     }
     let (start, partial) = c.string?;
-    let start = if partial.starts_with('/') { start + 1 } else { start };
+    let start = if partial.starts_with('/') {
+        start + 1
+    } else {
+        start
+    };
     Some((start, text[start..cursor.min(text.len())].to_string()))
 }
 
@@ -780,13 +895,19 @@ mod tests {
             Some((8, "tp ".to_string()))
         );
         // A leading slash is skipped; the quote kind does not matter.
-        assert_eq!(command_context("mc.cmd('/kill', 1)", 12), Some((9, "kil".to_string())));
+        assert_eq!(
+            command_context("mc.cmd('/kill', 1)", 12),
+            Some((9, "kil".to_string()))
+        );
         // A closed string, another call, or no string: nothing.
         assert_eq!(command_context("mc.cmd(\"tp\") ", 13), None);
         assert_eq!(command_context("print(\"tp\")", 9), None);
         assert_eq!(command_context("mc.cmd(", 7), None);
         // An escaped quote stays inside the string.
-        assert_eq!(command_context("mc.cmd(\"say \\\"hi\\\" x", 20), Some((8, "say \\\"hi\\\" x".to_string())));
+        assert_eq!(
+            command_context("mc.cmd(\"say \\\"hi\\\" x", 20),
+            Some((8, "say \\\"hi\\\" x".to_string()))
+        );
     }
 
     #[test]
@@ -801,10 +922,16 @@ mod tests {
         let c = call_context("print(mc.pos(\"@p\"), x", 21).unwrap();
         assert_eq!((c.name.as_str(), c.arg, c.string), ("print", 1, None));
         assert_eq!(call_context("x = 1", 5), None);
-        assert_eq!(entity_context("mc.get(\"@e[ty", 13), Some((8, "@e[ty".to_string())));
+        assert_eq!(
+            entity_context("mc.get(\"@e[ty", 13),
+            Some((8, "@e[ty".to_string()))
+        );
         assert_eq!(entity_context("mc.get(\"@p\", \"Po", 16), None);
         let c = lua_completions("mc.get(\"@p\", \"Po", 16);
-        assert_eq!(c.items.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(), ["Pos", "Pos[0]", "Pos[1]", "Pos[2]"]);
+        assert_eq!(
+            c.items.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(),
+            ["Pos", "Pos[0]", "Pos[1]", "Pos[2]"]
+        );
         assert!(c.hint.unwrap().starts_with("mc.get(entity[, path])"));
     }
 

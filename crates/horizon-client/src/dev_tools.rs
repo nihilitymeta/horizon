@@ -299,7 +299,6 @@ fn flags_label(flags: u8) -> String {
     }
 }
 
-
 fn pos_label(p: [f64; 3]) -> String {
     format!("{:.2} {:.2} {:.2}", p[0], p[1], p[2])
 }
@@ -342,7 +341,11 @@ fn tag_node(ui: &mut egui::Ui, key: &str, path: &str, tag: &Tag, depth: usize, f
                     }
                 })
                 .header_response
-                .on_hover_text(if path.is_empty() { "the whole entity" } else { path });
+                .on_hover_text(if path.is_empty() {
+                    "the whole entity"
+                } else {
+                    path
+                });
         }
         Tag::List(items) => {
             if !filter.is_empty() && !list_matches(items, filter) {
@@ -407,7 +410,10 @@ fn stale_note(ui: &mut egui::Ui, taken: std::time::Instant, what: &str) {
     if stale.as_millis() > 500 {
         ui.colored_label(
             egui::Color32::YELLOW,
-            format!("no {what} for {:.1} s: gone, unloaded or paused", stale.as_secs_f32()),
+            format!(
+                "no {what} for {:.1} s: gone, unloaded or paused",
+                stale.as_secs_f32()
+            ),
         );
     }
 }
@@ -546,7 +552,10 @@ fn goal_timeline(ui: &mut egui::Ui, brain: &BrainSnapshot, history: &[HistoryTic
         let y = rect.top() + row as f32 * row_h;
         if row % 2 == 1 {
             painter.rect_filled(
-                egui::Rect::from_min_size(egui::pos2(rect.left(), y), egui::vec2(rect.width(), row_h)),
+                egui::Rect::from_min_size(
+                    egui::pos2(rect.left(), y),
+                    egui::vec2(rect.width(), row_h),
+                ),
                 0.0,
                 egui::Color32::from_white_alpha(6),
             );
@@ -558,9 +567,7 @@ fn goal_timeline(ui: &mut egui::Ui, brain: &BrainSnapshot, history: &[HistoryTic
             egui::FontId::proportional(11.0),
             ui.visuals().text_color(),
         );
-        let running_now = history
-            .last()
-            .is_some_and(|(_, r)| r.contains(name));
+        let running_now = history.last().is_some_and(|(_, r)| r.contains(name));
         let color = if running_now {
             egui::Color32::LIGHT_GREEN
         } else {
@@ -655,7 +662,11 @@ fn senses_window(ctx: &egui::Context, item: &Inspected) {
                             "{:.1} blocks away at {}{}",
                             d,
                             pos_label(p),
-                            if d <= b.follow_range { " (in range)" } else { "" }
+                            if d <= b.follow_range {
+                                " (in range)"
+                            } else {
+                                ""
+                            }
                         ),
                         None => "none in the level".to_string(),
                     });
@@ -780,11 +791,17 @@ fn series_chart(ui: &mut egui::Ui, series: &Series) {
     }
     let last = series.samples[n - 1].1;
     ui.label(format!("last {last}, min {min}, max {max}, {n} samples"));
-    let (response, painter) =
-        ui.allocate_painter(egui::vec2(ui.available_width().max(200.0), 140.0), egui::Sense::hover());
+    let (response, painter) = ui.allocate_painter(
+        egui::vec2(ui.available_width().max(200.0), 140.0),
+        egui::Sense::hover(),
+    );
     let rect = response.rect.shrink(4.0);
     painter.rect_filled(response.rect, 2.0, egui::Color32::from_white_alpha(6));
-    let span = if (max - min).abs() < f64::EPSILON { 1.0 } else { max - min };
+    let span = if (max - min).abs() < f64::EPSILON {
+        1.0
+    } else {
+        max - min
+    };
     let (first_tick, last_tick) = (series.samples[0].0, series.samples[n - 1].0);
     let ticks = (last_tick - first_tick).max(1) as f64;
     let points: Vec<egui::Pos2> = series
@@ -796,11 +813,26 @@ fn series_chart(ui: &mut egui::Ui, series: &Series) {
             egui::pos2(x, y)
         })
         .collect();
-    painter.add(egui::Shape::line(points, egui::Stroke::new(1.5, egui::Color32::LIGHT_GREEN)));
+    painter.add(egui::Shape::line(
+        points,
+        egui::Stroke::new(1.5, egui::Color32::LIGHT_GREEN),
+    ));
     let font = egui::FontId::proportional(10.0);
     let color = ui.visuals().weak_text_color();
-    painter.text(rect.left_top(), egui::Align2::LEFT_TOP, format!("{max}"), font.clone(), color);
-    painter.text(rect.left_bottom(), egui::Align2::LEFT_BOTTOM, format!("{min}"), font.clone(), color);
+    painter.text(
+        rect.left_top(),
+        egui::Align2::LEFT_TOP,
+        format!("{max}"),
+        font.clone(),
+        color,
+    );
+    painter.text(
+        rect.left_bottom(),
+        egui::Align2::LEFT_BOTTOM,
+        format!("{min}"),
+        font.clone(),
+        color,
+    );
     painter.text(
         rect.right_bottom(),
         egui::Align2::RIGHT_BOTTOM,
@@ -820,7 +852,11 @@ fn series_chart(ui: &mut egui::Ui, series: &Series) {
 fn watch_window(ctx: &egui::Context, item: &Inspected, series: &Series) {
     let title = format!("{} {}", entity_title(item, "watch"), series.path);
     egui::Window::new(title)
-        .id(egui::Id::unique(("dev tools watch", item.id, series.path.clone())))
+        .id(egui::Id::unique((
+            "dev tools watch",
+            item.id,
+            series.path.clone(),
+        )))
         .default_width(420.0)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {

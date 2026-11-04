@@ -52,7 +52,9 @@ fn vm() -> mlua::Result<Lua> {
         lua.set_interrupt(|_| {
             let over = DEADLINE.with(|d| d.get().is_some_and(|at| Instant::now() > at));
             if over {
-                Err(mlua::Error::runtime(format!("ran over {BUDGET:?}: stopped")))
+                Err(mlua::Error::runtime(format!(
+                    "ran over {BUDGET:?}: stopped"
+                )))
             } else {
                 Ok(mlua::VmState::Continue)
             }
@@ -129,7 +131,9 @@ fn lua_to_snbt(v: &Value) -> Result<String, String> {
             if len > 0 {
                 let mut items = Vec::new();
                 for i in 1..=len {
-                    items.push(lua_to_snbt(&t.raw_get::<Value>(i).map_err(|e| e.to_string())?)?);
+                    items.push(lua_to_snbt(
+                        &t.raw_get::<Value>(i).map_err(|e| e.to_string())?,
+                    )?);
                 }
                 format!("[{}]", items.join(","))
             } else {
@@ -191,7 +195,10 @@ impl Game<'_> {
                 });
                 Ok(found)
             }
-            other => Err(format!("{} is not an entity id or a selector", other.type_name())),
+            other => Err(format!(
+                "{} is not an entity id or a selector",
+                other.type_name()
+            )),
         }
     }
 
@@ -220,7 +227,9 @@ impl Game<'_> {
                 scope.create_function_mut(|lua, line: String| {
                     let mut g = game.borrow_mut();
                     let replies = g.owner_console_command(&line);
-                    let ok = !replies.iter().any(|r| r.starts_with("Unknown or incomplete"));
+                    let ok = !replies
+                        .iter()
+                        .any(|r| r.starts_with("Unknown or incomplete"));
                     Ok((ok, lua.create_sequence_from(replies)?))
                 })?,
             )?;
@@ -276,8 +285,13 @@ impl Game<'_> {
                         let r = DataRef::Entity(t);
                         let done = g.in_target_level(t, |g| {
                             let mut data = g.data_of(&r).ok()?;
-                            let n = data_cmd::modify(Op::Set, &mut data, &path, std::slice::from_ref(&value))
-                                .ok()?;
+                            let n = data_cmd::modify(
+                                Op::Set,
+                                &mut data,
+                                &path,
+                                std::slice::from_ref(&value),
+                            )
+                            .ok()?;
                             if n > 0 {
                                 g.set_data_of(&r, data).ok()?;
                             }
@@ -485,8 +499,7 @@ impl Game<'_> {
                     .and_then(|c| console::signature_hint(&c.name)),
             }
         };
-        let completions = if let Some((start, command)) = console::command_context(&text, cursor)
-        {
+        let completions = if let Some((start, command)) = console::command_context(&text, cursor) {
             tree_completions(start, &command, 0)
         } else if let Some((start, partial)) = console::entity_context(&text, cursor) {
             // An entity argument completes as /tp's target does.

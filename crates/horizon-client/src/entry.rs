@@ -299,7 +299,12 @@ mod tests {
     fn list_mods_is_answered_before_any_mod_is_discovered() {
         // The launcher's query, alone or with the game's other arguments.
         assert!(list_mods_only(&args(&["--list-mods"])));
-        assert!(list_mods_only(&args(&["--game-dir", "x", "--list-mods", "--dev-tools"])));
+        assert!(list_mods_only(&args(&[
+            "--game-dir",
+            "x",
+            "--list-mods",
+            "--dev-tools"
+        ])));
         // A plain start, a mod check and a server start discover their mods.
         assert!(!list_mods_only(&args(&[])));
         assert!(!list_mods_only(&args(&["--dev-tools", "--dev-mod", "m"])));

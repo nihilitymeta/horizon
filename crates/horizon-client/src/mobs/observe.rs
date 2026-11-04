@@ -183,7 +183,8 @@ impl Observed {
     }
     /// Drops what no watch asks for any more.
     fn prune(&mut self) {
-        self.watch.retain(|w| !w.views.is_empty() || !w.paths.is_empty() || w.logged);
+        self.watch
+            .retain(|w| !w.views.is_empty() || !w.paths.is_empty() || w.logged);
         let ids: Vec<u32> = self.watch.iter().map(|w| w.id).collect();
         self.snapshots.retain(|s| ids.contains(&s.id));
         self.data.retain(|d| ids.contains(&d.id));
@@ -199,7 +200,9 @@ impl Observed {
         });
         WATCHING.store(!self.watch.is_empty(), Ordering::Relaxed);
         SHOWING.store(
-            self.watch.iter().any(|w| !w.views.is_empty() || !w.paths.is_empty()),
+            self.watch
+                .iter()
+                .any(|w| !w.views.is_empty() || !w.paths.is_empty()),
             Ordering::Relaxed,
         );
     }
@@ -361,7 +364,11 @@ pub fn set_sample(id: u32, path: &str, tick: u64, value: Result<f64, String>) {
     {
         return;
     }
-    let series = match s.series.iter_mut().position(|(i, x)| *i == id && x.path == path) {
+    let series = match s
+        .series
+        .iter_mut()
+        .position(|(i, x)| *i == id && x.path == path)
+    {
         Some(i) => &mut s.series[i].1,
         None => {
             s.series.push((
@@ -573,7 +580,10 @@ mod tests {
         set_sample(7, "Pos", 1, Ok(1.0));
         let all = snapshots();
         assert_eq!(all.len(), 1);
-        assert_eq!(all[0].data.as_ref().map(|d| d.name.as_str()), Some("Zombie"));
+        assert_eq!(
+            all[0].data.as_ref().map(|d| d.name.as_str()),
+            Some("Zombie")
+        );
         assert!(all[0].brain.is_none());
         assert_eq!(all[0].series.len(), 1);
         assert_eq!(all[0].series[0].samples.len(), 1);

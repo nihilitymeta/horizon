@@ -1072,9 +1072,7 @@ pub fn discover(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
     for step in load_order(&on) {
         let c = &on[step.index];
         if let Some(missing) = step.missing {
-            let e = format!(
-                "needs {missing}, which is not installed, not on, or not that version"
-            );
+            let e = format!("needs {missing}, which is not installed, not on, or not that version");
             log::error!("Horizon: Lua mod {} not loaded: it {e}", c.id);
             to_console(true, format!("[{}] not loaded: {e}", c.id));
             set_status(ModStatus {

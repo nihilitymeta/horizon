@@ -736,9 +736,15 @@ fn dev_tools_commands_come_only_with_the_tools() {
         let tools = vanilla::game_tree(false, horizon, dedicated, true);
         let parse = tools.parse("lua print(1)", &reg());
         assert_eq!(parse.executable().unwrap().1, "lua.run");
-        assert_eq!(tools.parse("inspect clear", &reg()).executable().unwrap().1, "inspect.clear");
+        assert_eq!(
+            tools.parse("inspect clear", &reg()).executable().unwrap().1,
+            "inspect.clear"
+        );
         assert_eq!(tools.nodes[tools.find("lua").unwrap()].permission, 2);
-        assert_eq!(tools.nodes[0].children.len(), plain.nodes[0].children.len() + 7);
+        assert_eq!(
+            tools.nodes[0].children.len(),
+            plain.nodes[0].children.len() + 7
+        );
     }
 }
 

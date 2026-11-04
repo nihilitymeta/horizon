@@ -589,13 +589,17 @@ pub fn game_dispatcher_with_features(features: &[String]) -> &'static Dispatcher
     if !features.iter().any(|f| f == MINECART_IMPROVEMENTS) {
         return game_dispatcher();
     }
-    static TREES: [std::sync::OnceLock<Dispatcher>; 16] = [const { std::sync::OnceLock::new() }; 16];
+    static TREES: [std::sync::OnceLock<Dispatcher>; 16] =
+        [const { std::sync::OnceLock::new() }; 16];
     let dev = std::env::var_os("HORIZON_DEV_COMMANDS").is_some();
     let horizon = HORIZON_COMMANDS.load(std::sync::atomic::Ordering::Relaxed);
     let dedicated = DEDICATED_COMMANDS.load(std::sync::atomic::Ordering::Relaxed);
     let tools = DEV_TOOLS_COMMANDS.load(std::sync::atomic::Ordering::Relaxed);
-    TREES[usize::from(dev) | usize::from(horizon) << 1 | usize::from(dedicated) << 2 | usize::from(tools) << 3].get_or_init(
-        || {
+    TREES[usize::from(dev)
+        | usize::from(horizon) << 1
+        | usize::from(dedicated) << 2
+        | usize::from(tools) << 3]
+        .get_or_init(|| {
             let mut d = build_for_features(dev, dedicated, true);
             if horizon {
                 horizon_commands(&mut d, 0);
@@ -604,8 +608,7 @@ pub fn game_dispatcher_with_features(features: &[String]) -> &'static Dispatcher
                 super::tree_extra::register_dev_tools(&mut d, 0);
             }
             d
-        },
-    )
+        })
 }
 /// Whether this process is a dedicated server, whose tree has the dedicated
 /// commands (`/op`, `/ban`, `/whitelist`...). Single player's server thread
@@ -645,8 +648,14 @@ pub fn set_horizon_commands(on: bool) {
 /// The server.properties key that turns `/pregen` on (Horizon's own; vanilla
 /// ignores keys it doesn't know).
 pub const PREGEN_PROPERTY: &str = "horizon-pregen";
-pub(crate) fn game_tree(dev: bool, horizon: bool, dedicated: bool, tools: bool) -> &'static Dispatcher {
-    static TREES: [std::sync::OnceLock<Dispatcher>; 16] = [const { std::sync::OnceLock::new() }; 16];
+pub(crate) fn game_tree(
+    dev: bool,
+    horizon: bool,
+    dedicated: bool,
+    tools: bool,
+) -> &'static Dispatcher {
+    static TREES: [std::sync::OnceLock<Dispatcher>; 16] =
+        [const { std::sync::OnceLock::new() }; 16];
     match (dev, horizon, dedicated, tools) {
         (true, false, false, false) => dispatcher(),
         (false, false, false, false) => release_dispatcher(),
