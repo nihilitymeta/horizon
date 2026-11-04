@@ -1,5 +1,5 @@
 -- What the mod adds, declared once when the game starts (docs/lua-bindings.md,
--- "Registering content from Lua"). Adding an item, block or entity type here
+-- "Declaring content"). Adding an item, block or entity type here
 -- needs the game restarted; scripts/init.lua reloads with /reload.
 local ns = registry.id
 

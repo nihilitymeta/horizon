@@ -43,6 +43,8 @@ A reference page is written by code from the source it describes, and a test fai
 | [horizon-ctl-commands.md](../horizon-ctl-commands.md) | the command table in `crates/horizon-client/src/bin/horizon-ctl/commands.rs` | `horizon-ctl help --markdown > docs/horizon-ctl-commands.md` |
 | [launcher-commands.md](../launcher-commands.md) | `launcher/src/cli.rs` | `HORIZON_WRITE_DOCS=1 cargo test --manifest-path launcher/Cargo.toml the_launcher_reference` |
 | [launch-reference.md](launch-reference.md) | `crates/horizon-client/src/game/launch_api.rs` | `HORIZON_WRITE_DOCS=1 cargo test -p horizon-client --lib launch_api` |
+| [hook-points.md](hook-points.md), every hook point and host helper, and the Lua handler each reaches | `native-hooks.json` and the hook functions' own docs (`xtask/src/hooks_doc.rs`) | `cargo run -p xtask -- hooks-doc` |
+| [horizon.d.lua](horizon.d.lua), the Luau types for scripted mods ([lua-bindings.md](../lua-bindings.md)) | the tables in `xtask/src/lua_types.rs`, which tests keep equal to the Lua runtime | `cargo run -p xtask -- lua-types` |
 
 So a pull request that changes an API also changes its reference, and the reviewer sees the API's diff in the
 reference's diff. The guides (overview, how-to, examples) are written by hand.
@@ -56,4 +58,3 @@ Every page has the same parts: **Overview** (what you can build), **Guide** (whe
 The website shows these pages at [playhorizon.dev/docs/api](https://playhorizon.dev/docs/api), built from this
 folder, and a summary for players and authors at [playhorizon.dev/docs/apis](https://playhorizon.dev/docs/apis)
 (in the website's repository, horizon-rust/horizon-site).
-- [horizon.d.lua](horizon.d.lua): Luau type definitions for scripted mods (generated; `docs/lua-bindings.md`).
