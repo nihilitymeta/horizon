@@ -1,19 +1,55 @@
 name: event horizon release
-# Event Horizon's releases (docs/event-horizon-releases.md): pushing a tag eh-v<version> on engine-work builds the game
-# and the launcher for Windows x64 on GitHub's runners and publishes them as that tag's GitHub release. Another platform
-# is another row in the matrix (Linux x86_64 needs the apt step below). The launcher's
-# GitHub sources install a release on an installed Horizon version's game files, as an imported build. Only the
-# programs are built here: the game files (exporters, prepared data) come from Horizon's own releases.
-#   git tag eh-v0.1.0 && git push origin eh-v0.1.0
+# Event Horizon's releases (docs/event-horizon-releases.md): the game and the launcher for Windows x64, built on GitHub's
+# runners and published as a GitHub release, which the launchers' GitHub sources install. Only the programs are built
+# here: the game files (exporters, prepared data) come from Horizon's own releases.
+# - A version of your choosing: push a tag eh-v<version> on engine-work.
+#     git tag eh-v0.1.0 && git push origin eh-v0.1.0
+# - A nightly, eh-nightly-<date>: every day at 09:00 UTC (4am Eastern in winter, 5am in summer), from engine-work, when it
+#   changed since the last release. The repository variable NIGHTLY_PAUSED=1 skips nightlies until it is removed:
+#     gh variable set NIGHTLY_PAUSED -R whos-carmen/horizon --body 1      # gh variable delete NIGHTLY_PAUSED to resume
+#   Run one now from the Actions tab or with: gh workflow run "event horizon release" -R whos-carmen/horizon
+# Another platform is another row in the build matrix (Linux x86_64 needs the apt step below).
 on:
   push:
     tags: ['eh-v*']
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: event-horizon-release-${{ github.ref_name }}
+  group: event-horizon-release
+  cancel-in-progress: false
 jobs:
+  decide:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.decide.outputs.tag }}
+      go: ${{ steps.decide.outputs.go }}
+    steps:
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAUSED: ${{ vars.NIGHTLY_PAUSED }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/eh-v* ]]; then
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"; echo "go=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == schedule && "$PAUSED" == 1 ]]; then
+            echo "::notice::NIGHTLY_PAUSED=1: no nightly"; echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          last=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .target_commitish 2>/dev/null || true)
+          if [[ "$GITHUB_EVENT_NAME" == schedule && "$last" == "$GITHUB_SHA" ]]; then
+            echo "::notice::engine-work is what the last release built: no nightly"; echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          tag="eh-nightly-$(date -u +%Y-%m-%d)"
+          # A second nightly on one day (a run by hand) gets -2, -3...
+          n=1; base=$tag
+          while gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" >/dev/null 2>&1; do n=$((n+1)); tag="$base-$n"; done
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"; echo "go=true" >> "$GITHUB_OUTPUT"
   build:
+    needs: decide
+    if: needs.decide.outputs.go == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -24,9 +60,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 240
     env:
-      # Event Horizon's own Azure app for Microsoft sign-in (docs/microsoft-account.md): the repository variable
-      # HORIZON_MSA_CLIENT_ID, never another app's. Unset, the launcher can't sign in, so it can't start the game.
+      # Event Horizon's own Azure app for Microsoft sign-in (docs/event-horizon-sign-in.md): the repository variable
+      # HORIZON_MSA_CLIENT_ID, never another app's. Unset, the launcher can't sign in.
       HORIZON_MSA_CLIENT_ID: ${{ vars.HORIZON_MSA_CLIENT_ID }}
+      TAG: ${{ needs.decide.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
       - name: Linux audio and input libraries
@@ -49,19 +86,19 @@ jobs:
         run: |
           cargo build --release --locked -p horizon-client -p horizon-client-lib --bin horizon-client --bin horizon-ctl
           cargo build --release --locked -p cargo-horizon-mod
-      - name: Build the launcher
-        shell: bash
-        working-directory: launcher
-        # The release it belongs to: the launcher updates itself to a newer eh-v release (game_sources.rs).
-        env:
-          HORIZON_LAUNCHER_TAG: ${{ github.ref_name }}
-        run: |
-          export HORIZON_LAUNCHER_VERSION="${HORIZON_LAUNCHER_TAG#eh-v}"
-          [[ -n "$HORIZON_MSA_CLIENT_ID" ]] || echo "::warning::HORIZON_MSA_CLIENT_ID is not set: this launcher can't sign in to Microsoft, so it can't start the game"
-          cargo build --release --locked
       - name: The game starts
         shell: bash
         run: target/release/horizon-client${{ matrix.exe }} --help | grep -q -- '--resources'
+      - name: Build the launcher
+        shell: bash
+        working-directory: launcher
+        # The release it belongs to, and when it was built: the launcher updates itself to a release published after
+        # it was built (game_sources.rs).
+        run: |
+          [[ -n "$HORIZON_MSA_CLIENT_ID" ]] || echo "::warning::HORIZON_MSA_CLIENT_ID is not set: this launcher can't sign in to Microsoft"
+          export HORIZON_LAUNCHER_TAG="$TAG" HORIZON_LAUNCHER_VERSION="${TAG#eh-}"
+          export HORIZON_LAUNCHER_BUILT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          cargo build --release --locked
       - name: Package
         shell: bash
         run: |
@@ -79,7 +116,7 @@ jobs:
           path: dist/event-horizon-${{ matrix.name }}.*
           if-no-files-found: error
   publish:
-    needs: build
+    needs: [decide, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -94,9 +131,12 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ needs.decide.outputs.tag }}
         run: |
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "Event Horizon ${TAG#eh-}" \
-            --notes "Event Horizon ${TAG#eh-}, built from $GITHUB_SHA. Install it from the launcher's GitHub sources." \
+          case "$TAG" in
+            eh-nightly-*) title="Event Horizon Nightly ${TAG#eh-nightly-}" ;;
+            *) title="Event Horizon ${TAG#eh-v}" ;;
+          esac
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$title" \
+            --notes "$title, built from $GITHUB_SHA. Install it from the launcher's GitHub sources (docs/event-horizon-releases.md)." \
             dist/event-horizon-* dist/SHA256SUMS

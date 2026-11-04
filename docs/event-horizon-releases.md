@@ -23,19 +23,30 @@ Horizon's own releases: they are built with Minecraft's files, which can't be on
 
 ## Publish a release
 
-1. Check `engine-work` as for any push ([fork-workflow.md](fork-workflow.md#5-check-it)).
-2. Tag it and push the tag:
+Releases come two ways, both from the `event horizon release` workflow:
 
-   ```sh
-   git tag eh-v0.1.0 engine-work
-   git push origin eh-v0.1.0
-   ```
+- **Nightly**: every day at 09:00 UTC (4am Eastern in winter, 5am in summer), the workflow builds `engine-work` as
+  `eh-nightly-<date>`, if it changed since the last release. GitHub can start a scheduled run some minutes late.
+- **A version of your choosing**: tag `engine-work` and push the tag:
 
-The `event horizon release` workflow builds the release and publishes it. It takes a while: it compiles the whole
-workspace. Its progress is on the repository's Actions tab.
+  ```sh
+  git tag eh-v0.1.0 engine-work
+  git push origin eh-v0.1.0
+  ```
 
-Version tags start with `eh-v`, so they never mix with upstream's `v…` tags. You decide when to release; nothing is
-released on its own.
+To skip the nightlies, for a day or for good, set the repository variable `NIGHTLY_PAUSED`; delete it to resume:
+
+```sh
+gh variable set NIGHTLY_PAUSED -R whos-carmen/horizon --body 1
+gh variable delete NIGHTLY_PAUSED -R whos-carmen/horizon
+```
+
+To make a nightly now, run the workflow by hand: on the repository's Actions tab, or
+`gh workflow run "event horizon release" -R whos-carmen/horizon`. A build takes a while, since it compiles the whole
+workspace; its progress is on the Actions tab.
+
+The modkit's own workflow does the same at the same time: `nightly-<date>` from its `main`, `v<version>` tags of your
+choosing (matching `horizon-mod.toml`), and its own `NIGHTLY_PAUSED` variable on `whos-carmen/horizon-modkit`.
 
 ## What a developer does
 

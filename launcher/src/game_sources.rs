@@ -52,6 +52,8 @@ pub struct Release {
     pub url: String,
     /// Its size in bytes, as GitHub lists it.
     pub size: u64,
+    /// When the release was published (`2026-11-05T09:12:00Z`), as GitHub says.
+    pub published: String,
     /// The SHA-256 GitHub lists for it, when it does: the download must match.
     pub sha256: Option<String>,
 }
@@ -186,6 +188,10 @@ pub(crate) fn asset(repo: &str, release: &serde_json::Value, ends: &[String]) ->
                 asset: name.to_owned(),
                 url: url.to_owned(),
                 size: a["size"].as_u64().unwrap_or(0),
+                published: release["published_at"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned(),
                 sha256: a["digest"]
                     .as_str()
                     .and_then(|d| d.strip_prefix("sha256:"))
@@ -348,11 +354,20 @@ fn local_build(version: &str) -> Option<String> {
     Some(build.commit.chars().take(7).collect())
 }
 
-/// An Event Horizon release installed from its GitHub source: the release's version (`0.1.0`).
+/// An Event Horizon release installed from its GitHub source: the release as a player reads it
+/// (`0.1.0`, `Nightly 2026-11-05`).
 fn release_build(version: &str) -> Option<String> {
     let about = build_import::about(version)?;
     let tag = about.file.strip_prefix(DEFAULT)?.strip_prefix(' ')?;
-    Some(tag.strip_prefix(TAG_PREFIX).unwrap_or(tag).to_owned())
+    Some(release_name(tag))
+}
+
+/// `eh-v0.1.0` → `0.1.0`, `eh-nightly-2026-11-05` → `Nightly 2026-11-05`.
+fn release_name(tag: &str) -> String {
+    if let Some(date) = tag.strip_prefix(NIGHTLY_PREFIX) {
+        return format!("Nightly {date}");
+    }
+    tag.strip_prefix(TAG_PREFIX).unwrap_or(tag).to_owned()
 }
 
 /// Whether an installed version is Event Horizon's: built here, or one of its releases.
@@ -380,11 +395,13 @@ pub fn label(version: &str) -> Option<String> {
     crate::nightly::label(version)
 }
 
-/// Event Horizon's release tags: `eh-v<version>`.
+/// Event Horizon's release tags: `eh-v<version>` for a version of the owner's choosing,
+/// `eh-nightly-<date>` for a nightly (event-horizon-release.yml).
 pub const TAG_PREFIX: &str = "eh-v";
+pub const NIGHTLY_PREFIX: &str = "eh-nightly-";
 
 pub fn is_event_horizon_tag(tag: &str) -> bool {
-    tag.starts_with(TAG_PREFIX)
+    tag.starts_with(TAG_PREFIX) || tag.starts_with(NIGHTLY_PREFIX)
 }
 
 /// An `eh-v<major>.<minor>.<patch>` tag's numbers, missing ones as zero; None for any other tag.
@@ -404,10 +421,24 @@ fn own_tag() -> Option<&'static str> {
     option_env!("HORIZON_LAUNCHER_TAG").filter(|t| is_event_horizon_tag(t))
 }
 
-fn newer(latest: &str, own: Option<&str>) -> bool {
-    match (numbers(latest), own.and_then(numbers)) {
+/// When the release workflow built this launcher (`HORIZON_LAUNCHER_BUILT`, `2026-11-05T09:03:00Z`).
+fn own_built() -> &'static str {
+    option_env!("HORIZON_LAUNCHER_BUILT").unwrap_or_default()
+}
+
+/// Whether release `latest`, published at `published`, is newer than this launcher's release
+/// `own`, built at `built`: two versions compare by their numbers; otherwise (a nightly on either
+/// side) a release published after this launcher was built is newer.
+fn newer(latest: &str, published: &str, own: Option<&str>, built: &str) -> bool {
+    let Some(own) = own else {
+        return false;
+    };
+    if latest == own {
+        return false;
+    }
+    match (numbers(latest), numbers(own)) {
         (Some(latest), Some(own)) => latest > own,
-        _ => false,
+        _ => !published.is_empty() && !built.is_empty() && published > built,
     }
 }
 
@@ -415,8 +446,8 @@ fn newer(latest: &str, own: Option<&str>) -> bool {
 /// with an archive for this computer, when it is newer than the one this launcher came with.
 pub fn launcher_update(api: Api) -> Option<backend::Release> {
     let found = latest(DEFAULT, api).ok().flatten()?;
-    newer(&found.tag, own_tag()).then(|| backend::Release {
-        name: format!("Event Horizon {}", &found.tag[TAG_PREFIX.len()..]),
+    newer(&found.tag, &found.published, own_tag(), own_built()).then(|| backend::Release {
+        name: format!("Event Horizon {}", release_name(&found.tag)),
         body: String::new(),
         date: String::new(),
         time: String::new(),
@@ -490,14 +521,43 @@ mod tests {
 
     #[test]
     fn the_launcher_updates_only_to_a_newer_event_horizon_release() {
-        assert!(newer("eh-v0.2.0", Some("eh-v0.1.9")));
-        assert!(newer("eh-v0.10.0", Some("eh-v0.9.0")));
-        assert!(!newer("eh-v0.1.0", Some("eh-v0.1.0")));
-        assert!(!newer("eh-v0.1.0", Some("eh-v0.2.0")));
-        // A launcher built by hand, or one of Horizon's tags, never updates from here.
-        assert!(!newer("eh-v0.2.0", None));
-        assert!(!newer("v0.3.0", Some("eh-v0.1.0")));
-        assert!(is_event_horizon_tag("eh-v0.1.0") && !is_event_horizon_tag("launcher@0.2.40"));
+        let built = "2026-11-05T09:03:00Z";
+        // Two versions: by their numbers.
+        assert!(newer("eh-v0.2.0", "", Some("eh-v0.1.9"), built));
+        assert!(newer("eh-v0.10.0", "", Some("eh-v0.9.0"), built));
+        assert!(!newer("eh-v0.1.0", "", Some("eh-v0.1.0"), built));
+        assert!(!newer("eh-v0.1.0", "", Some("eh-v0.2.0"), built));
+        // A nightly on either side: by when it was published, after this launcher was built.
+        assert!(newer(
+            "eh-nightly-2026-11-06",
+            "2026-11-06T09:20:00Z",
+            Some("eh-nightly-2026-11-05"),
+            built
+        ));
+        assert!(newer(
+            "eh-nightly-2026-11-06",
+            "2026-11-06T09:20:00Z",
+            Some("eh-v0.1.0"),
+            built
+        ));
+        assert!(!newer(
+            "eh-nightly-2026-11-05",
+            "2026-11-05T09:01:00Z",
+            Some("eh-v0.1.0"),
+            built
+        ));
+        assert!(!newer(
+            "eh-nightly-2026-11-05",
+            "2026-11-05T09:20:00Z",
+            Some("eh-nightly-2026-11-05"),
+            built
+        ));
+        // A launcher built by hand never updates from here.
+        assert!(!newer("eh-v0.2.0", "2027-01-01T00:00:00Z", None, built));
+        assert!(is_event_horizon_tag("eh-v0.1.0") && is_event_horizon_tag("eh-nightly-2026-11-05"));
+        assert!(!is_event_horizon_tag("launcher@0.2.40"));
+        assert_eq!(release_name("eh-nightly-2026-11-05"), "Nightly 2026-11-05");
+        assert_eq!(release_name("eh-v0.1.0"), "0.1.0");
     }
 
     #[test]

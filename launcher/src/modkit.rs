@@ -242,6 +242,7 @@ mod tests {
             asset: "horizon_modkit.hmod".into(),
             url: String::new(),
             size: 0,
+            published: String::new(),
             sha256: None,
         };
         let on = |tag: &str| State {
