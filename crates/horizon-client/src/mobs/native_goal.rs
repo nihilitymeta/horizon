@@ -379,6 +379,7 @@ impl Actions {
                                     kind: super::DamageKind::MobAttack,
                                     attacker: Some(Who::Mob(m.id)),
                                     from: Some(from),
+                                    attacker_species: Some(m.species()),
                                 },
                             },
                         });
