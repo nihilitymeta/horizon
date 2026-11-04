@@ -372,9 +372,19 @@ fn run(args: &[String]) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// A fresh folder of this test's own: the tests of this binary run side
+    /// by side in one process, so a shared name would have them tread on
+    /// each other's files. A leftover of an interrupted run is removed.
+    fn scratch(test: &str) -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("cargo-horizon-mod-{test}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
     #[test]
     fn the_content_template_builds_and_checks_with_no_code() {
-        let dir = std::env::temp_dir().join(format!("horizon-mod-content-{}", std::process::id()));
+        let dir = scratch("content-template");
         let path = dir.join("gems");
         let new_args = [
             path.display().to_string(),
@@ -420,7 +430,7 @@ mod tests {
     /// says (the wand, its `on_use`).
     #[test]
     fn the_lua_template_builds_and_checks_as_a_scripted_mod_on_the_modkit() {
-        let dir = std::env::temp_dir().join(format!("horizon-mod-lua-{}", std::process::id()));
+        let dir = scratch("lua-template");
         let path = dir.join("my-wand");
         new(&[
             path.display().to_string(),
@@ -475,7 +485,7 @@ mod tests {
     #[test]
     fn the_native_template_packs_into_an_hnmod_the_registry_accepts() {
         use std::io::Write;
-        let dir = std::env::temp_dir().join(format!("horizon-mod-native-{}", std::process::id()));
+        let dir = scratch("native-template");
         let path = dir.join("machine-mod");
         let commit = "0123456789abcdef0123456789abcdef01234567";
         let args = [
