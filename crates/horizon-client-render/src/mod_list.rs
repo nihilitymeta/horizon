@@ -47,6 +47,26 @@ pub enum ModKind {
     Engine,
 }
 
+impl ModKind {
+    /// The Mods page's sections in order: the build's own features as the launcher's Mods page
+    /// lists them (`Kind::SECTIONS`), then the mods the launcher built and the ones installed.
+    pub const SECTIONS: [ModKind; 4] = [
+        ModKind::Hook,
+        ModKind::Engine,
+        ModKind::Native,
+        ModKind::Content,
+    ];
+    /// The language key of the section's header.
+    pub fn header(self) -> &'static str {
+        match self {
+            ModKind::Hook => "horizon.mods.section.hook",
+            ModKind::Engine => "horizon.mods.section.engine",
+            ModKind::Native => "horizon.mods.section.native",
+            ModKind::Content => "horizon.mods.section.content",
+        }
+    }
+}
+
 impl From<crate::mod_registry::Kind> for ModKind {
     fn from(kind: crate::mod_registry::Kind) -> Self {
         match kind {

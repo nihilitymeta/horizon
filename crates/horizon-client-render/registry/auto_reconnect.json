@@ -1,0 +1,8 @@
+{
+  "id": "auto_reconnect",
+  "title": "Auto Reconnect 1.0",
+  "description": "Retries a dropped multiplayer connection.",
+  "kind": "hook",
+  "default_on": false,
+  "setting": { "file": "extras", "key": "autoReconnect", "on": "true", "off": "false" }
+}

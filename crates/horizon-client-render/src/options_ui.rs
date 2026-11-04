@@ -39,6 +39,27 @@ fn on_off(v: bool) -> Text {
 fn track_name(id: &str) -> &str {
     id.rsplit('/').next().unwrap_or(id)
 }
+/// The Extras rows a built-in hook mod's settings page shows under its toggle: the settings a
+/// feature has beyond its switch (the switch is the page's toggle, and a key is bound on the Key
+/// Binds screen). Only a feature with such rows is named here; the Mods page itself groups the
+/// registry's features by kind, so a new `registry/<id>.json` needs no line.
+fn mod_items(id: &str) -> &'static [crate::extras::Item] {
+    use crate::extras::Item;
+    match id {
+        "zoom" => &[Item::ZoomSmooth, Item::ZoomSensitivity, Item::ZoomLevel],
+        "minimap" => &[
+            Item::MinimapCorner,
+            Item::MinimapSize,
+            Item::MinimapShape,
+            Item::MinimapZoom,
+            Item::MinimapRotate,
+        ],
+        "fps_counter" => &[Item::FpsCorner, Item::FpsLows],
+        "keystrokes" => &[Item::KeystrokesCorner, Item::KeystrokesCps],
+        "mouse_tweaks" => &[Item::MouseTweaksWheel],
+        _ => &[],
+    }
+}
 fn chat_px(caption: &str, px: f32) -> Text {
     Text::translate(
         "options.pixel_value",
@@ -1275,6 +1296,7 @@ pub enum Page {
     Extras,
     /// PvP & HUD (`pvp`): the extras a PvP player sets, on their own page.
     Pvp,
+    ModConfigs,
     /// CreditsAndAttributionScreen.
     Credits,
     /// Horizon Settings: every page Horizon adds, as a mod's settings
@@ -1329,6 +1351,7 @@ enum Act {
     /// The installed native mod's settings page.
     ModSettings(usize),
     /// A native mod's key (mod, key) waits for a key; a button of its page.
+    #[allow(dead_code)]
     NativeKey(usize, usize),
     NativeButton(usize, usize),
     OpenModFolder,
@@ -1745,6 +1768,7 @@ fn horizon_page_tooltip(page: Page) -> Option<&'static str> {
         Page::Mods => "horizon.pages.mods.tooltip",
         Page::SplitSetup => "horizon.pages.split_setup.tooltip",
         Page::Music => "horizon.pages.music.tooltip",
+        Page::ModConfigs => "horizon.pages.mod_configs.tooltip",
         _ => return None,
     })
 }
@@ -2336,6 +2360,7 @@ impl OptionsUi {
             Page::Font => "options.font.title",
             Page::Packs => "resourcePack.title",
             Page::Mods => "horizon.pages.mods",
+            Page::ModConfigs => "horizon.pages.mod_configs",
             Page::NativeMod(_) => "Mod Settings",
             Page::ShaderPacks => "horizon.pages.shader_packs",
             Page::ShaderOptions | Page::NativePackOptions(..) => "horizon.pages.shader_options",
@@ -2402,39 +2427,65 @@ impl OptionsUi {
         filtered
     }
 
-    /// A native mod's page: its name, its keys as Key Binds rows (the
-    /// player's choice, else the default), then its buttons.
+    /// A native mod's page: its name, its description, its toggle, then its configuration buttons.
     fn native_rows(&self, s: &Settings, i: usize) -> Vec<Row> {
         let Some(m) = s.mods.installed.get(i) else {
             return Vec::new();
         };
         let mut rows = vec![Row::Note(m.title.clone())];
-        let Some(page) = &m.native else {
-            return rows;
-        };
-        let chosen = s.mods.keys.get(&m.id);
-        for (k, [name, label, default]) in page.keys.iter().enumerate() {
-            let key = chosen.and_then(|c| c.get(name)).unwrap_or(default);
-            let mut message = keybinds::display_name(key);
-            if self.selected_native_key == Some((i, k)) {
-                message = Text::literal("> ")
-                    .append(message.with_color(text::WHITE))
-                    .append(" <")
-                    .with_color(text::YELLOW);
-            }
-            let caption = button(0.0, 0.0, 150.0, Text::literal(label.clone()), Act::None);
-            let change = button(0.0, 0.0, 150.0, message, Act::NativeKey(i, k));
-            rows.push(Row::Buttons(inactive(caption), Some(change)));
+        if !m.description.is_empty() {
+            rows.push(Row::Note(m.description.clone()));
         }
-        for (b, label) in page.buttons.iter().enumerate() {
-            let widget = button(
-                0.0,
-                0.0,
-                310.0,
-                Text::literal(label.clone()),
-                Act::NativeButton(i, b),
-            );
-            rows.push(Row::Buttons(widget, None));
+
+        let on = s.mods.is_on(i);
+        let toggle_label = Text::translate(
+            "options.generic_value",
+            &[tr("horizon.mods.enabled"), on_off(on)],
+        );
+        rows.push(Row::Buttons(
+            button(0.0, 0.0, 310.0, toggle_label, Act::ToggleMod(i)),
+            None,
+        ));
+
+        let items = mod_items(&m.id);
+        if !items.is_empty() {
+            rows.push(Row::Header("horizon.mods.settings"));
+            let extra = |item: crate::extras::Item| {
+                let value = format!("{}: {}", item.caption_text(), item.value(&s.extras));
+                let label = if item.key_name().is_some() && self.selected_key == item.key_name() {
+                    Text::literal(format!("> {value} <")).with_color(text::YELLOW)
+                } else {
+                    Text::literal(value)
+                };
+                let widget = button(0.0, 0.0, 150.0, label, Act::Extra(item));
+                if !on
+                    || item
+                        .parent()
+                        .is_some_and(|p| p.switch(&s.extras) == Some(false))
+                {
+                    inactive(widget)
+                } else {
+                    widget
+                }
+            };
+            for chunk in items.chunks(2) {
+                let left = extra(chunk[0]);
+                let right = chunk.get(1).map(|&item| extra(item));
+                rows.push(Row::Buttons(left, right));
+            }
+        }
+
+        if let Some(page) = &m.native {
+            for (b, label) in page.buttons.iter().enumerate() {
+                let widget = button(
+                    0.0,
+                    0.0,
+                    310.0,
+                    Text::literal(label.clone()),
+                    Act::NativeButton(i, b),
+                );
+                rows.push(Row::Buttons(widget, None));
+            }
         }
         rows
     }
@@ -2498,6 +2549,78 @@ impl OptionsUi {
                 flush(&mut rows, &mut section);
                 rows
             }
+            Page::Mods | Page::ModConfigs => {
+                if s.mods.installed.is_empty() {
+                    return vec![Row::Header("horizon.mods.empty")];
+                }
+                // A section per kind, in the launcher's order (`ModKind::SECTIONS`), so a
+                // feature a registry/<id>.json declares lands in its kind's section with no
+                // line here. Each mod is its toggle, and a Settings button when it has a page.
+                let mut rows = Vec::new();
+                for kind in crate::mod_list::ModKind::SECTIONS {
+                    let mods: Vec<_> = s
+                        .mods
+                        .installed
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, m)| m.kind == kind)
+                        .collect();
+                    if mods.is_empty() {
+                        continue;
+                    }
+                    rows.push(Row::Header(kind.header()));
+                    for (i, m) in mods {
+                        let mut label =
+                            Text::literal(format!("{}: ", m.title)).append(on_off(s.mods.is_on(i)));
+                        if m.problem.as_deref() == Some(crate::mod_list::NOT_BUILT) {
+                            label = label.append(tr("horizon.mods.not_built"));
+                        } else if m.problem.is_some() {
+                            label = label.append(tr("horizon.mods.stopped"));
+                        } else if m.dev {
+                            label = label.append(tr("horizon.mods.dev"));
+                        }
+                        // A content mod's set feeds the block-state tables the
+                        // open world's chunks were decoded with: changing it
+                        // mid-world remaps their ids (Forge/Fabric freeze the
+                        // registry before a world opens). A native, hook or
+                        // engine mod toggles live, so it stays available.
+                        let content = m.kind == crate::mod_list::ModKind::Content;
+                        if self.in_world && content {
+                            label = label.append(tr("horizon.mods.in_world"));
+                        }
+                        let dead = m.dev || m.id.is_empty() || self.in_world && content;
+                        // Keys live on the Key Binds screen, so only a mod with settings of
+                        // its own (a native mod's buttons, a hook mod's Extras rows) has a
+                        // settings page worth a second button.
+                        let has_settings = m
+                            .native
+                            .as_ref()
+                            .is_some_and(|page| !page.buttons.is_empty())
+                            || !mod_items(&m.id).is_empty();
+                        let toggle = button(
+                            0.0,
+                            0.0,
+                            if has_settings { 150.0 } else { 310.0 },
+                            label,
+                            Act::ToggleMod(i),
+                        );
+                        let toggle_widget = if dead { inactive(toggle) } else { toggle };
+                        if has_settings {
+                            let settings = button(
+                                0.0,
+                                0.0,
+                                150.0,
+                                tr("horizon.mods.settings"),
+                                Act::ModSettings(i),
+                            );
+                            rows.push(Row::Buttons(toggle_widget, Some(settings)));
+                        } else {
+                            rows.push(Row::Buttons(toggle_widget, None));
+                        }
+                    }
+                }
+                rows
+            }
             Page::Horizon => {
                 // Two to a row, as vanilla's OptionsList.addSmall lays out
                 // buttons; each opens one of Horizon's settings pages.
@@ -2516,8 +2639,14 @@ impl OptionsUi {
                         Some(open("horizon.pages.open.controller", Page::Controller)),
                     ),
                     Row::Buttons(
-                        open("horizon.pages.open.extras", Page::Extras),
-                        Some(open("horizon.pages.open.mods", Page::Mods)),
+                        button(
+                            0.0,
+                            0.0,
+                            310.0,
+                            tr("horizon.pages.open.extras"),
+                            Act::Push(Page::Extras),
+                        ),
+                        None,
                     ),
                     Row::Buttons(
                         open(
@@ -2817,62 +2946,6 @@ impl OptionsUi {
                 rows
             }
             Page::Font => pairs(&[Opt::ForceUnicode, Opt::JapaneseGlyphs]),
-            Page::Mods => {
-                if s.mods.installed.is_empty() {
-                    return vec![Row::Header("horizon.mods.empty")];
-                }
-                s.mods
-                    .installed
-                    .iter()
-                    .enumerate()
-                    .map(|(i, installed)| {
-                        let mut label = Text::option_name_value(
-                            Text::literal(installed.title.clone()),
-                            on_off(s.mods.is_on(i)),
-                        );
-                        if installed.problem.as_deref() == Some(crate::mod_list::NOT_BUILT) {
-                            label = label.append(tr("horizon.mods.not_built"));
-                        } else if installed.problem.is_some() {
-                            label = label.append(tr("horizon.mods.stopped"));
-                        } else if installed.dev {
-                            label = label.append(tr("horizon.mods.dev"));
-                        }
-                        // A content mod's set feeds the block-state tables the
-                        // open world's chunks were decoded with: changing it
-                        // mid-world remaps their ids (Forge/Fabric freeze the
-                        // registry before a world opens). A native mod toggles
-                        // live through `native_on`, so it stays available.
-                        let content = installed.native.is_none();
-                        if self.in_world && content {
-                            label = label.append(tr("horizon.mods.in_world"));
-                        }
-                        let dead =
-                            installed.dev || installed.id.is_empty() || self.in_world && content;
-                        // Only native mods with actual settings need a second button.
-                        if installed
-                            .native
-                            .as_ref()
-                            .is_some_and(|page| !page.keys.is_empty() || !page.buttons.is_empty())
-                        {
-                            let toggle = button(0.0, 0.0, 150.0, label, Act::ToggleMod(i));
-                            let settings = button(
-                                0.0,
-                                0.0,
-                                150.0,
-                                tr("horizon.mods.settings"),
-                                Act::ModSettings(i),
-                            );
-                            Row::Buttons(
-                                if dead { inactive(toggle) } else { toggle },
-                                Some(settings),
-                            )
-                        } else {
-                            let widget = button(0.0, 0.0, 310.0, label, Act::ToggleMod(i));
-                            Row::Buttons(if dead { inactive(widget) } else { widget }, None)
-                        }
-                    })
-                    .collect()
-            }
             Page::NativeMod(i) => self.native_rows(s, i),
             Page::ShaderPacks => {
                 if s.shader_packs.is_empty() {
@@ -4250,6 +4323,37 @@ impl OptionsUi {
                                 self.selected_key = Some(name);
                             } else {
                                 item.cycle(&mut s.extras, self.shift);
+                                match item {
+                                    crate::extras::Item::Zoom => {
+                                        if !s.extras.zoom {
+                                            s.mods.disabled.insert("zoom".into());
+                                        } else {
+                                            s.mods.disabled.remove("zoom");
+                                        }
+                                    }
+                                    crate::extras::Item::Minimap => {
+                                        if !s.extras.minimap {
+                                            s.mods.disabled.insert("minimap".into());
+                                        } else {
+                                            s.mods.disabled.remove("minimap");
+                                        }
+                                    }
+                                    crate::extras::Item::Fps => {
+                                        if !s.extras.fps {
+                                            s.mods.disabled.insert("fps_counter".into());
+                                        } else {
+                                            s.mods.disabled.remove("fps_counter");
+                                        }
+                                    }
+                                    crate::extras::Item::Keystrokes => {
+                                        if !s.extras.keystrokes {
+                                            s.mods.disabled.insert("keystrokes".into());
+                                        } else {
+                                            s.mods.disabled.remove("keystrokes");
+                                        }
+                                    }
+                                    _ => {}
+                                }
                                 events.push(Event::Changed);
                             }
                         }
@@ -6184,58 +6288,6 @@ mod tests {
         assert!(s.mods.disabled.contains("no_settings"));
     }
 
-    #[test]
-    fn a_native_mods_key_shows_and_keeps_the_key_pressed() {
-        // #3539: Zoom's key set to R showed another key.
-        let atlas = atlas();
-        let mut s = Settings::default();
-        let mut ui = OptionsUi::default();
-        let size = (480.0, 240.0);
-        s.mods.installed.push(crate::mod_list::Installed {
-            kind: crate::mod_list::ModKind::Native,
-            id: "zoom".into(),
-            title: "Zoom 2.0.0".into(),
-            description: String::new(),
-            problem: None,
-            dev: false,
-            native: Some(crate::mod_list::NativePage {
-                keys: vec![["zoom".into(), "Zoom key".into(), "key.keyboard.z".into()]],
-                buttons: Vec::new(),
-            }),
-        });
-        ui.show(Page::NativeMod(0));
-        let key_label = |ui: &mut OptionsUi, s: &Settings| {
-            let (widgets, ..) = ui.layout(s, size.0, size.1);
-            widgets.into_iter().find_map(|w| match w.kind {
-                WKind::Button {
-                    label,
-                    act: Act::NativeKey(0, 0),
-                    ..
-                } => Some((label.plain(), w.x, w.y)),
-                _ => None,
-            })
-        };
-        let (label, x, y) = key_label(&mut ui, &s).expect("the key's row");
-        assert_eq!(label, "Z");
-        ui.click(
-            &mut s,
-            &atlas,
-            x + 1.0,
-            y + 1.0,
-            size,
-            [480, 240],
-            false,
-            false,
-        );
-        assert_eq!(
-            ui.key(&mut s, &atlas, winit::keyboard::KeyCode::KeyR, Some("r")),
-            vec![Event::Changed]
-        );
-        assert_eq!(key_label(&mut ui, &s).unwrap().0, "R");
-        let saved = crate::mod_list::ModList::parse(&s.mods.serialize());
-        assert_eq!(saved.keys_of("zoom"), vec![("zoom", "key.keyboard.r")]);
-    }
-
     fn mode(width: i32, rate: f32) -> crate::window::VideoMode {
         crate::window::VideoMode {
             width,
@@ -7602,7 +7654,6 @@ mod tests {
                 Page::ShaderPacks,
                 Page::Controller,
                 Page::Extras,
-                Page::Mods,
                 Page::SplitSetup,
                 Page::Pvp,
                 Page::Agent,
@@ -8361,6 +8412,178 @@ mod tests {
             ui.click(&mut s, &atlas, ex, ey, size, [854, 480], false, false);
             assert_eq!(s.extras.cosmetics_others, Some(Others::NameTags));
             ui.shift = false;
+        }
+    }
+
+    #[test]
+    fn mod_settings_page_shows_options_and_excludes_keybinds() {
+        let mut s = Settings::default();
+        s.mods.installed.push(crate::mod_list::Installed {
+            kind: crate::mod_list::ModKind::Hook,
+            id: "zoom".into(),
+            title: "Cinematic Zoom".into(),
+            description: "Smooth FOV zoom".into(),
+            problem: None,
+            dev: false,
+            native: Some(crate::mod_list::NativePage {
+                keys: vec![["zoom".into(), "Zoom Key".into(), "key.keyboard.c".into()]],
+                buttons: Vec::new(),
+            }),
+        });
+        let mut ui = OptionsUi::default();
+        ui.show(Page::NativeMod(0));
+        let rows = ui.list_rows(&s);
+        // Excludes duplicate keybinds from mod config screen
+        assert!(!rows.iter().any(|r| matches!(r, Row::Buttons(w, _) if matches!(w.kind, WKind::Button { act: Act::NativeKey(_, _), .. }))));
+        // Includes mod enabled toggle and mod options
+        let acts: Vec<Act> = rows
+            .iter()
+            .filter_map(|r| match r {
+                Row::Buttons(w1, w2) => {
+                    let mut a = vec![match &w1.kind {
+                        WKind::Button { act, .. } => act.clone(),
+                        _ => Act::None,
+                    }];
+                    if let Some(w2) = w2
+                        && let WKind::Button { act, .. } = &w2.kind
+                    {
+                        a.push(act.clone());
+                    }
+                    Some(a)
+                }
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert!(acts.contains(&Act::ToggleMod(0)));
+        assert!(acts.contains(&Act::Extra(crate::extras::Item::ZoomSmooth)));
+        assert!(acts.contains(&Act::Extra(crate::extras::Item::ZoomSensitivity)));
+        assert!(acts.contains(&Act::Extra(crate::extras::Item::ZoomLevel)));
+
+        // The toggle's label is a translated line, not English in the code.
+        let toggle = rows.iter().find_map(|r| match r {
+            Row::Buttons(w, _)
+                if matches!(
+                    w.kind,
+                    WKind::Button {
+                        act: Act::ToggleMod(0),
+                        ..
+                    }
+                ) =>
+            {
+                Some(w)
+            }
+            _ => None,
+        });
+        let en = crate::lang::Language::load(&[], "en_us");
+        assert!(en.get("horizon.mods.enabled").is_some());
+
+        // The Mods page shows the hook mod as its toggle and a Settings button to this page,
+        // under the hook mods' header, with no Extras row of its own.
+        ui.show(Page::Mods);
+        let page = ui.list_rows(&s);
+        assert!(toggle.is_some());
+        let acts: Vec<Act> = page
+            .iter()
+            .filter_map(|r| match r {
+                Row::Buttons(w1, w2) => {
+                    let mut a = vec![match &w1.kind {
+                        WKind::Button { act, .. } => act.clone(),
+                        _ => Act::None,
+                    }];
+                    if let Some(w2) = w2
+                        && let WKind::Button { act, .. } = &w2.kind
+                    {
+                        a.push(act.clone());
+                    }
+                    Some(a)
+                }
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert_eq!(acts, vec![Act::ToggleMod(0), Act::ModSettings(0)]);
+        assert!(matches!(page[0], Row::Header("horizon.mods.section.hook")));
+    }
+
+    /// The Mods page has a section per kind in the launcher's order, each named by a bundled key,
+    /// so a feature the registry declares with a kind lands in its section with no code.
+    #[test]
+    fn mods_page_groups_installed_mods_by_kind_in_the_launcher_order() {
+        use crate::mod_list::{Installed, ModKind, NativePage};
+        let mut s = Settings::default();
+        let mut add = |id: &str, kind: ModKind, buttons: Vec<String>| {
+            s.mods.installed.push(Installed {
+                kind,
+                id: id.into(),
+                title: format!("{id} 1.0"),
+                description: String::new(),
+                problem: None,
+                dev: false,
+                native: (kind != ModKind::Content).then(|| NativePage {
+                    keys: Vec::new(),
+                    buttons,
+                }),
+            });
+        };
+        // Installed in no particular order; one of each kind, plus a second hook.
+        add("pack", ModKind::Content, Vec::new());
+        add("fullbright", ModKind::Hook, Vec::new());
+        add("tool", ModKind::Native, vec!["Setting".into()]);
+        add("cas", ModKind::Engine, Vec::new());
+        add("zoom", ModKind::Hook, Vec::new());
+        let mut ui = OptionsUi::default();
+        ui.show(Page::Mods);
+        let rows = ui.list_rows(&s);
+        let order: Vec<String> = rows
+            .iter()
+            .map(|r| match r {
+                Row::Header(key) => (*key).to_owned(),
+                Row::Buttons(w, settings) => match (&w.kind, settings) {
+                    (
+                        WKind::Button {
+                            act: Act::ToggleMod(i),
+                            ..
+                        },
+                        None,
+                    ) => {
+                        format!("toggle {i}")
+                    }
+                    (
+                        WKind::Button {
+                            act: Act::ToggleMod(i),
+                            ..
+                        },
+                        Some(_),
+                    ) => {
+                        format!("toggle {i} + settings")
+                    }
+                    _ => panic!("unexpected row"),
+                },
+                _ => panic!("unexpected row"),
+            })
+            .collect();
+        assert_eq!(
+            order,
+            [
+                "horizon.mods.section.hook",
+                "toggle 1",
+                "toggle 4 + settings",
+                "horizon.mods.section.engine",
+                "toggle 3",
+                "horizon.mods.section.native",
+                "toggle 2 + settings",
+                "horizon.mods.section.content",
+                "toggle 0",
+            ]
+        );
+        let en = crate::lang::Language::load(&[], "en_us");
+        for kind in ModKind::SECTIONS {
+            assert!(
+                en.get(kind.header()).is_some(),
+                "{} has no English line",
+                kind.header()
+            );
         }
     }
 }

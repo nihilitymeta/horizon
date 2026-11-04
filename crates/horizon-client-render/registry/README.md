@@ -5,7 +5,7 @@ hook mods, such as zoom and the minimap, and the engine patches, such as sharpen
 
 `build.rs` collects the files, and `src/mod_registry.rs` reads them. The game uses them in three places:
 
-- Options > Mods lists the features.
+- Options > Mods lists the features, in one section for each kind.
 - `horizon-client --list-mods` prints them as JSON, for the launcher.
 - `horizon-mods.txt` keeps a `mod.<id>` line for each feature, in step with the setting the feature switches. The
   launcher turns a feature on or off by writing that line.

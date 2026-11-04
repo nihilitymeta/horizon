@@ -1,0 +1,8 @@
+{
+  "id": "inventory_sort",
+  "title": "Inventory Sorting 1.0",
+  "description": "Sorts chests and inventories with one key.",
+  "kind": "hook",
+  "default_on": false,
+  "setting": { "file": "extras", "key": "sort", "on": "true", "off": "false" }
+}
