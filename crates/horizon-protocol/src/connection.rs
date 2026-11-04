@@ -240,13 +240,15 @@ pub enum Transport {
     },
 }
 
-/// Packets received/sent and bytes in/out, for the debug screen.
+/// Packets received/sent and bytes in/out, and what the connection runs over, for the debug
+/// screen.
 #[derive(Debug, Default)]
 pub struct Counters {
     pub received: AtomicI64,
     pub sent: AtomicI64,
     pub bytes_in: AtomicI64,
     pub bytes_out: AtomicI64,
+    pub transport: std::sync::OnceLock<Transport>,
 }
 
 pub struct ConnReader {
@@ -408,6 +410,14 @@ impl Connection {
     }
     fn over(stream: Stream) -> Result<Self> {
         let counters = Arc::new(Counters::default());
+        let transport = match &stream {
+            Stream::Tcp(_) | Stream::Detached => Transport::Tcp,
+            Stream::Memory(_) => Transport::Memory,
+            Stream::WebSocket(w) => Transport::WebSocket {
+                secure: w.is_secure(),
+            },
+        };
+        let _ = counters.transport.set(transport);
         let write = stream.try_clone()?;
         Ok(Self {
             reader: ConnReader {
@@ -440,13 +450,12 @@ impl Connection {
     }
     /// What the connection runs over.
     pub fn transport(&self) -> Transport {
-        match &self.reader.stream {
-            Stream::Tcp(_) | Stream::Detached => Transport::Tcp,
-            Stream::Memory(_) => Transport::Memory,
-            Stream::WebSocket(w) => Transport::WebSocket {
-                secure: w.is_secure(),
-            },
-        }
+        self.reader
+            .counters
+            .transport
+            .get()
+            .copied()
+            .unwrap_or(Transport::Tcp)
     }
     /// `Connection.isMemoryConnection`: through a [`Pipe`] rather than a socket.
     pub fn is_memory(&self) -> bool {
