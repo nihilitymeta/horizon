@@ -255,6 +255,7 @@ impl Game<'_> {
                 health: p.health.health(),
                 yaw: p.yaw,
                 pitch: p.pitch,
+                entity_id: p.entity_id,
             },
         );
         players

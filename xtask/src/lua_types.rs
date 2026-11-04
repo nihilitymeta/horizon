@@ -391,7 +391,6 @@ const FUNCTIONS: &[(&str, &str)] = &[
     ("set_strength", "(n: number) -> ()"),
     ("set_duration", "(ticks: number) -> ()"),
     ("reply", "(text: string) -> ()"),
-    ("set_line", "(text: string) -> ()"),
 ];
 
 /// The `registry` global of `scripts/registry.lua`.

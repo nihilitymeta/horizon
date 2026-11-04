@@ -3352,19 +3352,14 @@ impl Hooks for LuaMod {
         if let Ok(mut names) = self.names.lock() {
             names.insert(event.player, event.name.to_owned());
         }
-        let r = self.call_bare(
-            hook,
-            None,
-            (player, event.message),
-            &mut |action, args| {
-                match action {
-                    "cancel" => cancel = true,
-                    "reply" => replies.push(args.get::<String>(1)?),
-                    other => log::warn!("[lua:{}] {hook}: {other} needs a host; dropped", self.id),
-                }
-                Ok(())
-            },
-        );
+        let r = self.call_bare(hook, None, (player, event.message), &mut |action, args| {
+            match action {
+                "cancel" => cancel = true,
+                "reply" => replies.push(args.get::<String>(1)?),
+                other => log::warn!("[lua:{}] {hook}: {other} needs a host; dropped", self.id),
+            }
+            Ok(())
+        });
         if let Err(e) = r {
             return self.hook_error(hook, e);
         }
@@ -4547,6 +4542,7 @@ experimental = ["scripts"]
                 health: 20.0,
                 yaw: 0.0,
                 pitch: 0.0,
+                entity_id: 0,
             })
         }
         fn mob_view(&self, dimension: &str, id: u32) -> Option<MobView> {
@@ -5586,6 +5582,7 @@ experimental = ["scripts"]
                 health: 20.0,
                 yaw: 0.0,
                 pitch: 0.0,
+                entity_id: 0,
             })
         }
         fn held(&self) -> Option<(String, u32, bool)> {
