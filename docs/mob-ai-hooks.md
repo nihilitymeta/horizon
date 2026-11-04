@@ -48,8 +48,8 @@ Trait mods get `MobAiRegisterEvent { mob }`, and the types `Mob`, `MobType`, `Go
 through `horizon_client::mod_api`.
 
 The hook's fragment is `tools/native-hook-fragments/mob_ai_register.json`. Its API number is given when the fragment
-is stamped with `python3 tools/stamp_native_hooks.py`, which this fork does not do. A bundle built on the fork pins
-the fork's commit instead.
+is stamped with `python3 tools/stamp_native_hooks.py`, which Event Horizon does not do. A bundle built on Event Horizon pins
+its commit instead.
 
 ## Goals for mods
 
