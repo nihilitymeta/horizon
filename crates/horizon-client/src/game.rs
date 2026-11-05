@@ -17551,7 +17551,8 @@ impl Game<'_> {
         {
             use crate::dev_tools::{self, Input};
             let playing = self.screen == Screen::Playing && self.title.is_none();
-            match dev_tools::window_event(self.window.as_deref(), &event, playing) {
+            let key = self.settings.keys.get("key.devTools");
+            match dev_tools::window_event(self.window.as_deref(), &event, playing, key) {
                 Input::Pass => {}
                 Input::Consumed => return,
                 Input::Toggled { free } => {

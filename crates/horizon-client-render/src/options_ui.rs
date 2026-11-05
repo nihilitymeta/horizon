@@ -3143,8 +3143,11 @@ impl OptionsUi {
                     list: false,
                     row: 0,
                 });
-                let mut mappings: Vec<(&str, &str)> =
-                    MAPPINGS.iter().map(|(n, _, c)| (*n, *c)).collect();
+                let mut mappings: Vec<(&str, &str)> = MAPPINGS
+                    .iter()
+                    .filter(|(n, _, _)| crate::keybinds::listed(n))
+                    .map(|(n, _, c)| (*n, *c))
+                    .collect();
                 let query = self.settings_search.value.to_lowercase();
                 mappings.retain(|(name, _)| {
                     query.is_empty() || lang::get(name).to_lowercase().contains(&query)

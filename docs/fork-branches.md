@@ -38,7 +38,7 @@ per mod, libraries first (`depends`, `require`).
   the hook points in [api/hook-points.md](api/hook-points.md).
 
 **Developer tools** (`archive/egui-tools`). Tools drawn with egui over the world, on only with `--dev-tools` or
-`HORIZON_DEV_TOOLS=1`. Their commands exist only then, and only the host may use `/lua`. `F8` frees the mouse.
+`HORIZON_DEV_TOOLS=1`. Their commands exist only then, and only the host may use `/lua`. `F8` (the Free Mouse for Dev Windows binding) frees the mouse.
 
 - `/inspect <targets>` shows an entity's data as a tree, `/goals` a mob's goal selectors, `/senses` what it
   perceives, `/nav` its path drawn in the world, `/watch <targets> <path>` a number over time, and `/mobai log` AI

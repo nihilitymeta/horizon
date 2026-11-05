@@ -552,6 +552,26 @@ impl Game<'_> {
                     return ok();
                 }
                 self.require_world()?;
+                // The dev windows' key (Free Mouse for Dev Windows), as a
+                // window's press of it is (`dev_tools::window_event`).
+                if action != "up"
+                    && crate::dev_tools::takes_key()
+                    && horizon_client::keybinds::key_name(key)
+                        == Some(self.settings.keys.get("key.devTools"))
+                    && let Some(window) = self.window.clone()
+                {
+                    let playing = self.screen == super::Screen::Playing && self.title.is_none();
+                    if let crate::dev_tools::Input::Toggled { free } =
+                        crate::dev_tools::toggle(&window, playing)
+                    {
+                        if free {
+                            self.capture(false);
+                        } else if playing {
+                            self.capture(true);
+                        }
+                    }
+                    return ok();
+                }
                 // KeyboardHandler.keyPress: the open screen's narration hears it.
                 super::narrator::narrate_key(&mut self.narration, key, arg(2)? != "up");
                 // The sign editor takes raw presses (Enter, arrows, Backspace, Escape).
@@ -1557,7 +1577,12 @@ fn key_code(name: &str) -> Option<KeyCode> {
         "f4" => KeyCode::F4,
         "f5" => KeyCode::F5,
         "f6" => KeyCode::F6,
+        "f7" => KeyCode::F7,
+        "f8" => KeyCode::F8,
+        "f9" => KeyCode::F9,
+        "f10" => KeyCode::F10,
         "f11" => KeyCode::F11,
+        "f12" => KeyCode::F12,
         "slash" | "/" => KeyCode::Slash,
         "backspace" => KeyCode::Backspace,
         "pageup" => KeyCode::PageUp,

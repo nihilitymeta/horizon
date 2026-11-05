@@ -71,8 +71,11 @@ A watch set in one world never shows an entity with the same id in the next worl
 
 ## The pointer
 
-Press F8 to free the mouse from mouselook, and again to give it back. Set `HORIZON_DEV_TOOLS_KEY` to a vanilla key
-name, such as `key.keyboard.f9`, to use another key.
+Press F8 to free the mouse from mouselook, and again to give it back. F8 is the default of a key binding, **Free
+Mouse for Dev Windows** (`key.devTools`), under Miscellaneous in Options → Controls → Key Binds. Rebind it there to
+another key or a mouse button, as any binding; it is saved in `options.txt` as `key_key.devTools`. Key Binds lists it
+only in a game that has the windows (Lua mods on, or `--dev-tools`), and the saved binding stays either way.
+horizon-ctl's `key` presses it too, as a window's key press does.
 
 While the mouse is free, it belongs to the tools:
 

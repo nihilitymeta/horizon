@@ -24,6 +24,7 @@
   "horizon.options.keyboard.steam": "Steam",
   "key.zoom": "Zoom",
   "key.minimap": "Minimap",
+  "key.devTools": "Free Mouse for Dev Windows",
   "horizon.options.unavailable": "This feature is not yet available in Horizon.",
   "horizon.options.search": "Search settings...",
   "horizon.pages.mods": "Mods",

@@ -36,6 +36,9 @@ pub const MAPPINGS: &[(&str, &str, &str)] = &[
     ("key.fullscreen", "key.keyboard.f11", "misc"),
     ("key.zoom", "key.keyboard.c", "misc"),
     ("key.minimap", "key.keyboard.m", "misc"),
+    // Event Horizon's dev windows: frees the mouse for them and takes it
+    // back; listed only in a game that has them ([`show_dev_tools_key`]).
+    ("key.devTools", "key.keyboard.f8", "misc"),
     ("key.spectatorOutlines", "key.keyboard.unknown", "spectator"),
     ("key.spectatorHotbar", "key.mouse.middle", "spectator"),
     ("key.swapOffhand", "key.keyboard.f", "inventory"),
@@ -76,6 +79,20 @@ pub const MAPPINGS: &[(&str, &str, &str)] = &[
     ("key.debug.lightmapTexture", "key.keyboard.4", "debug"),
     ("key.debug.improvedTransparency", "key.keyboard.x", "debug"),
 ];
+static DEV_TOOLS_KEY_LISTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// The game has the dev windows: Key Binds lists their key.
+pub fn show_dev_tools_key(on: bool) {
+    DEV_TOOLS_KEY_LISTED.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether Key Binds lists the mapping `name`: every one, but the dev
+/// windows' key only in a game that has them. All are saved either way.
+pub fn listed(name: &str) -> bool {
+    name != "key.devTools" || DEV_TOOLS_KEY_LISTED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Mappings Options builds as `ToggleKeyMapping` (hold or toggle by option).
 pub fn is_toggle(name: &str) -> bool {
     matches!(name, "key.sneak" | "key.sprint" | "key.use" | "key.attack")
@@ -504,6 +521,18 @@ impl KeyBinds {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_dev_windows_key_is_listed_only_in_a_game_that_has_them() {
+        assert_eq!(KeyBinds::default_of("key.devTools"), "key.keyboard.f8");
+        assert!(listed("key.zoom"));
+        show_dev_tools_key(false);
+        assert!(!listed("key.devTools"));
+        show_dev_tools_key(true);
+        assert!(listed("key.devTools"));
+        show_dev_tools_key(false);
+    }
+
     use super::*;
     #[test]
     fn container_mouse_hotkeys_follow_slot_bindings_and_pick_item_priority() {

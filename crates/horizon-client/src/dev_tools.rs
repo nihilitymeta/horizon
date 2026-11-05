@@ -42,10 +42,6 @@ pub const FLAG: &str = "--dev-tools";
 /// it follows the window's height in pixels: 1.0 below 1200, 1.5 up to 2000,
 /// 2.0 above (a 1440p or 4K window at scale 1 would otherwise be tiny).
 pub const SCALE_ENV: &str = "HORIZON_DEV_TOOLS_SCALE";
-/// `HORIZON_DEV_TOOLS_KEY`: the key that frees the pointer for the tools and
-/// takes it back, by its vanilla name (`key.keyboard.f8` by default).
-pub const KEY_ENV: &str = "HORIZON_DEV_TOOLS_KEY";
-const DEFAULT_KEY: &str = "key.keyboard.f8";
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 /// Whether the windows are installed: with the tools, or for the inspect stick.
@@ -76,15 +72,17 @@ thread_local! {
 pub fn mods(scripted: bool) -> Vec<Box<dyn Hooks>> {
     let mut mods: Vec<Box<dyn Hooks>> = Vec::new();
     let asked = std::env::var(ENV).is_ok_and(|v| v == "1") || std::env::args().any(|a| a == FLAG);
-    if !asked && scripted {
+    if asked || scripted {
         INSTALLED.store(true, Ordering::Relaxed);
+        // Their key, Free Mouse for Dev Windows, shows in Key Binds.
+        horizon_client::keybinds::show_dev_tools_key(true);
+    }
+    if !asked && scripted {
         mods.push(Box::new(DevTools::default()));
     }
     if asked {
-        INSTALLED.store(true, Ordering::Relaxed);
         log::info!(
-            "Horizon: developer tools on ({ENV}=1 or {FLAG}); {} frees the pointer",
-            toggle_key()
+            "Horizon: developer tools on ({ENV}=1 or {FLAG}); Free Mouse for Dev Windows (Key Binds) frees the pointer"
         );
         ENABLED.store(true, Ordering::Relaxed);
         // The commands come with the tools and only then: they run Lua and
@@ -110,13 +108,6 @@ fn active() -> bool {
 /// game grabs it until the key is pressed again.
 pub fn holds_pointer() -> bool {
     HOLDS_POINTER.load(Ordering::Relaxed)
-}
-
-fn toggle_key() -> String {
-    std::env::var(KEY_ENV)
-        .ok()
-        .filter(|k| k.starts_with("key.keyboard."))
-        .unwrap_or_else(|| DEFAULT_KEY.to_string())
 }
 
 /// The zoom the variable asks for, if any.
@@ -186,38 +177,70 @@ pub enum Input {
     Toggled { free: bool },
 }
 
+/// Whether `event` presses `key`, the binding Free Mouse for Dev Windows
+/// (`key.devTools`): a key, or a mouse button.
+fn presses(event: &WindowEvent, key: &str) -> bool {
+    match event {
+        WindowEvent::KeyboardInput {
+            event: k,
+            is_synthetic: false,
+            ..
+        } => {
+            k.state == ElementState::Pressed
+                && !k.repeat
+                && matches!(k.physical_key, PhysicalKey::Code(code)
+                    if crate::keybinds::key_name(code) == Some(key))
+        }
+        WindowEvent::MouseInput {
+            state: ElementState::Pressed,
+            button,
+            ..
+        } => crate::keybinds::mouse_name(*button) == key,
+        _ => false,
+    }
+}
+
+/// The binding Free Mouse for Dev Windows was pressed: the pointer is freed
+/// for the windows (only while `playing`), or given back. A window event's
+/// press comes here, and so does horizon-ctl's `key`, which skips the window.
+pub fn toggle(window: &Window, playing: bool) -> Input {
+    let held = holds_pointer();
+    if !held && !playing {
+        return Input::Pass;
+    }
+    HOLDS_POINTER.store(!held, Ordering::Relaxed);
+    if held {
+        // The pointer leaves egui with the grab: no hover stays lit.
+        with_winit(window, |s| {
+            s.egui_input_mut().events.push(egui::Event::PointerGone);
+        });
+    }
+    Input::Toggled { free: !held }
+}
+
+/// Whether the windows take a press of their key now (see [`toggle`]).
+pub fn takes_key() -> bool {
+    active()
+}
+
 /// A window event, before the game handles it. `playing` is whether the
 /// pointer would be the game's now (in the world, no screen): the key frees
-/// it only then, and takes it back from anywhere.
-pub fn window_event(window: Option<&Window>, event: &WindowEvent, playing: bool) -> Input {
+/// it only then, and takes it back from anywhere. `key` is the binding Free
+/// Mouse for Dev Windows (`key.devTools`, F8 unless rebound).
+pub fn window_event(
+    window: Option<&Window>,
+    event: &WindowEvent,
+    playing: bool,
+    key: &str,
+) -> Input {
     if !active() {
         return Input::Pass;
     }
     let Some(window) = window else {
         return Input::Pass;
     };
-    if let WindowEvent::KeyboardInput {
-        event: key,
-        is_synthetic: false,
-        ..
-    } = event
-        && key.state == ElementState::Pressed
-        && !key.repeat
-        && let PhysicalKey::Code(code) = key.physical_key
-        && crate::keybinds::key_name(code) == Some(toggle_key().as_str())
-    {
-        let held = holds_pointer();
-        if !held && !playing {
-            return Input::Pass;
-        }
-        HOLDS_POINTER.store(!held, Ordering::Relaxed);
-        if held {
-            // The pointer leaves egui with the grab: no hover stays lit.
-            with_winit(window, |s| {
-                s.egui_input_mut().events.push(egui::Event::PointerGone);
-            });
-        }
-        return Input::Toggled { free: !held };
+    if presses(event, key) {
+        return toggle(window, playing);
     }
     // Modifiers are tracked even while the game has the pointer, so a text
     // field typed into right after the key sees the right ones.
