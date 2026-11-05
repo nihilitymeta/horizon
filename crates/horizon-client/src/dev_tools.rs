@@ -17,7 +17,9 @@
 pub mod console;
 
 use crate::gfx::native_render::{RenderHooks, WorldDrawnEvent};
-use crate::mobs::observe::{self, BrainSnapshot, GoalRow, HistoryTick, Inspected, Series, View};
+use crate::mobs::observe::{
+    self, BrainSnapshot, GoalRow, HistoryTick, Inspected, Request, Series, View,
+};
 use crate::mod_api::{Hooks, Host, NativeBlockRim, VisualsEvent};
 use horizon_client_core::snbt::java_hash_order;
 use horizon_world::nbt::Tag;
@@ -313,13 +315,53 @@ fn key_matches(key: &str, filter: &str) -> bool {
     filter.is_empty() || key.to_lowercase().contains(filter)
 }
 
+/// A compound's key as an NBT path writes it: as it is, or quoted when it
+/// holds a character that ends an unquoted key (`NbtPath::parse`).
+fn path_key(key: &str) -> String {
+    let plain = !key.is_empty()
+        && !key
+            .bytes()
+            .any(|b| matches!(b, b' ' | b'"' | b'\'' | b'[' | b']' | b'.' | b'{' | b'}'));
+    if plain {
+        key.to_string()
+    } else {
+        format!("\"{}\"", key.replace('\\', "\\\\").replace('"', "\\\""))
+    }
+}
+
+/// The NBT path of a compound's child `key` under `parent` (empty: the root).
+fn child_path(parent: &str, key: &str) -> String {
+    if parent.is_empty() {
+        path_key(key)
+    } else {
+        format!("{parent}.{}", path_key(key))
+    }
+}
+
+/// Whether `/watch` charts the tag: a number.
+fn watchable(tag: &Tag) -> bool {
+    matches!(
+        tag,
+        Tag::Byte(_) | Tag::Short(_) | Tag::Int(_) | Tag::Long(_) | Tag::Float(_) | Tag::Double(_)
+    )
+}
+
 /// One node of the data tree: a compound or list folds, a leaf shows its
 /// SNBT value as `/data get` prints it. `path` is the node's NBT path, the
 /// salt of its fold state and the tooltip (it is what `/data get entity
 /// <target> <path>` takes). With a filter, leaves whose key does not match
 /// are left out, a container whose key matches shows all of itself, and
-/// the rest open to show what matched inside.
-fn tag_node(ui: &mut egui::Ui, key: &str, path: &str, tag: &Tag, depth: usize, filter: &str) {
+/// the rest open to show what matched inside. A number has a watch button,
+/// which charts that path of entity `id` as `/watch` does.
+fn tag_node(
+    ui: &mut egui::Ui,
+    id: u32,
+    key: &str,
+    path: &str,
+    tag: &Tag,
+    depth: usize,
+    filter: &str,
+) {
     let filter = if key_matches(key, filter) { "" } else { filter };
     match tag {
         Tag::Compound(c) => {
@@ -332,12 +374,8 @@ fn tag_node(ui: &mut egui::Ui, key: &str, path: &str, tag: &Tag, depth: usize, f
                 .show(ui, |ui| {
                     for (k, v) in java_hash_order(c) {
                         let k = k.to_string_lossy();
-                        let child = if path.is_empty() {
-                            k.clone()
-                        } else {
-                            format!("{path}.{k}")
-                        };
-                        tag_node(ui, &k, &child, v, depth + 1, filter);
+                        let child = child_path(path, &k);
+                        tag_node(ui, id, &k, &child, v, depth + 1, filter);
                     }
                 })
                 .header_response
@@ -357,7 +395,7 @@ fn tag_node(ui: &mut egui::Ui, key: &str, path: &str, tag: &Tag, depth: usize, f
                 .show(ui, |ui| {
                     for (i, v) in items.iter().enumerate() {
                         let child = format!("{path}[{i}]");
-                        tag_node(ui, &format!("[{i}]"), &child, v, depth + 1, filter);
+                        tag_node(ui, id, &format!("[{i}]"), &child, v, depth + 1, filter);
                     }
                 })
                 .header_response
@@ -371,6 +409,14 @@ fn tag_node(ui: &mut egui::Ui, key: &str, path: &str, tag: &Tag, depth: usize, f
                 ui.label(egui::RichText::new(format!("{key}:")).color(egui::Color32::LIGHT_BLUE))
                     .on_hover_text(path);
                 ui.add(egui::Label::new(egui::RichText::new(to_snbt(leaf)).monospace()).wrap());
+                if watchable(leaf)
+                    && ui
+                        .small_button("watch")
+                        .on_hover_text(format!("chart {path} over time, as /watch does"))
+                        .clicked()
+                {
+                    observe::add_path(&[id], path);
+                }
             });
         }
     }
@@ -473,7 +519,7 @@ fn inspect_window(ctx: &egui::Context, item: &Inspected) {
                 Some(d) => {
                     stale_note(ui, d.taken, "update");
                     ui.separator();
-                    tag_node(ui, "entity data", "", &d.data, 0, &filter);
+                    tag_node(ui, item.id, "entity data", "", &d.data, 0, &filter);
                     ui.separator();
                     egui::CollapsingHeader::new("SNBT, as /data get prints it")
                         .id_salt("snbt")
@@ -611,6 +657,30 @@ fn goal_timeline(ui: &mut egui::Ui, brain: &BrainSnapshot, history: &[HistoryTic
     }
 }
 
+/// The Goals window's log button, `/mobai log` for this mob: the game opens
+/// the file at its next tick, and the line names it while it is written.
+fn log_line(ui: &mut egui::Ui, item: &Inspected) {
+    ui.horizontal(|ui| match &item.log_file {
+        Some(file) => {
+            if ui.button("stop log").clicked() {
+                observe::request(Request::StopLog(item.id));
+            }
+            ui.colored_label(egui::Color32::LIGHT_GREEN, format!("logging to {file}"));
+        }
+        None => {
+            if ui
+                .button("log")
+                .on_hover_text(
+                    "write its AI snapshot each tick to dev-tools/logs/, as /mobai log does",
+                )
+                .clicked()
+            {
+                observe::request(Request::StartLog(item.id));
+            }
+        }
+    });
+}
+
 fn goals_window(ctx: &egui::Context, item: &Inspected) {
     egui::Window::new(entity_title(item, "goals"))
         .id(egui::Id::unique(("dev tools goals", item.id)))
@@ -620,6 +690,7 @@ fn goals_window(ctx: &egui::Context, item: &Inspected) {
             let Some(brain) = mob_header(ui, item, View::Goals) else {
                 return;
             };
+            log_line(ui, item);
             ui.strong("goals");
             goal_table(ui, "goals", &brain.goals);
             ui.add_space(4.0);
@@ -1014,5 +1085,63 @@ impl RenderHooks for DevTools {
         for id in &output.textures_delta.free {
             painter.renderer.free_texture(id);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use horizon_client_core::nbt_path::NbtPath;
+    use horizon_world::nbt::{Compound, JavaString};
+
+    /// Every number of `tag`, with the path the tree gives it.
+    fn numbers(path: &str, tag: &Tag, out: &mut Vec<(String, Tag)>) {
+        match tag {
+            Tag::Compound(c) => {
+                for (k, v) in c.iter() {
+                    numbers(&child_path(path, &k.to_string_lossy()), v, out);
+                }
+            }
+            Tag::List(items) => {
+                for (i, v) in items.iter().enumerate() {
+                    numbers(&format!("{path}[{i}]"), v, out);
+                }
+            }
+            leaf if watchable(leaf) => out.push((path.to_string(), leaf.clone())),
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn a_watch_button_charts_the_path_watch_would_read() {
+        let mut inner = Compound::default();
+        inner.insert(JavaString::from("a.b"), Tag::Int(3));
+        inner.insert(JavaString::from("say \"hi\""), Tag::Short(4));
+        inner.insert(JavaString::from("back\\slash"), Tag::Long(5));
+        let mut root = Compound::default();
+        root.insert(JavaString::from("Health"), Tag::Float(20f32.to_bits()));
+        root.insert(
+            JavaString::from("Motion"),
+            Tag::List(vec![
+                Tag::Double(0f64.to_bits()),
+                Tag::Double((-0.5f64).to_bits()),
+            ]),
+        );
+        root.insert(
+            JavaString::from("horizon:attachments"),
+            Tag::Compound(inner),
+        );
+        root.insert(JavaString::from("with space"), Tag::Byte(1));
+        root.insert(JavaString::from("CustomName"), Tag::String("x".into()));
+        let root = Tag::Compound(root);
+        let mut found = Vec::new();
+        numbers("", &root, &mut found);
+        assert_eq!(found.len(), 7, "{found:?}");
+        for (path, leaf) in found {
+            let parsed = NbtPath::parse(&path).unwrap_or_else(|e| panic!("{path}: {e:?}"));
+            assert_eq!(parsed.get(&root).unwrap(), vec![leaf], "{path}");
+        }
+        assert_eq!(child_path("", "Health"), "Health");
+        assert_eq!(child_path("a", "a.b"), "a.\"a.b\"");
     }
 }

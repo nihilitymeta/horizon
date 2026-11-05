@@ -6,7 +6,7 @@
 use super::{Arg, Context, Game, R, Target, data::DataRef, err};
 use horizon_client::{
     data_cmd,
-    mobs::observe::{self, View},
+    mobs::observe::{self, Request, View},
     nbt_path::NbtPath,
     text::Text,
 };
@@ -262,44 +262,17 @@ impl Game<'_> {
         if mobs.is_empty() {
             return Err(err("argument.entity.notfound.entity", &[]));
         }
-        let dir = std::path::Path::new(DIR).join("logs");
-        std::fs::create_dir_all(&dir).map_err(|e| {
-            super::CommandError::new(Text::literal(format!("{}: {e}", dir.display())))
-        })?;
-        let stamp = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+        let stamp = log_stamp();
         let mut opened = Vec::new();
-        {
-            let mut logs = LOGS.lock().unwrap_or_else(|e| e.into_inner());
-            for &(t, id) in &mobs {
-                if logs.iter().any(|(i, _)| *i == id) {
-                    continue;
-                }
-                let name = self
-                    .target_name(t)
-                    .plain()
-                    .chars()
-                    .map(|c| if c.is_alphanumeric() { c } else { '_' })
-                    .collect::<String>();
-                let path = dir.join(format!("mobai-{name}-{id}-{stamp}.jsonl"));
-                match std::fs::File::create(&path) {
-                    Ok(file) => {
-                        logs.push((id, file));
-                        opened.push(path.display().to_string());
-                    }
-                    Err(e) => {
-                        return Err(super::CommandError::new(Text::literal(format!(
-                            "{}: {e}",
-                            path.display()
-                        ))));
-                    }
-                }
+        for &(t, id) in &mobs {
+            let name = self.target_name(t).plain();
+            if let Some(path) = open_ai_log(&name, id, &stamp)
+                .map_err(|e| super::CommandError::new(Text::literal(e)))?
+            {
+                opened.push(path);
             }
         }
         remember(&mobs.iter().map(|(t, _)| *t).collect::<Vec<_>>());
-        // The snapshots come from the AI step, which only watches what the
-        // store lists: a log is a watch without a window.
-        let ids: Vec<u32> = mobs.iter().map(|(_, id)| *id).collect();
-        observe::add_log(&ids);
         self.feedback(if opened.is_empty() {
             Text::tr("horizon.dev_tools.already_logging", &[])
         } else {
@@ -313,6 +286,7 @@ impl Game<'_> {
     /// values, and the AI logs' lines. An entity that is gone keeps its
     /// last data, which the windows mark stale.
     pub(in crate::game) fn dev_inspect_tick(&mut self) {
+        self.dev_requests();
         let logging = !LOGS.lock().unwrap_or_else(|e| e.into_inner()).is_empty();
         if !observe::watching() && !logging {
             return;
@@ -357,6 +331,69 @@ impl Game<'_> {
     }
 }
 
+impl Game<'_> {
+    /// What the windows asked for since the last tick: the Goals window's
+    /// log button starts or stops one mob's log, as `/mobai log` does.
+    fn dev_requests(&mut self) {
+        for request in observe::take_requests() {
+            match request {
+                Request::StartLog(id) => {
+                    // A mob some command named: the Goals window shows only those.
+                    let target = WATCH
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .iter()
+                        .copied()
+                        .find(|t| *t == Target::Mob(id));
+                    let Some(t) = target else { continue };
+                    let name = self
+                        .in_target_level(t, |g| g.target_name(t).plain())
+                        .unwrap_or_default();
+                    if let Err(e) = open_ai_log(&name, id, &log_stamp()) {
+                        log::warn!("dev tools: {e}");
+                    }
+                }
+                Request::StopLog(id) => {
+                    LOGS.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .retain(|(i, _)| *i != id);
+                    observe::stop_log(id);
+                    forget_unwatched();
+                }
+            }
+        }
+    }
+}
+
+/// The time a log's file name carries.
+fn log_stamp() -> String {
+    chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string()
+}
+
+/// Opens mob `id`'s AI log in `dev-tools/logs/`, named after the mob, and
+/// marks it logged: the file's path, or None when it is logged already. The
+/// snapshots come from the AI step, which only watches what the store
+/// lists: a log is a watch without a window.
+fn open_ai_log(name: &str, id: u32, stamp: &str) -> Result<Option<String>, String> {
+    let mut logs = LOGS.lock().unwrap_or_else(|e| e.into_inner());
+    if logs.iter().any(|(i, _)| *i == id) {
+        return Ok(None);
+    }
+    let dir = std::path::Path::new(DIR).join("logs");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let name: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect();
+    let path = dir.join(format!("mobai-{name}-{id}-{stamp}.jsonl"));
+    let file = std::fs::File::create(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    logs.push((id, file));
+    let shown = path.display().to_string();
+    observe::add_log(&[id]);
+    observe::set_log_file(id, &shown);
+    Ok(Some(shown))
+}
+
 /// A numeric tag as a float, for the chart.
 fn number(tag: &Tag) -> Option<f64> {
     Some(match tag {
@@ -368,4 +405,104 @@ fn number(tag: &Tag) -> Option<f64> {
         Tag::Double(bits) => f64::from_bits(*bits),
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::{Audio, Game, Options, Progress, Settings, load_resources};
+
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn the_goals_windows_log_button_opens_and_closes_one_mobs_log() {
+        let root = std::path::PathBuf::from(std::env::var_os("HORIZON_TEST_RESOURCES").unwrap());
+        let settings = Settings::default();
+        let loaded = load_resources(
+            root.clone(),
+            None,
+            &root,
+            &settings,
+            std::time::Instant::now(),
+            false,
+            true,
+            &Progress::new(),
+            &mut |_, _| unreachable!(),
+        )
+        .unwrap();
+        let mut options = Options::parse(std::iter::empty()).unwrap().unwrap();
+        options.resources = root.clone();
+        options.execution_role = crate::game::execution_role::ExecutionRole::IntegratedServer;
+        let mut game = Game::new(
+            &loaded.resources,
+            loaded.pack,
+            loaded.gui.unwrap(),
+            options,
+            settings,
+            Audio::silent(&root),
+            None,
+        )
+        .unwrap();
+        let kind = game
+            .res
+            .mob_types()
+            .get("minecraft:zombie")
+            .unwrap()
+            .clone();
+        for id in [42, 43] {
+            game.mobs.push(horizon_client::mobs::Mob::new(
+                id,
+                kind.clone(),
+                horizon_core::geometry::Vec3::new(0.0, 0.0, 0.0),
+                0.0,
+            ));
+        }
+        game.build_registries();
+        game.set_allow_commands(true);
+        horizon_client::command::vanilla::set_dev_tools_commands(true);
+        observe::reset();
+        assert!(game.run_command("goals @e[type=minecraft:zombie]"));
+        // The button asks; the game opens the file at its next tick, where
+        // /mobai log opens it, and the window names it.
+        observe::request(Request::StartLog(42));
+        assert!(observe::snapshots().iter().all(|w| w.log_file.is_none()));
+        game.dev_inspect_tick();
+        let file = |id: u32| {
+            observe::snapshots()
+                .into_iter()
+                .find(|w| w.id == id)
+                .and_then(|w| w.log_file)
+        };
+        let path = file(42).expect("42 logged");
+        assert!(
+            path.starts_with("dev-tools/logs/mobai-") && path.ends_with(".jsonl"),
+            "{path}"
+        );
+        assert!(std::path::Path::new(&path).is_file());
+        assert_eq!(file(43), None);
+        // A mob no command named is not the window's to log.
+        observe::request(Request::StartLog(7));
+        game.dev_inspect_tick();
+        assert!(!observe::watched().contains(&7));
+        // Stop closes that log only; the Goals window stays.
+        assert!(game.run_command("mobai log @e[type=minecraft:zombie]"));
+        let other = file(43).expect("43 logged");
+        observe::request(Request::StopLog(42));
+        game.dev_inspect_tick();
+        assert_eq!(file(42), None);
+        assert_eq!(file(43).as_deref(), Some(other.as_str()));
+        assert!(
+            observe::snapshots()
+                .iter()
+                .any(|w| w.id == 42 && w.views.contains(&View::Goals))
+        );
+        assert!(LOGS.lock().unwrap().iter().all(|(id, _)| *id != 42));
+        observe::reset();
+        LOGS.lock().unwrap().clear();
+        for p in [path, other] {
+            std::fs::remove_file(p).unwrap();
+        }
+        // The folders only when the test made them (nothing else is in them).
+        let _ = std::fs::remove_dir(std::path::Path::new(DIR).join("logs"));
+        let _ = std::fs::remove_dir(DIR);
+    }
 }

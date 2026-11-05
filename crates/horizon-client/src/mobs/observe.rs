@@ -133,6 +133,35 @@ pub struct Inspected {
     pub brain: Option<BrainSnapshot>,
     pub history: Vec<HistoryTick>,
     pub series: Vec<Series>,
+    /// The file its AI log goes to, while `/mobai log` or the Goals window's
+    /// log button logs it.
+    pub log_file: Option<String>,
+}
+
+/// What a window asks of the game, done at its next server tick
+/// ([`take_requests`]): what only the game can do, such as opening a file
+/// where `/mobai log` opens it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Request {
+    /// Log the mob's AI, as `/mobai log` does.
+    StartLog(u32),
+    /// Stop that mob's log and close its file.
+    StopLog(u32),
+}
+
+static REQUESTS: Mutex<Vec<Request>> = Mutex::new(Vec::new());
+
+/// Ask the game for `request`, at its next server tick.
+pub fn request(request: Request) {
+    let mut r = REQUESTS.lock().unwrap_or_else(|e| e.into_inner());
+    if !r.contains(&request) {
+        r.push(request);
+    }
+}
+
+/// The requests made since the last call, in order.
+pub fn take_requests() -> Vec<Request> {
+    std::mem::take(&mut *REQUESTS.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
 struct Watch {
@@ -141,6 +170,8 @@ struct Watch {
     paths: Vec<String>,
     /// `/mobai log`: snapshots wanted, no window.
     logged: bool,
+    /// The file the log goes to.
+    log_file: Option<String>,
 }
 
 struct Observed {
@@ -177,6 +208,7 @@ impl Observed {
                 views: Vec::new(),
                 paths: Vec::new(),
                 logged: false,
+                log_file: None,
             });
             self.watch.last_mut().expect("just pushed")
         }
@@ -280,11 +312,29 @@ pub fn add_log(ids: &[u32]) {
     s.prune();
 }
 
+/// The file one entity's log goes to, for its Goals window.
+pub fn set_log_file(id: u32, path: &str) {
+    let mut s = state();
+    s.entry(id).log_file = Some(path.to_string());
+    s.prune();
+}
+
+/// One entity's log stopped.
+pub fn stop_log(id: u32) {
+    let mut s = state();
+    if let Some(w) = s.watch.iter_mut().find(|w| w.id == id) {
+        w.logged = false;
+        w.log_file = None;
+    }
+    s.prune();
+}
+
 /// The logs stopped: what only they kept watched is dropped.
 pub fn clear_logs() {
     let mut s = state();
     for w in &mut s.watch {
         w.logged = false;
+        w.log_file = None;
     }
     s.prune();
 }
@@ -293,6 +343,7 @@ pub fn clear_logs() {
 /// path, log mark and stored snapshot goes, so an entity of the next world
 /// that happens to have the same id is not shown under the old one's window.
 pub fn reset() {
+    REQUESTS.lock().unwrap_or_else(|e| e.into_inner()).clear();
     let mut s = state();
     s.watch.clear();
     s.snapshots.clear();
@@ -523,6 +574,7 @@ pub fn snapshots() -> Vec<Inspected> {
                 .filter(|(id, _)| *id == w.id)
                 .map(|(_, x)| x.clone())
                 .collect(),
+            log_file: w.log_file.clone(),
         })
         .collect()
 }
@@ -608,5 +660,35 @@ mod tests {
         assert!(brain_of(8).is_none());
         // A log mark does not survive either: the next world's entity 8 is not snapshotted.
         assert!(paths_of(7).is_empty());
+    }
+
+    #[test]
+    fn one_log_stops_without_the_others() {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        add(&[4], View::Goals);
+        add_log(&[4, 6]);
+        set_log_file(4, "dev-tools/logs/a.jsonl");
+        set_log_file(6, "dev-tools/logs/b.jsonl");
+        stop_log(4);
+        // 4 keeps its window, 6 its log.
+        assert_eq!(watched(), vec![4, 6]);
+        let all = snapshots();
+        assert_eq!(all[0].log_file, None);
+        assert_eq!(all[1].log_file.as_deref(), Some("dev-tools/logs/b.jsonl"));
+        stop_log(6);
+        assert_eq!(watched(), vec![4]);
+        // Requests come once each, in order, and a world close drops them.
+        request(Request::StartLog(4));
+        request(Request::StartLog(4));
+        request(Request::StopLog(4));
+        assert_eq!(
+            take_requests(),
+            vec![Request::StartLog(4), Request::StopLog(4)]
+        );
+        assert!(take_requests().is_empty());
+        request(Request::StartLog(4));
+        reset();
+        assert!(take_requests().is_empty());
     }
 }
