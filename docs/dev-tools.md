@@ -135,11 +135,32 @@ Who may use it:
 
 - A player in creative with permission level 2 or more (op, or cheats on in single player): vanilla's
   `Player.canUseGameMasterBlocks`. `horizon.dev.inspect` answers false for anyone else, and the stick is any stick.
-- The world's owner: the windows open on the host's screen. Another player's use is refused with
-  `horizon.dev_tools.stick.host_only`.
+- The world's owner sees the windows on the host's screen. Another player sees them on their own screen when their
+  client shows them ([A guest's windows](#a-guests-windows)), and is refused with `horizon.dev_tools.stick.no_windows`
+  when it doesn't.
 
 The windows open the same way with and without `--dev-tools`. The stick's request goes through `observe::request`,
 and the server thread handles it at the end of its tick (`stick_used` in `game/commands/inspect.rs`).
+
+### A guest's windows
+
+A LAN guest or a dedicated server's player uses the stick as the owner does, and the window opens on their own
+screen. Nothing opens on the host's.
+
+1. A Horizon client that has the windows (Lua mods are on, or `--dev-tools`) says so once it joins: `Wire::Hello`
+   on the custom payload channel `horizon:dev_tools` (`mobs/observe_wire.rs`). A vanilla client never sends it, and
+   is never sent a page.
+2. The guest's click reaches the server's hooks as any click does. The server reads the page the stick shows, the
+   same data the host's windows read, and sends it to that client as JSON. A mob shown this way is snapshot after
+   each AI step, with its goal history, but has no window on the host.
+3. The client puts the page in its own store (`observe::received`), so its windows draw it, and the Nav path and
+   the block's shapes are drawn in its world.
+4. The server sends the page again every second while the window is open. The window's interval choice asks for
+   0.25, 0.5, 1, 2 or 5 seconds; the server keeps no interval under 0.25 seconds.
+5. It stops when the guest closes the window (`Wire::Stop`), when the entity is gone, when the guest is more than 64
+   blocks away or in another level, or when the guest leaves (`Wire::Closed`).
+
+A guest's window has no **watch** or **log** button: charts and AI logs stay the host's.
 
 ### The block window
 

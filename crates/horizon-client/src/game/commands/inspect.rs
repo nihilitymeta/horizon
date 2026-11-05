@@ -5,11 +5,14 @@
 //! entity, read with the same `data_of`, and the block window's facts for
 //! every watched block; nothing is written back. The inspect stick (the
 //! modkit's item, `horizon.dev.inspect`) opens the same windows on what it
-//! is used on, a page at a time.
+//! is used on, a page at a time: on the host's screen, or for a guest whose
+//! Horizon client shows the windows, sent to that client every so often
+//! (`mobs::observe_wire`, docs/dev-tools.md "A guest's windows").
 use super::{Arg, Context, Game, R, Target, data::DataRef, err};
 use horizon_client::{
     data_cmd,
     mobs::observe::{self, BlockKey, BlockSnapshot, Request, StickTarget, View},
+    mobs::observe_wire::{self, BlockPage, EntityPage, Wire},
     nbt_path::NbtPath,
     text::Text,
 };
@@ -24,6 +27,31 @@ static WATCH: Mutex<Vec<(Target, u32)>> = Mutex::new(Vec::new());
 /// The inspect stick, by player: what it showed last, its page, and the
 /// window it opened, which the next use replaces.
 static STICK: Mutex<Vec<Stick>> = Mutex::new(Vec::new());
+
+/// The guests whose clients said they show the windows (`Wire::Hello`).
+static SHOWS: Mutex<Vec<u128>> = Mutex::new(Vec::new());
+/// The window each such guest's stick opened, sent to their client.
+static REMOTE: Mutex<Vec<RemoteShown>> = Mutex::new(Vec::new());
+/// Server ticks the tools counted, for the guests' intervals.
+static CLOCK: Mutex<u64> = Mutex::new(0);
+/// How far from a guest the thing their window shows may be.
+const REMOTE_RANGE: f64 = 64.0;
+
+#[derive(Clone)]
+struct RemoteShown {
+    player: u128,
+    what: RemoteWhat,
+    /// Milliseconds between two pages, at least `observe_wire::FLOOR`.
+    interval: u32,
+    /// The tick the next page goes at.
+    next: u64,
+}
+
+#[derive(Clone, PartialEq)]
+enum RemoteWhat {
+    Entity(Target, u32, View),
+    Block(BlockKey, [i32; 3]),
+}
 
 struct Stick {
     player: u128,
@@ -173,6 +201,9 @@ impl Game<'_> {
         LOGS.lock().unwrap_or_else(|e| e.into_inner()).clear();
         WATCH.lock().unwrap_or_else(|e| e.into_inner()).clear();
         STICK.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        SHOWS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        REMOTE.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        *CLOCK.lock().unwrap_or_else(|e| e.into_inner()) = 0;
         *TICKS.lock().unwrap_or_else(|e| e.into_inner()) = 0;
         observe::reset();
         super::lua_console::world_closed();
@@ -360,6 +391,7 @@ impl Game<'_> {
     /// last data, which the windows mark stale.
     pub(in crate::game) fn dev_inspect_tick(&mut self) {
         self.dev_requests();
+        self.dev_remote_tick();
         let logging = !LOGS.lock().unwrap_or_else(|e| e.into_inner()).is_empty();
         if !observe::watching() && !logging {
             return;
@@ -449,8 +481,16 @@ impl Game<'_> {
             return;
         };
         let (conn, back, dimension) = (guest.conn, guest.sneaking, guest.dimension.clone());
-        if self.serving.as_ref().map(|s| s.owner) != Some(player) {
-            self.stick_message(conn, Text::tr("horizon.dev_tools.stick.host_only", &[]));
+        // The owner's windows are the host's; a guest's are on their own
+        // screen when their client shows them.
+        let remote = self.serving.as_ref().map(|s| s.owner) != Some(player);
+        if remote
+            && !SHOWS
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains(&player)
+        {
+            self.stick_message(conn, Text::tr("horizon.dev_tools.stick.no_windows", &[]));
             return;
         }
         let mut sticks = STICK.lock().unwrap_or_else(|e| e.into_inner());
@@ -498,9 +538,13 @@ impl Game<'_> {
                 if let Some(opened) = stick.opened.take() {
                     close(opened);
                 }
-                remember_with_ids(&[(t, id)]);
-                observe::add(&[id], page);
-                stick.opened = Some(Opened::Entity(id, page));
+                if remote {
+                    remote_open(player, RemoteWhat::Entity(t, id, page));
+                } else {
+                    remember_with_ids(&[(t, id)]);
+                    observe::add(&[id], page);
+                    stick.opened = Some(Opened::Entity(id, page));
+                }
                 stick.page = page;
                 let n = pages.iter().position(|p| *p == page).unwrap_or(0) + 1;
                 Text::tr(
@@ -522,8 +566,12 @@ impl Game<'_> {
                 {
                     close(opened);
                 }
-                observe::add_block(key.clone(), *face);
-                stick.opened = Some(Opened::Block(key));
+                if remote {
+                    remote_open(player, RemoteWhat::Block(key, *face));
+                } else {
+                    observe::add_block(key.clone(), *face);
+                    stick.opened = Some(Opened::Block(key));
+                }
                 Text::tr("horizon.dev_tools.stick.block", &[])
             }
         };
@@ -531,6 +579,184 @@ impl Game<'_> {
         drop(sticks);
         forget_unwatched();
         self.stick_message(conn, line);
+    }
+
+    /// What the client of guest `conn` said on the tools' channel: it shows
+    /// the windows, its window closed, or another interval.
+    pub(in crate::game) fn guest_dev_tools(
+        &mut self,
+        host: &crate::game::lan::LanHost,
+        conn: u32,
+        data: &[u8],
+    ) {
+        let Some(player) = host.hub.guest(conn).map(|g| g.uuid) else {
+            return;
+        };
+        match observe_wire::decode(data) {
+            Some(Wire::Hello) => {
+                let mut shows = SHOWS.lock().unwrap_or_else(|e| e.into_inner());
+                if !shows.contains(&player) {
+                    shows.push(player);
+                }
+            }
+            Some(Wire::Stop) => remote_stop(player),
+            Some(Wire::Interval(ms)) => {
+                let mut remote = REMOTE.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(r) = remote.iter_mut().find(|r| r.player == player) {
+                    r.interval = observe_wire::clamp_interval(ms);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The guests' windows whose interval came: their pages, read now and
+    /// sent; a window whose player left, or whose entity is gone or out of
+    /// range, ends with `Wire::Closed`.
+    fn dev_remote_tick(&mut self) {
+        let now = {
+            let mut c = CLOCK.lock().unwrap_or_else(|e| e.into_inner());
+            *c += 1;
+            *c
+        };
+        let due: Vec<RemoteShown> = REMOTE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .filter(|r| r.next <= now)
+            .cloned()
+            .collect();
+        for r in due {
+            let guest = self.lan.as_ref().and_then(|l| {
+                l.hub
+                    .guests
+                    .iter()
+                    .find(|g| g.uuid == r.player)
+                    .map(|g| (g.conn, g.dimension.clone(), g.position))
+            });
+            let Some((conn, dimension, at)) = guest else {
+                remote_stop(r.player);
+                continue;
+            };
+            let near = |p: [f64; 3]| {
+                (0..3).map(|i| (p[i] - at[i]).powi(2)).sum::<f64>() <= REMOTE_RANGE * REMOTE_RANGE
+            };
+            let page = match &r.what {
+                RemoteWhat::Entity(t, id, view) => {
+                    let (t, id, view) = (*t, *id, *view);
+                    self.in_dimension(&dimension, |g| {
+                        if !matches!(t, Target::Guest(_)) && g.level_entity(id as i32) != Some(t) {
+                            return None;
+                        }
+                        let data = g.data_of(&DataRef::Entity(t)).ok()?;
+                        let pos = match data.get("Pos") {
+                            Some(Tag::List(p)) if p.len() == 3 => {
+                                let f = |v: &Tag| match v {
+                                    Tag::Double(bits) => f64::from_bits(*bits),
+                                    _ => 0.0,
+                                };
+                                [f(&p[0]), f(&p[1]), f(&p[2])]
+                            }
+                            _ => return None,
+                        };
+                        near(pos).then(|| {
+                            Wire::Entity(EntityPage {
+                                id,
+                                view,
+                                name: g.target_name(t).plain(),
+                                data: Some(horizon_world::snbt_text::to_snbt(&data)),
+                                brain: observe::brain_of(id),
+                                history: observe::history_of(id)
+                                    .into_iter()
+                                    .map(|(age, names)| {
+                                        (age, names.iter().map(|n| n.to_string()).collect())
+                                    })
+                                    .collect(),
+                                interval: r.interval,
+                            })
+                        })
+                    })
+                    .flatten()
+                }
+                RemoteWhat::Block(key, face) => (key.dimension == dimension
+                    && near(key.pos.map(|c| f64::from(c) + 0.5)))
+                .then(|| {
+                    self.in_dimension(&dimension, |g| {
+                        Wire::Block(BlockPage {
+                            key: key.clone(),
+                            face: *face,
+                            snapshot: g.block_snapshot(key.pos, *face),
+                            interval: r.interval,
+                        })
+                    })
+                })
+                .flatten(),
+            };
+            match page {
+                Some(wire) => {
+                    self.send_dev_tools(conn, &wire);
+                    let ticks = u64::from(r.interval.div_ceil(50)).max(1);
+                    if let Some(shown) = REMOTE
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .iter_mut()
+                        .find(|s| s.player == r.player)
+                    {
+                        shown.next = now + ticks;
+                    }
+                }
+                None => {
+                    self.send_dev_tools(conn, &Wire::Closed);
+                    remote_stop(r.player);
+                }
+            }
+        }
+    }
+
+    /// A client's tick: once joined, it tells the server it shows the windows
+    /// (when it has them), and sends what its windows asked for.
+    pub(in crate::game) fn dev_tools_client_tick(&mut self) {
+        if !self.remote.as_ref().is_some_and(|r| r.joined) {
+            return;
+        }
+        let mut out = observe::take_outbox();
+        if crate::dev_tools::installed()
+            && !crate::dev_tools::HELLO.swap(true, std::sync::atomic::Ordering::Relaxed)
+        {
+            out.insert(0, Wire::Hello);
+        }
+        for wire in out {
+            if let Some(data) = observe_wire::encode(&wire) {
+                self.send(horizon_protocol::packets::play::Serverbound::CustomPayload(
+                    horizon_protocol::packets::configuration::CustomPayload {
+                        channel: observe_wire::CHANNEL.into(),
+                        data,
+                    },
+                ));
+            }
+        }
+    }
+
+    /// A message to guest `conn`'s client on the tools' channel.
+    fn send_dev_tools(&mut self, conn: u32, wire: &Wire) {
+        let Some(data) = observe_wire::encode(wire) else {
+            log::warn!(
+                "dev tools: a page past {} bytes is not sent",
+                observe_wire::MAX
+            );
+            return;
+        };
+        if let Some(lan) = self.lan.as_ref() {
+            lan.hub.send_to(
+                conn,
+                &horizon_protocol::packets::play::Clientbound::CustomPayload(
+                    horizon_protocol::packets::configuration::CustomPayload {
+                        channel: observe_wire::CHANNEL.into(),
+                        data,
+                    },
+                ),
+            );
+        }
     }
 
     /// A line over the hotbar of the guest `conn`, as the debug stick tells
@@ -655,6 +881,50 @@ impl Game<'_> {
             taken: std::time::Instant::now(),
             name,
         }
+    }
+}
+
+/// Guest `player`'s stick shows `what` on their screen now, the first page
+/// at the end of this tick; a mob's AI is snapshot for it.
+fn remote_open(player: u128, what: RemoteWhat) {
+    let mut remote = REMOTE.lock().unwrap_or_else(|e| e.into_inner());
+    let (interval, old) = match remote.iter().position(|r| r.player == player) {
+        Some(i) => {
+            let r = remote.remove(i);
+            (r.interval, Some(r.what))
+        }
+        None => (observe_wire::DEFAULT_INTERVAL, None),
+    };
+    if let RemoteWhat::Entity(Target::Mob(_), id, _) = &what {
+        observe::set_remote(*id, true);
+    }
+    remote.push(RemoteShown {
+        player,
+        what,
+        interval,
+        next: 0,
+    });
+    unwatch_remote(&remote, old);
+}
+
+/// Guest `player`'s window ended.
+fn remote_stop(player: u128) {
+    let mut remote = REMOTE.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(i) = remote.iter().position(|r| r.player == player) else {
+        return;
+    };
+    let r = remote.remove(i);
+    unwatch_remote(&remote, Some(r.what));
+}
+
+/// A mob no guest's window shows any more is no longer snapshot for one.
+fn unwatch_remote(remote: &[RemoteShown], old: Option<RemoteWhat>) {
+    if let Some(RemoteWhat::Entity(_, id, _)) = old
+        && !remote
+            .iter()
+            .any(|r| matches!(r.what, RemoteWhat::Entity(_, i, _) if i == id))
+    {
+        observe::set_remote(id, false);
     }
 }
 

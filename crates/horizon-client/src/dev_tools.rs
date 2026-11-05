@@ -50,6 +50,14 @@ const DEFAULT_KEY: &str = "key.keyboard.f8";
 static ENABLED: AtomicBool = AtomicBool::new(false);
 /// Whether the windows are installed: with the tools, or for the inspect stick.
 static INSTALLED: AtomicBool = AtomicBool::new(false);
+/// Whether this client told its server, since it joined, that it shows the
+/// windows (`observe_wire::Wire::Hello`).
+pub static HELLO: AtomicBool = AtomicBool::new(false);
+
+/// Whether this game draws the windows: a server may send it a guest's.
+pub fn installed() -> bool {
+    INSTALLED.load(Ordering::Relaxed)
+}
 static HOLDS_POINTER: AtomicBool = AtomicBool::new(false);
 /// The egui context, shared by the window thread (input) and the render thread (drawing).
 static CTX: OnceLock<egui::Context> = OnceLock::new();
@@ -246,6 +254,7 @@ static HAD_WINDOWS: AtomicBool = AtomicBool::new(false);
 /// they had windows, which the store no longer lists (`observe::reset`).
 pub fn world_closed() {
     HOLDS_POINTER.store(false, Ordering::Relaxed);
+    HELLO.store(false, Ordering::Relaxed);
     HAD_WINDOWS.store(false, Ordering::Relaxed);
 }
 
@@ -371,10 +380,10 @@ fn watchable(tag: &Tag) -> bool {
 /// <target> <path>` takes). With a filter, leaves whose key does not match
 /// are left out, a container whose key matches shows all of itself, and
 /// the rest open to show what matched inside. A number has a watch button,
-/// which charts that path of entity `id` as `/watch` does.
+/// which charts that path of entity `id` as `/watch` does (none without `id`).
 fn tag_node(
     ui: &mut egui::Ui,
-    id: u32,
+    id: Option<u32>,
     key: &str,
     path: &str,
     tag: &Tag,
@@ -428,7 +437,8 @@ fn tag_node(
                 ui.label(egui::RichText::new(format!("{key}:")).color(egui::Color32::LIGHT_BLUE))
                     .on_hover_text(path);
                 ui.add(egui::Label::new(egui::RichText::new(to_snbt(leaf)).monospace()).wrap());
-                if watchable(leaf)
+                if let Some(id) = id
+                    && watchable(leaf)
                     && ui
                         .small_button("watch")
                         .on_hover_text(format!("chart {path} over time, as /watch does"))
@@ -469,10 +479,12 @@ fn entity_title(item: &Inspected, what: &str) -> String {
     }
 }
 
-/// A yellow line when the snapshot stopped updating.
+/// A yellow line when the snapshot stopped updating: half a second late,
+/// past the interval a window the server shows comes at.
 fn stale_note(ui: &mut egui::Ui, taken: std::time::Instant, what: &str) {
     let stale = taken.elapsed();
-    if stale.as_millis() > 500 {
+    let every = observe::remote().map_or(0, |(_, ms)| u128::from(ms));
+    if stale.as_millis() > every + 500 {
         ui.colored_label(
             egui::Color32::YELLOW,
             format!(
@@ -483,11 +495,46 @@ fn stale_note(ui: &mut egui::Ui, taken: std::time::Instant, what: &str) {
     }
 }
 
+/// The interval a window the server shows (a guest's) comes at, as a
+/// choice: the server keeps it, down to its floor.
+fn interval_choice(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug) {
+    let Some((_, mut ms)) = observe::remote() else {
+        return;
+    };
+    let label = |ms: u32| format!("every {} s", f64::from(ms) / 1000.0);
+    let before = ms;
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(label(ms))
+        .show_ui(ui, |ui| {
+            for choice in crate::mobs::observe_wire::INTERVALS {
+                ui.selectable_value(&mut ms, choice, label(choice));
+            }
+        })
+        .response
+        .on_hover_text("how often the server sends this window");
+    if ms != before {
+        observe::set_remote_interval(ms);
+    }
+}
+
+/// An entity window's stop button: a window the server shows ends there too.
+fn stop_entity(ui: &mut egui::Ui, id: u32, view: View) {
+    let remote = observe::is_remote_entity(id);
+    if ui.button("stop").clicked() {
+        if remote {
+            observe::close_remote();
+        } else {
+            observe::remove(id, Some(view));
+        }
+    }
+    if remote {
+        interval_choice(ui, ("interval", id));
+    }
+}
+
 /// The top line of the mob windows: stop button and the usual warnings.
 fn mob_header<'a>(ui: &mut egui::Ui, item: &'a Inspected, view: View) -> Option<&'a BrainSnapshot> {
-    if ui.button("stop").clicked() {
-        observe::remove(item.id, Some(view));
-    }
+    ui.horizontal(|ui| stop_entity(ui, item.id, view));
     match &item.brain {
         None => {
             ui.weak("no AI step yet: not a mob, or not ticked since it was named");
@@ -526,11 +573,11 @@ fn inspect_window(ctx: &egui::Context, item: &Inspected) {
                 if edit.changed() {
                     ui.data_mut(|d| d.insert_temp(filter_id, filter.clone()));
                 }
-                if ui.button("stop").clicked() {
-                    observe::remove(item.id, Some(View::Data));
-                }
+                stop_entity(ui, item.id, View::Data);
             });
             let filter = filter.to_lowercase();
+            // A window the server shows has no charts: /watch reads this game's world.
+            let watch = !observe::is_remote_entity(item.id);
             match &item.data {
                 None => {
                     ui.weak("no data yet: not ticked since it was named, or no longer there");
@@ -538,7 +585,15 @@ fn inspect_window(ctx: &egui::Context, item: &Inspected) {
                 Some(d) => {
                     stale_note(ui, d.taken, "update");
                     ui.separator();
-                    tag_node(ui, item.id, "entity data", "", &d.data, 0, &filter);
+                    tag_node(
+                        ui,
+                        watch.then_some(item.id),
+                        "entity data",
+                        "",
+                        &d.data,
+                        0,
+                        &filter,
+                    );
                     ui.separator();
                     egui::CollapsingHeader::new("SNBT, as /data get prints it")
                         .id_salt("snbt")
@@ -709,7 +764,9 @@ fn goals_window(ctx: &egui::Context, item: &Inspected) {
             let Some(brain) = mob_header(ui, item, View::Goals) else {
                 return;
             };
-            log_line(ui, item);
+            if !observe::is_remote_entity(item.id) {
+                log_line(ui, item);
+            }
             ui.strong("goals");
             goal_table(ui, "goals", &brain.goals);
             ui.add_space(4.0);
@@ -983,9 +1040,19 @@ fn block_window(ctx: &egui::Context, block: &InspectedBlock) {
         .default_height(520.0)
         .vscroll(true)
         .show(ctx, |ui| {
-            if ui.button("stop").clicked() {
-                observe::remove_block(key);
-            }
+            let remote = observe::is_remote_block(key);
+            ui.horizontal(|ui| {
+                if ui.button("stop").clicked() {
+                    if remote {
+                        observe::close_remote();
+                    } else {
+                        observe::remove_block(key);
+                    }
+                }
+                if remote {
+                    interval_choice(ui, ("interval", &key.dimension, key.pos));
+                }
+            });
             let Some(b) = &block.snapshot else {
                 ui.weak("no read yet: the level is not loaded, or not ticked since");
                 return;

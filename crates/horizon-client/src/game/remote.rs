@@ -3129,6 +3129,12 @@ impl Game<'_> {
             C::CustomPayload(p) if p.channel == horizon_protocol::mod_net::CHANNEL => {
                 self.remote_native_net(&p.data);
             }
+            // The page a guest's inspect stick opened, for this client's windows.
+            C::CustomPayload(p) if p.channel == horizon_client::mobs::observe_wire::CHANNEL => {
+                if let Some(wire) = horizon_client::mobs::observe_wire::decode(&p.data) {
+                    horizon_client::mobs::observe::received(wire);
+                }
+            }
             // The synced attachments of a holder the server shows the window.
             C::CustomPayload(p) if p.channel == horizon_protocol::attachment_sync::CHANNEL => {
                 self.remote_attachment_sync(&p.data);
@@ -5914,6 +5920,7 @@ impl Game<'_> {
             r.session.send_far_terrain();
         }
         self.tick_chat_session();
+        self.dev_tools_client_tick();
         // Minecraft.tick sends this even when the player cannot tick yet,
         // including while waiting for chunks. Keep it outside early returns.
         if self.remote.as_ref().is_some_and(|r| r.joined) {

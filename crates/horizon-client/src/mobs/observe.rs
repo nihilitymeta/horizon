@@ -12,14 +12,14 @@
 //! snapshots nobody reads, and a client of a remote server sees none.
 use super::{Mob, MobWorld};
 use horizon_world::nbt::Tag;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 /// A window of the tools, by the command that opens it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum View {
     /// `/inspect`: the entity's data as a tree.
     Data,
@@ -36,6 +36,50 @@ pub const HISTORY_TICKS: usize = 1200;
 /// Samples kept per watched path.
 pub const SERIES_SAMPLES: usize = 1200;
 
+/// A name a server sent, as the `&'static str` the snapshots hold: kept
+/// once each, up to a bound, so a server can't fill the client's memory.
+pub fn received_name(name: &str) -> &'static str {
+    use std::collections::HashSet;
+    static NAMES: Mutex<Option<HashSet<&'static str>>> = Mutex::new(None);
+    let mut names = NAMES.lock().unwrap_or_else(|e| e.into_inner());
+    let names = names.get_or_insert_with(HashSet::new);
+    if let Some(known) = names.get(name) {
+        return known;
+    }
+    if names.len() >= 1024 || name.len() > 96 {
+        return "?";
+    }
+    let leaked: &'static str = Box::leak(name.to_owned().into_boxed_str());
+    names.insert(leaked);
+    leaked
+}
+
+/// A goal row as a server sends it: the name owned.
+#[derive(Deserialize)]
+struct GoalRowWire {
+    priority: i32,
+    name: String,
+    running: bool,
+    flags: u8,
+}
+
+impl From<GoalRowWire> for GoalRow {
+    fn from(w: GoalRowWire) -> Self {
+        Self {
+            priority: w.priority,
+            name: received_name(&w.name),
+            running: w.running,
+            flags: w.flags,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for GoalRow {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        GoalRowWire::deserialize(d).map(Self::from)
+    }
+}
+
 /// One goal of a selector, as the panel lists it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct GoalRow {
@@ -47,7 +91,7 @@ pub struct GoalRow {
 }
 
 /// A mob's path, as far as the panel shows it.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PathSnapshot {
     pub nodes: Vec<[i32; 3]>,
     pub next: usize,
@@ -56,7 +100,7 @@ pub struct PathSnapshot {
 }
 
 /// What a watched mob looked like after its last AI step.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BrainSnapshot {
     pub id: u32,
     /// `minecraft:zombie`.
@@ -97,8 +141,9 @@ pub struct BrainSnapshot {
     pub speed: f32,
     pub goals: Vec<GoalRow>,
     pub targets: Vec<GoalRow>,
-    /// When it was taken; the panel shows a stale one as such.
-    #[serde(skip)]
+    /// When it was taken; the panel shows a stale one as such. One a
+    /// server sent was taken when it came.
+    #[serde(skip, default = "Instant::now")]
     pub taken: Instant,
 }
 
@@ -166,19 +211,21 @@ pub enum StickTarget {
 }
 
 /// A block the block window shows: where it is.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockKey {
     pub dimension: String,
     pub pos: [i32; 3],
 }
 
 /// A block as the block window shows it, read once a server tick.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BlockSnapshot {
     /// `minecraft:repeater`, and its state properties.
     pub name: String,
     pub properties: Vec<(String, String)>,
-    /// Its block entity's data, as `/data get block` prints it.
+    /// Its block entity's data, as `/data get block` prints it (in SNBT on
+    /// the wire).
+    #[serde(with = "snbt_tag")]
     pub entity: Option<Tag>,
     /// Block light and sky light at the block, and at the clicked face.
     pub light: [u8; 2],
@@ -200,7 +247,141 @@ pub struct BlockSnapshot {
     /// max x, y, z), drawn in the world while the window is open.
     pub collision: Vec<[f64; 6]>,
     pub outline: Vec<[f64; 6]>,
+    #[serde(skip, default = "Instant::now")]
     pub taken: Instant,
+}
+
+/// A tag as SNBT, for the wire.
+mod snbt_tag {
+    use horizon_world::nbt::Tag;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    pub fn serialize<S: Serializer>(tag: &Option<Tag>, s: S) -> Result<S::Ok, S::Error> {
+        tag.as_ref()
+            .map(horizon_world::snbt_text::to_snbt)
+            .serialize(s)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Tag>, D::Error> {
+        Ok(Option::<String>::deserialize(d)?
+            .and_then(|t| horizon_world::nbt::parse_snbt(&t).ok().map(|(tag, _)| tag)))
+    }
+}
+
+/// The window a server shows this client, a guest's (docs/dev-tools.md, "A
+/// guest's windows"): which, and the interval the server sends it at.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Remote {
+    Entity(u32, View),
+    Block(BlockKey),
+}
+
+static REMOTE: Mutex<Option<(Remote, u32)>> = Mutex::new(None);
+/// What this client's windows tell the server, sent at the client's next tick.
+static OUTBOX: Mutex<Vec<super::observe_wire::Wire>> = Mutex::new(Vec::new());
+
+/// The window the server shows this client, and its interval.
+pub fn remote() -> Option<(Remote, u32)> {
+    REMOTE.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// Whether the entity window of `id` is the server's.
+pub fn is_remote_entity(id: u32) -> bool {
+    matches!(remote(), Some((Remote::Entity(i, _), _)) if i == id)
+}
+
+/// Whether the block window at `key` is the server's.
+pub fn is_remote_block(key: &BlockKey) -> bool {
+    matches!(remote(), Some((Remote::Block(k), _)) if k == *key)
+}
+
+/// Tell the server, at the client's next tick.
+pub fn send_to_server(wire: super::observe_wire::Wire) {
+    OUTBOX.lock().unwrap_or_else(|e| e.into_inner()).push(wire);
+}
+
+/// What waits for the server.
+pub fn take_outbox() -> Vec<super::observe_wire::Wire> {
+    std::mem::take(&mut *OUTBOX.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+/// What the server sent this client: its page in this client's store, in
+/// place of the last one it sent, so the windows show it.
+pub fn received(wire: super::observe_wire::Wire) {
+    use super::observe_wire::Wire;
+    match wire {
+        Wire::Entity(page) => {
+            let shown = Remote::Entity(page.id, page.view);
+            replace_remote(Some((shown, page.interval)));
+            add(&[page.id], page.view);
+            let data = page
+                .data
+                .and_then(|t| horizon_world::nbt::parse_snbt(&t).ok().map(|(tag, _)| tag));
+            if let Some(data) = data {
+                set_data(page.id, page.name, data);
+            }
+            let mut s = state();
+            if let Some(mut brain) = page.brain {
+                brain.id = page.id;
+                brain.taken = Instant::now();
+                match s.snapshots.iter_mut().find(|b| b.id == page.id) {
+                    Some(old) => *old = brain,
+                    None => s.snapshots.push(brain),
+                }
+            }
+            let history: VecDeque<HistoryTick> = page
+                .history
+                .into_iter()
+                .map(|(age, names)| (age, names.iter().map(|n| received_name(n)).collect()))
+                .collect();
+            match s.history.iter_mut().find(|(id, _)| *id == page.id) {
+                Some((_, h)) => *h = history,
+                None => s.history.push((page.id, history)),
+            }
+        }
+        Wire::Block(page) => {
+            replace_remote(Some((Remote::Block(page.key.clone()), page.interval)));
+            add_block(page.key.clone(), page.face);
+            let mut snapshot = page.snapshot;
+            snapshot.taken = Instant::now();
+            set_block(&page.key, snapshot);
+        }
+        Wire::Closed => replace_remote(None),
+        Wire::Hello | Wire::Stop | Wire::Interval(_) => {}
+    }
+}
+
+/// The server's window is now `new`: the one before closes.
+fn replace_remote(new: Option<(Remote, u32)>) {
+    let old = {
+        let mut r = REMOTE.lock().unwrap_or_else(|e| e.into_inner());
+        let old = r.take();
+        *r = new.clone();
+        old
+    };
+    match old {
+        Some((was, _)) if new.as_ref().map(|(n, _)| n) != Some(&was) => match was {
+            Remote::Entity(id, view) => remove(id, Some(view)),
+            Remote::Block(key) => remove_block(&key),
+        },
+        _ => {}
+    }
+}
+
+/// The server's window closed here: tell the server to stop sending it.
+pub fn close_remote() {
+    if remote().is_some() {
+        replace_remote(None);
+        send_to_server(super::observe_wire::Wire::Stop);
+    }
+}
+
+/// A window of this client asks the server for another interval.
+pub fn set_remote_interval(ms: u32) {
+    let mut r = REMOTE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, interval)) = r.as_mut() {
+        *interval = ms;
+        drop(r);
+        send_to_server(super::observe_wire::Wire::Interval(ms));
+    }
 }
 
 /// One watched block: where, the face it was clicked on, and what is stored.
@@ -234,6 +415,9 @@ struct Watch {
     logged: bool,
     /// The file the log goes to.
     log_file: Option<String>,
+    /// A guest's window shows it, on the guest's screen: snapshots and
+    /// history wanted, no window here.
+    remote: bool,
 }
 
 struct Observed {
@@ -273,6 +457,7 @@ impl Observed {
                 paths: Vec::new(),
                 logged: false,
                 log_file: None,
+                remote: false,
             });
             self.watch.last_mut().expect("just pushed")
         }
@@ -280,14 +465,14 @@ impl Observed {
     /// Drops what no watch asks for any more.
     fn prune(&mut self) {
         self.watch
-            .retain(|w| !w.views.is_empty() || !w.paths.is_empty() || w.logged);
+            .retain(|w| !w.views.is_empty() || !w.paths.is_empty() || w.logged || w.remote);
         let ids: Vec<u32> = self.watch.iter().map(|w| w.id).collect();
         self.snapshots.retain(|s| ids.contains(&s.id));
         self.data.retain(|d| ids.contains(&d.id));
         self.history.retain(|(id, _)| {
             self.watch
                 .iter()
-                .any(|w| w.id == *id && w.views.contains(&View::Goals))
+                .any(|w| w.id == *id && (w.views.contains(&View::Goals) || w.remote))
         });
         self.series.retain(|(id, s)| {
             self.watch
@@ -381,6 +566,28 @@ pub fn add_log(ids: &[u32]) {
     s.prune();
 }
 
+/// A guest's window shows mob `id` (`on`), or stopped: the server keeps its
+/// AI snapshots and history for it, with no window of its own.
+pub fn set_remote(id: u32, on: bool) {
+    let mut s = state();
+    if on {
+        s.entry(id).remote = true;
+    } else if let Some(w) = s.watch.iter_mut().find(|w| w.id == id) {
+        w.remote = false;
+    }
+    s.prune();
+}
+
+/// The goals history of one mob, for a guest's Goals page.
+pub fn history_of(id: u32) -> Vec<HistoryTick> {
+    state()
+        .history
+        .iter()
+        .find(|(i, _)| *i == id)
+        .map(|(_, h)| h.iter().cloned().collect())
+        .unwrap_or_default()
+}
+
 /// The file one entity's log goes to, for its Goals window.
 pub fn set_log_file(id: u32, path: &str) {
     let mut s = state();
@@ -413,6 +620,8 @@ pub fn clear_logs() {
 /// that happens to have the same id is not shown under the old one's window.
 pub fn reset() {
     REQUESTS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    *REMOTE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    OUTBOX.lock().unwrap_or_else(|e| e.into_inner()).clear();
     let mut s = state();
     s.watch.clear();
     s.snapshots.clear();
@@ -537,7 +746,7 @@ pub fn observe(m: &Mob, w: &MobWorld) {
     let Some(watch) = s.watch.iter().find(|x| x.id == m.id) else {
         return;
     };
-    let goals_view = watch.views.contains(&View::Goals);
+    let goals_view = watch.views.contains(&View::Goals) || watch.remote;
     let ai = &m.ai;
     let position = [m.position.x, m.position.y, m.position.z];
     let snap = BrainSnapshot {
@@ -811,6 +1020,50 @@ mod tests {
         add_block(key, [0, 1, 0]);
         reset();
         assert!(blocks().is_empty());
+    }
+
+    #[test]
+    fn a_page_the_server_sends_shows_here_until_it_closes() {
+        use crate::mobs::observe_wire::{EntityPage, Wire};
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        let page = |id: u32, view: View| {
+            Wire::Entity(EntityPage {
+                id,
+                view,
+                name: "Pig".into(),
+                data: Some("{Health:10.0f}".into()),
+                brain: None,
+                history: vec![(4, vec!["Float".into(), "Stroll".into()])],
+                interval: 500,
+            })
+        };
+        received(page(9, View::Goals));
+        let all = snapshots();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].views, [View::Goals]);
+        assert_eq!(all[0].data.as_ref().map(|d| d.name.as_str()), Some("Pig"));
+        assert_eq!(all[0].history, [(4, vec!["Float", "Stroll"])]);
+        assert_eq!(remote(), Some((Remote::Entity(9, View::Goals), 500)));
+        assert!(is_remote_entity(9) && showing());
+        // The next page replaces the window; a new interval goes to the server.
+        received(page(9, View::Senses));
+        assert_eq!(snapshots()[0].views, [View::Senses]);
+        set_remote_interval(2000);
+        assert_eq!(remote().map(|(_, ms)| ms), Some(2000));
+        // Closing it here tells the server to stop.
+        close_remote();
+        assert!(!showing() && remote().is_none());
+        let out = take_outbox();
+        assert!(
+            matches!(out[..], [Wire::Interval(2000), Wire::Stop]),
+            "{out:?}"
+        );
+        // The server's own end closes it too, and sends nothing back.
+        received(page(3, View::Data));
+        received(Wire::Closed);
+        assert!(!showing() && take_outbox().is_empty());
+        reset();
     }
 
     #[test]

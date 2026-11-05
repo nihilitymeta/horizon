@@ -583,8 +583,14 @@ impl LuaMod {
                     // click was the stick's, which the caller then cancels.
                     "dev_inspect" => {
                         let (who, what): (Value, Value) = FromLuaMulti::from_lua_multi(rest, lua)?;
-                        let player = uuid_of(h, &who)
-                            .and_then(|u| h.level_players().into_iter().find(|p| p.uuid == u));
+                        // The acting player first: during a guest's turn the
+                        // other players are out of reach, and its permission
+                        // is the guest's own.
+                        let player = uuid_of(h, &who).and_then(|u| {
+                            h.acting_player()
+                                .filter(|p| p.uuid == u)
+                                .or_else(|| h.level_players().into_iter().find(|p| p.uuid == u))
+                        });
                         let Some(p) = player.filter(|p| p.game_mode == 1 && p.permission >= 2)
                         else {
                             return Ok(Value::Boolean(false));
@@ -7357,7 +7363,8 @@ experimental = ["scripts"]
     }
 
     /// A host whose acting player, steve, is in `game_mode` with operator
-    /// `permission`, and holds the inspect stick.
+    /// `permission`, and holds the inspect stick. As in a guest's turn, the
+    /// world's other players are out of reach: `level_players` is empty.
     struct StickHost {
         game_mode: i32,
         permission: u8,
@@ -7388,7 +7395,7 @@ experimental = ["scripts"]
             })
         }
         fn level_players(&self) -> Vec<crate::mod_api::NativeServerPlayer> {
-            self.acting_player().into_iter().collect()
+            Vec::new()
         }
         fn held(&self) -> Option<(String, u32, bool)> {
             Some(("horizon_modkit:inspect_stick".into(), 1, true))
