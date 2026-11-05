@@ -108,7 +108,30 @@ again. What the script declares is fixed at start. A later run can write differe
 new or missing declaration is set aside, with a log line that says a restart applies it ([Reloading](#reloading)).
 
 The script runs in a Luau state of its own, with nothing but the `registry` table, a five-second budget and
-64 MiB. It has no `require`, because there is no other script to reach, no `loadstring` and no files.
+64 MiB. It has no `loadstring` and no files. Its `require` reaches only the mod's registry modules, in
+`scripts/registry/`.
+
+### Splitting the registry into modules
+
+A mod that adds a lot can keep its declarations in several files. Put them in `scripts/registry/`, and require
+each one from `scripts/registry.lua`, in the order they should run:
+
+```lua
+-- scripts/registry.lua
+require("@registry/items")   -- scripts/registry/items.lua
+require("@registry/blocks")  -- scripts/registry/blocks.lua, or scripts/registry/blocks/init.lua
+```
+
+- `@registry/items`, `registry/items` and `registry.items` name the same module.
+- Each module runs once. A second `require` returns the value that the module returned, or `true` if it
+  returned nothing.
+- Modules run in the same state as `scripts/registry.lua`, with the same `registry` table, budget and memory.
+- A missing module, a name outside `scripts/registry/`, and a module that requires itself on the way are
+  errors that name the module.
+- The mod's other scripts can't require a registry module. Those modules run once, when the mod is read.
+
+For luau-lsp to find the modules, add the alias to `.luaurc`: `"registry": "scripts/registry"`.
+`cargo horizon-mod new --template lua` writes it.
 
 The launcher runs the script the same way when it inspects a mod that it installs, so a declaration error shows
 there first. The registry server and its CI are built without the `lua` feature: they list the mod's files only, and
@@ -125,9 +148,21 @@ registered is an error, as is anything that the file would have been refused for
 | `registry.data(name, value)` | Writes `data/<ns>/<name>.json`. The namespace comes from the name, or is the mod's id: `"loot_table/entities/crawler"`, `"minecraft:tags/block/mineable/hoe"` |
 | `registry.asset(name, value)` | Writes `assets/<ns>/<name>.json`: `"lang/en_us"`, `"models/block/hive"`, `"blockstates/hive"` |
 | `registry.file(path, value)` | Writes any content path. *value* is a table, written as JSON, or a string, written as it is |
+| `registry.lang(locale, entries)` | Adds names to `assets/<id>/lang/<locale>.json`. Every call for a locale, from any module, goes into the same file. A key given twice is an error that names both calls. *locale* is a lang file name, such as `"en_us"` |
 
 A table whose keys are 1 to n becomes a JSON array, and any other table an object; `{}` is an empty object. A whole
 number becomes an integer.
+
+Use `registry.lang` for names when the registry is split into modules, so that each module names what it adds:
+
+```lua
+-- scripts/registry/items.lua
+registry.item("wand", { template = "minecraft:stick" })
+registry.lang("en_us", { ["item.my_mod.wand"] = "Wand" })
+```
+
+A locale that `registry.lang` writes can't also come from `registry.asset("lang/<locale>")`, `registry.file`, or a
+`lang/<locale>.json` file of the mod. Use one of them for each locale.
 
 Two things a mob needs are data rather than script:
 

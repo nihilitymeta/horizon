@@ -159,7 +159,7 @@ declare horizon: {
     reply: (text: string) -> (),
 }
 
--- `scripts/registry.lua` runs with this instead of `horizon`.
+-- `scripts/registry.lua` and its modules (`scripts/registry/`) run with this instead of `horizon`.
 declare registry: {
     id: string,
     namespaces: { string },
@@ -172,4 +172,5 @@ declare registry: {
     data: (path: string, value: Data) -> (),
     asset: (path: string, value: Data) -> (),
     file: (path: string, value: Data | string) -> (),
+    lang: (locale: string, entries: { [string]: string }) -> (),
 }

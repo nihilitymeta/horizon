@@ -1896,6 +1896,15 @@ impl LuaMod {
                         "require({name:?}): a module name, with dots or slashes for folders"
                     )));
                 }
+                // scripts/registry/ holds the registry script's modules,
+                // which run once, when the content is read, with `registry`.
+                if name == "registry" || name.starts_with("registry.") {
+                    return Err(mlua::Error::runtime(format!(
+                        "require({name:?}): scripts/registry/ holds the modules of \
+                         scripts/registry.lua, which run once when the mod is read; \
+                         the mod's scripts require their own folders"
+                    )));
+                }
                 let loaded: Table = lua.named_registry_value(LOADED)?;
                 if let Some(v) = loaded.get::<Option<Value>>(name.as_str())? {
                     return Ok(v);
@@ -6962,7 +6971,17 @@ experimental = ["scripts"]
         // A bad name is refused before any lookup.
         let (bad_dir, bad) = hmod("badname", &[("scripts/init.lua", b"require('../x')")]);
         assert!(LuaMod::load(&bad, &[]).unwrap_err().contains("for folders"));
-        for d in [lib_dir, dir, bad_dir] {
+        // The registry script's modules are not the scripts' to run.
+        let (reg_dir, reg) = hmod(
+            "registry-module",
+            &[
+                ("scripts/init.lua", b"require('@registry/items')"),
+                ("scripts/registry/items.lua", b"return 1"),
+            ],
+        );
+        let e = LuaMod::load(&reg, &[]).unwrap_err();
+        assert!(e.contains("scripts/registry/") && e.contains("once"), "{e}");
+        for d in [lib_dir, dir, bad_dir, reg_dir] {
             std::fs::remove_dir_all(&d).unwrap();
         }
     }

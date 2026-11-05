@@ -846,11 +846,27 @@ impl Content {
             let code =
                 String::from_utf8(code).map_err(|_| format!("{REGISTRY_SCRIPT}: not UTF-8"))?;
             let namespaces: Vec<String> = manifest.owned_namespaces().map(str::to_owned).collect();
-            let made = crate::registry::run(&code, &manifest.id, &namespaces)?;
+            // The modules it may require: scripts/registry/**.lua.
+            let mut modules = crate::registry::Modules::new();
+            for name in scripts
+                .iter()
+                .filter(|s| s.starts_with(crate::registry::MODULES) && s.ends_with(".lua"))
+            {
+                let code = reader.read(name)?;
+                let code = String::from_utf8(code).map_err(|_| format!("{name}: not UTF-8"))?;
+                modules.insert(name.clone(), code);
+            }
+            let made = crate::registry::run(&code, &modules, &manifest.id, &namespaces)?;
             for (name, bytes) in made {
                 if files.contains(&name) {
+                    let lang = name.contains("/lang/");
                     return Err(format!(
-                        "{name}: both a file of the mod and registered by {REGISTRY_SCRIPT}"
+                        "{name}: both a file of the mod and registered by {REGISTRY_SCRIPT}{}",
+                        if lang {
+                            " (registry.lang or registry.asset): use one"
+                        } else {
+                            ""
+                        }
                     ));
                 }
                 if bytes.len() as u64 > MAX_FILE {
@@ -1791,6 +1807,36 @@ experimental = ["scripts"]
         .unwrap_err();
         assert!(
             e.starts_with("scripts/registry.lua:") && e.contains("no"),
+            "{e}"
+        );
+        // The script's modules come from the mod, in a folder and a .hmod
+        // alike, and registry.lang meets the mod's own lang file: use one.
+        let modules: &[(&str, &[u8])] = &[
+            ("scripts/init.lua", b""),
+            ("scripts/registry.lua", b"require('@registry/blocks')"),
+            (
+                "scripts/registry/blocks.lua",
+                b"registry.block('hive', { template = 'minecraft:sculk' })\nregistry.lang('en_us', { ['block.ruby.hive'] = 'Hive' })",
+            ),
+        ];
+        for content in [
+            folder("registry-modules", MANIFEST_SCRIPTED, modules).unwrap(),
+            hmod("registry-modules-hmod", MANIFEST_SCRIPTED, modules).unwrap(),
+        ] {
+            assert_eq!(content.blocks[0].id, "ruby:hive");
+            assert_eq!(
+                content.files,
+                [
+                    "assets/ruby/lang/en_us.json",
+                    "data/ruby/horizon/block/hive.json"
+                ]
+            );
+        }
+        let mut clash = modules.to_vec();
+        clash.push(("assets/ruby/lang/en_us.json", b"{}"));
+        let e = folder("registry-lang-clash", MANIFEST_SCRIPTED, &clash).unwrap_err();
+        assert!(
+            e.contains("assets/ruby/lang/en_us.json") && e.contains("use one"),
             "{e}"
         );
     }

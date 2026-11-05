@@ -87,12 +87,13 @@ Unknown keys are refused, so a typo is an error, not a silently ignored permissi
 
 A content mod has capability `registries` and carries `assets/` and `data/` in the `.hmod`. With capability `scripts`
 (experimental), it also carries `scripts/`: Lua that the game runs on its hook points. Such a mod can declare its
-content in `scripts/registry.lua` instead of files ([lua-bindings.md](lua-bindings.md)). It adds blocks and items
-by declaring them in `data/<id>/horizon/block/*.json` and `data/<id>/horizon/item/*.json`, each copying a vanilla
-template ([modpacks.md](modpacks.md#registries-02-data-driven-blocks-items-and-mob-effects)), and creative tabs, mob
-effects, entity types and menu types (each below) in `creative_tab/`, `mob_effect/`, `entity_type/` and `menu/` beside
-them. LAN and dedicated server players play with them when they run the same mods: a client whose mods add different
-content is refused when it joins, with the reason.
+content in `scripts/registry.lua`, and the modules it requires from `scripts/registry/`, instead of files
+([lua-bindings.md](lua-bindings.md)). It adds blocks and items by declaring them in `data/<id>/horizon/block/*.json`
+and `data/<id>/horizon/item/*.json`, each copying a vanilla template
+([modpacks.md](modpacks.md#registries-02-data-driven-blocks-items-and-mob-effects)), and creative tabs, mob effects,
+entity types and menu types (each below) in `creative_tab/`, `mob_effect/`, `entity_type/` and `menu/` beside them.
+LAN and dedicated server players play with them when they run the same mods: a client whose mods add different content
+is refused when it joins, with the reason.
 
 A server that has content mods on also checks them one by one (`horizon_protocol::mod_list`, channel
 `horizon:mod_list`): in the configuration phase it sends the id, version and SHA-256 of each `.hmod` with

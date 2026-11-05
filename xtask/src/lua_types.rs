@@ -406,6 +406,10 @@ const REGISTRY: &[(&str, &str)] = &[
     ("data", "(path: string, value: Data) -> ()"),
     ("asset", "(path: string, value: Data) -> ()"),
     ("file", "(path: string, value: Data | string) -> ()"),
+    (
+        "lang",
+        "(locale: string, entries: { [string]: string }) -> ()",
+    ),
 ];
 
 fn render() -> String {
@@ -428,7 +432,7 @@ fn render() -> String {
     for (name, ty) in FUNCTIONS {
         out.push_str(&format!("    {name}: {ty},\n"));
     }
-    out.push_str("}\n\n-- `scripts/registry.lua` runs with this instead of `horizon`.\ndeclare registry: {\n");
+    out.push_str("}\n\n-- `scripts/registry.lua` and its modules (`scripts/registry/`) run with this instead of `horizon`.\ndeclare registry: {\n");
     for (name, ty) in REGISTRY {
         out.push_str(&format!("    {name}: {ty},\n"));
     }
