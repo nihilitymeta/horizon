@@ -78,7 +78,7 @@ Linux, use the launcher's Versions page, **Import a game build…**, and pick `t
 
 ### Build the launcher yourself
 
-Event Horizon's releases are for Windows. On a Mac, or on Linux, build Event Horizon's launcher from the checkout:
+Event Horizon's releases are for Windows and Linux. On a Mac, or to try a change to the launcher, build it from the checkout:
 
 ```sh
 export HORIZON_MSA_CLIENT_ID=<client id>       # for Microsoft sign-in (event-horizon-sign-in.md)

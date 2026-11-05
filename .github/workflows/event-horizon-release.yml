@@ -1,14 +1,14 @@
 name: event horizon release
-# Event Horizon's releases (docs/event-horizon-releases.md): the game and the launcher for Windows x64, built on GitHub's
-# runners and published as a GitHub release, which the launchers' GitHub sources install. Only the programs are built
-# here: the game files (exporters, prepared data) come from Horizon's own releases.
+# Event Horizon's releases (docs/event-horizon-releases.md): the game and the launcher for Windows x64 and Linux x86_64,
+# built on GitHub's runners and published as a GitHub release, which the launchers' GitHub sources install. Only the
+# programs are built here: the game files (exporters, prepared data) come from Horizon's own releases.
 # - A version of your choosing: push a tag eh-v<version> on engine-work.
 #     git tag eh-v0.1.0 && git push origin eh-v0.1.0
 # - A nightly, eh-nightly-<date>: every day at 09:00 UTC (4am Eastern in winter, 5am in summer), from engine-work, when it
 #   changed since the last release. The repository variable NIGHTLY_PAUSED=1 skips nightlies until it is removed:
 #     gh variable set NIGHTLY_PAUSED -R whos-carmen/horizon --body 1      # gh variable delete NIGHTLY_PAUSED to resume
 #   Run one now from the Actions tab or with: gh workflow run "event horizon release" -R whos-carmen/horizon
-# Another platform is another row in the build matrix (Linux x86_64 needs the apt step below).
+# Another platform is another row in the build matrix (a Linux row needs the apt step below).
 on:
   push:
     tags: ['eh-v*']
@@ -57,6 +57,9 @@ jobs:
           - os: windows-latest
             name: windows-x64
             exe: .exe
+          - os: ubuntu-latest
+            name: linux-x86_64
+            exe: ''
     runs-on: ${{ matrix.os }}
     timeout-minutes: 240
     env:

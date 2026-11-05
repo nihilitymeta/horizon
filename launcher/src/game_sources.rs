@@ -212,7 +212,7 @@ fn pick(repo: &str, release: &serde_json::Value, platform: &str) -> Result<Relea
 }
 
 /// `repo`'s newest release for this computer, through `api`; None when it has no build for this
-/// computer (Event Horizon publishes Windows builds only).
+/// computer (Event Horizon publishes Windows x64 and Linux x86_64 builds).
 pub fn latest(repo: &str, api: Api) -> Result<Option<Release>, String> {
     let Some(platform) = platform() else {
         return Ok(None);

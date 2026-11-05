@@ -1,12 +1,12 @@
 # Event Horizon Releases
 
-Event Horizon publishes its builds as GitHub releases of `whos-carmen/horizon`, for Windows x64. A
+Event Horizon publishes its builds as GitHub releases of `whos-carmen/horizon`, for Windows x64 and Linux x86_64. A
 mod developer installs the launcher from a release once; after that, the launcher installs each new release by itself.
 Nobody compiles the engine to play it.
 
 ## What a release holds
 
-The archive, `event-horizon-windows-x64.zip`, holds:
+Each archive, `event-horizon-windows-x64.zip` and `event-horizon-linux-x86_64.tar.gz`, holds:
 
 | Program | What it is |
 |---|---|
@@ -50,8 +50,10 @@ choosing (matching `horizon-mod.toml`), and its own `NIGHTLY_PAUSED` variable on
 
 ## What a developer does
 
-1. Download `event-horizon-windows-x64.zip` from the newest release, unpack it, and start `horizon-launcher.exe`.
-   Windows may warn that the program is unrecognized, since it isn't code-signed: choose More info, then Run anyway.
+1. Download the archive for your computer from the newest release, unpack it, and start the launcher:
+   `horizon-launcher.exe` from `event-horizon-windows-x64.zip`, or `horizon-launcher` from
+   `event-horizon-linux-x86_64.tar.gz`. Windows may warn that the program is unrecognized, since it isn't
+   code-signed: choose More info, then Run anyway.
 2. Sign in with a Microsoft account that owns Minecraft: Java Edition.
 3. Install one Horizon version, for its game files: Versions, the newest Nightly, Install.
 
