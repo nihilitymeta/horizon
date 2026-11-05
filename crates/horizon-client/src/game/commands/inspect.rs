@@ -406,7 +406,7 @@ impl Game<'_> {
         for (t, id) in targets {
             let read = self.in_target_level(t, |g| {
                 let name = g.target_name(t).plain();
-                g.data_of(&DataRef::Entity(t)).ok().map(|data| (name, data))
+                g.inspected_data(t).map(|data| (name, data))
             });
             let Some(Some((name, data))) = read else {
                 continue;
@@ -435,6 +435,30 @@ impl Game<'_> {
 }
 
 impl Game<'_> {
+    /// An entity as the dev windows show it: its data as `/data get entity`
+    /// prints it, with what mods keep on it (`mob.data`, a player's data)
+    /// under `horizon:attachments`, as the save writes it. `/data` itself
+    /// stays vanilla's.
+    fn inspected_data(&mut self, t: Target) -> Option<Tag> {
+        use horizon_world::attachments::ATTACHMENTS_KEY;
+        let mut data = self.data_of(&DataRef::Entity(t)).ok()?;
+        match t {
+            Target::Guest(conn) => {
+                let uuid = self.command_guest(conn)?.uuid;
+                let mods = self
+                    .guest_attachments
+                    .get(&uuid)
+                    .map(|a| a.to_nbt())
+                    .filter(|c| !c.is_empty());
+                if let (Some(mods), Tag::Compound(c)) = (mods, &mut data) {
+                    c.insert(ATTACHMENTS_KEY.into(), Tag::Compound(mods));
+                }
+            }
+            _ => crate::game::persist::write_attachments(&mut data, &self.entity_attachments),
+        }
+        Some(data)
+    }
+
     /// What the windows asked for since the last tick: the Goals window's
     /// log button starts or stops one mob's log, as `/mobai log` does.
     fn dev_requests(&mut self) {
@@ -648,7 +672,7 @@ impl Game<'_> {
                         if !matches!(t, Target::Guest(_)) && g.level_entity(id as i32) != Some(t) {
                             return None;
                         }
-                        let data = g.data_of(&DataRef::Entity(t)).ok()?;
+                        let data = g.inspected_data(t)?;
                         let pos = match data.get("Pos") {
                             Some(Tag::List(p)) if p.len() == 3 => {
                                 let f = |v: &Tag| match v {
@@ -997,6 +1021,79 @@ mod tests {
         assert_eq!(next_page(frame, View::Senses, false, false), View::Data);
         assert_eq!(next_page(frame, View::Data, true, false), View::Data);
         assert_eq!(pages(Target::Guest(3)), [View::Data]);
+    }
+
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn the_dev_windows_show_what_mods_keep_on_a_mob_and_data_stays_vanillas() {
+        use horizon_world::attachments::{ATTACHMENTS_KEY, Attachments};
+        use horizon_world::nbt::{Compound, JavaString};
+        let root = std::path::PathBuf::from(std::env::var_os("HORIZON_TEST_RESOURCES").unwrap());
+        let settings = Settings::default();
+        let loaded = load_resources(
+            root.clone(),
+            None,
+            &root,
+            &settings,
+            std::time::Instant::now(),
+            false,
+            true,
+            &Progress::new(),
+            &mut |_, _| unreachable!(),
+        )
+        .unwrap();
+        let mut options = Options::parse(std::iter::empty()).unwrap().unwrap();
+        options.resources = root.clone();
+        options.execution_role = crate::game::execution_role::ExecutionRole::IntegratedServer;
+        let mut game = Game::new(
+            &loaded.resources,
+            loaded.pack,
+            loaded.gui.unwrap(),
+            options,
+            settings,
+            Audio::silent(&root),
+            None,
+        )
+        .unwrap();
+        let kind = game.res.mob_types().get("minecraft:cow").unwrap().clone();
+        for id in [42, 43] {
+            game.mobs.push(horizon_client::mobs::Mob::new(
+                id,
+                kind.clone(),
+                horizon_core::geometry::Vec3::new(0.0, 0.0, 0.0),
+                0.0,
+            ));
+        }
+        // A mod's `mob.data` on cow 42, as the attachment store keeps it.
+        let mut load = Compound::default();
+        load.insert(JavaString::from("viral_load"), Tag::Double(15f64.to_bits()));
+        let mut data = Compound::default();
+        data.insert(JavaString::from("value"), Tag::Compound(load));
+        let mut names = Compound::default();
+        names.insert(JavaString::from("data"), Tag::Compound(data));
+        let mut raw = Compound::default();
+        raw.insert(JavaString::from("example_mod"), Tag::Compound(names));
+        let uuid = game.uuid_for(42);
+        game.entity_attachments
+            .insert(uuid, Attachments::from_nbt(raw.clone()));
+        let shown = game.inspected_data(Target::Mob(42)).unwrap();
+        assert_eq!(shown.get(ATTACHMENTS_KEY), Some(&Tag::Compound(raw)));
+        // A path into it reads as the watch button's chart would.
+        let path =
+            NbtPath::parse("\"horizon:attachments\".example_mod.data.value.viral_load").unwrap();
+        assert_eq!(
+            path.get(&shown).unwrap(),
+            vec![Tag::Double(15f64.to_bits())]
+        );
+        // A cow without mod data has none, and /data's own read never has it.
+        assert!(
+            game.inspected_data(Target::Mob(43))
+                .unwrap()
+                .get(ATTACHMENTS_KEY)
+                .is_none()
+        );
+        let plain = game.data_of(&DataRef::Entity(Target::Mob(42))).unwrap();
+        assert!(plain.get(ATTACHMENTS_KEY).is_none());
     }
 
     #[test]
