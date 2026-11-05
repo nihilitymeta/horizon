@@ -186,6 +186,7 @@ pub const LUA_HOOK_NAMES: &[&str] = &[
     "player_hurt",
     "mob_killed",
     "mob_interact",
+    "entity_interact",
     "mob_tick",
     "mob_died",
     "mob_fall",
@@ -304,6 +305,7 @@ return function(slot, horizon)
   horizon.count_items = function(who, item) return read("count_items", who, item) end
   horizon.carried_items = function(who) return read("carried_items", who) end
   horizon.data = function(path) return read("data", path) end
+  horizon.dev = { inspect = function(who, what) return read("dev_inspect", who, what) end }
   -- A refused registration (a hook name the runtime does not know) is
   -- raised from the script's own line, as any Lua error is.
   local on = horizon.on
@@ -572,6 +574,57 @@ impl LuaMod {
                             out.push(goals::view_table(lua, &view)?)?;
                         }
                         Value::Table(out)
+                    }
+                    // The inspect stick: `who` used it on an entity (its
+                    // id) or a block (`{x, y, z, face}`). Only a player who
+                    // may use game-master items (creative, permission 2 or
+                    // more, as vanilla's debug stick) inspects; the game
+                    // opens the window at the end of the tick. Whether the
+                    // click was the stick's, which the caller then cancels.
+                    "dev_inspect" => {
+                        let (who, what): (Value, Value) = FromLuaMulti::from_lua_multi(rest, lua)?;
+                        let player = uuid_of(h, &who)
+                            .and_then(|u| h.level_players().into_iter().find(|p| p.uuid == u));
+                        let Some(p) = player.filter(|p| p.game_mode == 1 && p.permission >= 2)
+                        else {
+                            return Ok(Value::Boolean(false));
+                        };
+                        let int = |v: Value| -> mlua::Result<i32> {
+                            match v {
+                                Value::Integer(i) => i32::try_from(i).map_err(mlua::Error::runtime),
+                                Value::Number(n) if n.fract() == 0.0 => Ok(n as i32),
+                                other => Err(mlua::Error::runtime(format!(
+                                    "horizon.dev.inspect: a whole number, not {}",
+                                    other.type_name()
+                                ))),
+                            }
+                        };
+                        use crate::mobs::observe::{Request, StickTarget, request};
+                        let target = match what {
+                            Value::Table(t) => {
+                                let face = match t.get::<Value>("face")? {
+                                    Value::Table(f) => {
+                                        [int(f.get("x")?)?, int(f.get("y")?)?, int(f.get("z")?)?]
+                                    }
+                                    _ => [0, 1, 0],
+                                };
+                                StickTarget::Block {
+                                    dimension: t
+                                        .get::<Option<String>>("dimension")?
+                                        .unwrap_or_else(|| p.dimension.clone()),
+                                    pos: [int(t.get("x")?)?, int(t.get("y")?)?, int(t.get("z")?)?],
+                                    face,
+                                }
+                            }
+                            other => StickTarget::Entity(
+                                u32::try_from(int(other)?).map_err(mlua::Error::runtime)?,
+                            ),
+                        };
+                        request(Request::Stick {
+                            player: p.uuid,
+                            target,
+                        });
+                        Value::Boolean(true)
                     }
                     "players" => {
                         let out = lua.create_table()?;
@@ -2800,6 +2853,113 @@ fn dimension_id(dimension: LevelDimension) -> &'static str {
     }
 }
 
+impl LuaMod {
+    /// A player right-clicks any entity, players and entities that are not
+    /// mobs included: `entity_interact(dimension, entity, player, held)`,
+    /// `entity` its `{id, kind}`, before `mob_interact` and before the entity
+    /// and the item act. `horizon.cancel()` takes the click, and
+    /// `mob_interact` is not told. Asked once per hand, as vanilla tries the
+    /// main hand and then the off hand.
+    fn entity_interact(&self, host: &mut dyn Host, event: &mut InteractEntityEvent<'_>) -> Flow {
+        let hook = "entity_interact";
+        let kind = qualify(event.kind);
+        if !self.watches(hook, &kind) {
+            return Flow::Continue;
+        }
+        let mut cancel = false;
+        let r = (|| -> mlua::Result<()> {
+            let player = self.player_table(host)?;
+            let held = match event.stack {
+                Some(stack) => {
+                    let t = self.lua.create_table()?;
+                    t.set("item", &*stack.item)?;
+                    t.set("count", stack.count)?;
+                    t.set("plain", stack.extra.is_none())?;
+                    Value::Table(t)
+                }
+                None => Value::Nil,
+            };
+            let entity = self.lua.create_table()?;
+            entity.set("id", event.entity)?;
+            entity.set("kind", kind.as_str())?;
+            let dimension = host.dimension().to_owned();
+            self.call_kind(
+                hook,
+                Some(&kind),
+                host,
+                (dimension, entity, player, held),
+                &mut |host, action, args| {
+                    match action {
+                        "cancel" => cancel = true,
+                        other => self.run_action(host, other, args)?,
+                    }
+                    Ok(())
+                },
+            )
+        })();
+        if let Err(e) = r {
+            return self.hook_error(hook, e);
+        }
+        if cancel { Flow::Cancel } else { Flow::Continue }
+    }
+    /// `mob_interact(dimension, mob, player, held, data)`.
+    fn mob_interact(&self, host: &mut dyn Host, event: &mut InteractEntityEvent<'_>) -> Flow {
+        let hook = "mob_interact";
+        let kind = qualify(event.kind);
+        if !self.watches(hook, &kind) {
+            return Flow::Continue;
+        }
+        let Ok(id) = u32::try_from(event.entity) else {
+            return Flow::Continue;
+        };
+        let mut cancel = false;
+        let r = (|| -> mlua::Result<()> {
+            let player = self.player_table(host)?;
+            let held = match event.stack {
+                Some(stack) => {
+                    let t = self.lua.create_table()?;
+                    t.set("item", &*stack.item)?;
+                    t.set("count", stack.count)?;
+                    t.set("plain", stack.extra.is_none())?;
+                    Value::Table(t)
+                }
+                None => Value::Nil,
+            };
+            let dimension = host.dimension().to_owned();
+            let Some(view) = host.mob_view(&dimension, id) else {
+                return Ok(());
+            };
+            let mob = goals::view_table(&self.lua, &view)?;
+            let data = self.mob_data(host, id)?;
+            self.call_kind(
+                hook,
+                Some(&kind),
+                host,
+                (
+                    dimension,
+                    mob,
+                    player,
+                    held,
+                    data.as_ref().map(|(_, t)| t.clone()),
+                ),
+                &mut |host, action, args| {
+                    match action {
+                        "cancel" => cancel = true,
+                        other => self.run_action(host, other, args)?,
+                    }
+                    Ok(())
+                },
+            )?;
+            self.store_mob_data(host, hook, id, data);
+            Ok(())
+        })();
+        if let Err(e) = r {
+            return self.hook_error(hook, e);
+        }
+        if cancel { Flow::Cancel } else { Flow::Continue }
+    }
+}
+
 impl Hooks for LuaMod {
     /// The server's data tables load (the world opens, `/reload`): from the
     /// second load on, the scripts are read and run again, so an edited
@@ -4345,59 +4505,10 @@ impl Hooks for LuaMod {
     /// `horizon.cancel()` takes the click (the hand swings, nothing else
     /// happens); `data` is written back.
     fn interact_entity(&self, host: &mut dyn Host, event: &mut InteractEntityEvent<'_>) -> Flow {
-        let hook = "mob_interact";
-        let kind = qualify(event.kind);
-        if !self.watches(hook, &kind) {
-            return Flow::Continue;
+        if self.entity_interact(host, event) == Flow::Cancel {
+            return Flow::Cancel;
         }
-        let Ok(id) = u32::try_from(event.entity) else {
-            return Flow::Continue;
-        };
-        let mut cancel = false;
-        let r = (|| -> mlua::Result<()> {
-            let player = self.player_table(host)?;
-            let held = match event.stack {
-                Some(stack) => {
-                    let t = self.lua.create_table()?;
-                    t.set("item", &*stack.item)?;
-                    t.set("count", stack.count)?;
-                    t.set("plain", stack.extra.is_none())?;
-                    Value::Table(t)
-                }
-                None => Value::Nil,
-            };
-            let dimension = host.dimension().to_owned();
-            let Some(view) = host.mob_view(&dimension, id) else {
-                return Ok(());
-            };
-            let mob = goals::view_table(&self.lua, &view)?;
-            let data = self.mob_data(host, id)?;
-            self.call_kind(
-                hook,
-                Some(&kind),
-                host,
-                (
-                    dimension,
-                    mob,
-                    player,
-                    held,
-                    data.as_ref().map(|(_, t)| t.clone()),
-                ),
-                &mut |host, action, args| {
-                    match action {
-                        "cancel" => cancel = true,
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )?;
-            self.store_mob_data(host, hook, id, data);
-            Ok(())
-        })();
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        self.mob_interact(host, event)
     }
     /// The game keeps the list of ticking entities only while a mod listens:
     /// this one does while a `mob_tick` handler is registered.
@@ -7242,6 +7353,138 @@ experimental = ["scripts"]
         let (dir, path) = hmod("broken", &[("scripts/init.lua", b"error('boom')")]);
         let e = LuaMod::load(&path, &[]).unwrap_err();
         assert!(e.contains("boom") && e.contains("scripts/init.lua"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A host whose acting player, steve, is in `game_mode` with operator
+    /// `permission`, and holds the inspect stick.
+    struct StickHost {
+        game_mode: i32,
+        permission: u8,
+    }
+    impl Host for StickHost {
+        fn dimension(&self) -> &'static str {
+            "minecraft:the_nether"
+        }
+        fn attachments(
+            &mut self,
+            _: Holder,
+        ) -> crate::mod_api::AttachmentResult<&mut crate::mod_api::Attachments> {
+            Err(crate::mod_api::AttachmentError::MissingHolder)
+        }
+        fn acting_player(&self) -> Option<crate::mod_api::NativeServerPlayer> {
+            Some(crate::mod_api::NativeServerPlayer {
+                uuid: 0x123e4567_e89b_12d3_a456_426614174000,
+                name: "steve".into(),
+                permission: self.permission,
+                dimension: "minecraft:the_nether".into(),
+                position: [1.0, 64.0, 1.0],
+                game_mode: self.game_mode,
+                health: 20.0,
+                yaw: 0.0,
+                pitch: 0.0,
+                entity_id: 5,
+                address: String::new(),
+            })
+        }
+        fn level_players(&self) -> Vec<crate::mod_api::NativeServerPlayer> {
+            self.acting_player().into_iter().collect()
+        }
+        fn held(&self) -> Option<(String, u32, bool)> {
+            Some(("horizon_modkit:inspect_stick".into(), 1, true))
+        }
+        fn block(&self, _: [i32; 3]) -> String {
+            "minecraft:chest".into()
+        }
+        fn mod_block_entity_data(&self, _: [i32; 3]) -> Option<Compound> {
+            None
+        }
+        fn mob_view(&self, _: &str, _: u32) -> Option<MobView> {
+            None
+        }
+    }
+
+    #[test]
+    fn entity_interact_hears_any_entity_and_the_stick_asks_for_its_window() {
+        use crate::mobs::observe::{self, Request, StickTarget};
+        let (dir, path) = hmod(
+            "stick",
+            &[(
+                "scripts/init.lua",
+                br#"
+                HEARD = {}
+                horizon.on("entity_interact", function(dimension, entity, player, held)
+                  HEARD[#HEARD + 1] = dimension .. ":" .. entity.kind .. ":" .. entity.id .. ":" .. player.name
+                  if held and held.item == "horizon_modkit:inspect_stick" and horizon.dev.inspect(player, entity.id) then
+                    horizon.cancel()
+                  end
+                end)
+                horizon.on("mob_interact", function() MOB = true end)
+                horizon.on("right_click_block", function(x, y, z, block, face, player, held)
+                  if horizon.dev.inspect(player, { x = x, y = y, z = z, face = face }) then horizon.cancel() end
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let stick = crate::mod_api::ItemStack {
+            item: "horizon_modkit:inspect_stick".into(),
+            count: 1,
+            damage: 0,
+            extra: None,
+        };
+        let _ = observe::take_requests();
+        // In creative with permission 2, an item frame (no mob) is heard, the
+        // click is the stick's, and mob_interact is not told.
+        let mut op = StickHost {
+            game_mode: 1,
+            permission: 2,
+        };
+        let mut frame = InteractEntityEvent {
+            entity: 9,
+            kind: "item_frame",
+            stack: Some(&stick),
+        };
+        assert_eq!(m.interact_entity(&mut op, &mut frame), Flow::Cancel);
+        let mut block = RightClickBlockEvent {
+            pos: [4, 70, -2],
+            face: [0, 0, -1],
+        };
+        assert_eq!(m.right_click_block(&mut op, &mut block), Flow::Cancel);
+        assert_eq!(
+            observe::take_requests(),
+            vec![
+                Request::Stick {
+                    player: 0x123e4567_e89b_12d3_a456_426614174000,
+                    target: StickTarget::Entity(9),
+                },
+                Request::Stick {
+                    player: 0x123e4567_e89b_12d3_a456_426614174000,
+                    target: StickTarget::Block {
+                        dimension: "minecraft:the_nether".into(),
+                        pos: [4, 70, -2],
+                        face: [0, 0, -1],
+                    },
+                },
+            ]
+        );
+        // In survival, or without the permission, the stick is any item:
+        // nothing asked, nothing cancelled, the mob hook told.
+        for (game_mode, permission) in [(0, 4), (1, 1)] {
+            let mut host = StickHost {
+                game_mode,
+                permission,
+            };
+            assert_eq!(m.interact_entity(&mut host, &mut frame), Flow::Continue);
+            assert_eq!(m.right_click_block(&mut host, &mut block), Flow::Continue);
+        }
+        assert!(observe::take_requests().is_empty());
+        let heard: Vec<String> = m.lua.globals().get::<Vec<String>>("HEARD").unwrap();
+        assert_eq!(heard.len(), 3);
+        assert_eq!(
+            heard[0],
+            "minecraft:the_nether:minecraft:item_frame:9:steve"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

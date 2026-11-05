@@ -6470,8 +6470,18 @@ impl Game<'_> {
             Some(t) => Some(t.id),
             None => self.pick_entity_hit().flatten(),
         };
+        // Another player is no entity of the level: found by its network id.
+        let player = |g: &Self, id: i32| {
+            g.lan.as_ref().and_then(|l| {
+                l.hub
+                    .guests
+                    .iter()
+                    .find(|guest| guest.entity_id == id && Some(guest.conn) != g.lan_acting)
+                    .map(|guest| commands::Target::Guest(guest.conn))
+            })
+        };
         if let Some(id) = named
-            && let Some(entity) = self.level_entity(id)
+            && let Some(entity) = self.level_entity(id).or_else(|| player(self, id))
         {
             let kind = self.target_type(entity);
             let stack = self.held().cloned();

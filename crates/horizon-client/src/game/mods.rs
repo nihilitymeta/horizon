@@ -77,6 +77,21 @@ static LAST_DECLARATIONS: std::sync::Mutex<
     std::collections::BTreeMap<String, horizon_client::mod_content::Declarations>,
 > = std::sync::Mutex::new(std::collections::BTreeMap::new());
 
+/// The content mod that declares the block `id`, and the block's template:
+/// what the game runs on (`FIXED_DECLARATIONS`), or the last root built
+/// before a game started.
+pub(super) fn block_declared_by(id: &str) -> Option<(String, String)> {
+    let find =
+        |all: &std::collections::BTreeMap<String, horizon_client::mod_content::Declarations>| {
+            all.iter()
+                .find_map(|(m, d)| d.block_template(id).map(|t| (m.clone(), t.to_string())))
+        };
+    match FIXED_DECLARATIONS.get() {
+        Some(fixed) => find(fixed),
+        None => find(&*LAST_DECLARATIONS.lock().ok()?),
+    }
+}
+
 /// A `Game` starts on the last content root built: its mods' blocks, items,
 /// mob effects, entity types and menu types are the process's until restart.
 pub(super) fn fix_declarations() {

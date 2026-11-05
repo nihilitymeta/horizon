@@ -147,6 +147,68 @@ pub enum Request {
     StartLog(u32),
     /// Stop that mob's log and close its file.
     StopLog(u32),
+    /// The inspect stick, used by the player with this UUID on an entity or
+    /// a block: the game checks who may, and opens or turns its page.
+    Stick { player: u128, target: StickTarget },
+}
+
+/// What the inspect stick was used on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StickTarget {
+    /// An entity, by its id (a player's too).
+    Entity(u32),
+    /// A block, and the face clicked (a unit vector, out of the block).
+    Block {
+        dimension: String,
+        pos: [i32; 3],
+        face: [i32; 3],
+    },
+}
+
+/// A block the block window shows: where it is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BlockKey {
+    pub dimension: String,
+    pub pos: [i32; 3],
+}
+
+/// A block as the block window shows it, read once a server tick.
+#[derive(Clone, Debug)]
+pub struct BlockSnapshot {
+    /// `minecraft:repeater`, and its state properties.
+    pub name: String,
+    pub properties: Vec<(String, String)>,
+    /// Its block entity's data, as `/data get block` prints it.
+    pub entity: Option<Tag>,
+    /// Block light and sky light at the block, and at the clicked face.
+    pub light: [u8; 2],
+    pub face_light: [u8; 2],
+    pub biome: Option<String>,
+    /// `getBestNeighborSignal`: the power it receives.
+    pub power: i32,
+    /// `getDirectSignal(pos, direction)`, by `Direction::ALL`: the strong
+    /// signal it gives each way.
+    pub strong: [i32; 6],
+    pub random_ticks: bool,
+    /// Its pending scheduled ticks: what, in how many ticks, and the priority.
+    pub scheduled: Vec<(String, i64, i32)>,
+    /// The block tags it is in, `#minecraft:mineable/pickaxe`.
+    pub tags: Vec<String>,
+    /// A content mod's block: the mod that declares it, and its template.
+    pub declared_by: Option<(String, String)>,
+    /// Its collision and outline boxes, in world coordinates (min x, y, z,
+    /// max x, y, z), drawn in the world while the window is open.
+    pub collision: Vec<[f64; 6]>,
+    pub outline: Vec<[f64; 6]>,
+    pub taken: Instant,
+}
+
+/// One watched block: where, the face it was clicked on, and what is stored.
+#[derive(Clone, Debug)]
+pub struct InspectedBlock {
+    pub key: BlockKey,
+    pub face: [i32; 3],
+    pub snapshot: Option<BlockSnapshot>,
 }
 
 static REQUESTS: Mutex<Vec<Request>> = Mutex::new(Vec::new());
@@ -180,6 +242,7 @@ struct Observed {
     data: Vec<DataSnapshot>,
     history: Vec<(u32, VecDeque<HistoryTick>)>,
     series: Vec<(u32, Series)>,
+    blocks: Vec<InspectedBlock>,
 }
 
 /// The fast path for every mob's tick: whether anything is watched at all.
@@ -192,6 +255,7 @@ static STATE: Mutex<Observed> = Mutex::new(Observed {
     data: Vec::new(),
     history: Vec::new(),
     series: Vec::new(),
+    blocks: Vec::new(),
 });
 
 fn state() -> std::sync::MutexGuard<'static, Observed> {
@@ -230,11 +294,16 @@ impl Observed {
                 .iter()
                 .any(|w| w.id == *id && w.paths.contains(&s.path))
         });
-        WATCHING.store(!self.watch.is_empty(), Ordering::Relaxed);
+        WATCHING.store(
+            !self.watch.is_empty() || !self.blocks.is_empty(),
+            Ordering::Relaxed,
+        );
         SHOWING.store(
-            self.watch
-                .iter()
-                .any(|w| !w.views.is_empty() || !w.paths.is_empty()),
+            !self.blocks.is_empty()
+                || self
+                    .watch
+                    .iter()
+                    .any(|w| !w.views.is_empty() || !w.paths.is_empty()),
             Ordering::Relaxed,
         );
     }
@@ -350,6 +419,7 @@ pub fn reset() {
     s.data.clear();
     s.history.clear();
     s.series.clear();
+    s.blocks.clear();
     s.prune();
 }
 
@@ -552,6 +622,40 @@ pub fn brain_of(id: u32) -> Option<BrainSnapshot> {
     state().snapshots.iter().find(|b| b.id == id).cloned()
 }
 
+/// Open the block window of the block at `key`, clicked on `face`.
+pub fn add_block(key: BlockKey, face: [i32; 3]) {
+    let mut s = state();
+    match s.blocks.iter_mut().find(|b| b.key == key) {
+        Some(b) => b.face = face,
+        None => s.blocks.push(InspectedBlock {
+            key,
+            face,
+            snapshot: None,
+        }),
+    }
+    s.prune();
+}
+
+/// Close the block window of the block at `key`.
+pub fn remove_block(key: &BlockKey) {
+    let mut s = state();
+    s.blocks.retain(|b| b.key != *key);
+    s.prune();
+}
+
+/// The game stores a watched block's facts, once a server tick.
+pub fn set_block(key: &BlockKey, snapshot: BlockSnapshot) {
+    let mut s = state();
+    if let Some(b) = s.blocks.iter_mut().find(|b| b.key == *key) {
+        b.snapshot = Some(snapshot);
+    }
+}
+
+/// The watched blocks, in the order opened.
+pub fn blocks() -> Vec<InspectedBlock> {
+    state().blocks.clone()
+}
+
 /// Every watched entity, in the order first named, with what has been stored for it.
 pub fn snapshots() -> Vec<Inspected> {
     let s = state();
@@ -660,6 +764,53 @@ mod tests {
         assert!(brain_of(8).is_none());
         // A log mark does not survive either: the next world's entity 8 is not snapshotted.
         assert!(paths_of(7).is_empty());
+    }
+
+    #[test]
+    fn a_block_window_keeps_its_block_watched_until_it_closes() {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        let key = BlockKey {
+            dimension: "minecraft:overworld".into(),
+            pos: [1, 64, -2],
+        };
+        add_block(key.clone(), [0, 1, 0]);
+        add_block(key.clone(), [1, 0, 0]);
+        assert!(watching() && showing());
+        let all = blocks();
+        assert_eq!(all.len(), 1, "one window per block");
+        assert_eq!(all[0].face, [1, 0, 0]);
+        // A block nobody watches gets no snapshot.
+        let other = BlockKey {
+            dimension: "minecraft:the_nether".into(),
+            pos: [1, 64, -2],
+        };
+        set_block(
+            &other,
+            BlockSnapshot {
+                name: "minecraft:stone".into(),
+                properties: Vec::new(),
+                entity: None,
+                light: [0, 15],
+                face_light: [0, 15],
+                biome: None,
+                power: 0,
+                strong: [0; 6],
+                random_ticks: false,
+                scheduled: Vec::new(),
+                tags: Vec::new(),
+                declared_by: None,
+                collision: Vec::new(),
+                outline: Vec::new(),
+                taken: Instant::now(),
+            },
+        );
+        assert!(blocks()[0].snapshot.is_none());
+        remove_block(&key);
+        assert!(!watching() && !showing());
+        add_block(key, [0, 1, 0]);
+        reset();
+        assert!(blocks().is_empty());
     }
 
     #[test]

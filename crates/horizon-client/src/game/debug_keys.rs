@@ -991,6 +991,30 @@ impl Game<'_> {
         let mut g = Gizmos::default();
         self.bounding_box_gizmos(camera, &mut g);
         self.debug_renderer_gizmos(&mut g);
+        // The block windows (the inspect stick): the block's collision boxes
+        // in blue and its outline, a hair larger, in yellow, while open.
+        for b in horizon_client::mobs::observe::blocks() {
+            let Some(snap) = b.snapshot.filter(|_| b.key.dimension == self.dim.id()) else {
+                continue;
+            };
+            for c in &snap.collision {
+                g.cuboid(
+                    [c[0], c[1], c[2]],
+                    [c[3], c[4], c[5]],
+                    horizon_client::gizmos::BLUE,
+                    2.0,
+                );
+            }
+            let e = 0.002;
+            for o in &snap.outline {
+                g.cuboid(
+                    [o[0] - e, o[1] - e, o[2] - e],
+                    [o[3] + e, o[4] + e, o[5] + e],
+                    horizon_client::gizmos::YELLOW,
+                    2.0,
+                );
+            }
+        }
         if self.debug_entry("chunk_borders")
             && let Some(p) = &self.player
         {

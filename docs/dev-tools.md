@@ -12,6 +12,7 @@ The tools live on the `egui-tools` branch of whos-carmen/horizon. It is stacked 
 | The overlay, and pointer input with a release key | built |
 | The entity windows: `/inspect`, `/goals`, `/senses`, `/nav`, `/watch`, `/mobai log` | built |
 | The Lua console, `/lua` | built |
+| The inspect stick and the block window | built |
 | The rest | [planned](#plan) |
 
 The code is in `crates/horizon-client/src/dev_tools.rs`, `dev_tools/console.rs`, `mobs/observe.rs`,
@@ -27,6 +28,9 @@ horizon-client --dev-tools …
 
 A launcher's game arguments can carry the flag. The tools draw nothing until one of the commands below names
 something; then a window opens over the world for each entity it named.
+
+A game with Lua mods has the windows without the flag, for the [inspect stick](#the-inspect-stick), and none of the
+commands. The windows draw only while the stick opened one, and a game without Lua mods has no part of the tools.
 
 ### Who can use them
 
@@ -90,8 +94,8 @@ Each command except `/lua` takes an entity selector, for operators, as `/data` d
 entity. `… clear` closes that kind of window everywhere, and a window's **stop** button closes it alone. `/inspect`
 with no arguments lists what is watched.
 
-Players are left out, because their data is read as the acting player, who is nobody on a tick. All the windows are
-read-only: nothing touches the entity.
+Players are watched by their connection and shown by their network entity id, so `/inspect @a` shows each
+player's data as `/data get entity` prints it. All the windows are read-only: nothing touches the entity.
 
 The snapshots are statics of the process, which the server thread fills. This works in single player. A dedicated
 server fills snapshots that nobody shows, and a client of a remote server sees none. An entity that stops updating,
@@ -109,6 +113,49 @@ because it is gone, unloaded or the game is paused, keeps its last data, marked 
 A button in a window can't do what only the game does, such as opening a file, from the render thread. It asks
 (`observe::request`), and the game does it at the end of its next server tick (`dev_requests` in
 `game/commands/inspect.rs`).
+
+## The inspect stick
+
+The modkit's item `horizon_modkit:inspect_stick` opens these windows on what it is used on, as vanilla's debug stick
+changes block states. It copies the debug stick, so it is listed only with the operator items; `/give @s
+horizon_modkit:inspect_stick` gets one. The modkit's scripts call `horizon.dev.inspect` from `entity_interact` and
+`right_click_block`, and cancel the click, both hands' turns of it, so nothing else happens: no trade, no chest, no
+button.
+
+| Used on | Opens |
+|---|---|
+| An entity, the first time | Its Inspect window |
+| The same entity again | Its next page: a mob has Inspect, Goals, Senses and Nav; any other entity, a player included, Inspect alone. Sneaking turns back. Both wrap around |
+| Another entity | The same page, when it has it, else Inspect |
+| A block | The block window |
+
+Each use replaces the window the stick opened before, and a line over the hotbar says which page is open.
+
+Who may use it:
+
+- A player in creative with permission level 2 or more (op, or cheats on in single player): vanilla's
+  `Player.canUseGameMasterBlocks`. `horizon.dev.inspect` answers false for anyone else, and the stick is any stick.
+- The world's owner: the windows open on the host's screen. Another player's use is refused with
+  `horizon.dev_tools.stick.host_only`.
+
+The windows open the same way with and without `--dev-tools`. The stick's request goes through `observe::request`,
+and the server thread handles it at the end of its tick (`stick_used` in `game/commands/inspect.rs`).
+
+### The block window
+
+The block window shows what the game knows of one block, read once each server tick in the block's level:
+
+- the block's id and state properties
+- its dimension and biome
+- block light and sky light, at the block and on the face the stick clicked
+- the power it receives (`getBestNeighborSignal`), and the strong signal it gives each way (`getDirectSignal`)
+- whether it gets random ticks, and its scheduled block and fluid ticks with their delay and priority
+- the block tags it is in
+- for a content mod's block, the mod that declares it and its template
+- its block entity's data as a tree, as `/data get block` prints it
+
+While the window is open, the block's collision boxes are drawn in the world in blue, and its outline in yellow
+(`debug_gizmos`).
 
 ## The Lua console
 
@@ -213,7 +260,9 @@ tools lose nothing.
 
 ## How it is wired
 
-The tools are a built-in trait mod. `dev_tools::mods()` gives `entry::main` a `Hooks` object when the tools are on.
+The tools are a built-in trait mod. `dev_tools::mods()` gives `entry::main` a `Hooks` object when the tools are on,
+or when Lua mods are, for the inspect stick. A game with neither has no `Hooks` object, so the engine's paths for a
+game without mods stay as they are.
 Its `RenderHooks::world_drawn` draws egui on the render thread, with the frame's device, queue, encoder and colour
 target, through the renderer's own hook point for mods ([native-mods.md](native-mods.md#render-hook-points)).
 

@@ -2,11 +2,14 @@
 //! `/senses`, `/nav` and `/watch` name entities for the egui windows, `/mobai
 //! log` writes a mob's AI snapshot to a file each tick. Each server tick the
 //! data `/data get entity` prints goes to `mobs::observe` for every watched
-//! entity, read with the same `data_of`; nothing is written back.
+//! entity, read with the same `data_of`, and the block window's facts for
+//! every watched block; nothing is written back. The inspect stick (the
+//! modkit's item, `horizon.dev.inspect`) opens the same windows on what it
+//! is used on, a page at a time.
 use super::{Arg, Context, Game, R, Target, data::DataRef, err};
 use horizon_client::{
     data_cmd,
-    mobs::observe::{self, Request, View},
+    mobs::observe::{self, BlockKey, BlockSnapshot, Request, StickTarget, View},
     nbt_path::NbtPath,
     text::Text,
 };
@@ -14,10 +17,59 @@ use horizon_world::nbt::Tag;
 use std::io::Write;
 use std::sync::Mutex;
 
-/// The entities watched, as the selectors found them; the lib's store holds
-/// their ids. One list a process: single player's server thread writes the
-/// data its window shows.
-static WATCH: Mutex<Vec<Target>> = Mutex::new(Vec::new());
+/// The entities watched, as the selectors found them, with the ids the lib's
+/// store holds them by (a player's is its network entity id). One list a
+/// process: single player's server thread writes the data its window shows.
+static WATCH: Mutex<Vec<(Target, u32)>> = Mutex::new(Vec::new());
+/// The inspect stick, by player: what it showed last, its page, and the
+/// window it opened, which the next use replaces.
+static STICK: Mutex<Vec<Stick>> = Mutex::new(Vec::new());
+
+struct Stick {
+    player: u128,
+    last: Option<StickTarget>,
+    page: View,
+    opened: Option<Opened>,
+}
+
+/// A window the stick opened.
+enum Opened {
+    Entity(u32, View),
+    Block(BlockKey),
+}
+
+/// The pages of an entity, in the stick's order: every entity has its data,
+/// a mob its goals, senses and path too.
+fn pages(t: Target) -> &'static [View] {
+    if matches!(t, Target::Mob(_)) {
+        &[View::Data, View::Goals, View::Senses, View::Nav]
+    } else {
+        &[View::Data]
+    }
+}
+
+/// The page the stick shows next: the same entity again turns the page
+/// (back when sneaking), another keeps the page when it has it, else its data.
+fn next_page(pages: &[View], page: View, same: bool, back: bool) -> View {
+    let Some(i) = pages.iter().position(|p| *p == page) else {
+        return View::Data;
+    };
+    if !same {
+        return page;
+    }
+    let n = pages.len();
+    pages[if back { (i + n - 1) % n } else { (i + 1) % n }]
+}
+
+/// A page's name, as its command is named.
+fn page_name(view: View) -> &'static str {
+    match view {
+        View::Data => "inspect",
+        View::Goals => "goals",
+        View::Senses => "senses",
+        View::Nav => "nav",
+    }
+}
 /// `/mobai log`: the mobs logged, each with its open file.
 static LOGS: Mutex<Vec<(u32, std::fs::File)>> = Mutex::new(Vec::new());
 /// Ticks since the tools first read anything: the x axis of `/watch`.
@@ -53,12 +105,22 @@ pub(super) fn id_of(t: Target) -> Option<u32> {
     }
 }
 
-/// Remember targets a command or the Lua console named, so the tick reads their data.
+/// Remember targets a command or the Lua console named, so the tick reads
+/// their data: those with an id here (not players; [`remember_with_ids`]).
 pub(super) fn remember(targets: &[Target]) {
+    let with: Vec<(Target, u32)> = targets
+        .iter()
+        .filter_map(|&t| id_of(t).map(|id| (t, id)))
+        .collect();
+    remember_with_ids(&with);
+}
+
+/// [`remember`] with each target's id.
+fn remember_with_ids(targets: &[(Target, u32)]) {
     let mut watch = WATCH.lock().unwrap_or_else(|e| e.into_inner());
-    for &t in targets {
-        if !watch.contains(&t) {
-            watch.push(t);
+    for &(t, id) in targets {
+        if !watch.iter().any(|(_, i)| *i == id) {
+            watch.push((t, id));
         }
     }
 }
@@ -75,7 +137,7 @@ fn forget_unwatched() {
     WATCH
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .retain(|t| id_of(*t).is_some_and(|id| watched.contains(&id) || logged.contains(&id)));
+        .retain(|(_, id)| watched.contains(id) || logged.contains(id));
 }
 
 /// `key` with `args`, or `key.one` when `n` is one: the two forms of a
@@ -110,24 +172,35 @@ impl Game<'_> {
     pub(in crate::game) fn dev_tools_world_closed(&mut self) {
         LOGS.lock().unwrap_or_else(|e| e.into_inner()).clear();
         WATCH.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        STICK.lock().unwrap_or_else(|e| e.into_inner()).clear();
         *TICKS.lock().unwrap_or_else(|e| e.into_inner()) = 0;
         observe::reset();
         super::lua_console::world_closed();
         crate::dev_tools::world_closed();
     }
 
-    /// The targets of the command with their ids, players left out.
-    fn watchable(&mut self, ctx: &Context) -> R<(Vec<Target>, Vec<u32>, usize)> {
+    /// A target as the tools watch it, and its id: a player is kept by
+    /// connection (the acting player in place is that guest), by its network
+    /// entity id; none for a player not on the hub.
+    fn watch_id(&self, t: Target) -> Option<(Target, u32)> {
+        let guest = match t {
+            Target::Guest(conn) => conn,
+            Target::Player => self.lan_acting?,
+            _ => return id_of(t).map(|id| (t, id)),
+        };
+        let id = u32::try_from(self.command_guest(guest)?.entity_id).ok()?;
+        Some((Target::Guest(guest), id))
+    }
+
+    /// The targets of the command with their ids, and how many have none.
+    fn watchable(&mut self, ctx: &Context) -> R<(Vec<(Target, u32)>, Vec<u32>, usize)> {
         let targets = self.entities(ctx, "targets", false)?;
-        let watched: Vec<Target> = targets
-            .iter()
-            .copied()
-            .filter(|t| id_of(*t).is_some())
-            .collect();
+        let watched: Vec<(Target, u32)> =
+            targets.iter().filter_map(|t| self.watch_id(*t)).collect();
         if watched.is_empty() {
             return Err(err("argument.entity.notfound.entity", &[]));
         }
-        let ids = watched.iter().filter_map(|t| id_of(*t)).collect();
+        let ids = watched.iter().map(|(_, id)| *id).collect();
         let skipped = targets.len() - watched.len();
         Ok((watched, ids, skipped))
     }
@@ -173,7 +246,7 @@ impl Game<'_> {
             return Ok(0);
         }
         let (targets, ids, skipped) = self.watchable(ctx)?;
-        remember(&targets);
+        remember_with_ids(&targets);
         observe::add(&ids, view);
         self.dev_inspect_tick();
         let line = self.opened_line("horizon.dev_tools.opened", name, ids.len(), skipped);
@@ -228,7 +301,7 @@ impl Game<'_> {
         };
         NbtPath::parse(&path).map_err(data_cmd::path_error)?;
         let (targets, ids, skipped) = self.watchable(ctx)?;
-        remember(&targets);
+        remember_with_ids(&targets);
         observe::add_path(&ids, &path);
         self.dev_inspect_tick();
         let line = self.opened_line("horizon.dev_tools.watch", &path, ids.len(), skipped);
@@ -296,11 +369,9 @@ impl Game<'_> {
             *t += 1;
             *t
         };
+        self.dev_blocks_tick();
         let targets = WATCH.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        for t in targets {
-            let Some(id) = id_of(t) else {
-                continue;
-            };
+        for (t, id) in targets {
             let read = self.in_target_level(t, |g| {
                 let name = g.target_name(t).plain();
                 g.data_of(&DataRef::Entity(t)).ok().map(|data| (name, data))
@@ -343,7 +414,7 @@ impl Game<'_> {
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
                         .iter()
-                        .copied()
+                        .map(|(t, _)| *t)
                         .find(|t| *t == Target::Mob(id));
                     let Some(t) = target else { continue };
                     let name = self
@@ -360,8 +431,238 @@ impl Game<'_> {
                     observe::stop_log(id);
                     forget_unwatched();
                 }
+                Request::Stick { player, target } => self.stick_used(player, target),
             }
         }
+    }
+
+    /// The inspect stick used by `player` on `target`. The windows are the
+    /// host's: another player's use is refused with a message. An entity
+    /// shows its data first; the same entity again turns the page (back when
+    /// sneaking), and the window replaces the one the stick opened before.
+    fn stick_used(&mut self, player: u128, target: StickTarget) {
+        let Some(guest) = self
+            .lan
+            .as_ref()
+            .and_then(|l| l.hub.guests.iter().find(|g| g.uuid == player))
+        else {
+            return;
+        };
+        let (conn, back, dimension) = (guest.conn, guest.sneaking, guest.dimension.clone());
+        if self.serving.as_ref().map(|s| s.owner) != Some(player) {
+            self.stick_message(conn, Text::tr("horizon.dev_tools.stick.host_only", &[]));
+            return;
+        }
+        let mut sticks = STICK.lock().unwrap_or_else(|e| e.into_inner());
+        let i = match sticks.iter().position(|s| s.player == player) {
+            Some(i) => i,
+            None => {
+                sticks.push(Stick {
+                    player,
+                    last: None,
+                    page: View::Data,
+                    opened: None,
+                });
+                sticks.len() - 1
+            }
+        };
+        let stick = &mut sticks[i];
+        let line = match &target {
+            StickTarget::Entity(id) => {
+                let id = *id;
+                // A player by its entity id, or what the player's level holds.
+                let found = self
+                    .lan
+                    .as_ref()
+                    .and_then(|l| {
+                        l.hub
+                            .guests
+                            .iter()
+                            .find(|g| u32::try_from(g.entity_id) == Ok(id))
+                    })
+                    .map(|g| Target::Guest(g.conn))
+                    .or_else(|| {
+                        self.in_dimension(&dimension, |g| g.level_entity(id as i32))
+                            .flatten()
+                    });
+                let Some(t) = found else {
+                    return;
+                };
+                let pages = pages(t);
+                let same = stick.last.as_ref() == Some(&target);
+                let page = if stick.last.is_none() {
+                    View::Data
+                } else {
+                    next_page(pages, stick.page, same, back)
+                };
+                if let Some(opened) = stick.opened.take() {
+                    close(opened);
+                }
+                remember_with_ids(&[(t, id)]);
+                observe::add(&[id], page);
+                stick.opened = Some(Opened::Entity(id, page));
+                stick.page = page;
+                let n = pages.iter().position(|p| *p == page).unwrap_or(0) + 1;
+                Text::tr(
+                    "horizon.dev_tools.stick.page",
+                    &[&page_name(page), &n, &pages.len()],
+                )
+            }
+            StickTarget::Block {
+                dimension,
+                pos,
+                face,
+            } => {
+                let key = BlockKey {
+                    dimension: dimension.clone(),
+                    pos: *pos,
+                };
+                if let Some(opened) = stick.opened.take()
+                    && !matches!(&opened, Opened::Block(k) if *k == key)
+                {
+                    close(opened);
+                }
+                observe::add_block(key.clone(), *face);
+                stick.opened = Some(Opened::Block(key));
+                Text::tr("horizon.dev_tools.stick.block", &[])
+            }
+        };
+        stick.last = Some(target);
+        drop(sticks);
+        forget_unwatched();
+        self.stick_message(conn, line);
+    }
+
+    /// A line over the hotbar of the guest `conn`, as the debug stick tells
+    /// what it did.
+    fn stick_message(&mut self, conn: u32, line: Text) {
+        if let Some(lan) = self.lan.as_ref() {
+            lan.hub.send_to(
+                conn,
+                &horizon_protocol::packets::play::Clientbound::SystemChat(
+                    horizon_protocol::packets::play::SystemChat {
+                        content: horizon_client::lan::data::component_nbt(&line.component()),
+                        overlay: true,
+                    },
+                ),
+            );
+        }
+    }
+
+    /// Run `f` in the level of `dimension`, putting the level in place back;
+    /// None when that level is not loaded.
+    fn in_dimension<R>(&mut self, dimension: &str, f: impl FnOnce(&mut Self) -> R) -> Option<R> {
+        if self.dim.id() == dimension {
+            return Some(f(self));
+        }
+        let dim = crate::game::Dim::from_id(dimension);
+        if dim.id() != dimension {
+            return None;
+        }
+        let back = self.enter_command_level(dim)?;
+        let r = f(self);
+        self.enter_command_level(back);
+        Some(r)
+    }
+
+    /// Each watched block's facts, read in its level.
+    fn dev_blocks_tick(&mut self) {
+        for block in observe::blocks() {
+            let read = self.in_dimension(&block.key.dimension, |g| {
+                g.block_snapshot(block.key.pos, block.face)
+            });
+            if let Some(snapshot) = read {
+                observe::set_block(&block.key, snapshot);
+            }
+        }
+    }
+
+    /// What the block window shows of the block at `pos`, clicked on `face`.
+    fn block_snapshot(&mut self, pos: [i32; 3], face: [i32; 3]) -> BlockSnapshot {
+        use horizon_core::position::{BlockPos, ChunkPos};
+        let [x, y, z] = pos;
+        let state = self.world.block(x, y, z);
+        let (name, properties) = match self.pack.assets.registry.state(state) {
+            Some(s) => (
+                s.name.clone(),
+                s.properties
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            ),
+            None => (String::new(), Vec::new()),
+        };
+        let entity = self.data_of(&DataRef::Block(pos)).ok();
+        let light = |l: u8| [l & 15, l >> 4];
+        let at = BlockPos::new(x, y, z);
+        let (power, strong) = self.with_level(|b, level, ticks| {
+            (
+                b.best_neighbor_signal(level, ticks, at),
+                b.direct_signals(level, ticks, at),
+            )
+        });
+        let now = self.world.game_time;
+        let mut scheduled = Vec::new();
+        let chunk = ChunkPos {
+            x: x >> 4,
+            z: z >> 4,
+        };
+        for (kind, ticks) in [
+            ("block", &self.block_ticks.blocks),
+            ("fluid", &self.block_ticks.fluids),
+        ] {
+            if let Some(c) = ticks.chunk(chunk) {
+                for t in c.queued().iter().filter(|t| t.pos == at) {
+                    scheduled.push((kind.to_string(), t.trigger_tick - now, t.priority as i32));
+                }
+            }
+        }
+        let tags = horizon_client::debug_overlay::tag_lines(&self.items().block_tags, &name);
+        let collision = self
+            .block_collision_shape(pos)
+            .boxes()
+            .iter()
+            .map(|b| {
+                let (min, max) = (b.min_position(), b.max_position());
+                [
+                    f64::from(x) + min.x,
+                    f64::from(y) + min.y,
+                    f64::from(z) + min.z,
+                    f64::from(x) + max.x,
+                    f64::from(y) + max.y,
+                    f64::from(z) + max.z,
+                ]
+            })
+            .collect();
+        BlockSnapshot {
+            properties,
+            entity,
+            light: light(self.world.light(x, y, z)),
+            face_light: light(self.world.light(x + face[0], y + face[1], z + face[2])),
+            biome: self.biome_name_at(horizon_core::geometry::Vec3::new(
+                f64::from(x) + 0.5,
+                f64::from(y) + 0.5,
+                f64::from(z) + 0.5,
+            )),
+            power,
+            strong,
+            random_ticks: self.res.behaviours().is_randomly_ticking(state),
+            scheduled,
+            tags,
+            declared_by: crate::game::mods::block_declared_by(&name),
+            collision,
+            outline: self.outline_boxes(pos),
+            taken: std::time::Instant::now(),
+            name,
+        }
+    }
+}
+
+/// Close a window the stick opened.
+fn close(opened: Opened) {
+    match opened {
+        Opened::Entity(id, view) => observe::remove(id, Some(view)),
+        Opened::Block(key) => observe::remove_block(&key),
     }
 }
 
@@ -411,6 +712,22 @@ fn number(tag: &Tag) -> Option<f64> {
 mod tests {
     use super::*;
     use crate::game::{Audio, Game, Options, Progress, Settings, load_resources};
+
+    #[test]
+    fn the_stick_turns_a_mobs_pages_and_keeps_its_page_on_another() {
+        let mob = pages(Target::Mob(1));
+        // The same mob again: forward, wrapping; sneaking: back, wrapping.
+        assert_eq!(next_page(mob, View::Data, true, false), View::Goals);
+        assert_eq!(next_page(mob, View::Nav, true, false), View::Data);
+        assert_eq!(next_page(mob, View::Data, true, true), View::Nav);
+        assert_eq!(next_page(mob, View::Senses, true, true), View::Goals);
+        // Another mob keeps the page; an entity without it shows its data.
+        assert_eq!(next_page(mob, View::Senses, false, false), View::Senses);
+        let frame = pages(Target::Frame(2));
+        assert_eq!(next_page(frame, View::Senses, false, false), View::Data);
+        assert_eq!(next_page(frame, View::Data, true, false), View::Data);
+        assert_eq!(pages(Target::Guest(3)), [View::Data]);
+    }
 
     #[test]
     #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]

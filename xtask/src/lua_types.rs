@@ -131,6 +131,10 @@ const HOOKS: &[(&str, &str)] = &[
         "(dimension: string, mob: MobView, player: Player, held: Held?, data: Data?) -> ()",
     ),
     (
+        "entity_interact",
+        "(dimension: string, entity: IdKind, player: Player, held: Held?) -> ()",
+    ),
+    (
         "mob_tick",
         "(dimension: string, mob: MobView, data: Data?) -> ()",
     ),
@@ -290,6 +294,10 @@ const FUNCTIONS: &[(&str, &str)] = &[
     ),
     ("carried_items", "(who: string | Player) -> Carried?"),
     ("data", "(path: string) -> any"),
+    (
+        "dev",
+        "{ inspect: (who: Player | string, what: number | { x: number, y: number, z: number, face: Vec3?, dimension: string? }) -> boolean }",
+    ),
     (
         "summon",
         "(dimension: string, kind: string, x: number, y: number, z: number) -> number?",
@@ -501,9 +509,10 @@ mod tests {
         }
         for line in src.lines() {
             let line = line.trim();
+            // `horizon.name = function` and a table of them, `horizon.name = {`.
             if let Some(rest) = line.strip_prefix("horizon.")
-                && let Some(name) = rest.split(" = function").next()
-                && rest.contains(" = function")
+                && let Some(name) = rest.split(" = ").next()
+                && (rest.contains(" = function") || rest.contains(" = {"))
                 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
             {
                 installed.insert(name.to_owned());

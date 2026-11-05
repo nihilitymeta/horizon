@@ -46,6 +46,7 @@ export type HorizonOn =
     ((name: "player_hurt", fn: (player: IdKind, damage_type: string, causing: number, direct: number, amount: number) -> (), kind: string?) -> ()) &
     ((name: "mob_killed", fn: (dimension: string, mob: IdKind, killer: Player, data: Data?) -> (), kind: string?) -> ()) &
     ((name: "mob_interact", fn: (dimension: string, mob: MobView, player: Player, held: Held?, data: Data?) -> (), kind: string?) -> ()) &
+    ((name: "entity_interact", fn: (dimension: string, entity: IdKind, player: Player, held: Held?) -> (), kind: string?) -> ()) &
     ((name: "mob_tick", fn: (dimension: string, mob: MobView, data: Data?) -> (), kind: string?) -> ()) &
     ((name: "mob_died", fn: (dimension: string, mob: IdKind, cause: DeathCause, data: Data?) -> (), kind: string?) -> ()) &
     ((name: "mob_fall", fn: (mob: IdKind, distance: number, multiplier: number) -> (), kind: string?) -> ()) &
@@ -112,6 +113,7 @@ declare horizon: {
     count_items: (who: string | Player, id: string) -> number?,
     carried_items: (who: string | Player) -> Carried?,
     data: (path: string) -> any,
+    dev: { inspect: (who: Player | string, what: number | { x: number, y: number, z: number, face: Vec3?, dimension: string? }) -> boolean },
     summon: (dimension: string, kind: string, x: number, y: number, z: number) -> number?,
     after: (ticks: number, fn: () -> ()) -> (),
     every: (ticks: number, fn: () -> ()) -> (),

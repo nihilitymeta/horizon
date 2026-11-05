@@ -42,9 +42,12 @@ pub fn main() {
         main_with(Default::default());
         return;
     }
-    // Built in first: the developer tools, then the Lua mods found on the command line and in the mods folder.
-    let mut mods = crate::dev_tools::mods();
-    mods.extend(crate::lua_mods::discover(std::env::args().skip(1)));
+    // Built in first: the developer tools (their windows alone for the
+    // inspect stick when Lua mods are on), then the Lua mods found on the
+    // command line and in the mods folder.
+    let lua = crate::lua_mods::discover(std::env::args().skip(1));
+    let mut mods = crate::dev_tools::mods(!lua.is_empty());
+    mods.extend(lua);
     main_with(mods.into());
 }
 

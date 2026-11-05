@@ -97,6 +97,13 @@ impl Declarations {
             menu_types: content.menu_types.clone(),
         }
     }
+    /// The template of the block `id` this mod declares, if it declares it.
+    pub fn block_template(&self, id: &str) -> Option<&str> {
+        self.blocks
+            .iter()
+            .find(|b| b.id == id)
+            .map(|b| b.template.as_str())
+    }
     fn is_empty(&self) -> bool {
         self.blocks.is_empty()
             && self.items.is_empty()
@@ -1891,6 +1898,47 @@ impl<'a> Plan<'a> {
                     .unwrap_or_else(|| path.to_owned())
             };
             let tab = &mut tabs[search];
+            // A new item copying an item only operators get (the debug stick,
+            // a command block) is listed as its template is: with the
+            // permissions only (`permissions_only`, by index).
+            let id_of = |v: &J| match v {
+                J::Str(snbt) => snbt
+                    .split_once("id:\"")
+                    .and_then(|(_, rest)| rest.split_once('"'))
+                    .map(|(id, _)| id.to_owned()),
+                _ => None,
+            };
+            let (first, operator): (usize, std::collections::HashSet<String>) = {
+                let items: &[J] = match tab.get("items") {
+                    Some(J::Arr(list)) => list,
+                    _ => &[],
+                };
+                let only: Vec<usize> = match tab.get("permissions_only") {
+                    Some(J::Arr(list)) => list
+                        .iter()
+                        .filter_map(|n| match n {
+                            J::Num(n) => n.as_u64().and_then(|n| usize::try_from(n).ok()),
+                            _ => None,
+                        })
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                let operator = only
+                    .iter()
+                    .filter_map(|&i| items.get(i).and_then(id_of))
+                    .collect();
+                (items.len(), operator)
+            };
+            let operator_only: Vec<J> = self
+                .items
+                .iter()
+                .enumerate()
+                .filter(|(_, i)| operator.contains(&i.rename.from))
+                .map(|(n, _)| J::Num((first + n).into()))
+                .collect();
+            if let Some(J::Arr(list)) = tab.get_mut("permissions_only") {
+                list.extend(operator_only);
+            }
             for (key, add) in [
                 ("items", new.iter().map(|id| stack(id)).collect::<Vec<_>>()),
                 (

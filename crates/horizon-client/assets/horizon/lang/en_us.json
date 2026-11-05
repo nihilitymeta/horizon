@@ -659,5 +659,8 @@
   "horizon.dev_tools.already_logging": "Already logging those",
   "horizon.dev_tools.logging_to": "Logging to %s",
   "horizon.dev_tools.lua.open": "Lua console open",
-  "horizon.dev_tools.lua.closed": "Lua console closed"
+  "horizon.dev_tools.lua.closed": "Lua console closed",
+  "horizon.dev_tools.stick.host_only": "The inspect stick's windows open on the host's screen",
+  "horizon.dev_tools.stick.page": "Inspect stick: /%s, page %s of %s",
+  "horizon.dev_tools.stick.block": "Inspect stick: the block window"
 }

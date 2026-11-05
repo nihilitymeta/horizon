@@ -1244,6 +1244,17 @@ impl Behaviours {
     ) -> i32 {
         self.sim(level, ticks).best_neighbor_signal(pos)
     }
+    /// `SignalGetter.getDirectSignal(pos, direction)` for each direction of
+    /// `Direction::ALL`: the strong signal the block at `pos` gives that way.
+    pub fn direct_signals<L: LevelAccess + ?Sized>(
+        &self,
+        level: &mut L,
+        ticks: &mut Ticks,
+        pos: BlockPos,
+    ) -> [i32; 6] {
+        let sim = self.sim(level, ticks);
+        horizon_core::geometry::Direction::ALL.map(|d| sim.direct_signal(pos, d))
+    }
     /// `BlockState.onProjectileHit` of a target block (`TargetBlock`) hit by
     /// a projectile at `location` on the face with normal `face`; `arrow`
     /// for an `AbstractArrow`. Returns the output strength, or None when the

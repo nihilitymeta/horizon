@@ -3,7 +3,9 @@
 //! `/inspect <targets>` names, showing the data `/data get entity` prints as
 //! a tree (and a mob's goals), for people working on mods and engine
 //! features, off in a player's game. Nothing is drawn until something is
-//! inspected.
+//! inspected. A game with Lua mods has the windows without the commands, for
+//! the inspect stick (`horizon.dev.inspect`): they show only while it opened
+//! one.
 //!
 //! Three threads meet here. The window thread feeds egui its events
 //! ([`window_event`], from `Game::handle_window_event_inner`) and hands over
@@ -18,7 +20,7 @@ pub mod console;
 
 use crate::gfx::native_render::{RenderHooks, WorldDrawnEvent};
 use crate::mobs::observe::{
-    self, BrainSnapshot, GoalRow, HistoryTick, Inspected, Request, Series, View,
+    self, BrainSnapshot, GoalRow, HistoryTick, Inspected, InspectedBlock, Request, Series, View,
 };
 use crate::mod_api::{Hooks, Host, NativeBlockRim, VisualsEvent};
 use horizon_client_core::snbt::java_hash_order;
@@ -46,6 +48,8 @@ pub const KEY_ENV: &str = "HORIZON_DEV_TOOLS_KEY";
 const DEFAULT_KEY: &str = "key.keyboard.f8";
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
+/// Whether the windows are installed: with the tools, or for the inspect stick.
+static INSTALLED: AtomicBool = AtomicBool::new(false);
 static HOLDS_POINTER: AtomicBool = AtomicBool::new(false);
 /// The egui context, shared by the window thread (input) and the render thread (drawing).
 static CTX: OnceLock<egui::Context> = OnceLock::new();
@@ -57,10 +61,19 @@ thread_local! {
     static WINIT: RefCell<Option<egui_winit::State>> = const { RefCell::new(None) };
 }
 
-/// The built-in mods of a plain `horizon-client`: the dev tools when asked for.
-pub fn mods() -> Vec<Box<dyn Hooks>> {
+/// The built-in mods of a plain `horizon-client`: the dev tools when asked
+/// for, and their windows alone when `scripted` (Lua mods are on, which may
+/// use the inspect stick). A game without either has no mod here, so the
+/// hooks' fast paths for a game without mods stay.
+pub fn mods(scripted: bool) -> Vec<Box<dyn Hooks>> {
     let mut mods: Vec<Box<dyn Hooks>> = Vec::new();
-    if std::env::var(ENV).is_ok_and(|v| v == "1") || std::env::args().any(|a| a == FLAG) {
+    let asked = std::env::var(ENV).is_ok_and(|v| v == "1") || std::env::args().any(|a| a == FLAG);
+    if !asked && scripted {
+        INSTALLED.store(true, Ordering::Relaxed);
+        mods.push(Box::new(DevTools::default()));
+    }
+    if asked {
+        INSTALLED.store(true, Ordering::Relaxed);
         log::info!(
             "Horizon: developer tools on ({ENV}=1 or {FLAG}); {} frees the pointer",
             toggle_key()
@@ -77,6 +90,12 @@ pub fn mods() -> Vec<Box<dyn Hooks>> {
 /// Whether the tools are on (`HORIZON_DEV_TOOLS=1`).
 pub fn enabled() -> bool {
     ENABLED.load(Ordering::Relaxed)
+}
+
+/// Whether the windows take input and draw now: the tools are on, or they
+/// are installed and the inspect stick opened a window.
+fn active() -> bool {
+    enabled() || (INSTALLED.load(Ordering::Relaxed) && (observe::showing() || holds_pointer()))
 }
 
 /// Whether the tools hold the pointer: freed by their key, so nothing in the
@@ -163,7 +182,7 @@ pub enum Input {
 /// pointer would be the game's now (in the world, no screen): the key frees
 /// it only then, and takes it back from anywhere.
 pub fn window_event(window: Option<&Window>, event: &WindowEvent, playing: bool) -> Input {
-    if !enabled() {
+    if !active() {
         return Input::Pass;
     }
     let Some(window) = window else {
@@ -245,7 +264,7 @@ pub enum PointerChange {
 /// thread. A frame the render thread skipped keeps its events. The answer
 /// says whether the game should release or grab the pointer now.
 pub fn frame(window: Option<&Window>) -> PointerChange {
-    if !enabled() {
+    if !active() && !HAD_WINDOWS.load(Ordering::Relaxed) {
         return PointerChange::None;
     }
     let Some(window) = window else {
@@ -946,9 +965,170 @@ fn watch_window(ctx: &egui::Context, item: &Inspected, series: &Series) {
         });
 }
 
+/// The face names of `Direction::ALL`, as vanilla names them.
+const FACES: [&str; 6] = ["down", "up", "north", "south", "west", "east"];
+
+/// The block window (the inspect stick): what the game knows of one block,
+/// read once a server tick. Its collision and outline boxes are drawn in the
+/// world while it is open (`debug_gizmos`).
+fn block_window(ctx: &egui::Context, block: &InspectedBlock) {
+    let key = &block.key;
+    egui::Window::new(format!("block: {}", block_label(key.pos)))
+        .id(egui::Id::unique((
+            "dev tools block",
+            &key.dimension,
+            key.pos,
+        )))
+        .default_width(420.0)
+        .default_height(520.0)
+        .vscroll(true)
+        .show(ctx, |ui| {
+            if ui.button("stop").clicked() {
+                observe::remove_block(key);
+            }
+            let Some(b) = &block.snapshot else {
+                ui.weak("no read yet: the level is not loaded, or not ticked since");
+                return;
+            };
+            stale_note(ui, b.taken, "update");
+            ui.strong(&b.name);
+            egui::Grid::new("block")
+                .num_columns(2)
+                .spacing([12.0, 2.0])
+                .show(ui, |ui| {
+                    for (k, v) in &b.properties {
+                        ui.weak(k);
+                        ui.monospace(v);
+                        ui.end_row();
+                    }
+                    ui.weak("dimension");
+                    ui.label(&key.dimension);
+                    ui.end_row();
+                    ui.weak("biome");
+                    ui.label(b.biome.as_deref().unwrap_or("unknown"));
+                    ui.end_row();
+                    ui.weak("light");
+                    ui.label(format!(
+                        "block {} sky {}; on the face {}: block {} sky {}",
+                        b.light[0],
+                        b.light[1],
+                        block_label(block.face),
+                        b.face_light[0],
+                        b.face_light[1]
+                    ));
+                    ui.end_row();
+                    ui.weak("power received");
+                    ui.label(b.power.to_string())
+                        .on_hover_text("getBestNeighborSignal");
+                    ui.end_row();
+                    ui.weak("strong power");
+                    ui.label(
+                        FACES
+                            .iter()
+                            .zip(b.strong)
+                            .map(|(f, p)| format!("{f} {p}"))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    )
+                    .on_hover_text(
+                        "getDirectSignal(pos, direction): the strong signal it gives that way",
+                    );
+                    ui.end_row();
+                    ui.weak("random ticks");
+                    ui.label(if b.random_ticks { "yes" } else { "no" });
+                    ui.end_row();
+                    ui.weak("scheduled ticks");
+                    ui.label(if b.scheduled.is_empty() {
+                        "none".to_string()
+                    } else {
+                        b.scheduled
+                            .iter()
+                            .map(|(kind, delay, priority)| {
+                                format!("{kind} in {delay} ticks, priority {priority}")
+                            })
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    });
+                    ui.end_row();
+                    ui.weak("declared by");
+                    ui.label(match &b.declared_by {
+                        Some((m, template)) => format!("{m}, template {template}"),
+                        None => "the game".to_string(),
+                    });
+                    ui.end_row();
+                    ui.weak("shapes");
+                    ui.label(format!(
+                        "{} collision boxes (blue), {} outline boxes (yellow), drawn in the world",
+                        b.collision.len(),
+                        b.outline.len()
+                    ));
+                    ui.end_row();
+                });
+            ui.separator();
+            egui::CollapsingHeader::new(format!("tags  [{}]", b.tags.len()))
+                .id_salt("tags")
+                .show(ui, |ui| {
+                    for t in &b.tags {
+                        ui.monospace(t);
+                    }
+                });
+            match &b.entity {
+                None => {
+                    ui.weak("no block entity");
+                }
+                Some(data) => {
+                    ui.separator();
+                    block_entity_tree(ui, data);
+                }
+            }
+        });
+}
+
+/// A block entity's data as the Inspect window's tree, without watch buttons
+/// (`/watch` charts entities).
+fn block_entity_tree(ui: &mut egui::Ui, data: &Tag) {
+    fn node(ui: &mut egui::Ui, key: &str, path: &str, tag: &Tag) {
+        match tag {
+            Tag::Compound(c) => {
+                egui::CollapsingHeader::new(format!("{key}  {{{}}}", c.len()))
+                    .id_salt(path)
+                    .default_open(path.is_empty())
+                    .show(ui, |ui| {
+                        for (k, v) in java_hash_order(c) {
+                            let k = k.to_string_lossy();
+                            node(ui, &k, &child_path(path, &k), v);
+                        }
+                    });
+            }
+            Tag::List(items) => {
+                egui::CollapsingHeader::new(format!("{key}  [{}]", items.len()))
+                    .id_salt(path)
+                    .show(ui, |ui| {
+                        for (i, v) in items.iter().enumerate() {
+                            node(ui, &format!("[{i}]"), &format!("{path}[{i}]"), v);
+                        }
+                    });
+            }
+            leaf => {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("{key}:")).color(egui::Color32::LIGHT_BLUE),
+                    )
+                    .on_hover_text(path);
+                    ui.add(egui::Label::new(egui::RichText::new(to_snbt(leaf)).monospace()).wrap());
+                });
+            }
+        }
+    }
+    node(ui, "block entity data", "", data);
+}
+
 impl DevTools {
     fn ui(&self, ctx: &egui::Context) {
         console::window(ctx);
+        for block in &observe::blocks() {
+            block_window(ctx, block);
+        }
         for item in &observe::snapshots() {
             for view in &item.views {
                 match view {
@@ -1010,6 +1190,10 @@ impl Hooks for DevTools {
 
 impl RenderHooks for DevTools {
     fn world_drawn(&self, event: &mut WorldDrawnEvent<'_, '_>) {
+        // Without the tools, egui runs only while the stick's window is open.
+        if !enabled() && !observe::showing() {
+            return;
+        }
         let world = &mut *event.world;
         let [w, h] = world.size;
         if w == 0 || h == 0 {

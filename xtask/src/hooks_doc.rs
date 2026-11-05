@@ -33,7 +33,7 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "interact_entity",
-        "`mob_interact(dimension, mob, player, held, data)`, by kind",
+        "`entity_interact(dimension, entity, player, held)` for any entity, by kind, then `mob_interact(dimension, mob, player, held, data)`, by kind",
     ),
     (
         "entity_tick_post",
