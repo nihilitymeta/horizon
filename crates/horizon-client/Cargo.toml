@@ -123,6 +123,9 @@ rng-trace = ["horizon-core/rng-trace", "horizon-client-lib/rng-trace"]
 # mimalloc with a tag on each block: `horizon-ctl memory` lists the live heap by startup step and
 # thread (`heap_by_tag_mb`). For measuring only: each block costs 16 bytes more.
 alloc-census = ["horizon-threads/alloc-census"]
+# Constructors for the mod API's `#[non_exhaustive]` events, for the dev builds of the crates
+# above this one (`event-horizon-lua`'s tests); never in players' builds.
+test-support = []
 
 [[test]]
 name = "datapack_biome_sync"

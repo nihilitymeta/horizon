@@ -16,10 +16,12 @@
 //!
 //! With the developer tools on (docs/dev-tools.md), each mod's `horizon.log`,
 //! `print` and errors also reach the Lua console's window, which lists the
-//! mods ([`crate::dev_input::mods::status`]) and reloads one on demand
-//! ([`crate::dev_input::mods::request_reload`]).
-use crate::dev_input::mods::{ModStatus, reload_asked, reload_generation, set_error, set_status};
-use crate::mod_api::{
+//! mods ([`horizon_client::dev_input::mods::status`]) and reloads one on demand
+//! ([`horizon_client::dev_input::mods::request_reload`]).
+use horizon_client::dev_input::mods::{
+    ModStatus, reload_asked, reload_generation, set_error, set_status,
+};
+use horizon_client::mod_api::{
     AttachmentCodec, AttachmentType, BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
     BlockPos, BlockStateId, Compound, DataPackFilesEvent, EntityTickListenedEvent,
     EntityTickPostEvent, Flow, Holder, Hooks, Host, InteractEntityEvent, LevelDimension, LevelHost,
@@ -27,12 +29,12 @@ use crate::mod_api::{
     MobView, RandomTickEvent, RightClickBlockEvent, ServerTickEvent, ServerTickPhase,
     TickBlockEvent, WorldLifecycleEvent,
 };
-use crate::mod_api::{
+use horizon_client::mod_api::{
     AttackEntityEvent, DestroyBlockEvent, InventoryTickEvent, ItemPickedUpEvent, ItemStack,
     LivingEntityUseItemFinishEvent, MobDiedEvent, PlaceBlockEvent, PlayerDiedEvent,
     PlayerLoggedInEvent, PlayerLoggedOutEvent, PlayerRespawnedEvent, UseItemEvent, UseItemOnEvent,
 };
-use crate::mod_api::{
+use horizon_client::mod_api::{
     EntityJoinLevelEvent, ExplosionDetonateEvent, HearsProjectileImpactsEvent, HurtEnemyEvent,
     ItemCraftedEvent, ItemDroppedEvent, LivingEntityUseItemStartEvent, LivingEquipmentChangeEvent,
     LivingEquipmentListenedEvent, LivingFallEvent, LivingHealEvent, LivingKnockbackEvent,
@@ -40,7 +42,7 @@ use crate::mod_api::{
     PlayerCommandEvent, PlayerContainerOpenEvent, PlayerExpChangeEvent, PlayerTickEvent,
     ProjectileImpactEvent, ProjectileLaunchEvent,
 };
-use crate::mod_api::{NativeCommand, PerformCommandEvent, RegisterCommandsEvent};
+use horizon_client::mod_api::{NativeCommand, PerformCommandEvent, RegisterCommandsEvent};
 use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
 use std::collections::{HashMap, HashSet};
@@ -51,8 +53,8 @@ use std::time::{Duration, Instant};
 
 /// A line for the developer tools' console, when they are on.
 fn to_console(error: bool, line: String) {
-    if crate::dev_input::enabled() {
-        use crate::dev_input::console::{Kind, push};
+    if horizon_client::dev_input::enabled() {
+        use horizon_client::dev_input::console::{Kind, push};
         push(if error { Kind::Err } else { Kind::Out }, line);
     }
 }
@@ -334,7 +336,10 @@ fn uuid_parse(text: &str) -> Option<u128> {
 
 /// A server player as a table: `uuid`, `name`, `dimension`, `position`
 /// (`{x, y, z}`), `yaw`, `pitch`, `game_mode`, `health`.
-fn player_table_of(lua: &Lua, p: &crate::mod_api::NativeServerPlayer) -> mlua::Result<Table> {
+fn player_table_of(
+    lua: &Lua,
+    p: &horizon_client::mod_api::NativeServerPlayer,
+) -> mlua::Result<Table> {
     let t = lua.create_table()?;
     t.set("uuid", uuid_text(p.uuid))?;
     t.set("name", p.name.as_str())?;
@@ -553,7 +558,7 @@ impl LuaMod {
                                 ))),
                             }
                         };
-                        use crate::mobs::observe::{Request, StickTarget, request};
+                        use horizon_client::mobs::observe::{Request, StickTarget, request};
                         let target = match what {
                             Value::Table(t) => {
                                 let face = match t.get::<Value>("face")? {
@@ -620,7 +625,7 @@ impl LuaMod {
                         Value::Table(t)
                     }
                     "surface_height" => {
-                        use crate::mod_api::NativeHeightmap;
+                        use horizon_client::mod_api::NativeHeightmap;
                         let (x, z, heightmap): (i32, i32, Option<String>) =
                             FromLuaMulti::from_lua_multi(rest, lua)?;
                         let heightmap = match heightmap.as_deref() {
@@ -813,8 +818,8 @@ fn command_args(
     usage: &str,
     line: &str,
     args: &Table,
-) -> mlua::Result<Option<crate::mod_api::Text>> {
-    use crate::mod_api::Text;
+) -> mlua::Result<Option<horizon_client::mod_api::Text>> {
+    use horizon_client::mod_api::Text;
     let usage_line = || Text::tr("horizon.lua.command.usage", &[&usage]);
     let params: Vec<(&str, &str)> = usage
         .split_whitespace()
@@ -969,7 +974,7 @@ fn mod_attachment(id: &str) -> AttachmentType<Compound> {
 /// [`mod_attachment`] under another name: one per holder kind.
 fn mod_attachment_named(id: &str, name: &'static str) -> AttachmentType<Compound> {
     AttachmentType {
-        namespace: crate::mobs::native_goal::intern(id),
+        namespace: horizon_client::mobs::native_goal::intern(id),
         name,
         default: Compound::default,
         codec: Some(AttachmentCodec {
@@ -1049,8 +1054,10 @@ pub fn discover(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
     // The game folder: `--game-dir` when given (the game moves there only after this runs, so a
     // game started elsewhere, as horizon-ctl starts it, still finds its installed mods), else here.
     let root = game_dir.clone().unwrap_or_else(|| here.clone());
-    let enabled = crate::mod_list::ModList::load(&crate::logging::shared_dir(&root)).enabled;
-    let mut paths = horizon_mods::find(&root.join(crate::mod_list::DIR));
+    let enabled =
+        horizon_client::mod_list::ModList::load(&horizon_client::logging::shared_dir(&root))
+            .enabled;
+    let mut paths = horizon_mods::find(&root.join(horizon_client::mod_list::DIR));
     paths.retain(|p| !dev.contains(p));
     paths.extend(dev.iter().cloned());
     // Every mod that is on, scripted or not: a dependency may be content only.
@@ -1221,11 +1228,11 @@ pub fn check_mod(
 /// would stop on.
 fn check_content(base: &Path, id: &str, content: Content) -> Result<Vec<String>, String> {
     let out = std::env::temp_dir().join(format!("horizon-check-content-{}", std::process::id()));
-    let mods = [crate::mod_content::ContentMod {
+    let mods = [horizon_client::mod_content::ContentMod {
         id: id.to_owned(),
         content,
     }];
-    let built = crate::mod_content::build(base, &mods, &out);
+    let built = horizon_client::mod_content::build(base, &mods, &out);
     let _ = std::fs::remove_dir_all(&out);
     let warnings = built.map_err(|e| format!("its content would not load in a game: {e}"))?;
     let mut lines = vec![format!("{id}: content layered on {}", base.display())];
@@ -2451,7 +2458,7 @@ impl LuaMod {
         match action {
             "broadcast" => {
                 let line: String = args.get(1)?;
-                host.broadcast(crate::mod_api::Text::literal(line));
+                host.broadcast(horizon_client::mod_api::Text::literal(line));
             }
             "summon" => {
                 let (dimension, kind): (String, String) = (args.get(1)?, args.get(2)?);
@@ -2473,7 +2480,7 @@ impl LuaMod {
                 if let Some(uuid) = uuid_of(host, &who) {
                     match action {
                         "tell" => {
-                            host.tell(uuid, crate::mod_api::Text::literal(text));
+                            host.tell(uuid, horizon_client::mod_api::Text::literal(text));
                         }
                         "action_bar" => {
                             host.title(uuid, "actionbar", &text);
@@ -2629,7 +2636,7 @@ impl LuaMod {
                 host.set_block(&dimension, [x, y, z], state, flags.unwrap_or(UPDATE_ALL));
             }
             "fill" => {
-                use crate::mod_api::{NativeBlockEdit, NativeBlockRun};
+                use horizon_client::mod_api::{NativeBlockEdit, NativeBlockRun};
                 let (x1, y1, z1, x2, y2, z2, id, props): (
                     i32,
                     i32,
@@ -3080,6 +3087,9 @@ impl Hooks for LuaMod {
         let (phase, running) = match event.phase {
             ServerTickPhase::ServerTickStart { world_running } => ("start", world_running),
             ServerTickPhase::ServerTickEnd { world_running } => ("end", world_running),
+            // A phase this runtime does not know fires no hook, rather than a
+            // made-up one the scripts have not heard of.
+            _ => return,
         };
         // The developer tools asked for a reload: before this tick's handlers.
         if phase == "start" && self.reload_asked() {
@@ -3705,7 +3715,9 @@ impl Hooks for LuaMod {
             return self.hook_error(hook, e);
         }
         for line in replies {
-            event.replies.push(crate::mod_api::Text::literal(line));
+            event
+                .replies
+                .push(horizon_client::mod_api::Text::literal(line));
         }
         if cancel { Flow::Cancel } else { Flow::Continue }
     }
@@ -3741,7 +3753,9 @@ impl Hooks for LuaMod {
             return self.hook_error(hook, e);
         }
         for line in replies {
-            event.replies.push(crate::mod_api::Text::literal(line));
+            event
+                .replies
+                .push(horizon_client::mod_api::Text::literal(line));
         }
         if cancel { Flow::Cancel } else { Flow::Continue }
     }
@@ -4339,7 +4353,7 @@ impl Hooks for LuaMod {
                     match action {
                         "feedback" => {
                             let text: String = args.get(1)?;
-                            host.feedback(crate::mod_api::Text::literal(text));
+                            host.feedback(horizon_client::mod_api::Text::literal(text));
                         }
                         other => self.run_action(host, other, args)?,
                     }
@@ -4512,6 +4526,9 @@ fn table_in(lua: &Lua, table: &Table, key: &str) -> mlua::Result<Table> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The engine's `#[non_exhaustive]` events are built by their defining
+    // crate's test-support constructors (horizon-client's `test_events`).
+    use horizon_client::test_events;
 
     const MANIFEST_TEXT: &str = r#"
 id = "ruby"
@@ -4593,7 +4610,7 @@ experimental = ["scripts"]
                 assert!(!goal.state().started());
                 assert_eq!(
                     def.flags,
-                    crate::mod_api::GOAL_MOVE | crate::mod_api::GOAL_LOOK
+                    horizon_client::mod_api::GOAL_MOVE | horizon_client::mod_api::GOAL_LOOK
                 );
             }
             seen.push((action.to_owned(), args.get::<Option<i32>>(1)?, name));
@@ -4621,7 +4638,7 @@ experimental = ["scripts"]
         /// Mod block entities' data by position.
         data: HashMap<[i32; 3], Compound>,
     }
-    impl crate::mod_api::LevelHost for FakeLevel {
+    impl horizon_client::mod_api::LevelHost for FakeLevel {
         fn block_state(&self, _: [i32; 3]) -> BlockStateId {
             BlockStateId(7)
         }
@@ -4641,18 +4658,21 @@ experimental = ["scripts"]
             self.props.clone()
         }
     }
-    impl crate::mod_api::LevelRandomHost for FakeLevel {
+    impl horizon_client::mod_api::LevelRandomHost for FakeLevel {
         fn attachments(
             &mut self,
-            _: crate::mod_api::Holder,
-        ) -> Result<&mut crate::mod_api::Attachments, crate::mod_api::AttachmentError> {
-            Err(crate::mod_api::AttachmentError::MissingHolder)
+            _: horizon_client::mod_api::Holder,
+        ) -> Result<
+            &mut horizon_client::mod_api::Attachments,
+            horizon_client::mod_api::AttachmentError,
+        > {
+            Err(horizon_client::mod_api::AttachmentError::MissingHolder)
         }
-        fn random(&mut self) -> Option<&mut crate::mod_api::LegacyRandom> {
+        fn random(&mut self) -> Option<&mut horizon_client::mod_api::LegacyRandom> {
             None
         }
     }
-    impl crate::mod_api::LevelTicksHost for FakeLevel {
+    impl horizon_client::mod_api::LevelTicksHost for FakeLevel {
         fn schedule_block_tick(&mut self, pos: [i32; 3], block: &str, delay: i32) -> bool {
             self.ticks.push((pos, block.to_owned(), delay));
             true
@@ -4673,7 +4693,12 @@ experimental = ["scripts"]
                 .push((pos, key.to_owned(), value.to_owned(), flags));
             true
         }
-        fn summon(&mut self, kind: &str, pos: [f64; 3], _: crate::mod_api::Compound) -> bool {
+        fn summon(
+            &mut self,
+            kind: &str,
+            pos: [f64; 3],
+            _: horizon_client::mod_api::Compound,
+        ) -> bool {
             self.summons.push((kind.to_owned(), pos));
             true
         }
@@ -4686,7 +4711,7 @@ experimental = ["scripts"]
         }
         fn send_particles(
             &mut self,
-            _: &crate::mod_api::ParticleOptions,
+            _: &horizon_client::mod_api::ParticleOptions,
             _: Option<BlockStateId>,
             _: [f64; 3],
             _: [f64; 3],
@@ -4728,11 +4753,11 @@ experimental = ["scripts"]
             summons: Vec::new(),
             data: HashMap::new(),
         };
-        let mut event = RandomTickEvent {
-            dimension: LevelDimension::Nether,
-            pos: BlockPos::new(1, 64, -3),
-            state: BlockStateId(7),
-        };
+        let mut event = test_events::random_tick_event(
+            LevelDimension::Nether,
+            BlockPos::new(1, 64, -3),
+            BlockStateId(7),
+        );
         assert!(matches!(
             m.random_tick(&mut level, &mut event),
             Flow::Cancel
@@ -4760,11 +4785,11 @@ experimental = ["scripts"]
         assert!(matches!(
             m.tick_block(
                 &mut level,
-                &mut TickBlockEvent {
-                    dimension: LevelDimension::Overworld,
-                    pos: BlockPos::new(0, 0, 0),
-                    state: BlockStateId(7),
-                }
+                &mut test_events::tick_block_event(
+                    LevelDimension::Overworld,
+                    BlockPos::new(0, 0, 0),
+                    BlockStateId(7)
+                )
             ),
             Flow::Continue
         ));
@@ -4781,10 +4806,11 @@ experimental = ["scripts"]
         fn attachments(
             &mut self,
             _: Holder,
-        ) -> crate::mod_api::AttachmentResult<&mut crate::mod_api::Attachments> {
-            Err(crate::mod_api::AttachmentError::MissingHolder)
+        ) -> horizon_client::mod_api::AttachmentResult<&mut horizon_client::mod_api::Attachments>
+        {
+            Err(horizon_client::mod_api::AttachmentError::MissingHolder)
         }
-        fn acting_player(&self) -> Option<crate::mod_api::NativeServerPlayer> {
+        fn acting_player(&self) -> Option<horizon_client::mod_api::NativeServerPlayer> {
             None
         }
         fn held(&self) -> Option<(String, u32, bool)> {
@@ -4798,13 +4824,13 @@ experimental = ["scripts"]
     /// A host of one living cow, number 7, that keeps its attachments and
     /// records what the mob hooks ask of it.
     struct MobHost {
-        attachments: crate::mod_api::Attachments,
+        attachments: horizon_client::mod_api::Attachments,
         health: Vec<(u32, f32)>,
         lines: Mutex<Vec<String>>,
         pushes: Vec<[f64; 3]>,
         carried: ItemStack,
-        world: crate::mod_api::Attachments,
-        player: crate::mod_api::Attachments,
+        world: horizon_client::mod_api::Attachments,
+        player: horizon_client::mod_api::Attachments,
     }
     impl Host for MobHost {
         fn dimension(&self) -> &'static str {
@@ -4813,35 +4839,36 @@ experimental = ["scripts"]
         fn attachments(
             &mut self,
             holder: Holder,
-        ) -> crate::mod_api::AttachmentResult<&mut crate::mod_api::Attachments> {
+        ) -> horizon_client::mod_api::AttachmentResult<&mut horizon_client::mod_api::Attachments>
+        {
             match holder {
                 Holder::Entity(7) => Ok(&mut self.attachments),
                 Holder::Level => Ok(&mut self.world),
                 Holder::Player(0x123e4567_e89b_12d3_a456_426614174000) => Ok(&mut self.player),
-                _ => Err(crate::mod_api::AttachmentError::MissingHolder),
+                _ => Err(horizon_client::mod_api::AttachmentError::MissingHolder),
             }
         }
-        fn acting_player(&self) -> Option<crate::mod_api::NativeServerPlayer> {
-            Some(crate::mod_api::NativeServerPlayer {
-                uuid: 0x123e4567_e89b_12d3_a456_426614174000,
-                name: "steve".into(),
-                permission: 0,
-                dimension: "minecraft:overworld".into(),
-                position: [1.0, 64.0, 1.0],
-                game_mode: 0,
-                health: 20.0,
-                yaw: 0.0,
-                pitch: 0.0,
-                entity_id: 0,
-                address: String::new(),
-            })
+        fn acting_player(&self) -> Option<horizon_client::mod_api::NativeServerPlayer> {
+            Some(test_events::native_server_player(
+                0x123e4567_e89b_12d3_a456_426614174000,
+                "steve".into(),
+                0,
+                "minecraft:overworld".into(),
+                [1.0, 64.0, 1.0],
+                0,
+                20.0,
+                0.0,
+                0.0,
+                0,
+                String::new(),
+            ))
         }
         fn mob_view(&self, dimension: &str, id: u32) -> Option<MobView> {
             use horizon_core::geometry::Vec3;
             (dimension == "minecraft:overworld" && id == 7).then(|| {
-                let kind = crate::mobs::MobType::cow_for_tests();
+                let kind = horizon_client::mobs::MobType::cow_for_tests();
                 MobView::of(
-                    &crate::mobs::Mob::new(7, kind, Vec3::new(2.0, 64.0, 3.0), 0.0),
+                    &horizon_client::mobs::Mob::new(7, kind, Vec3::new(2.0, 64.0, 3.0), 0.0),
                     None,
                 )
             })
@@ -4884,7 +4911,7 @@ experimental = ["scripts"]
         fn block_property(&self, pos: [i32; 3], key: &str) -> Option<String> {
             (pos == [1, 2, 3] && key == "facing").then(|| "north".to_owned())
         }
-        fn level_players(&self) -> Vec<crate::mod_api::NativeServerPlayer> {
+        fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
             self.acting_player().into_iter().collect()
         }
         fn day_time(&self) -> i64 {
@@ -4944,22 +4971,26 @@ experimental = ["scripts"]
                 .push(format!("times steve: {fade_in}/{stay}/{fade_out}"));
             true
         }
-        fn tell(&mut self, _: u128, line: crate::mod_api::Text) -> bool {
+        fn tell(&mut self, _: u128, line: horizon_client::mod_api::Text) -> bool {
             self.lines
                 .lock()
                 .unwrap()
                 .push(format!("tell steve: {}", line.plain()));
             true
         }
-        fn feedback(&mut self, line: crate::mod_api::Text) {
+        fn feedback(&mut self, line: horizon_client::mod_api::Text) {
             self.lines
                 .lock()
                 .unwrap()
                 .push(format!("feedback {}", line.plain()));
         }
-        fn player_raycast(&self, uuid: u128, distance: f32) -> Option<crate::mod_api::NativeHit> {
+        fn player_raycast(
+            &self,
+            uuid: u128,
+            distance: f32,
+        ) -> Option<horizon_client::mod_api::NativeHit> {
             (uuid == 0x123e4567_e89b_12d3_a456_426614174000 && distance == 8.0).then(|| {
-                crate::mod_api::NativeHit {
+                horizon_client::mod_api::NativeHit {
                     block_x: 4,
                     block_y: 5,
                     block_z: 6,
@@ -4970,7 +5001,7 @@ experimental = ["scripts"]
                 }
             })
         }
-        fn broadcast(&self, text: crate::mod_api::Text) {
+        fn broadcast(&self, text: horizon_client::mod_api::Text) {
             self.lines.lock().unwrap().push(text.plain());
         }
         fn state_named(&self, name: &str) -> Option<BlockStateId> {
@@ -4997,7 +5028,7 @@ experimental = ["scripts"]
         fn edit_blocks(
             &mut self,
             _: &str,
-            edit: &crate::mod_api::NativeBlockEdit,
+            edit: &horizon_client::mod_api::NativeBlockEdit,
         ) -> Result<u64, String> {
             let run = edit.runs[0];
             self.lines.lock().unwrap().push(format!(
@@ -5057,13 +5088,13 @@ experimental = ["scripts"]
             &self,
             _: &str,
             columns: &[(i32, i32)],
-            heightmap: crate::mod_api::NativeHeightmap,
+            heightmap: horizon_client::mod_api::NativeHeightmap,
         ) -> Result<Vec<Option<i32>>, String> {
             Ok(columns
                 .iter()
                 .map(|c| {
                     (*c == (1, 3)).then(|| {
-                        if heightmap == crate::mod_api::NativeHeightmap::OceanFloor {
+                        if heightmap == horizon_client::mod_api::NativeHeightmap::OceanFloor {
                             70
                         } else {
                             64
@@ -5078,7 +5109,7 @@ experimental = ["scripts"]
             state: BlockStateId,
             pos: [f64; 3],
             velocity: [f64; 3],
-            _: crate::mod_api::NativeFalling,
+            _: horizon_client::mod_api::NativeFalling,
         ) -> bool {
             self.lines.lock().unwrap().push(format!(
                 "falling state {} at {},{},{} v {},{},{}",
@@ -5214,55 +5245,35 @@ experimental = ["scripts"]
         // The wand's use is taken, and one is consumed; the registered name
         // without a namespace is minecraft's, so "wand" hears nothing.
         assert_eq!(
-            m.use_item(&mut host, &mut UseItemEvent { stack: &wand }),
+            m.use_item(&mut host, &mut test_events::use_item_event(&wand)),
             Flow::Cancel
         );
-        let mut stone = UseItemOnEvent {
-            stack: &wand,
-            pos: [1, 2, 3],
-            face: [0, 1, 0],
-        };
+        let mut stone = test_events::use_item_on_event(&wand, [1, 2, 3], [0, 1, 0]);
         assert_eq!(m.use_item_on(&mut host, &mut stone), Flow::Continue);
         assert_eq!(
             m.attack_entity(
                 &mut host,
-                &mut AttackEntityEvent {
-                    entity: 7,
-                    kind: "cow",
-                    pos: [2.0, 64.0, 3.0]
-                }
+                &mut test_events::attack_entity_event(7, "cow", [2.0, 64.0, 3.0])
             ),
             Flow::Cancel
         );
         let mut result = Some(wand.clone());
         m.living_entity_use_item_finish(
             &mut host,
-            &mut LivingEntityUseItemFinishEvent {
-                stack: &wand,
-                entity: None,
-                hand: crate::mod_api::Hand::Main,
-                duration: 0,
-                result: &mut result,
-            },
+            &mut test_events::living_entity_use_item_finish_event(
+                &wand,
+                None,
+                horizon_client::mod_api::Hand::Main,
+                0,
+                &mut result,
+            ),
         );
         assert_eq!(
             result.as_ref().map(|s| (&*s.item, s.count)),
             Some(("minecraft:stick", 2))
         );
-        m.inventory_tick(
-            &mut host,
-            &mut InventoryTickEvent {
-                slot: 3,
-                selected: true,
-            },
-        );
-        m.inventory_tick(
-            &mut host,
-            &mut InventoryTickEvent {
-                slot: 4,
-                selected: false,
-            },
-        );
+        m.inventory_tick(&mut host, &mut test_events::inventory_tick_event(3, true));
+        m.inventory_tick(&mut host, &mut test_events::inventory_tick_event(4, false));
         assert_eq!(host.carried.count, 2);
         let log: Vec<String> = m
             .lua
@@ -5328,111 +5339,75 @@ experimental = ["scripts"]
         let steve = 0x123e4567_e89b_12d3_a456_426614174000;
         m.mob_died(
             &mut host,
-            &mut MobDiedEvent {
-                dimension: "minecraft:overworld",
-                entity: 7,
-                kind: "cow",
-                damage_type: "minecraft:on_fire",
-                causing: 0,
-                player: Some(steve),
-            },
+            &mut test_events::mob_died_event(
+                "minecraft:overworld",
+                7,
+                "cow",
+                "minecraft:on_fire",
+                0,
+                Some(steve),
+            ),
         );
         m.mob_died(
             &mut host,
-            &mut MobDiedEvent {
-                dimension: "minecraft:overworld",
-                entity: 9,
-                kind: "minecraft:zombie",
-                damage_type: "minecraft:fall",
-                causing: 0,
-                player: None,
-            },
+            &mut test_events::mob_died_event(
+                "minecraft:overworld",
+                9,
+                "minecraft:zombie",
+                "minecraft:fall",
+                0,
+                None,
+            ),
         );
         m.player_logged_in(
             &mut host,
-            &mut PlayerLoggedInEvent {
-                player: steve,
-                name: "steve",
-            },
+            &mut test_events::player_logged_in_event(steve, "steve"),
         );
         m.player_logged_out(
             &mut host,
-            &mut PlayerLoggedOutEvent {
-                player: 5,
-                name: "alex",
-            },
+            &mut test_events::player_logged_out_event(5, "alex"),
         );
         m.player_respawned(
             &mut host,
-            &mut PlayerRespawnedEvent {
-                player: steve,
-                name: "steve",
-            },
+            &mut test_events::player_respawned_event(steve, "steve"),
         );
         m.player_died(
             &mut host,
-            &mut PlayerDiedEvent {
-                player: steve,
-                cause: Some("death.attack.lava"),
-            },
+            &mut test_events::player_died_event(steve, Some("death.attack.lava")),
         );
         // A death names no one and the host has no record of alex any more:
         // the name the logout told is kept.
-        m.player_died(
-            &mut host,
-            &mut PlayerDiedEvent {
-                player: 5,
-                cause: None,
-            },
-        );
+        m.player_died(&mut host, &mut test_events::player_died_event(5, None));
         assert_eq!(
             m.destroy_block(
                 &mut host,
-                &mut DestroyBlockEvent {
-                    pos: [1, 2, 3],
-                    state: BlockStateId(1)
-                }
+                &mut test_events::destroy_block_event([1, 2, 3], BlockStateId(1))
             ),
             Flow::Cancel
         );
         assert_eq!(
             m.destroy_block(
                 &mut host,
-                &mut DestroyBlockEvent {
-                    pos: [0, 0, 0],
-                    state: BlockStateId(0)
-                }
+                &mut test_events::destroy_block_event([0, 0, 0], BlockStateId(0))
             ),
             Flow::Continue
         );
         let wand = wand();
         m.place_block(
             &mut host,
-            &mut PlaceBlockEvent {
-                stack: &wand,
-                pos: [1, 2, 3],
-                state: BlockStateId(1),
-            },
+            &mut test_events::place_block_event(&wand, [1, 2, 3], BlockStateId(1)),
         );
         assert_eq!(
             m.item_picked_up(
                 &mut host,
-                &mut ItemPickedUpEvent {
-                    player: steve,
-                    item: "ruby:wand",
-                    count: 2
-                }
+                &mut test_events::item_picked_up_event(steve, "ruby:wand", 2)
             ),
             Flow::Cancel
         );
         assert_eq!(
             m.item_picked_up(
                 &mut host,
-                &mut ItemPickedUpEvent {
-                    player: steve,
-                    item: "minecraft:apple",
-                    count: 2
-                }
+                &mut test_events::item_picked_up_event(steve, "minecraft:apple", 2)
             ),
             Flow::Continue
         );
@@ -5500,11 +5475,11 @@ experimental = ["scripts"]
             player: Default::default(),
         };
         let key = |k: &str| horizon_world::nbt::JavaString::from(k);
-        let context = crate::mod_api::NativeLifecycleContext {
-            authority: crate::mod_api::NativeAuthority::IntegratedServer,
-            epoch: crate::mod_api::NativeWorldEpoch::new(1),
-            tick: crate::mod_api::NativeTickId::new(1),
-        };
+        let context = test_events::native_lifecycle_context(
+            horizon_client::mod_api::NativeAuthority::IntegratedServer,
+            horizon_client::mod_api::NativeWorldEpoch::new(1),
+            horizon_client::mod_api::NativeTickId::new(1),
+        );
         for _ in 0..5 {
             for phase in [
                 ServerTickPhase::ServerTickStart {
@@ -5516,10 +5491,7 @@ experimental = ["scripts"]
             ] {
                 m.server_tick(
                     &mut host,
-                    &mut ServerTickEvent {
-                        context: &context,
-                        phase,
-                    },
+                    &mut test_events::server_tick_event(&context, phase),
                 );
             }
         }
@@ -5537,11 +5509,7 @@ experimental = ["scripts"]
         for _ in 0..2 {
             m.interact_entity(
                 &mut host,
-                &mut InteractEntityEvent {
-                    entity: 7,
-                    kind: "cow",
-                    stack: None,
-                },
+                &mut test_events::interact_entity_event(7, "cow", None),
             );
         }
         let world = m
@@ -5600,9 +5568,7 @@ experimental = ["scripts"]
         let mut commands = Vec::new();
         m.register_commands(
             &mut host,
-            &mut RegisterCommandsEvent {
-                commands: &mut commands,
-            },
+            &mut test_events::register_commands_event(&mut commands),
         );
         assert_eq!(
             commands
@@ -5618,13 +5584,7 @@ experimental = ["scripts"]
         );
         let steve = host.acting_player().unwrap();
         let run = |m: &LuaMod, host: &mut MobHost, line: &str| {
-            m.perform_command(
-                host,
-                &mut PerformCommandEvent {
-                    player: &steve,
-                    command: line,
-                },
-            )
+            m.perform_command(host, &mut test_events::perform_command_event(&steve, line))
         };
         assert_eq!(run(&m, &mut host, "parasite count zombie 3"), Flow::Cancel);
         assert_eq!(run(&m, &mut host, "parasite count"), Flow::Cancel);
@@ -5634,13 +5594,15 @@ experimental = ["scripts"]
         // argument are refused with a message, and the handler is not called.
         assert_eq!(run(&m, &mut host, "probeadd 2 0.5 total"), Flow::Cancel);
         // The refusals are translated: the bundled English here.
-        let (flows, missed) =
-            crate::lang::scoped(crate::lang::Language::load(&[], "en_us"), || {
+        let (flows, missed) = horizon_client::lang::scoped(
+            horizon_client::lang::Language::load(&[], "en_us"),
+            || {
                 (
                     run(&m, &mut host, "probeadd x 1"),
                     run(&m, &mut host, "probeadd 2"),
                 )
-            });
+            },
+        );
         assert_eq!(flows, (Flow::Cancel, Flow::Cancel));
         assert_eq!(missed, Vec::<String>::new());
         assert_eq!(run(&m, &mut host, "parasite"), Flow::Continue);
@@ -5767,10 +5729,7 @@ experimental = ["scripts"]
         let mut run = |line: &str| {
             m.perform_command(
                 &mut host,
-                &mut PerformCommandEvent {
-                    player: &steve,
-                    command: line,
-                },
+                &mut test_events::perform_command_event(&steve, line),
             )
         };
         assert_eq!(run("helpers"), Flow::Cancel);
@@ -5847,7 +5806,7 @@ experimental = ["scripts"]
     struct ReentrantHost {
         lines: Mutex<Vec<String>>,
         m: Option<Arc<LuaMod>>,
-        world: crate::mod_api::Attachments,
+        world: horizon_client::mod_api::Attachments,
     }
     impl Host for ReentrantHost {
         fn dimension(&self) -> &'static str {
@@ -5856,31 +5815,32 @@ experimental = ["scripts"]
         fn attachments(
             &mut self,
             holder: Holder,
-        ) -> crate::mod_api::AttachmentResult<&mut crate::mod_api::Attachments> {
+        ) -> horizon_client::mod_api::AttachmentResult<&mut horizon_client::mod_api::Attachments>
+        {
             match holder {
                 Holder::Level => Ok(&mut self.world),
-                _ => Err(crate::mod_api::AttachmentError::MissingHolder),
+                _ => Err(horizon_client::mod_api::AttachmentError::MissingHolder),
             }
         }
-        fn acting_player(&self) -> Option<crate::mod_api::NativeServerPlayer> {
-            Some(crate::mod_api::NativeServerPlayer {
-                uuid: 7,
-                name: "steve".into(),
-                permission: 0,
-                dimension: "minecraft:overworld".into(),
-                position: [1.0, 64.0, 1.0],
-                game_mode: 0,
-                health: 20.0,
-                yaw: 0.0,
-                pitch: 0.0,
-                entity_id: 0,
-                address: String::new(),
-            })
+        fn acting_player(&self) -> Option<horizon_client::mod_api::NativeServerPlayer> {
+            Some(test_events::native_server_player(
+                7,
+                "steve".into(),
+                0,
+                "minecraft:overworld".into(),
+                [1.0, 64.0, 1.0],
+                0,
+                20.0,
+                0.0,
+                0.0,
+                0,
+                String::new(),
+            ))
         }
         fn held(&self) -> Option<(String, u32, bool)> {
             None
         }
-        fn level_players(&self) -> Vec<crate::mod_api::NativeServerPlayer> {
+        fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
             self.acting_player().into_iter().collect()
         }
         fn block(&self, pos: [i32; 3]) -> String {
@@ -5890,27 +5850,22 @@ experimental = ["scripts"]
                 "minecraft:air".into()
             }
         }
-        fn broadcast(&self, text: crate::mod_api::Text) {
+        fn broadcast(&self, text: horizon_client::mod_api::Text) {
             self.lines.lock().unwrap().push(text.plain());
         }
         fn summon(&mut self, _: &str, kind: &str, pos: [f64; 3], _: Compound) -> Option<u32> {
             let m = self.m.clone().unwrap();
             // As the game: the mob's goals are set up (no host), then the spawn is told.
-            let mut mob = crate::mobs::Mob::new(
+            let mut mob = horizon_client::mobs::Mob::new(
                 42,
-                crate::mobs::MobType::cow_for_tests(),
+                horizon_client::mobs::MobType::cow_for_tests(),
                 horizon_core::geometry::Vec3::new(pos[0], pos[1], pos[2]),
                 0.0,
             );
-            m.mob_ai_register(&mut MobAiRegisterEvent { mob: &mut mob });
+            m.mob_ai_register(&mut test_events::mob_ai_register_event(&mut mob));
             m.mob_spawned(
                 self,
-                &mut MobSpawnedEvent {
-                    dimension: "minecraft:overworld",
-                    kind,
-                    pos,
-                    natural: false,
-                },
+                &mut test_events::mob_spawned_event("minecraft:overworld", kind, pos, false),
             );
             Some(42)
         }
@@ -5955,10 +5910,7 @@ experimental = ["scripts"]
         assert_eq!(
             m.perform_command(
                 &mut host,
-                &mut PerformCommandEvent {
-                    player: &steve,
-                    command: "nest",
-                },
+                &mut test_events::perform_command_event(&steve, "nest"),
             ),
             Flow::Cancel
         );
@@ -5972,19 +5924,16 @@ experimental = ["scripts"]
         assert_eq!(g.get::<String>("SPAWN_READ").unwrap(), "minecraft:stone");
         assert_eq!(g.get::<String>("AFTER_READ").unwrap(), "minecraft:stone");
         // The same from a block entity's tick, with its data written back after.
-        let mut entity = crate::mod_api::ModBlockEntity::default();
+        let mut entity = horizon_client::mod_api::ModBlockEntity::default();
         entity.id = "ruby:hive".into();
         entity.nbt = m
-            .block_entity(&mut host, &mut BlockEntityEvent { block: "ruby:hive" })
+            .block_entity(&mut host, &mut test_events::block_entity_event("ruby:hive"))
             .unwrap()
             .1;
         host.lines.lock().unwrap().clear();
         m.block_entity_tick(
             &mut host,
-            &mut BlockEntityTickEvent {
-                pos: [1, 2, 3],
-                entity: &mut entity,
-            },
+            &mut test_events::block_entity_tick_event([1, 2, 3], &mut entity),
         );
         assert_eq!(*host.lines.lock().unwrap(), ["spawned ruby:crawler at 1.5"]);
         assert_eq!(
@@ -6078,89 +6027,71 @@ experimental = ["scripts"]
             player: Default::default(),
         };
         let steve = host.acting_player().unwrap();
-        m.player_tick(&mut host, &mut PlayerTickEvent {});
-        let mut hit = LivingIncomingDamageEvent {
-            entity: 5,
-            kind: "minecraft:player",
-            damage_type: "minecraft:fall",
-            causing: -1,
-            direct: -1,
-            amount: 6.0,
-        };
+        m.player_tick(&mut host, &mut test_events::player_tick_event());
+        let mut hit = test_events::living_incoming_damage_event(
+            5,
+            "minecraft:player",
+            "minecraft:fall",
+            -1,
+            -1,
+            6.0,
+        );
         assert_eq!(m.living_incoming_damage(&mut hit), Flow::Continue);
         assert_eq!(hit.amount, 3.0);
-        let mut fall = LivingFallEvent {
-            entity: 7,
-            kind: "minecraft:cow",
-            distance: 4.0,
-            multiplier: 1.0,
-        };
+        let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
         assert_eq!(m.living_fall(&mut fall), Flow::Continue);
         assert_eq!(fall.distance, 1.5);
-        let mut fall = LivingFallEvent {
-            entity: 5,
-            kind: "minecraft:player",
-            distance: 9.0,
-            multiplier: 1.0,
-        };
+        let mut fall = test_events::living_fall_event(5, "minecraft:player", 9.0, 1.0);
         assert_eq!(m.living_fall(&mut fall), Flow::Cancel);
-        let mut heal = LivingHealEvent {
-            entity: 7,
-            amount: 2.0,
-        };
+        let mut heal = test_events::living_heal_event(7, 2.0);
         assert_eq!(m.living_heal(&mut heal), Flow::Continue);
         assert_eq!(heal.amount, 3.0);
-        let mut knock = LivingKnockbackEvent {
-            entity: 7,
-            kind: "minecraft:cow",
-            damage_type: "minecraft:player_attack",
-            causing: 5,
-            direct: 5,
-            strength: 0.4,
-            x: 1.0,
-            z: 0.0,
-        };
+        let mut knock = test_events::living_knockback_event(
+            7,
+            "minecraft:cow",
+            "minecraft:player_attack",
+            5,
+            5,
+            0.4,
+            1.0,
+            0.0,
+        );
         assert_eq!(m.living_knockback(&mut knock), Flow::Continue);
         assert_eq!(knock.strength, 0.25);
         let mut replies = Vec::new();
         assert_eq!(
-            m.player_chat(&mut PlayerChatEvent {
-                player: steve.uuid,
-                name: "steve",
-                message: "hello all",
-                replies: &mut replies,
-            }),
+            m.player_chat(&mut test_events::player_chat_event(
+                steve.uuid,
+                "steve",
+                "hello all",
+                &mut replies
+            )),
             Flow::Continue
         );
-        assert_eq!(replies, [crate::mod_api::Text::literal("heard hello all")]);
+        assert_eq!(
+            replies,
+            [horizon_client::mod_api::Text::literal("heard hello all")]
+        );
         let mut replies = Vec::new();
         assert_eq!(
-            m.player_chat(&mut PlayerChatEvent {
-                player: steve.uuid,
-                name: "steve",
-                message: "shh",
-                replies: &mut replies,
-            }),
+            m.player_chat(&mut test_events::player_chat_event(
+                steve.uuid,
+                "steve",
+                "shh",
+                &mut replies
+            )),
             Flow::Cancel
         );
         let mut replies = Vec::new();
-        let mut cmd = PlayerCommandEvent {
-            player: steve.uuid,
-            name: "steve",
-            command: "secret",
-            replies: &mut replies,
-        };
+        let mut cmd =
+            test_events::player_command_event(steve.uuid, "steve", "secret", &mut replies);
         assert_eq!(m.player_command(&mut host, &mut cmd), Flow::Cancel);
         assert_eq!(
             replies.iter().map(|t| t.plain()).collect::<Vec<_>>(),
             ["not here"]
         );
-        let mut cmd = PlayerCommandEvent {
-            player: steve.uuid,
-            name: "steve",
-            command: "time set day",
-            replies: &mut replies,
-        };
+        let mut cmd =
+            test_events::player_command_event(steve.uuid, "steve", "time set day", &mut replies);
         assert_eq!(m.player_command(&mut host, &mut cmd), Flow::Continue);
         let planks = ItemStack {
             item: "minecraft:oak_planks".into(),
@@ -6170,19 +6101,11 @@ experimental = ["scripts"]
         };
         m.item_crafted(
             &mut host,
-            &mut ItemCraftedEvent {
-                player: steve.uuid,
-                recipe: "minecraft:oak_planks",
-                stack: &planks,
-            },
+            &mut test_events::item_crafted_event(steve.uuid, "minecraft:oak_planks", &planks),
         );
         m.item_dropped(
             &mut host,
-            &mut ItemDroppedEvent {
-                player: steve.uuid,
-                item: "minecraft:stick",
-                count: 2,
-            },
+            &mut test_events::item_dropped_event(steve.uuid, "minecraft:stick", 2),
         );
         // A block's loot, changed in place: the count, and a diamond added.
         let mut drops = vec![ItemStack {
@@ -6194,20 +6117,20 @@ experimental = ["scripts"]
         let pick = wand();
         m.loot_drops(
             &mut host,
-            &mut LootDropsEvent {
-                context: &crate::mod_api::NativeLootDrops {
-                    table: "minecraft:blocks/stone",
-                    dimension: "minecraft:overworld",
-                    origin: [1.5, 2.5, 3.5],
-                    block: Some(([1, 2, 3], BlockStateId(1))),
-                    entity: None,
-                    player: Some(steve.uuid),
-                    tool: Some(&pick),
-                    explosion: None,
-                    used: false,
-                },
-                drops: &mut drops,
-            },
+            &mut test_events::loot_drops_event(
+                &test_events::native_loot_drops(
+                    "minecraft:blocks/stone",
+                    "minecraft:overworld",
+                    [1.5, 2.5, 3.5],
+                    Some(([1, 2, 3], BlockStateId(1))),
+                    None,
+                    Some(steve.uuid),
+                    Some(&pick),
+                    None,
+                    false,
+                ),
+                &mut drops,
+            ),
         );
         assert_eq!(
             drops
@@ -6228,39 +6151,39 @@ experimental = ["scripts"]
         }];
         m.loot_drops(
             &mut host,
-            &mut LootDropsEvent {
-                context: &crate::mod_api::NativeLootDrops {
-                    table: "minecraft:entities/cow",
-                    dimension: "minecraft:overworld",
-                    origin: [2.0, 64.0, 3.0],
-                    block: None,
-                    entity: Some((7, "minecraft:cow")),
-                    player: None,
-                    tool: None,
-                    explosion: None,
-                    used: false,
-                },
-                drops: &mut drops,
-            },
+            &mut test_events::loot_drops_event(
+                &test_events::native_loot_drops(
+                    "minecraft:entities/cow",
+                    "minecraft:overworld",
+                    [2.0, 64.0, 3.0],
+                    None,
+                    Some((7, "minecraft:cow")),
+                    None,
+                    None,
+                    None,
+                    false,
+                ),
+                &mut drops,
+            ),
         );
         assert!(drops.is_empty());
-        let mut hears = HearsProjectileImpactsEvent { hears: false };
+        let mut hears = test_events::hears_projectile_impacts_event(false);
         m.hears_projectile_impacts(&host, &mut hears);
         assert!(hears.hears);
-        let mut listened = LivingEquipmentListenedEvent { listened: false };
+        let mut listened = test_events::living_equipment_listened_event(false);
         m.living_equipment_listened(&mut host, &mut listened);
         assert!(listened.listened);
-        let mut impact = ProjectileImpactEvent {
-            dimension: "minecraft:overworld",
-            projectile: 30,
-            kind: "minecraft:snowball",
-            owner: 5,
-            entity: Some(7),
-            entity_kind: "minecraft:cow",
-            block: [0, 0, 0],
-            face: [0, 0, 0],
-            at: [2.0, 64.5, 3.0],
-        };
+        let mut impact = test_events::projectile_impact_event(
+            "minecraft:overworld",
+            30,
+            "minecraft:snowball",
+            5,
+            Some(7),
+            "minecraft:cow",
+            [0, 0, 0],
+            [0, 0, 0],
+            [2.0, 64.5, 3.0],
+        );
         assert_eq!(m.projectile_impact(&mut host, &mut impact), Flow::Cancel);
         impact.entity = None;
         impact.block = [1, 2, 3];
@@ -6268,59 +6191,51 @@ experimental = ["scripts"]
         assert_eq!(m.projectile_impact(&mut host, &mut impact), Flow::Continue);
         m.projectile_launch(
             &mut host,
-            &mut ProjectileLaunchEvent {
-                player: Some(steve.uuid),
-                name: "steve",
-                entity: 30,
-                kind: "minecraft:snowball",
-            },
+            &mut test_events::projectile_launch_event(
+                Some(steve.uuid),
+                "steve",
+                30,
+                "minecraft:snowball",
+            ),
         );
         let mut blocks = vec![[1, 2, 3], [1, 3, 3]];
         m.explosion_detonate(
             &mut host,
-            &mut ExplosionDetonateEvent {
-                dimension: "minecraft:overworld",
-                center: [1.0, 2.0, 3.0],
-                blocks: &mut blocks,
-            },
+            &mut test_events::explosion_detonate_event(
+                "minecraft:overworld",
+                [1.0, 2.0, 3.0],
+                &mut blocks,
+            ),
         );
         assert_eq!(blocks, [[1, 3, 3]]);
         m.player_changed_dimension(
             &mut host,
-            &mut PlayerChangedDimensionEvent {
-                player: steve.uuid,
-                name: "steve",
-                from: "minecraft:overworld",
-                to: "minecraft:the_nether",
-            },
+            &mut test_events::player_changed_dimension_event(
+                steve.uuid,
+                "steve",
+                "minecraft:overworld",
+                "minecraft:the_nether",
+            ),
         );
         assert_eq!(
             m.player_bed_enter(
                 &mut host,
-                &mut PlayerBedEnterEvent {
-                    player: steve.uuid,
-                    name: "steve",
-                    pos: [4, 5, 6],
-                }
+                &mut test_events::player_bed_enter_event(steve.uuid, "steve", [4, 5, 6])
             ),
             Flow::Cancel
         );
-        let mut exp = PlayerExpChangeEvent {
-            player: steve.uuid,
-            name: "steve",
-            amount: 3,
-        };
+        let mut exp = test_events::player_exp_change_event(steve.uuid, "steve", 3);
         m.player_exp_change(&mut host, &mut exp);
         assert_eq!(exp.amount, 6);
         m.player_container_open(
             &mut host,
-            &mut PlayerContainerOpenEvent {
-                player: steve.uuid,
-                name: "steve",
-                dimension: "minecraft:overworld",
-                menu: "minecraft:generic_9x3",
-                pos: Some([7, 8, 9]),
-            },
+            &mut test_events::player_container_open_event(
+                steve.uuid,
+                "steve",
+                "minecraft:overworld",
+                "minecraft:generic_9x3",
+                Some([7, 8, 9]),
+            ),
         );
         let sword = ItemStack {
             item: "minecraft:iron_sword".into(),
@@ -6330,41 +6245,38 @@ experimental = ["scripts"]
         };
         m.living_equipment_change(
             &mut host,
-            &mut LivingEquipmentChangeEvent {
-                entity: 7,
-                kind: "minecraft:cow",
-                slot: "mainhand",
-                from: None,
-                to: Some(&sword),
-            },
+            &mut test_events::living_equipment_change_event(
+                7,
+                "minecraft:cow",
+                "mainhand",
+                None,
+                Some(&sword),
+            ),
         );
         assert_eq!(
             m.entity_join_level(
                 &mut host,
-                &mut EntityJoinLevelEvent {
-                    dimension: "minecraft:overworld",
-                    entity: 99,
-                    kind: "minecraft:arrow",
-                    pos: [1.0, 64.0, 1.0],
-                    loaded_from_disk: false,
-                }
+                &mut test_events::entity_join_level_event(
+                    "minecraft:overworld",
+                    99,
+                    "minecraft:arrow",
+                    [1.0, 64.0, 1.0],
+                    false
+                )
             ),
             Flow::Cancel
         );
         m.hurt_enemy(
             &mut host,
-            &mut HurtEnemyEvent {
-                stack: &wand(),
-                entity: 7,
-                kind: "minecraft:cow",
-            },
+            &mut test_events::hurt_enemy_event(&wand(), 7, "minecraft:cow"),
         );
-        let mut start = LivingEntityUseItemStartEvent {
-            stack: &wand(),
-            entity: None,
-            hand: horizon_client::first_person::Hand::Off,
-            duration: 32,
-        };
+        let stick = wand();
+        let mut start = test_events::living_entity_use_item_start_event(
+            &stick,
+            None,
+            horizon_client::first_person::Hand::Off,
+            32,
+        );
         assert_eq!(
             m.living_entity_use_item_start(&mut host, &mut start),
             Flow::Continue
@@ -6452,14 +6364,14 @@ experimental = ["scripts"]
         let m = LuaMod::load(&path, &[]).unwrap();
         let key = |k: &str| horizon_world::nbt::JavaString::from(k);
         // A hurt zombie is nobody's business; the cow's hit is doubled, fire refused.
-        let mut hit = LivingIncomingDamageEvent {
-            entity: 9,
-            kind: "zombie",
-            damage_type: "minecraft:mob_attack",
-            causing: 1,
-            direct: 1,
-            amount: 3.0,
-        };
+        let mut hit = test_events::living_incoming_damage_event(
+            9,
+            "zombie",
+            "minecraft:mob_attack",
+            1,
+            1,
+            3.0,
+        );
         assert_eq!(m.living_incoming_damage(&mut hit), Flow::Continue);
         assert_eq!(hit.amount, 3.0);
         hit.kind = "cow";
@@ -6485,7 +6397,7 @@ experimental = ["scripts"]
         // The mod listens to entity ticks: it has a mob_tick handler.
         // No host mid-hit: the reads refuse there.
         assert!(!m.lua.globals().get::<bool>("HURT_READ").unwrap());
-        let mut listened = EntityTickListenedEvent { listened: false };
+        let mut listened = test_events::entity_tick_listened_event(false);
         m.entity_tick_listened(&mut NoHost, &mut listened);
         assert!(listened.listened);
         // Ticks count in the mob's saved data; the second one sets its health.
@@ -6501,19 +6413,11 @@ experimental = ["scripts"]
         for _ in 0..3 {
             m.entity_tick_post(
                 &mut host,
-                &mut EntityTickPostEvent {
-                    dimension: "minecraft:overworld",
-                    entity: 7,
-                    kind: "cow",
-                },
+                &mut test_events::entity_tick_post_event("minecraft:overworld", 7, "cow"),
             );
             m.entity_tick_post(
                 &mut host,
-                &mut EntityTickPostEvent {
-                    dimension: "minecraft:overworld",
-                    entity: 8,
-                    kind: "cow",
-                },
+                &mut test_events::entity_tick_post_event("minecraft:overworld", 8, "cow"),
             );
         }
         assert_eq!(host.health, [(7, 9.0)]);
@@ -6527,15 +6431,11 @@ experimental = ["scripts"]
         assert_eq!(
             m.interact_entity(
                 &mut host,
-                &mut InteractEntityEvent {
-                    entity: 7,
-                    kind: "cow",
-                    stack: None
-                }
+                &mut test_events::interact_entity_event(7, "cow", None)
             ),
             Flow::Continue
         );
-        let wheat = crate::mod_api::ItemStack {
+        let wheat = horizon_client::mod_api::ItemStack {
             item: "minecraft:wheat".into(),
             count: 1,
             damage: 0,
@@ -6544,11 +6444,7 @@ experimental = ["scripts"]
         assert_eq!(
             m.interact_entity(
                 &mut host,
-                &mut InteractEntityEvent {
-                    entity: 7,
-                    kind: "cow",
-                    stack: Some(&wheat)
-                }
+                &mut test_events::interact_entity_event(7, "cow", Some(&wheat))
             ),
             Flow::Cancel
         );
@@ -6556,11 +6452,7 @@ experimental = ["scripts"]
         assert_eq!(
             m.interact_entity(
                 &mut host,
-                &mut InteractEntityEvent {
-                    entity: 8,
-                    kind: "cow",
-                    stack: Some(&wheat)
-                }
+                &mut test_events::interact_entity_event(8, "cow", Some(&wheat))
             ),
             Flow::Continue
         );
@@ -6589,11 +6481,7 @@ experimental = ["scripts"]
         // The kill hears the player and the data.
         m.mob_killed(
             &mut host,
-            &mut MobKilledEvent {
-                player: 1,
-                entity: 7,
-                kind: "minecraft:cow",
-            },
+            &mut test_events::mob_killed_event(1, 7, "minecraft:cow"),
         );
         assert_eq!(
             *host.lines.lock().unwrap(),
@@ -6602,11 +6490,7 @@ experimental = ["scripts"]
         // Without a host that knows the mob there is no data, and nothing breaks.
         m.mob_killed(
             &mut NoHost,
-            &mut MobKilledEvent {
-                player: 1,
-                entity: 7,
-                kind: "minecraft:cow",
-            },
+            &mut test_events::mob_killed_event(1, 7, "minecraft:cow"),
         );
         assert_eq!(host.lines.lock().unwrap().len(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -6655,9 +6539,9 @@ experimental = ["scripts"]
         ]);
         // The first data load is the one the scripts were loaded for; the next reloads.
         let mut files = Vec::new();
-        m.data_pack_files(&NoHost, &mut DataPackFilesEvent { files: &mut files });
+        m.data_pack_files(&NoHost, &mut test_events::data_pack_files_event(&mut files));
         assert_eq!(handlers(&m), 3);
-        m.data_pack_files(&NoHost, &mut DataPackFilesEvent { files: &mut files });
+        m.data_pack_files(&NoHost, &mut test_events::data_pack_files_event(&mut files));
         assert_eq!(handlers(&m), 2);
         assert_eq!(m.lua.globals().get::<i64>("VERSION").unwrap(), 2);
         let tick = |m: &LuaMod| {
@@ -6801,7 +6685,7 @@ experimental = ["scripts"]
 
     #[test]
     fn an_action_outside_a_hooks_handlers_is_an_error_and_leaves_nothing_queued() {
-        use crate::mod_api::NativeBehaviour;
+        use horizon_client::mod_api::NativeBehaviour;
         // From a goal function: no runner takes the action, so it is refused
         // where it is called, not left in the queue for the state's life.
         let (dir, path) = hmod(
@@ -6827,16 +6711,16 @@ experimental = ["scripts"]
             .behaviour(m.lua.clone(), m.id(), m.budget.clone())
             .unwrap();
         let view = MobView::of(
-            &crate::mobs::Mob::new(
+            &horizon_client::mobs::Mob::new(
                 7,
-                crate::mobs::MobType::cow_for_tests(),
+                horizon_client::mobs::MobType::cow_for_tests(),
                 horizon_core::geometry::Vec3::new(0.0, 64.0, 0.0),
                 0.0,
             ),
             None,
         );
         let mut state = goals::LuaGoalState::default();
-        let mut out = crate::mod_api::Actions::default();
+        let mut out = horizon_client::mod_api::Actions::default();
         assert!(!behaviour.can_use(&mut state, &view, &mut out));
         let e: String = m.lua.globals().get("SUMMON").unwrap();
         assert!(e.contains("horizon.summon") && e.contains("handler"), "{e}");
@@ -7064,55 +6948,41 @@ experimental = ["scripts"]
         let key = |k: &str| horizon_world::nbt::JavaString::from(k);
         // A declared block gets a block entity with its starting data; others none.
         let (id, data) = m
-            .block_entity(&mut host, &mut BlockEntityEvent { block: "ruby:hive" })
+            .block_entity(&mut host, &mut test_events::block_entity_event("ruby:hive"))
             .unwrap();
         assert_eq!(id, "ruby:hive");
         assert_eq!(data.get(&key("charge")), Some(&Tag::Int(0)));
         assert_eq!(data.get(&key("name")), Some(&Tag::String("x".into())));
         let (_, lamp) = m
-            .block_entity(&mut host, &mut BlockEntityEvent { block: "ruby:lamp" })
+            .block_entity(&mut host, &mut test_events::block_entity_event("ruby:lamp"))
             .unwrap();
         assert!(lamp.is_empty());
         assert!(
             m.block_entity(
                 &mut host,
-                &mut BlockEntityEvent {
-                    block: "ruby:other"
-                }
+                &mut test_events::block_entity_event("ruby:other")
             )
             .is_none()
         );
         // Only the hive ticks.
-        let mut ticks = BlockEntityTicksEvent {
-            block: "ruby:hive",
-            ticks: false,
-        };
+        let mut ticks = test_events::block_entity_ticks_event("ruby:hive", false);
         m.block_entity_ticks(&host, &mut ticks);
         assert!(ticks.ticks);
-        let mut ticks = BlockEntityTicksEvent {
-            block: "ruby:lamp",
-            ticks: false,
-        };
+        let mut ticks = test_events::block_entity_ticks_event("ruby:lamp", false);
         m.block_entity_ticks(&host, &mut ticks);
         assert!(!ticks.ticks);
         // The tick handler changes the data, which is written back: the int
         // stays an int, the removed key is gone, the new one is there.
-        let mut entity = crate::mod_api::ModBlockEntity::default();
+        let mut entity = horizon_client::mod_api::ModBlockEntity::default();
         entity.id = "ruby:hive".into();
         entity.nbt = data;
         m.block_entity_tick(
             &mut host,
-            &mut BlockEntityTickEvent {
-                pos: [1, 2, 3],
-                entity: &mut entity,
-            },
+            &mut test_events::block_entity_tick_event([1, 2, 3], &mut entity),
         );
         m.block_entity_tick(
             &mut host,
-            &mut BlockEntityTickEvent {
-                pos: [1, 2, 3],
-                entity: &mut entity,
-            },
+            &mut test_events::block_entity_tick_event([1, 2, 3], &mut entity),
         );
         assert_eq!(entity.nbt.get(&key("charge")), Some(&Tag::Int(2)));
         assert_eq!(
@@ -7131,11 +7001,11 @@ experimental = ["scripts"]
         };
         m.random_tick(
             &mut level,
-            &mut RandomTickEvent {
-                dimension: LevelDimension::Overworld,
-                pos: BlockPos::new(1, 64, -3),
-                state: BlockStateId(7),
-            },
+            &mut test_events::random_tick_event(
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+            ),
         );
         assert_eq!(
             level.data[&[1, 64, -3]].get(&key("charge")),
@@ -7251,7 +7121,7 @@ experimental = ["scripts"]
         let m = LuaMod::load(&path, &[]).unwrap();
         m.publish(None);
         let of = |m: &LuaMod| {
-            crate::dev_input::mods::status()
+            horizon_client::dev_input::mods::status()
                 .into_iter()
                 .find(|s| s.id == m.id())
                 .unwrap()
@@ -7277,9 +7147,9 @@ experimental = ["scripts"]
         assert!(of(&m).error.unwrap().contains("oops"));
         // The console asks for a reload, by id or for everyone: each is served once.
         assert!(!m.reload_asked());
-        crate::dev_input::mods::request_reload(Some(m.id()));
+        horizon_client::dev_input::mods::request_reload(Some(m.id()));
         assert!(m.reload_asked() && !m.reload_asked());
-        crate::dev_input::mods::request_reload(None);
+        horizon_client::dev_input::mods::request_reload(None);
         assert!(m.reload_asked() && !m.reload_asked());
         m.reload_now("the test");
         let s = of(&m);
@@ -7315,25 +7185,26 @@ experimental = ["scripts"]
         fn attachments(
             &mut self,
             _: Holder,
-        ) -> crate::mod_api::AttachmentResult<&mut crate::mod_api::Attachments> {
-            Err(crate::mod_api::AttachmentError::MissingHolder)
+        ) -> horizon_client::mod_api::AttachmentResult<&mut horizon_client::mod_api::Attachments>
+        {
+            Err(horizon_client::mod_api::AttachmentError::MissingHolder)
         }
-        fn acting_player(&self) -> Option<crate::mod_api::NativeServerPlayer> {
-            Some(crate::mod_api::NativeServerPlayer {
-                uuid: 0x123e4567_e89b_12d3_a456_426614174000,
-                name: "steve".into(),
-                permission: self.permission,
-                dimension: "minecraft:the_nether".into(),
-                position: [1.0, 64.0, 1.0],
-                game_mode: self.game_mode,
-                health: 20.0,
-                yaw: 0.0,
-                pitch: 0.0,
-                entity_id: 5,
-                address: String::new(),
-            })
+        fn acting_player(&self) -> Option<horizon_client::mod_api::NativeServerPlayer> {
+            Some(test_events::native_server_player(
+                0x123e4567_e89b_12d3_a456_426614174000,
+                "steve".into(),
+                self.permission,
+                "minecraft:the_nether".into(),
+                [1.0, 64.0, 1.0],
+                self.game_mode,
+                20.0,
+                0.0,
+                0.0,
+                5,
+                String::new(),
+            ))
         }
-        fn level_players(&self) -> Vec<crate::mod_api::NativeServerPlayer> {
+        fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
             Vec::new()
         }
         fn held(&self) -> Option<(String, u32, bool)> {
@@ -7352,7 +7223,7 @@ experimental = ["scripts"]
 
     #[test]
     fn entity_interact_hears_any_entity_and_the_stick_asks_for_its_window() {
-        use crate::mobs::observe::{self, Request, StickTarget};
+        use horizon_client::mobs::observe::{self, Request, StickTarget};
         let (dir, path) = hmod(
             "stick",
             &[(
@@ -7373,7 +7244,7 @@ experimental = ["scripts"]
             )],
         );
         let m = LuaMod::load(&path, &[]).unwrap();
-        let stick = crate::mod_api::ItemStack {
+        let stick = horizon_client::mod_api::ItemStack {
             item: "horizon_modkit:inspect_stick".into(),
             count: 1,
             damage: 0,
@@ -7386,16 +7257,9 @@ experimental = ["scripts"]
             game_mode: 1,
             permission: 2,
         };
-        let mut frame = InteractEntityEvent {
-            entity: 9,
-            kind: "item_frame",
-            stack: Some(&stick),
-        };
+        let mut frame = test_events::interact_entity_event(9, "item_frame", Some(&stick));
         assert_eq!(m.interact_entity(&mut op, &mut frame), Flow::Cancel);
-        let mut block = RightClickBlockEvent {
-            pos: [4, 70, -2],
-            face: [0, 0, -1],
-        };
+        let mut block = test_events::right_click_block_event([4, 70, -2], [0, 0, -1]);
         assert_eq!(m.right_click_block(&mut op, &mut block), Flow::Cancel);
         assert_eq!(
             observe::take_requests(),

@@ -3,60 +3,7 @@ use crate::{crash, game, logging};
 
 /// Start the game. The executable supplies the allocator and retains the mod API marker.
 pub fn main() {
-    // `--check-mod <path> [--dev-mod <library>]... [--resources <folder>]`:
-    // load a scripted mod headlessly (and with `--resources`, layer its
-    // content as the game would), report, and leave; no window, no world.
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if let Some(i) = args.iter().position(|a| a == "--check-mod") {
-        let Some(path) = args.get(i + 1) else {
-            eprintln!("--check-mod <path to a mod folder or .hmod>");
-            std::process::exit(2);
-        };
-        let dev: Vec<std::path::PathBuf> = args
-            .windows(2)
-            .filter(|w| w[0] == "--dev-mod")
-            .map(|w| std::path::PathBuf::from(&w[1]))
-            .collect();
-        let resources = args
-            .windows(2)
-            .find(|w| w[0] == "--resources")
-            .map(|w| std::path::PathBuf::from(&w[1]));
-        match crate::lua_mods::check_mod(std::path::Path::new(path), &dev, resources.as_deref()) {
-            Ok(lines) => {
-                for line in lines {
-                    println!("{line}");
-                }
-                std::process::exit(0);
-            }
-            Err(e) => {
-                eprintln!("{e}");
-                std::process::exit(1);
-            }
-        }
-    }
-    // `--list-mods` asks for the build's feature registry and nothing else
-    // (`main_with` prints it and returns): the launcher runs it at every
-    // version selection, so no mod is discovered or loaded for it, no
-    // `mods` folder scanned, and the developer tools stay off.
-    if list_mods_only(&args) {
-        main_with(Default::default());
-        return;
-    }
-    // Built in first: the developer tools (their windows alone for the
-    // inspect stick when Lua mods are on), then the Lua mods found on the
-    // command line and in the mods folder.
-    let lua = crate::lua_mods::discover(std::env::args().skip(1));
-    let mut mods = crate::dev_tools::mods(!lua.is_empty());
-    mods.extend(lua);
-    main_with(mods.into());
-}
-
-/// Whether the command line is a `--list-mods` query, as `main_with` reads
-/// it: among the game's arguments, before any `--dedicated`.
-fn list_mods_only(args: &[String]) -> bool {
-    args.iter()
-        .take_while(|a| *a != "--dedicated")
-        .any(|a| a == "--list-mods")
+    main_with(Default::default());
 }
 
 /// Start the game with trait mods in dispatch order.
@@ -293,30 +240,5 @@ fn raise_open_file_limit() {
                 Err(e) => log::warn!("Open file limit stays at {:?}: {e}", limit.current),
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::list_mods_only;
-
-    fn args(list: &[&str]) -> Vec<String> {
-        list.iter().map(|s| s.to_string()).collect()
-    }
-
-    #[test]
-    fn list_mods_is_answered_before_any_mod_is_discovered() {
-        // The launcher's query, alone or with the game's other arguments.
-        assert!(list_mods_only(&args(&["--list-mods"])));
-        assert!(list_mods_only(&args(&[
-            "--game-dir",
-            "x",
-            "--list-mods",
-            "--dev-tools"
-        ])));
-        // A plain start, a mod check and a server start discover their mods.
-        assert!(!list_mods_only(&args(&[])));
-        assert!(!list_mods_only(&args(&["--dev-tools", "--dev-mod", "m"])));
-        assert!(!list_mods_only(&args(&["--dedicated", "--list-mods"])));
     }
 }

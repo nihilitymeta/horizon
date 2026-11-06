@@ -7,7 +7,7 @@
 //! z, speed)`...). Then a `mob_ai_register` handler attaches it:
 //! `horizon.add_goal(priority, name)`. The game runs it through
 //! [`NativeGoal`], as it runs a trait mod's.
-use crate::mod_api::{
+use horizon_client::mod_api::{
     Actions, GOAL_JUMP, GOAL_LOOK, GOAL_MOVE, GOAL_TARGET, GoalAction, MobView, NativeBehaviour,
     NativeGoal, Who,
 };

@@ -39,11 +39,7 @@ fn main() {
             .windows(2)
             .find(|w| w[0] == "--resources")
             .map(|w| std::path::PathBuf::from(&w[1]));
-        match horizon_client::lua_mods::check_mod(
-            std::path::Path::new(path),
-            &dev,
-            resources.as_deref(),
-        ) {
+        match event_horizon_lua::check_mod(std::path::Path::new(path), &dev, resources.as_deref()) {
             Ok(lines) => {
                 for line in lines {
                     println!("{line}");
@@ -73,4 +69,29 @@ fn list_mods_only(args: &[String]) -> bool {
     args.iter()
         .take_while(|a| *a != "--dedicated")
         .any(|a| a == "--list-mods")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::list_mods_only;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn list_mods_is_answered_before_any_mod_is_discovered() {
+        // The launcher's query, alone or with the game's other arguments.
+        assert!(list_mods_only(&args(&["--list-mods"])));
+        assert!(list_mods_only(&args(&[
+            "--game-dir",
+            "x",
+            "--list-mods",
+            "--dev-tools"
+        ])));
+        // A plain start, a mod check and a server start discover their mods.
+        assert!(!list_mods_only(&args(&[])));
+        assert!(!list_mods_only(&args(&["--dev-tools", "--dev-mod", "m"])));
+        assert!(!list_mods_only(&args(&["--dedicated", "--list-mods"])));
+    }
 }

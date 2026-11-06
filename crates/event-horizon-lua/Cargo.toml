@@ -1,0 +1,28 @@
+[package]
+name = "event-horizon-lua"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version = "1.90"
+description = "Event Horizon's Lua runtime for scripted mods"
+autobins = false
+autoexamples = false
+autotests = false
+
+[dependencies]
+horizon-client = { path = "../horizon-client", default-features = false }
+# Scripted mods (docs/lua-bindings.md): the `scripts/` capability, the mods folder index.
+horizon-mods = { path = "../horizon-mods", default-features = false, features = ["index", "lua"] }
+# Luau, built from source, no system library; one state per mod, shared across threads.
+mlua = { version = "0.12", features = ["luau", "vendored", "send"] }
+horizon-world = { path = "../horizon-world" }
+serde_json = { version = "1.0.151" }
+log = "0.4"
+
+[dev-dependencies]
+horizon-core = { path = "../horizon-core" }
+# The tests build the engine's `#[non_exhaustive]` events through these constructors.
+horizon-client = { path = "../horizon-client", default-features = false, features = ["test-support"] }
+
+[lints]
+workspace = true
