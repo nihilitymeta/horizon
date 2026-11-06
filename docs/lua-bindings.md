@@ -9,7 +9,7 @@ this API with classes and callbacks. This page is the layer under it.
 
 | Part | Status |
 |---|---|
-| The runtime (`crates/horizon-client/src/lua_mods.rs`) and scripts inside the `.hmod` | built |
+| The runtime (`crates/event-horizon-lua/src/lua_mods.rs`) and scripts inside the `.hmod` | built |
 | Mob goals in Lua (`lua_mods/goals.rs`) | built |
 | Block behaviour: random and scheduled ticks, right clicks, block entities | built |
 | Reloading on `/reload` | built |
@@ -585,7 +585,7 @@ nothing of the handler runs past its deadline, and the actions it queued are dro
 
 `init.lua`, with the modules it requires, has five seconds at load and at reload. A state may use up to 64 MiB.
 
-A script reads nothing but its own mod (`lua_mods::Budget`):
+A script reads nothing but its own mod (`lua_mods::Budget`, in `event-horizon-lua`):
 
 - Luau has no `io`, `loadfile` or `dofile`.
 - Its `os` has only `clock`, `date`, `difftime` and `time`.

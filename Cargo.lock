@@ -1072,13 +1072,17 @@ version = "0.1.0"
 name = "event-horizon-lua"
 version = "0.1.0"
 dependencies = [
+ "egui",
+ "egui-wgpu",
  "horizon-client",
+ "horizon-client-core",
  "horizon-core",
  "horizon-mods",
  "horizon-world",
  "log",
  "mlua",
  "serde_json",
+ "wgpu",
 ]
 
 [[package]]
@@ -1577,7 +1581,6 @@ dependencies = [
  "bytemuck",
  "chrono",
  "egui",
- "egui-wgpu",
  "egui-winit",
  "event-horizon-debug",
  "event-horizon-websocket",

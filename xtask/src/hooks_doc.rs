@@ -548,7 +548,7 @@ mod tests {
     fn the_hooks_the_runtime_answers_are_the_ones_the_reference_names() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let src =
-            std::fs::read_to_string(root.join("crates/horizon-client/src/lua_mods.rs")).unwrap();
+            std::fs::read_to_string(root.join("crates/event-horizon-lua/src/lua_mods.rs")).unwrap();
         let file = syn::parse_file(&src).unwrap();
         let mut answered = std::collections::BTreeSet::new();
         for item in file.items {
@@ -595,7 +595,7 @@ mod tests {
         }
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let src =
-            std::fs::read_to_string(root.join("crates/horizon-client/src/lua_mods.rs")).unwrap();
+            std::fs::read_to_string(root.join("crates/event-horizon-lua/src/lua_mods.rs")).unwrap();
         let file = syn::parse_file(&src).unwrap();
         let mut calls = Calls(Default::default());
         calls.visit_file(&file);
@@ -626,7 +626,7 @@ mod tests {
     fn the_hook_names_a_script_may_register_are_the_reference_s() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let src =
-            std::fs::read_to_string(root.join("crates/horizon-client/src/lua_mods.rs")).unwrap();
+            std::fs::read_to_string(root.join("crates/event-horizon-lua/src/lua_mods.rs")).unwrap();
         let start = src.find("pub const LUA_HOOK_NAMES").unwrap();
         let end = start + src[start..].find("];").unwrap();
         let runtime: std::collections::BTreeSet<String> = src[start..end]

@@ -79,12 +79,12 @@ ureq = { version = "2", default-features = false, features = ["tls"] }
 unicode-bidi = "0.3.18"
 # `LevelStorageAccess.estimateDiskSpace`: usable disk space, without unsafe code on Windows.
 fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
-# Lua scripts as mods (docs/lua-bindings.md) and the developer tools' console (docs/dev-tools.md): Luau, built
-# from source, no system library; one state per mod, shared across threads.
+# The /lua console's Luau state (game/commands/lua_console.rs); the scripted mods' runtime
+# and the console's window live in event-horizon-lua (until #32).
 mlua = { version = "0.12", features = ["luau", "vendored", "send"] }
-# Developer tools drawn with egui over the world (docs/dev-tools.md): HORIZON_DEV_TOOLS=1.
+# The developer tools' shared input state (dev_input.rs) and their key bindings; the windows that draw it live in
+# event-horizon-lua, as does the Lua runtime (#28).
 egui = { version = "0.37", default-features = false, features = ["default_fonts"] }
-egui-wgpu = { version = "0.37", default-features = false }
 egui-winit = { version = "0.37", default-features = false }
 
 [target.'cfg(unix)'.dependencies]

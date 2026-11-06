@@ -8,16 +8,16 @@
 //! one.
 //!
 //! This is the windows' half: it draws with the shared state of
-//! [`crate::dev_input`] and never the other way round, so the two can move
+//! [`horizon_client::dev_input`] and never the other way round, so the two can move
 //! apart (#19).
 pub mod console;
 
-use crate::dev_input;
-use crate::gfx::native_render::{RenderHooks, WorldDrawnEvent};
-use crate::mobs::observe::{
+use horizon_client::dev_input;
+use horizon_client::gfx::native_render::{RenderHooks, WorldDrawnEvent};
+use horizon_client::mobs::observe::{
     self, BrainSnapshot, GoalRow, HistoryTick, Inspected, InspectedBlock, Request, Series, View,
 };
-use crate::mod_api::{Hooks, Host, NativeBlockRim, VisualsEvent};
+use horizon_client::mod_api::{Hooks, Host, NativeBlockRim, VisualsEvent};
 use horizon_client_core::snbt::java_hash_order;
 use horizon_world::nbt::Tag;
 use horizon_world::snbt_text::to_snbt;
@@ -259,7 +259,7 @@ fn interval_choice(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug
     egui::ComboBox::from_id_salt(id)
         .selected_text(label(ms))
         .show_ui(ui, |ui| {
-            for choice in crate::mobs::observe_wire::INTERVALS {
+            for choice in horizon_client::mobs::observe_wire::INTERVALS {
                 ui.selectable_value(&mut ms, choice, label(choice));
             }
         })

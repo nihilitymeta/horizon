@@ -472,7 +472,7 @@ mod tests {
 
     fn runtime_source() -> String {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        std::fs::read_to_string(root.join("crates/horizon-client/src/lua_mods.rs")).unwrap()
+        std::fs::read_to_string(root.join("crates/event-horizon-lua/src/lua_mods.rs")).unwrap()
     }
 
     /// Every hook `horizon.on` takes (the runtime's `LUA_HOOK_NAMES`, less

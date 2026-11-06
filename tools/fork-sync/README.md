@@ -52,8 +52,8 @@ If the merge goes badly, `git merge --abort` puts `engine-work` back as it was. 
 
 - **Conflicts** come from files that both sides change: the render settings (`graphics.rs`, `options_ui.rs`,
   `extras.rs`), the lists everyone adds to (`native-hooks.json`, lang files, `docs/native-mods.md`) and the Lua
-  runtime (`lua_mods.rs`, `content.rs`). Their number grows with how much upstream changed in those files, not with
-  the number of upstream commits.
+  runtime's content side (`content.rs`; the runtime itself lives in `event-horizon-lua`). Their number grows with
+  how much upstream changed in those files, not with the number of upstream commits.
 - **Breakage without a conflict** happens too: upstream adds a field, a helper of the same name or a language, and
   Event Horizon's code no longer builds. `verify.sh` finds these.
 - **Upstream's known failures on macOS:** `drops_match_vanillas_motion_bit_for_bit` (a one-bit float difference on

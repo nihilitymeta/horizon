@@ -37,7 +37,7 @@ per mod, libraries first (`depends`, `require`).
   access. The launcher installs such a mod as content.
 - `cargo horizon-mod new --template lua` scaffolds a mod, and `cargo horizon-mod check` loads its scripts without a
   world.
-- Code: `crates/horizon-client/src/lua_mods.rs` and `lua_mods/`. Reference: [lua-bindings.md](lua-bindings.md), and
+- Code: `crates/event-horizon-lua/src/lua_mods.rs` and `lua_mods/`. Reference: [lua-bindings.md](lua-bindings.md), and
   the hook points in [api/hook-points.md](api/hook-points.md).
 
 **Developer tools** (`archive/egui-tools`). Tools drawn with egui over the world, on only with `--dev-tools` or
@@ -49,7 +49,7 @@ per mod, libraries first (`depends`, `require`).
 - `/lua` opens a console: a Luau state on the server thread with `mc.*` for commands, selectors and entity data. It
   also lists the scripted mods with their handlers and errors, and has a reload button.
 - Code: `crates/event-horizon-observe/` (the observation store and the wire), `crates/horizon-client/src/dev_input.rs` and
-  `dev_input/` (the state the game and the tools share), `crates/horizon-client/src/dev_tools.rs` and `dev_tools/` (the
+  `dev_input/` (the state the game and the tools share), `crates/event-horizon-lua/src/dev_tools.rs` and `dev_tools/` (the
   windows). Reference: [dev-tools.md](dev-tools.md).
 
 **Content reload** (`archive/hot-reload`). Content mods reload without a restart. Run the game with `--dev-mod`

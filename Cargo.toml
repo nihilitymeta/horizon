@@ -17,7 +17,7 @@ members = [
     "crates/event-horizon-observe",
     # The F3 overlay's pure helpers: the frame-time window and the process memory.
     "crates/event-horizon-debug",
-    # Event Horizon's Lua runtime for scripted mods, above the gameplay library.
+    # Event Horizon's Lua runtime and developer windows, above the gameplay library.
     "crates/event-horizon-lua",
     "crates/horizon-cosmetics",
     "crates/horizon-command",

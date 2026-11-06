@@ -1,7 +1,7 @@
 //! The Lua console's window (docs/dev-tools.md). What it shows and writes is
-//! the console's shared state ([`crate::dev_input::console`]): the game's
+//! the console's shared state ([`horizon_client::dev_input::console`]): the game's
 //! own code runs what the window queues and answers its completion requests.
-use crate::dev_input::console::{
+use horizon_client::dev_input::console::{
     Kind, OPEN, SCRIPTS_DIR, STOP_TICKS, TICKING, clear, completions_for, history, lines, push,
     remember, request_completions, submit, take_focus,
 };
@@ -44,7 +44,7 @@ pub fn run_file(path: &Path) {
 /// handlers and goals, its last error in red, and a reload button that
 /// reads its scripts again at the next server tick.
 fn mods_fold(ui: &mut egui::Ui) {
-    let mods = crate::dev_input::mods::status();
+    let mods = horizon_client::dev_input::mods::status();
     egui::CollapsingHeader::new(format!("Lua mods ({})", mods.len()))
         .id_salt("mods")
         .default_open(mods.iter().any(|m| m.error.is_some()))
@@ -56,7 +56,7 @@ fn mods_fold(ui: &mut egui::Ui) {
             for m in &mods {
                 ui.horizontal(|ui| {
                     if m.scripts > 0 && ui.small_button("reload").clicked() {
-                        crate::dev_input::mods::request_reload(Some(&m.id));
+                        horizon_client::dev_input::mods::request_reload(Some(&m.id));
                     }
                     ui.strong(&m.id);
                     ui.weak(&m.source);
@@ -82,7 +82,7 @@ fn mods_fold(ui: &mut egui::Ui) {
                 }
             }
             if mods.len() > 1 && ui.small_button("reload all").clicked() {
-                crate::dev_input::mods::request_reload(None);
+                horizon_client::dev_input::mods::request_reload(None);
             }
             ui.weak("a reload runs at the next server tick, as /reload does; the mods' log and print lines show below");
         });
