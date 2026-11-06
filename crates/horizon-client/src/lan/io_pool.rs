@@ -6,13 +6,10 @@
 //! encryption, the socket writes, reading and the keep-alives happen here. A
 //! connection stays on one thread, so its bytes keep their order. The
 //! integrated server's own player, over an in-memory pipe, is served the same
-//! way: the pipe tells the thread when bytes arrive. A WebSocket player's
-//! socket is polled like a TCP one, its frames made and read on the way
-//! ([`horizon_protocol::websocket::Framed`]).
-use horizon_protocol::{
-    connection::{ConnReader, ConnWriter, Pipe, Socket},
-    websocket::Framed,
-};
+//! way: the pipe tells the thread when bytes arrive. A custom transport's
+//! socket is polled like a TCP one through [`horizon_transport::Polled`].
+use horizon_protocol::connection::{ConnReader, ConnWriter, Pipe, Socket};
+use horizon_transport::Polled;
 use mio::{Events, Interest, Poll, Registry, Token, Waker};
 use std::{
     io::{ErrorKind, Read, Write},
@@ -354,14 +351,14 @@ fn run(mut poll: Poll, worker: &Arc<Worker>) {
 enum Io {
     Tcp(mio::net::TcpStream),
     Memory(Pipe),
-    WebSocket(Framed<mio::net::TcpStream>),
+    Custom(Box<dyn Polled>),
 }
 impl Read for Io {
     fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
         match self {
             Self::Tcp(s) => s.read(out),
             Self::Memory(p) => p.read(out),
-            Self::WebSocket(f) => f.read(out),
+            Self::Custom(t) => t.read(out),
         }
     }
 }
@@ -370,13 +367,13 @@ impl Write for Io {
         match self {
             Self::Tcp(s) => s.write(data),
             Self::Memory(p) => p.write(data),
-            Self::WebSocket(f) => f.write(data),
+            Self::Custom(t) => t.write(data),
         }
     }
-    /// A WebSocket's frames wait in it until the socket takes them: `WouldBlock` until then.
+    /// A custom transport's bytes may wait in it until the socket takes them: `WouldBlock` until then.
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
-            Self::WebSocket(f) => f.flush(),
+            Self::Custom(t) => t.flush(),
             _ => Ok(()),
         }
     }
@@ -428,10 +425,14 @@ impl Conn {
         };
         let registered = match a.socket {
             Socket::Tcp(stream) => poll(stream).map(Io::Tcp),
-            Socket::WebSocket(ws) => ws
-                .take_parts()
-                .and_then(|(stream, inbound)| Ok(Framed::new(poll(stream)?, inbound)))
-                .map(Io::WebSocket),
+            Socket::Custom(transport) => transport.into_polled().and_then(|mut transport| {
+                registry.register(
+                    transport.socket(),
+                    Token(i),
+                    Interest::READABLE | Interest::WRITABLE,
+                )?;
+                Ok(Io::Custom(transport))
+            }),
             Socket::Memory(mut pipe) => {
                 pipe.set_nonblocking(true);
                 let worker = worker.clone();
@@ -570,7 +571,7 @@ impl Conn {
             }
             self.draining = end == Some(End::Disconnect);
         }
-        // Written means taken by the socket: a WebSocket's frames may still wait in it (`stalled`).
+        // Written means taken by the socket: a custom transport's bytes may still wait in it (`stalled`).
         if self.draining
             && self.written == self.out.len()
             && self.stalled.is_none()
@@ -654,10 +655,10 @@ impl Conn {
                 let _ = registry.deregister(stream);
                 let _ = stream.shutdown(std::net::Shutdown::Both);
             }
-            Io::WebSocket(framed) => {
-                framed.close();
-                let _ = registry.deregister(framed.socket());
-                let _ = framed.socket().shutdown(std::net::Shutdown::Both);
+            Io::Custom(transport) => {
+                transport.close();
+                let _ = registry.deregister(transport.socket());
+                let _ = transport.socket().shutdown(std::net::Shutdown::Both);
             }
             Io::Memory(pipe) => {
                 pipe.on_ready(|| {});
@@ -674,13 +675,11 @@ impl Conn {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use horizon_protocol::{
-        connection::Connection,
-        websocket::{
-            WsStream,
-            codec::{self, Role},
-        },
+    use event_horizon_websocket::{
+        WsStream,
+        codec::{self, Role},
     };
+    use horizon_protocol::connection::Connection;
     use std::sync::mpsc::{Receiver, Sender, channel};
 
     #[derive(Debug, PartialEq)]
@@ -913,14 +912,13 @@ mod tests {
         let (ws, _) =
             WsStream::accept(listener.accept().unwrap().0, Duration::from_secs(5), &[]).unwrap();
         let served = serve(
-            Connection::from_websocket(ws).unwrap(),
+            Connection::from_transport(Box::new(ws)).unwrap(),
             quiet,
             Duration::from_secs(30),
         );
         assert_eq!(served.next(), Seen::Packet(1, body(1, 10)[1..].to_vec()));
         assert_eq!(served.next(), Seen::Packet(2, body(2, 10)[1..].to_vec()));
-        let (head, _) =
-            horizon_protocol::websocket::handshake::read_head(&mut client.socket).unwrap();
+        let (head, _) = event_horizon_websocket::handshake::read_head(&mut client.socket).unwrap();
         assert!(head.starts_with("HTTP/1.1 101 "));
 
         // About 4 MiB: the client reads nothing for a while, so most of it waits.

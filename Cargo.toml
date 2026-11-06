@@ -27,6 +27,8 @@ members = [
     "crates/horizon-bots",
     "crates/horizon-assets",
     "crates/horizon-protocol",
+    "crates/horizon-transport",
+    "crates/event-horizon-websocket",
     "crates/horizon-theme",
     "crates/horizon-prepare",
     "crates/horizon-telemetry",

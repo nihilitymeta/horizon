@@ -7,6 +7,10 @@ your own.
 
 Vanilla clients can't join over a WebSocket. They join the same server over TCP as before.
 
+The implementation lives in `crates/event-horizon-websocket`. The program registers it at startup. The generic
+blocking, polled, connector and server-door extension points live in `crates/horizon-transport`; the protocol and
+LAN crates use those extension points without depending on WebSocket code.
+
 ## How it works
 
 - Minecraft's own bytes travel in WebSocket binary messages. Nothing above the connection changes: login,

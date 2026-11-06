@@ -1,0 +1,13 @@
+[package]
+name = "horizon-transport"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Generic blocking and polled transports, and their process-wide extension registry"
+
+[dependencies]
+mio = { version = "1.2.4", features = ["os-poll", "net"] }
+
+[lints]
+workspace = true

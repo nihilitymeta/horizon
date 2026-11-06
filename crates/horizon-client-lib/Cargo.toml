@@ -28,6 +28,7 @@ horizon-threads = { path = "../horizon-threads" }
 horizon-hdr = { path = "../horizon-hdr" }
 horizon-world = { path = "../horizon-world" }
 horizon-protocol = { path = "../horizon-protocol" }
+horizon-transport = { path = "../horizon-transport" }
 # Event Horizon's developer tools: the observation store and the wire (docs/dev-tools.md).
 event-horizon-observe = { path = "../event-horizon-observe" }
 # server.properties, eula.txt and the user lists, shared with horizon-server.
@@ -127,6 +128,7 @@ windows-segment-heap = []
 workspace = true
 
 [dev-dependencies]
+event-horizon-websocket = { path = "../event-horizon-websocket" }
 horizon-client-render = { path = "../horizon-client-render", features = ["test-support"] }
 horizon-items = { path = "../horizon-items", features = ["test-support"] }
 # Every WGSL shader translated as wgpu's DirectX 12 backend does (gfx.rs tests).

@@ -179,7 +179,7 @@ pub fn request(url: &Url, key: &str) -> String {
          Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nUser-Agent: Horizon/{}\r\n\r\n",
         url.path,
         url.host_header(),
-        crate::GAME_VERSION,
+        horizon_core::VANILLA_VERSION,
     )
 }
 

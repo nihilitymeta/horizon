@@ -3,16 +3,11 @@
 //! splits into a reader (for a receive thread) and a shareable writer, or
 //! gives its stream up ([`Connection::detach`]) to be polled without blocking,
 //! the halves then keeping only the framing, compression and encryption. It
-//! runs over TCP, or over an in-memory pipe between two threads of one process
+//! runs over TCP, over an in-memory pipe between two threads of one process
 //! (vanilla's `LocalChannel`, which an integrated server's player uses), or
-//! over a WebSocket (Horizon's own, for tunnels: [`crate::websocket`]).
-use crate::{
-    Error, Result,
-    buf::Reader,
-    crypto::Cfb8,
-    frame,
-    websocket::{self, WsStream},
-};
+//! over a registered custom transport.
+use crate::{Error, Result, buf::Reader, crypto::Cfb8, frame};
+use horizon_transport::{Registry, Transport as CustomTransport};
 use std::{
     io::{Read, Write},
     net::{Shutdown, SocketAddr, TcpStream, ToSocketAddrs},
@@ -153,7 +148,7 @@ impl Write for Pipe {
 enum Stream {
     Tcp(TcpStream),
     Memory(Pipe),
-    WebSocket(WsStream),
+    Custom(Box<dyn CustomTransport>),
     /// Given up by [`Connection::detach`]: reads and writes fail.
     Detached,
 }
@@ -165,7 +160,7 @@ impl Stream {
         Ok(match self {
             Self::Tcp(s) => Self::Tcp(s.try_clone()?),
             Self::Memory(p) => Self::Memory(p.try_clone()),
-            Self::WebSocket(w) => Self::WebSocket(w.clone()),
+            Self::Custom(t) => Self::Custom(t.try_clone()?),
             Self::Detached => Self::Detached,
         })
     }
@@ -176,7 +171,7 @@ impl Stream {
                 *p.timeout.lock().unwrap() = timeout;
                 Ok(())
             }
-            Self::WebSocket(w) => w.set_read_timeout(timeout),
+            Self::Custom(t) => t.set_read_timeout(timeout),
             Self::Detached => Ok(()),
         }
     }
@@ -186,7 +181,7 @@ impl Stream {
                 let _ = s.shutdown(Shutdown::Both);
             }
             Self::Memory(p) => p.shutdown(),
-            Self::WebSocket(w) => w.shutdown(),
+            Self::Custom(t) => t.shutdown(),
             Self::Detached => {}
         }
     }
@@ -196,7 +191,7 @@ impl Read for Stream {
         match self {
             Self::Tcp(s) => s.read(out),
             Self::Memory(p) => p.read(out),
-            Self::WebSocket(w) => w.read(out),
+            Self::Custom(t) => t.read(out),
             Self::Detached => Err(detached()),
         }
     }
@@ -206,7 +201,7 @@ impl Write for Stream {
         match self {
             Self::Tcp(s) => s.write(data),
             Self::Memory(p) => p.write(data),
-            Self::WebSocket(w) => w.write(data),
+            Self::Custom(t) => t.write(data),
             Self::Detached => Err(detached()),
         }
     }
@@ -214,7 +209,7 @@ impl Write for Stream {
         match self {
             Self::Tcp(s) => s.flush(),
             Self::Memory(p) => p.flush(),
-            Self::WebSocket(w) => w.flush(),
+            Self::Custom(t) => t.flush(),
             Self::Detached => Err(detached()),
         }
     }
@@ -224,9 +219,7 @@ impl Write for Stream {
 pub enum Socket {
     Tcp(TcpStream),
     Memory(Pipe),
-    /// A server's WebSocket: [`WsStream::take_parts`] gives the socket and what arrived on it
-    /// to a [`websocket::Framed`].
-    WebSocket(WsStream),
+    Custom(Box<dyn CustomTransport>),
 }
 
 /// What a connection runs over, for the debug screen.
@@ -234,10 +227,7 @@ pub enum Socket {
 pub enum Transport {
     Tcp,
     Memory,
-    /// `ws://`, or `wss://` when secure.
-    WebSocket {
-        secure: bool,
-    },
+    Custom { name: &'static str },
 }
 
 /// Packets received/sent and bytes in/out, and what the connection runs over, for the debug
@@ -297,11 +287,11 @@ pub struct Connection {
     pub writer: ConnWriter,
 }
 impl Connection {
-    /// Connects to `host` and `port`, or to the WebSocket `host` names when it is a `ws://` or
-    /// `wss://` address ([`websocket::Url`]).
+    /// Connects to `host` and `port`, or through the first registered connector that recognizes `host`.
     pub fn connect(host: &str, port: u16, timeout: Duration) -> Result<Self> {
-        if let Some(url) = websocket::Url::parse(host) {
-            return Self::connect_websocket(&url, timeout);
+        if let Some(custom) = Registry::global().connect(host, timeout) {
+            let (transport, _) = custom.map_err(Error::from)?;
+            return Self::from_transport(transport);
         }
         let addrs: Vec<_> = (host, port)
             .to_socket_addrs()
@@ -321,10 +311,11 @@ impl Connection {
         port: u16,
         timeout: Duration,
     ) -> Result<(Self, String, u16)> {
-        // A WebSocket address has no SRV redirect: the handshake names its host and port.
-        if let Some(url) = websocket::Url::parse(host) {
-            let connection = Self::connect_websocket(&url, timeout)?;
-            return Ok((connection, url.host, url.port));
+        // A registered address supplies its handshake endpoint instead of using an SRV redirect.
+        if let Some(custom) = Registry::global().connect(host, timeout) {
+            let (transport, address) = custom.map_err(Error::from)?;
+            let connection = Self::from_transport(transport)?;
+            return Ok((connection, address.handshake_host, address.port));
         }
         let resolved = crate::resolver::resolve(host, port)?;
         let connection = Self::connect_addresses(host, resolved.addresses, timeout)?;
@@ -335,19 +326,6 @@ impl Connection {
     /// in a round-robin set costs 250 ms instead of the whole timeout.
     fn connect_addresses(host: &str, addrs: Vec<SocketAddr>, timeout: Duration) -> Result<Self> {
         Self::from_stream(Self::connect_socket(host, addrs, timeout)?)
-    }
-    /// Opens a WebSocket at `url` (TLS through rustls for `wss://`): its host's addresses are
-    /// tried as [`Self::connect`] tries a server's, and `timeout` bounds the TLS and HTTP
-    /// handshakes too.
-    pub fn connect_websocket(url: &websocket::Url, timeout: Duration) -> Result<Self> {
-        let addrs: Vec<_> = (url.host.as_str(), url.port)
-            .to_socket_addrs()
-            .map_err(|e| Error::new(format!("Unknown host {}: {e}", url.host)))?
-            .collect();
-        let socket = Self::connect_socket(&url.host, addrs, timeout)?;
-        let ws = WsStream::connect(socket, url, timeout)
-            .map_err(|e| Error::new(format!("WebSocket connection to {url} failed: {e}")))?;
-        Self::over(Stream::WebSocket(ws))
     }
     /// The TCP connection [`Self::connect_addresses`] makes.
     fn connect_socket(host: &str, addrs: Vec<SocketAddr>, timeout: Duration) -> Result<TcpStream> {
@@ -400,9 +378,9 @@ impl Connection {
         stream.set_nodelay(true)?;
         Self::over(Stream::Tcp(stream))
     }
-    /// A connection over a WebSocket a server accepted ([`WsStream::accept`]).
-    pub fn from_websocket(ws: WsStream) -> Result<Self> {
-        Self::over(Stream::WebSocket(ws))
+    /// A connection over a registered custom transport.
+    pub fn from_transport(transport: Box<dyn CustomTransport>) -> Result<Self> {
+        Self::over(Stream::Custom(transport))
     }
     /// A connection over one end of an in-memory [`Pipe`].
     pub fn local(pipe: Pipe) -> Self {
@@ -413,9 +391,7 @@ impl Connection {
         let transport = match &stream {
             Stream::Tcp(_) | Stream::Detached => Transport::Tcp,
             Stream::Memory(_) => Transport::Memory,
-            Stream::WebSocket(w) => Transport::WebSocket {
-                secure: w.is_secure(),
-            },
+            Stream::Custom(t) => Transport::Custom { name: t.name() },
         };
         let _ = counters.transport.set(transport);
         let write = stream.try_clone()?;
@@ -495,7 +471,7 @@ impl Connection {
         let socket = match std::mem::replace(&mut self.reader.stream, Stream::Detached) {
             Stream::Tcp(s) => Socket::Tcp(s),
             Stream::Memory(p) => Socket::Memory(p),
-            Stream::WebSocket(w) => Socket::WebSocket(w),
+            Stream::Custom(t) => Socket::Custom(t),
             Stream::Detached => unreachable!("a connection is detached once, by value"),
         };
         (socket, self.reader, self.writer)
@@ -743,7 +719,7 @@ mod tests {
     fn peer(c: &Connection) -> SocketAddr {
         match &c.reader.stream {
             Stream::Tcp(s) => s.peer_addr().unwrap(),
-            Stream::WebSocket(w) => w.peer_addr().unwrap(),
+            Stream::Custom(t) => t.peer_addr().unwrap(),
             Stream::Memory(_) | Stream::Detached => panic!("not a socket"),
         }
     }

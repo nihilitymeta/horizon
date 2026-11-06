@@ -17,6 +17,7 @@ static MOD_API_LEVEL: [u8; 27] = horizon_mods::api_level::MARK;
 static FEATURE_REGISTRY: [u8; 27] = horizon_mods::feature_registry::MARK;
 
 fn main() {
+    event_horizon_websocket::install();
     std::hint::black_box(&MOD_API_LEVEL);
     std::hint::black_box(&FEATURE_REGISTRY);
 

@@ -534,7 +534,7 @@ impl Game<'_> {
                     "\"{}\" server{status}, {tx} tx, {rx} rx",
                     remote.brand
                 ));
-                // Horizon's own, only for a WebSocket (docs/websocket.md): over TCP the screen
+                // A custom transport names itself (docs/websocket.md): over TCP the screen
                 // stays vanilla's.
                 let transport = remote
                     .session
@@ -543,9 +543,8 @@ impl Game<'_> {
                     .unwrap()
                     .as_ref()
                     .and_then(|c| c.transport.get().copied());
-                if let Some(Transport::WebSocket { secure }) = transport {
-                    let scheme = if secure { "wss" } else { "ws" };
-                    d.line(format!("WebSocket ({scheme}): {}", remote.session.address));
+                if let Some(Transport::Custom { name }) = transport {
+                    d.line(format!("{name}: {}", remote.session.address));
                 }
             }
         }

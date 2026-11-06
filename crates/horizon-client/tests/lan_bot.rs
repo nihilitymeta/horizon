@@ -1023,6 +1023,7 @@ fn status_and_join() {
 /// poller. A TCP player's status on the same port is unchanged.
 #[test]
 fn a_websocket_player_joins_on_the_game_port() {
+    event_horizon_websocket::install();
     let Some(resources) = resources() else {
         return;
     };
@@ -1035,7 +1036,9 @@ fn a_websocket_player_joins_on_the_game_port() {
             Connection::connect(&ws, port, Duration::from_secs(5)).map_err(|e| e.to_string())?;
         assert_eq!(
             c.transport(),
-            horizon_protocol::connection::Transport::WebSocket { secure: false }
+            horizon_protocol::connection::Transport::Custom {
+                name: "WebSocket (ws)"
+            }
         );
         c.send(
             &handshake::Serverbound::Intention(handshake::Intention {

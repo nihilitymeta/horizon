@@ -11,6 +11,9 @@ The gameplay library re-exports the reusable API, keeping existing mod targets u
 Gameplay tests run in its library test target, separately from the reusable library's tests.
 There is no copy of gameplay in the executable's test target. Tools and probes depend only
 on the reusable library, so gameplay edits do not invalidate their builds.
+`horizon-transport` holds the generic transport traits and process-wide registry used by the protocol and LAN code.
+`event-horizon-websocket` implements and registers the WebSocket connector and server door; `event-horizon` installs
+it at startup.
 
 Paths: `L/` = `crates/horizon-client/src/`, `G/` = `crates/horizon-client/src/game/`, `W/` =
 `crates/horizon-world/src/`, `K/` = `crates/horizon-client-core/src/`, `C/` = `crates/horizon-command/src/`,

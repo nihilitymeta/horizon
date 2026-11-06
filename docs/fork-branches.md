@@ -94,7 +94,8 @@ it does nothing elsewhere. Graphics > Advanced > Frames; registers `anti_lag`.
 
 **WebSocket transport** (`archive/websocket`). A multiplayer transport over `ws://` and `wss://`, so a world can be
 reached through Cloudflare Tunnels and other HTTP-only relays. It covers the door's limits and settings and a tunnel
-player's forwarded address, and F3 shows the transport and path. Reference: [websocket.md](websocket.md).
+player's forwarded address, and F3 shows the transport and path. Code: `crates/event-horizon-websocket/`; generic
+transport traits and registration: `crates/horizon-transport/`. Reference: [websocket.md](websocket.md).
 
 ## For the launcher
 

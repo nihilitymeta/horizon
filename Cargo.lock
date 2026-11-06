@@ -1054,6 +1054,7 @@ dependencies = [
 name = "event-horizon"
 version = "0.1.0"
 dependencies = [
+ "event-horizon-websocket",
  "horizon-client",
  "horizon-core",
  "horizon-mods",
@@ -1069,6 +1070,21 @@ dependencies = [
  "horizon-world",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "event-horizon-websocket"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "getrandom 0.3.4",
+ "horizon-core",
+ "horizon-transport",
+ "log",
+ "mio",
+ "rustls",
+ "sha1",
+ "webpki-roots 1.0.10",
 ]
 
 [[package]]
@@ -1545,6 +1561,7 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "egui-winit",
+ "event-horizon-websocket",
  "flate2",
  "fs4",
  "gilrs",
@@ -1575,6 +1592,7 @@ dependencies = [
  "horizon-telemetry",
  "horizon-theme",
  "horizon-threads",
+ "horizon-transport",
  "horizon-world",
  "log",
  "miniz_oxide 0.8.9",
@@ -1626,6 +1644,7 @@ dependencies = [
  "bytemuck",
  "chrono",
  "event-horizon-observe",
+ "event-horizon-websocket",
  "flate2",
  "fs4",
  "gilrs",
@@ -1654,6 +1673,7 @@ dependencies = [
  "horizon-telemetry",
  "horizon-theme",
  "horizon-threads",
+ "horizon-transport",
  "horizon-world",
  "log",
  "miniz_oxide 0.8.9",
@@ -1901,18 +1921,16 @@ name = "horizon-protocol"
 version = "0.1.0"
 dependencies = [
  "aes",
- "base64",
  "flate2",
  "getrandom 0.3.4",
  "horizon-core",
+ "horizon-transport",
  "horizon-world",
  "ipconfig",
  "log",
- "rustls",
  "serde_json",
  "sha1",
  "sha2",
- "webpki-roots 1.0.10",
 ]
 
 [[package]]
@@ -2023,6 +2041,13 @@ dependencies = [
  "libmimalloc-sys",
  "mimalloc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "horizon-transport"
+version = "0.1.0"
+dependencies = [
+ "mio",
 ]
 
 [[package]]
