@@ -6,14 +6,16 @@
 //! until #34 registers them from that crate, and talk to the shared
 //! `event_horizon_observe` store the windows read.
 use super::{Arg, Context, Game, R, Target, err};
+use crate::dev_input::console;
 use crate::mobs::observe::{self, View};
 use crate::mobs::observe_wire::{self, Wire};
 use crate::nbt_path::NbtPath;
 use crate::{data_cmd, text::Text};
+use std::sync::atomic::Ordering;
 
 /// A target's entity id; players have none here (`/data get entity @s` reads
 /// the acting player, who is nobody on a tick).
-pub(super) fn id_of(t: Target) -> Option<u32> {
+pub(in crate::game) fn id_of(t: Target) -> Option<u32> {
     match t {
         Target::Player | Target::Guest(_) => None,
         Target::Mob(id)
@@ -38,17 +40,8 @@ pub(super) fn id_of(t: Target) -> Option<u32> {
     }
 }
 
-/// Remember targets a command or the Lua console named, so the tick reads
-/// their data: those with an id here (not players), read in `dimension`.
-pub(super) fn remember(targets: &[Target], dimension: &str) {
-    let with: Vec<(u32, Option<String>)> = targets
-        .iter()
-        .filter_map(|&t| id_of(t).map(|id| (id, Some(dimension.to_owned()))))
-        .collect();
-    remember_with_ids(&with);
-}
-
-/// [`remember`] with each target's id.
+/// Remember the entities with their ids, so the tick reads their data:
+/// those read in `dimension`.
 fn remember_with_ids(targets: &[(u32, Option<String>)]) {
     observe::remember(targets);
 }
@@ -80,16 +73,81 @@ impl Game<'_> {
     }
 
     /// The world closed: nothing of it stays watched. The windows' store
-    /// empties, the AI logs' files close, the tick count restarts, the
-    /// console closes and drops its handlers, and the tools let the pointer
-    /// go, so a watch on entity 123 of this world never reads the next
-    /// world's entity 123.
+    /// empties, the AI logs' files close, the tick count restarts, and
+    /// the tools let the pointer go, so a watch on entity 123 of this world
+    /// never reads the next world's entity 123. The console closes and
+    /// drops its handlers in the console mod's `world_lifecycle` hook.
     pub(in crate::game) fn dev_tools_world_closed(&mut self) {
         // The stick's own statics are reset by the mod's `world_lifecycle`
         // hook on the server; this half empties the shared store.
         observe::reset();
-        super::lua_console::world_closed();
         crate::dev_input::world_closed();
+    }
+
+    /// `/lua`: the console window; `/lua <code>` runs a line in it.
+    pub(super) fn cmd_lua(&mut self, code: Option<String>) -> super::R<i32> {
+        // The console runs with the owner's powers and shows on the owner's
+        // screen: a guest's /lua is refused, as every tool's command is.
+        self.dev_tools_owner_only()?;
+        match code {
+            None => {
+                let open = !console::OPEN.load(Ordering::Relaxed);
+                if open {
+                    console::open_from_command();
+                } else {
+                    console::OPEN.store(false, Ordering::Relaxed);
+                }
+                let line = horizon_client::text::Text::tr(
+                    if open {
+                        "horizon.dev_tools.lua.open"
+                    } else {
+                        "horizon.dev_tools.lua.closed"
+                    },
+                    &[],
+                );
+                let line = self.with_tools_note(line);
+                self.feedback(line);
+                Ok(1)
+            }
+            Some(code) => {
+                console::open_from_command();
+                console::submit(format!("> {code}"), code);
+                Ok(1)
+            }
+        }
+    }
+
+    /// Once a frame on the window's game: the completions the console asked
+    /// for. Inside `mc.cmd("…")` they are the chat box's own, from the
+    /// tree the server sent; elsewhere the `mc` names.
+    pub(in crate::game) fn dev_console_complete(&mut self) {
+        let Some((text, cursor)) = console::take_completion_request() else {
+            return;
+        };
+        let tree_completions = |start: usize, command: &str, skip: usize| {
+            // `skip` bytes of `command` are a prefix the line does not hold.
+            let tree = crate::game::chat::chat_tree(&self.remote);
+            let parse = tree.parse(command, &self.ui.registries);
+            let (range, list) = tree.client_suggestions(&parse, command.len(), &self.ui.registries);
+            let map = |i: usize| start + i.saturating_sub(skip);
+            console::Completions {
+                text: text.clone(),
+                cursor,
+                range: (map(range.0), map(range.1)),
+                items: list.into_iter().map(|s| (s.text, s.tooltip)).collect(),
+                hint: console::call_context(&text, cursor)
+                    .and_then(|c| console::signature_hint(&c.name)),
+            }
+        };
+        let completions = if let Some((start, command)) = console::command_context(&text, cursor) {
+            tree_completions(start, &command, 0)
+        } else if let Some((start, partial)) = console::entity_context(&text, cursor) {
+            // An entity argument completes as /tp's target does.
+            tree_completions(start, &format!("tp {partial}"), 3)
+        } else {
+            console::lua_completions(&text, cursor)
+        };
+        console::set_completions(completions);
     }
 
     /// A target as the tools watch it, and its id: a player is kept by

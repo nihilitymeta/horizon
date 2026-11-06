@@ -532,11 +532,7 @@ impl Game<'_> {
             self.native_lifecycle.cancel_server_tick();
             return Err(error);
         }
-        // The developer tools' console, after every level ticked; the
-        // inspect reads are the dev-tools mod's `ServerTickEnd` hook below.
-        if !paused {
-            self.dev_console_tick();
-        }
+        // The console runs in the console mod's `ServerTickEnd` hook below.
         // `ServerTickEnd`: an errored tick or an idle-close failure (at
         // the `?` above) never reaches this site.
         self.native_lifecycle_server_tick_end(paused);

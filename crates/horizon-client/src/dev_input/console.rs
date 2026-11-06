@@ -1,7 +1,7 @@
 //! The Lua console's shared state: the lines it shows, the code it runs and
 //! the completions of its input line (docs/dev-tools.md). The window (the
 //! windows' half, the `dev_tools` console) draws it, and the game's own code
-//! (`game/commands/lua_console.rs`) answers its completion requests. Both
+//! (`game/commands/inspect.rs`) answers its completion requests. Both
 //! read and write these queues; neither draws the other.
 
 use std::collections::VecDeque;

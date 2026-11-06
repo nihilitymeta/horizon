@@ -18,8 +18,8 @@ The tools live on the `egui-tools` branch of whos-carmen/horizon. It is stacked 
 The code is in `crates/event-horizon-observe/` (the observation store and the wire), `crates/horizon-client/src/dev_input.rs`
 (the state the game and the tools share), `dev_input/console.rs` (the console's queues), `dev_input/mods.rs` (the scripted
 mods' status), `crates/event-horizon-dev-tools/` (the windows, the stick's server half and the guests' windows; the
-commands and the console stay in `game/commands/inspect.rs` and `game/commands/lua_console.rs` until #34 and #32), and
-`mobs/observe.rs`.
+commands stay in `game/commands/inspect.rs` until #34), `crates/event-horizon-lua/src/console.rs` (the console's
+runtime, a built-in mod) and `mobs/observe.rs`.
 
 ## Turning the tools on
 
@@ -64,7 +64,7 @@ stopped by Luau's interrupt, so an endless loop does not freeze the server threa
 Everything the tools remember belongs to the process: the watched entities, the open AI log files, the chart's tick
 count, the console's tick handlers and the ids its selectors found, and whether the tools hold the pointer. An entity
 id means nothing outside its world. So closing a world clears it all (`Game::dev_tools_world_closed`, from
-`finish_close_world`):
+`finish_close_world`, and the console mod's `world_lifecycle` hook on the server):
 
 - the windows close, and the log files are closed
 - the console window closes, and its handlers stop at the next server tick; its output and history stay
@@ -189,8 +189,11 @@ While the window is open, the block's collision boxes are drawn in the world in 
 `/lua` opens the console, takes the pointer for the tools, and focuses the input line. `/lua <code>` runs one line
 in it.
 
-The console is a Luau state on the server thread (`game/commands/lua_console.rs`, mlua built from source). Once
-each server tick, after the levels have ticked, it runs what the window queued (`dev_input/console.rs`).
+The console is a Luau state on the server thread (`crates/event-horizon-lua/src/console.rs`, mlua built from
+source), a built-in mod that runs on the server tick. Once each server tick, after the levels have ticked, it runs
+what the window queued (`dev_input/console.rs`). It reads and writes the world through the engine's generic host
+helpers (`select_ids`, `entity_data_in_place`, `set_entity_data`, `entity_name_in_place`, `run_command_as_owner`,
+`level_dimension`), so the engine's own code keeps only the `/lua` command and the window's completions.
 
 The window:
 
@@ -216,11 +219,11 @@ Inside any call, a popup shows the function's signature and an example.
 
 ### The `mc` table
 
-The `mc` table is bound to the game for the length of the chunk (`Lua::scope`), so a script cannot keep the game
-after its run. It is bound again for each run and each tick.
+The `mc` table is bound to the server's game for the length of the chunk (`Lua::scope`), so a script cannot keep
+the game after its run. It is bound again for each run and each tick.
 
 An *entity* argument is a selector string, such as `"@e[type=pig,limit=1]"`, or an id that a selector found before
-(`mc.select` returns them). Players have no id here, so reach them by selector, in a command.
+(`mc.select` returns them). A player's id is its network entity id; reach a player by selector too.
 
 | Function | Description |
 |---|---|

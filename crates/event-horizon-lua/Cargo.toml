@@ -12,6 +12,10 @@ autotests = false
 [dependencies]
 horizon-client = { path = "../horizon-client", default-features = false }
 horizon-client-core = { path = "../horizon-client-core" }
+# The store the developer windows read and the wire a server and a guest's
+# client speak (docs/dev-tools.md); the console's `mc.inspect` and `mc.watch`
+# open their pages in it.
+event-horizon-observe = { path = "../event-horizon-observe" }
 # Scripted mods (docs/lua-bindings.md): the `scripts/` capability, the mods folder index.
 horizon-mods = { path = "../horizon-mods", default-features = false, features = ["index", "lua"] }
 # Luau, built from source, no system library; one state per mod, shared across threads.

@@ -1096,6 +1096,7 @@ dependencies = [
 name = "event-horizon-lua"
 version = "0.1.0"
 dependencies = [
+ "event-horizon-observe",
  "horizon-client",
  "horizon-client-core",
  "horizon-core",
@@ -1640,7 +1641,6 @@ dependencies = [
  "horizon-world",
  "log",
  "miniz_oxide 0.8.9",
- "mlua",
  "naga",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",

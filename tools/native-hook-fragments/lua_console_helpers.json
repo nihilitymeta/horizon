@@ -1,0 +1,16 @@
+{
+  "hooks": [],
+  "helpers": [
+    {"name": "select_ids", "target": "horizon_client::game::native_console::Game<'_>::native_console_select_ids"},
+    {"name": "entity_data_in_place", "target": "horizon_client::game::native_console::Game<'_>::native_console_entity_data"},
+    {"name": "set_entity_data", "target": "horizon_client::game::native_console::Game<'_>::native_console_set_entity_data"},
+    {"name": "entity_name_in_place", "target": "horizon_client::game::native_console::Game<'_>::native_console_entity_name"},
+    {"name": "run_command_as_owner", "target": "horizon_client::game::native_console::Game<'_>::native_console_run_command"},
+    {"name": "level_dimension", "target": "horizon_client::game::native_console::Game<'_>::native_console_dimension"}
+  ],
+  "rust_summary": "the `/lua` console's reads and writes on the level in place: the ids a selector names, an entity's data and name, a write of that data, a command run as the world's owner, and the dimension of the level in place.",
+  "doc_summary": "`select_ids(selector)` are the ids the entities a selector names have, as the owner's command finds them; `entity_data_in_place(id)` is the entity's data as `/data get entity` prints it; `set_entity_data(id, tag)` writes it back; `entity_name_in_place(id)` is its name as plain text; `run_command_as_owner(line)` runs a command as the world's owner and returns the chat replies; `level_dimension()` is the dimension of the level in place. Bundles need \"hooks\": @API:lua_console_helpers@.",
+  "comments": [
+    "crates/horizon-client/src/game/native_console.rs"
+  ]
+}
