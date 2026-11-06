@@ -1,0 +1,13 @@
+{
+  "hooks": [],
+  "helpers": [
+    {"name": "entity_data_with_attachments", "target": "horizon_client::game::native_entity_data::Game<'_>::native_entity_data_with_attachments"},
+    {"name": "server_owner", "target": "horizon_client::game::native_server::Game<'_>::native_server_owner"}
+  ],
+  "rust_summary": "the developer tools' own reads: an entity's data with what mods keep on it under `horizon:attachments` (`native_entity_data_with_attachments`), and the serving game's owner uuid (`native_server_owner`).",
+  "doc_summary": "`entity_data_with_attachments(dimension, id)` is `entity_data` with what mods keep on the entity under `horizon:attachments`, as the dev tools' Inspect window shows it, and `server_owner()` is the single-player world owner's uuid, the player the dev tools' commands act for. Bundles need \"hooks\": @API:dev_inspect_helpers@.",
+  "comments": [
+    "crates/horizon-client/src/game/native_entity_data.rs",
+    "crates/horizon-client/src/game/native_server.rs"
+  ]
+}

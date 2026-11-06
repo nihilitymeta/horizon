@@ -16,7 +16,7 @@ static FEATURE_REGISTRY: [u8; 27] = horizon_mods::feature_registry::MARK;
 pub fn builtin_mods(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
     let lua = event_horizon_lua::discover(args);
     let mut mods = event_horizon_extras::mods();
-    mods.extend(event_horizon_lua::dev_tools::mods(!lua.is_empty()));
+    mods.extend(event_horizon_dev_tools::mods(!lua.is_empty()));
     mods.extend(lua);
     mods
 }

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 rust-version = "1.90"
-description = "Event Horizon's Lua runtime and developer windows"
+description = "Event Horizon's Lua runtime for scripted mods"
 autobins = false
 autoexamples = false
 autotests = false
@@ -19,10 +19,6 @@ mlua = { version = "0.12", features = ["luau", "vendored", "send"] }
 horizon-world = { path = "../horizon-world" }
 serde_json = { version = "1.0.151" }
 log = "0.4"
-# The developer windows draw with egui over the world (docs/dev-tools.md): HORIZON_DEV_TOOLS=1.
-egui = { version = "0.37", default-features = false, features = ["default_fonts"] }
-egui-wgpu = { version = "0.37", default-features = false }
-wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "metal", "wgsl", "naga-ir"] }
 
 [dev-dependencies]
 horizon-core = { path = "../horizon-core" }

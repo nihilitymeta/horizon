@@ -2,6 +2,7 @@
 //! `EntityRef` (docs/native-mods.md, "Entity and level handles", #7387): what
 //! `/data` and `/tag` read and change. They return `None` (or `false`) for a
 //! stale handle or on a client.
+use super::commands::DataRef;
 use super::{Dim, Game, commands::Target};
 use horizon_client::mod_api::EntityRef;
 use horizon_world::nbt::{Compound, Tag};
@@ -123,6 +124,52 @@ impl Game<'_> {
         }
     }
 
+    /// The entity `id`'s data in `dimension` as the developer windows show
+    /// it: [`Self::native_entity_data`]'s data with what mods keep on the
+    /// entity under `horizon:attachments`, as the save writes it. `/data`
+    /// itself stays vanilla's. None as `native_entity_data`'s None.
+    /// API @API:dev_inspect_helpers@.
+    pub(super) fn native_entity_data_with_attachments(
+        &mut self,
+        dimension: &str,
+        id: u32,
+    ) -> Option<Compound> {
+        let own = self.dim.id();
+        self.native_in_dimension(dimension, |g| {
+            g.entity_data_with_attachments_in_level(id, own)
+        })
+        .flatten()
+    }
+
+    /// The entity `id`'s data in the level in place, with its attachments.
+    fn entity_data_with_attachments_in_level(
+        &mut self,
+        id: u32,
+        own_dimension: &str,
+    ) -> Option<Compound> {
+        use horizon_world::attachments::ATTACHMENTS_KEY;
+        let t = self.native_target_in_level(id, own_dimension)?;
+        let mut data = self.data_of(&DataRef::Entity(t)).ok()?;
+        match t {
+            Target::Guest(conn) => {
+                let uuid = self.command_guest(conn)?.uuid;
+                let mods = self
+                    .guest_attachments
+                    .get(&uuid)
+                    .map(|a| a.to_nbt())
+                    .filter(|c| !c.is_empty());
+                if let (Some(mods), Tag::Compound(c)) = (mods, &mut data) {
+                    c.insert(ATTACHMENTS_KEY.into(), Tag::Compound(mods));
+                }
+            }
+            _ => crate::game::persist::write_attachments(&mut data, &self.entity_attachments),
+        }
+        match data {
+            Tag::Compound(c) => Some(c),
+            _ => None,
+        }
+    }
+
     /// The entity `id`'s name in `dimension`, as plain text
     /// (`Entity.getName`): its custom name, a player's name, else its type's
     /// name. The window's own player counts only in the dimension it is in.
@@ -228,12 +275,14 @@ mod tests {
     #[allow(dead_code)]
     fn the_host_offers_the_new_helpers(host: &mut dyn horizon_client::mod_api::Host) {
         let _ = host.entity_data("minecraft:overworld", 1);
+        let _ = host.entity_data_with_attachments("minecraft:overworld", 1);
         let _ = host.entity_name_at("minecraft:overworld", 1);
         let _ = host.entity_is_mob("minecraft:overworld", 1);
         let _ = host.block_info("minecraft:overworld", [0, 64, 0], [0, 1, 0]);
         let _ = host.send_payload(1, "horizon:dev_tools", &[0]);
         let _ = host.player_sneaking(1);
         let _ = host.player_permission(1);
+        let _ = host.server_owner();
     }
 
     #[test]
@@ -259,6 +308,61 @@ mod tests {
         assert!(!entity_is_mob(Target::Item(7), true));
         assert!(!entity_is_mob(Target::Player, true));
         assert!(!entity_is_mob(Target::Guest(1), true));
+    }
+
+    /// The dev windows show a mod's data on a mob under
+    /// `horizon:attachments`; `/data`'s own read never has it.
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn the_dev_windows_show_what_mods_keep_on_a_mob_and_data_stays_vanillas() {
+        use super::super::commands::data::DataRef;
+        use horizon_client::nbt_path::NbtPath;
+        use horizon_world::attachments::{ATTACHMENTS_KEY, Attachments};
+        use horizon_world::nbt::{Compound, JavaString};
+
+        let mut game = game_with_resources();
+        let kind = game.res.mob_types().get("minecraft:cow").unwrap().clone();
+        for id in [42, 43] {
+            game.mobs.push(horizon_client::mobs::Mob::new(
+                id,
+                kind.clone(),
+                horizon_core::geometry::Vec3::new(0.0, 0.0, 0.0),
+                0.0,
+            ));
+        }
+        // A mod's `mob.data` on cow 42, as the attachment store keeps it.
+        let mut load = Compound::default();
+        load.insert(JavaString::from("viral_load"), Tag::Double(15f64.to_bits()));
+        let mut data = Compound::default();
+        data.insert(JavaString::from("value"), Tag::Compound(load));
+        let mut names = Compound::default();
+        names.insert(JavaString::from("data"), Tag::Compound(data));
+        let mut raw = Compound::default();
+        raw.insert(JavaString::from("example_mod"), Tag::Compound(names));
+        let uuid = game.uuid_for(42);
+        game.entity_attachments
+            .insert(uuid, Attachments::from_nbt(raw.clone()));
+        let shown = game
+            .native_entity_data_with_attachments("minecraft:overworld", 42)
+            .unwrap();
+        assert_eq!(
+            shown.get(&JavaString::from(ATTACHMENTS_KEY)),
+            Some(&Tag::Compound(raw))
+        );
+        // A path into it reads as the watch button's chart would.
+        let path =
+            NbtPath::parse("\"horizon:attachments\".example_mod.data.value.viral_load").unwrap();
+        assert_eq!(
+            path.get(&Tag::Compound(shown)).unwrap(),
+            vec![Tag::Double(15f64.to_bits())]
+        );
+        // A cow without mod data has none, and /data's own read never has it.
+        let plain_cow = game
+            .native_entity_data_with_attachments("minecraft:overworld", 43)
+            .unwrap();
+        assert!(!plain_cow.contains_key(&JavaString::from(ATTACHMENTS_KEY)));
+        let plain = game.data_of(&DataRef::Entity(Target::Mob(42))).unwrap();
+        assert!(plain.get(ATTACHMENTS_KEY).is_none());
     }
 
     /// A game with the prepared resources and an integrated server.

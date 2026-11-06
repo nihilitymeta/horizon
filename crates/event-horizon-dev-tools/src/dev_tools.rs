@@ -8,8 +8,9 @@
 //! one.
 //!
 //! This is the windows' half: it draws with the shared state of
-//! [`horizon_client::dev_input`] and never the other way round, so the two can move
-//! apart (#19).
+//! [`horizon_client::dev_input`] and never the other way round. The server
+//! half (the stick, the watched data, the guests' pages and the AI logs) is
+//! [`crate::inspect`], which moved out of the engine with it (#31).
 pub mod console;
 
 use horizon_client::dev_input;
@@ -17,7 +18,10 @@ use horizon_client::gfx::native_render::{RenderHooks, WorldDrawnEvent};
 use horizon_client::mobs::observe::{
     self, BrainSnapshot, GoalRow, HistoryTick, Inspected, InspectedBlock, Request, Series, View,
 };
-use horizon_client::mod_api::{Hooks, Host, NativeBlockRim, VisualsEvent};
+use horizon_client::mod_api::{
+    Hooks, Host, NativeBlockRim, ServerTickEvent, ServerTickPhase, VisualsEvent,
+    WorldLifecycleEvent, WorldPhase,
+};
 use horizon_client_core::snbt::java_hash_order;
 use horizon_world::nbt::Tag;
 use horizon_world::snbt_text::to_snbt;
@@ -968,6 +972,29 @@ impl DevTools {
 impl Hooks for DevTools {
     fn render(&self) -> Option<&dyn RenderHooks> {
         Some(self)
+    }
+    /// The server half's tick (#31): after every level ticked, on a world
+    /// that runs. Drains the stick's requests and what the guests' clients
+    /// said, turns the stick's pages, reads the watched entities and blocks,
+    /// writes the AI logs and sends the guests their pages.
+    fn server_tick(&self, host: &mut dyn Host, event: &mut ServerTickEvent<'_>) {
+        if matches!(
+            event.phase,
+            ServerTickPhase::ServerTickEnd {
+                world_running: true
+            }
+        ) {
+            crate::inspect::tick(host);
+        }
+    }
+    /// The world closed: nothing of it stays watched. The stick's windows,
+    /// the guests' pages and the tick counts go, and the store's watches,
+    /// logs and snapshots with them (`observe::reset`), so a watch on
+    /// entity 123 of this world never reads the next world's entity 123.
+    fn world_lifecycle(&self, _host: &mut dyn Host, event: &mut WorldLifecycleEvent<'_>) {
+        if event.phase == WorldPhase::WorldCloseFinal {
+            crate::inspect::world_closed();
+        }
     }
     /// `/nav`: the path drawn in the world as block outlines. A node is
     /// where the mob's feet go, usually air, and a rim takes the shape of

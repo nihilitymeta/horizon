@@ -17,8 +17,9 @@ The tools live on the `egui-tools` branch of whos-carmen/horizon. It is stacked 
 
 The code is in `crates/event-horizon-observe/` (the observation store and the wire), `crates/horizon-client/src/dev_input.rs`
 (the state the game and the tools share), `dev_input/console.rs` (the console's queues), `dev_input/mods.rs` (the scripted
-mods' status), `crates/event-horizon-lua/src/dev_tools.rs` and `dev_tools/console.rs` (the windows), `mobs/observe.rs`,
-`game/commands/inspect.rs` and `game/commands/lua_console.rs`.
+mods' status), `crates/event-horizon-dev-tools/` (the windows, the stick's server half and the guests' windows; the
+commands and the console stay in `game/commands/inspect.rs` and `game/commands/lua_console.rs` until #34 and #32), and
+`mobs/observe.rs`.
 
 ## Turning the tools on
 
@@ -291,8 +292,8 @@ statics that keep them, the bounded name interner and the wire a server and a gu
 game code, so it is read and tested on its own. `horizon-client-lib` depends on it; `mobs/observe.rs` keeps the game's
 part, the snapshot a mob's AI step takes, and re-exports the rest under the path the callers use.
 
-The tools are a built-in trait mod. `dev_tools::mods()` gives `entry::main` a `Hooks` object when the tools are on,
-or when Lua mods are, for the inspect stick. A game with neither has no `Hooks` object, so the engine's paths for a
+The tools are a built-in trait mod. `event_horizon_dev_tools::mods()` gives `event_horizon::run` a `Hooks` object when
+the tools are on, or when Lua mods are, for the inspect stick. A game with neither has no `Hooks` object, so the engine's paths for a
 game without mods stay as they are.
 Its `RenderHooks::world_drawn` draws egui on the render thread, with the frame's device, queue, encoder and colour
 target, through the renderer's own hook point for mods ([native-mods.md](native-mods.md#render-hook-points)).

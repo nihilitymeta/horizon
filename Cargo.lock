@@ -1054,6 +1054,7 @@ dependencies = [
 name = "event-horizon"
 version = "0.1.0"
 dependencies = [
+ "event-horizon-dev-tools",
  "event-horizon-extras",
  "event-horizon-lua",
  "event-horizon-websocket",
@@ -1070,6 +1071,21 @@ name = "event-horizon-debug"
 version = "0.1.0"
 
 [[package]]
+name = "event-horizon-dev-tools"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "egui-wgpu",
+ "event-horizon-observe",
+ "horizon-client",
+ "horizon-client-core",
+ "horizon-world",
+ "log",
+ "serde_json",
+ "wgpu",
+]
+
+[[package]]
 name = "event-horizon-extras"
 version = "0.1.0"
 dependencies = [
@@ -1080,8 +1096,6 @@ dependencies = [
 name = "event-horizon-lua"
 version = "0.1.0"
 dependencies = [
- "egui",
- "egui-wgpu",
  "horizon-client",
  "horizon-client-core",
  "horizon-core",
@@ -1090,13 +1104,13 @@ dependencies = [
  "log",
  "mlua",
  "serde_json",
- "wgpu",
 ]
 
 [[package]]
 name = "event-horizon-observe"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "horizon-world",
  "serde",
  "serde_json",

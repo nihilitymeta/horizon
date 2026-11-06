@@ -16,8 +16,9 @@ on the reusable library, so gameplay edits do not invalidate their builds.
 `event-horizon-websocket` implements and registers the WebSocket connector and server door; `event-horizon` installs
 it at startup.
 `event-horizon-debug` holds the F3 overlay's pure helpers: the frame-time window and the process memory.
-`event-horizon-lua` holds the Lua runtime and the developer windows; `event-horizon-extras` holds the zoom, minimap,
-FPS counter and keystrokes as one built-in native mod; `event-horizon` installs them.
+`event-horizon-lua` holds the Lua runtime; `event-horizon-dev-tools` holds the developer tools (the egui windows and
+their server half); `event-horizon-extras` holds the zoom, minimap, FPS counter and keystrokes as one built-in native
+mod; `event-horizon` installs them.
 
 Paths: `L/` = `crates/horizon-client/src/`, `G/` = `crates/horizon-client/src/game/`, `W/` =
 `crates/horizon-world/src/`, `K/` = `crates/horizon-client-core/src/`, `C/` = `crates/horizon-command/src/`,

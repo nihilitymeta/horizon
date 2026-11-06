@@ -1,0 +1,27 @@
+[package]
+name = "event-horizon-dev-tools"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version = "1.90"
+description = "Event Horizon's developer tools: the egui windows over the world and the server half that feeds them"
+autobins = false
+autoexamples = false
+autotests = false
+
+[dependencies]
+horizon-client = { path = "../horizon-client", default-features = false }
+horizon-client-core = { path = "../horizon-client-core" }
+# The store the windows read and the wire a server and a guest's client
+# speak (docs/dev-tools.md); the engine's two packet feeds move through it.
+event-horizon-observe = { path = "../event-horizon-observe" }
+horizon-world = { path = "../horizon-world" }
+serde_json = { version = "1.0.151" }
+log = "0.4"
+# The windows draw with egui over the world (docs/dev-tools.md): HORIZON_DEV_TOOLS=1.
+egui = { version = "0.37", default-features = false, features = ["default_fonts"] }
+egui-wgpu = { version = "0.37", default-features = false }
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "metal", "wgsl", "naga-ir"] }
+
+[lints]
+workspace = true

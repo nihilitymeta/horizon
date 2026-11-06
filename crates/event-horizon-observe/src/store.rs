@@ -352,6 +352,125 @@ pub struct InspectedBlock {
     pub snapshot: Option<BlockSnapshot>,
 }
 
+/// The entities the tools' commands named, as the ids the store holds them
+/// by, with the dimension each is read in: None for a player, whose record
+/// names the dimension they are in. One list a process: the dev-tools mod's
+/// tick reads them ([`watch_entries`]); a command that names one adds it
+/// ([`remember`]). The store and this list stay in step
+/// ([`forget_unwatched`]).
+static WATCH: Mutex<Vec<(u32, Option<String>)>> = Mutex::new(Vec::new());
+/// `/mobai log`: the mobs logged, each with its open file. The files close
+/// when the list drains ([`stop_logs`]) or the world closes ([`reset`]).
+static LOGS: Mutex<Vec<(u32, std::fs::File)>> = Mutex::new(Vec::new());
+/// What the clients of guests told the server on the tools' channel
+/// (`Wire::Hello`, `Wire::Stop`, `Wire::Interval`; the server never receives
+/// pages), each with the player that sent it, waiting for the server's next
+/// tick ([`take_server_commands`]).
+static SERVER_COMMANDS: Mutex<Vec<(u128, Wire)>> = Mutex::new(Vec::new());
+
+/// Where the tools keep their files, under the game folder.
+pub const DIR: &str = "dev-tools";
+
+/// Remember entities a command named, so the tick reads their data: each
+/// with the dimension it is read in (None for a player, wherever they are).
+/// One a process; a duplicate id is kept once.
+pub fn remember(entries: &[(u32, Option<String>)]) {
+    let mut watch = WATCH.lock().unwrap_or_else(|e| e.into_inner());
+    for (id, dimension) in entries {
+        if !watch.iter().any(|(i, _)| *i == *id) {
+            watch.push((*id, dimension.clone()));
+        }
+    }
+}
+
+/// The entities remembered ([`remember`]), in the order first named.
+pub fn watch_entries() -> Vec<(u32, Option<String>)> {
+    WATCH.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// Forget the remembered entities the store no longer watches or logs.
+pub fn forget_unwatched() {
+    let watched = watched();
+    let logged: Vec<u32> = LOGS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .map(|(id, _)| *id)
+        .collect();
+    WATCH
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|(id, _)| watched.contains(id) || logged.contains(id));
+}
+
+/// Whether any mob's AI is logged, the tick's cheap check.
+pub fn is_logging() -> bool {
+    !LOGS.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+}
+
+/// Writes `line` to mob `id`'s open log file, if it has one.
+pub fn write_log_line(id: u32, line: &str) {
+    use std::io::Write;
+    let mut logs = LOGS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, file)) = logs.iter_mut().find(|(i, _)| *i == id) {
+        let _ = writeln!(file, "{line}");
+    }
+}
+
+/// Closes every open log file: how many there were. The store's log marks
+/// are not touched; [`clear_logs`] does that.
+pub fn stop_logs() -> usize {
+    LOGS.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .drain(..)
+        .count()
+}
+
+/// The time a log's file name carries.
+fn log_stamp() -> String {
+    chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string()
+}
+
+/// Opens mob `id`'s AI log in `dev-tools/logs/`, named after the mob, and
+/// marks it logged: the file's path, or None when it is logged already. The
+/// snapshots come from the AI step, which only watches what the store
+/// lists: a log is a watch without a window.
+pub fn open_log(name: &str, id: u32) -> Result<Option<String>, String> {
+    let mut logs = LOGS.lock().unwrap_or_else(|e| e.into_inner());
+    if logs.iter().any(|(i, _)| *i == id) {
+        return Ok(None);
+    }
+    let dir = std::path::Path::new(DIR).join("logs");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let name: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect();
+    let path = dir.join(format!("mobai-{name}-{id}-{}.jsonl", log_stamp()));
+    let file = std::fs::File::create(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    logs.push((id, file));
+    let shown = path.display().to_string();
+    add_log(&[id]);
+    set_log_file(id, &shown);
+    Ok(Some(shown))
+}
+
+/// A guest's client told the server `wire` on the tools' channel, as the
+/// player `uuid`'s client: it is read at the server's next tick
+/// ([`take_server_commands`]).
+pub fn push_server_command(uuid: u128, wire: Wire) {
+    SERVER_COMMANDS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push((uuid, wire));
+}
+
+/// What the clients told the server since the last call, in order, each
+/// with the player whose client said it.
+pub fn take_server_commands() -> Vec<(u128, Wire)> {
+    std::mem::take(&mut *SERVER_COMMANDS.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
 static REQUESTS: Mutex<Vec<Request>> = Mutex::new(Vec::new());
 
 /// Ask the game for `request`, at its next server tick.
@@ -580,6 +699,12 @@ pub fn clear_logs() {
 /// that happens to have the same id is not shown under the old one's window.
 pub fn reset() {
     REQUESTS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    WATCH.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    LOGS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    SERVER_COMMANDS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
     *REMOTE.lock().unwrap_or_else(|e| e.into_inner()) = None;
     OUTBOX.lock().unwrap_or_else(|e| e.into_inner()).clear();
     let mut s = state();
@@ -1008,5 +1133,91 @@ mod tests {
         request(Request::StartLog(4));
         reset();
         assert!(take_requests().is_empty());
+    }
+
+    #[test]
+    fn the_servers_inbox_holds_each_players_commands_until_read() {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        // Nothing waits: taking drains.
+        assert!(take_server_commands().is_empty());
+        // A guest's client says it shows the windows and asks for another
+        // interval; another's says its window closed. Each keeps its player.
+        push_server_command(7, Wire::Hello);
+        push_server_command(7, Wire::Interval(250));
+        push_server_command(9, Wire::Stop);
+        // A page a client sent by mistake is pushed as-is: the reader drops it.
+        push_server_command(
+            7,
+            Wire::Entity(crate::wire::EntityPage {
+                id: 1,
+                view: View::Data,
+                name: String::new(),
+                data: None,
+                brain: None,
+                history: Vec::new(),
+                interval: 0,
+            }),
+        );
+        let taken = take_server_commands();
+        assert!(
+            matches!(
+                &taken[..],
+                [
+                    (7, Wire::Hello),
+                    (7, Wire::Interval(250)),
+                    (9, Wire::Stop),
+                    (7, Wire::Entity(_))
+                ]
+            ),
+            "{taken:?}"
+        );
+        assert!(take_server_commands().is_empty());
+        // A world close drops what waited.
+        push_server_command(7, Wire::Hello);
+        reset();
+        assert!(take_server_commands().is_empty());
+    }
+
+    #[test]
+    fn remembered_entities_come_and_go_with_the_watches() {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        let dim = "minecraft:overworld".to_string();
+        // One a player, wherever they are; one of a dimension, kept once.
+        remember(&[(7, None), (8, Some(dim.clone())), (8, Some(dim.clone()))]);
+        assert_eq!(watch_entries(), vec![(7, None), (8, Some(dim.clone()))]);
+        // The store watching nothing and no log open drops them; a watch or
+        // a log keeps one.
+        forget_unwatched();
+        assert!(watch_entries().is_empty());
+        remember(&[(7, None)]);
+        add(&[7], View::Data);
+        remember(&[(8, Some(dim.clone()))]);
+        let cow = open_log("Cow", 8).unwrap().expect("a new log");
+        forget_unwatched();
+        assert_eq!(
+            watch_entries(),
+            vec![(7, None), (8, Some("minecraft:overworld".into()))]
+        );
+        // A world close forgets them and closes the logs.
+        assert!(is_logging());
+        std::fs::remove_file(&cow).unwrap();
+        reset();
+        assert!(watch_entries().is_empty());
+        assert!(!is_logging());
+        // A log opens once per mob, under the tools' folder.
+        let path = open_log("Zombie", 8).unwrap().expect("a new log");
+        assert!(
+            path.starts_with("dev-tools/logs/mobai-Zombie-8-") && path.ends_with(".jsonl"),
+            "{path}"
+        );
+        assert!(open_log("Zombie", 8).unwrap().is_none());
+        std::fs::remove_file(&path).unwrap();
+        let _ = std::fs::remove_dir(std::path::Path::new(DIR).join("logs"));
+        let _ = std::fs::remove_dir(DIR);
+        // Closing stops them all: how many there were.
+        assert_eq!(stop_logs(), 1);
+        assert!(!is_logging());
     }
 }

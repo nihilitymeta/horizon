@@ -487,6 +487,7 @@ Every hook point a native mod (`docs/native-mods.md`) or a trait mod (`crates/ho
 | `entity_block_position` | 373 |  | The block the entity's position is in (`Entity.blockPosition`). API 373. |
 | `entity_bounding_box` | 379 |  | The entity's box (`Entity.getBoundingBox`): its lowest and highest corner. None for the kinds whose box Horizon doesn't keep (displays, markers, End crystals, the dragon). API 379. |
 | `entity_data` | — |  | The entity `id`'s data in `dimension`, as `/data get entity` prints it (`Entity.saveWithoutId`): its compound without `id`. A player is named by their network entity id; the window's own player counts only in the dimension it is in. None for an unknown dimension and for no such entity. A client holds only the level in place, so another dimension answers None. API @API:dev_helpers@. |
+| `entity_data_with_attachments` | — |  | The entity `id`'s data in `dimension` as the developer windows show it: [`Self::native_entity_data`]'s data with what mods keep on the entity under `horizon:attachments`, as the save writes it. `/data` itself stays vanilla's. None as `native_entity_data`'s None. API @API:dev_inspect_helpers@. |
 | `entity_distance_to_sqr` | 379 |  | The square of the distance from the entity's feet to `pos` (`Entity.distanceToSqr`). API 379. |
 | `entity_eye_height` | 379 |  | The height of the entity's eyes above its feet (`Entity.getEyeHeight`). API 379. |
 | `entity_eye_position` | 379 |  | Where the entity's eyes are (`Entity.getEyePosition`). API 379. |
@@ -609,6 +610,7 @@ Every hook point a native mod (`docs/native-mods.md`) or a trait mod (`crates/ho
 | `send_particles` | — |  | `ServerLevel.sendParticles` in the level in place, as a level hook's `LevelWriteHost::send_particles` sends them: the players near `at` see `count` particles spread by `spread` (a zero count sends one moving `speed` along `spread`). `state` is the block of block particles. True when accepted; false off a server and where the level host's `send_particles` refuses. API @API:host_bridge@. |
 | `send_payload` | — |  | Sends `data` on `channel` to `player` (`ClientboundCustomPayloadPacket`): only the engine's own channel (`horizon:dev_tools`) and only a payload the engine's wire can carry (1 MiB), so a mod cannot send anything else to a client. False for another channel, a bigger payload and a player who is not on. API @API:dev_helpers@. |
 | `server_item_in_tag` | — |  | Test an item stack against the server's merged item tags. |
+| `server_owner` | — |  | The single-player world's owner, as the serving state knows them (`Serving::owner`): the player the developer tools' commands act for. None where no serving state is (a dedicated server, a client). API @API:dev_inspect_helpers@. |
 | `server_players` | — |  | The players on this server, in the order they joined. Empty on a client and in a world nobody else can join. |
 | `set_block` | 24 | `horizon.set_block(x, y, z, id[, props][, flags])` | Sets a block in the current authoritative level through `Level.setBlock`. Returns false for another dimension, an invalid state, or no change. `flags` selects vanilla's neighbour and shape updates; Horizon sends every write to players whatever the flags. A block entity block gets its block entity. API 24. |
 | `set_block_property` | 18 | `horizon.set_block_property(key, value[, flags])` | Sets property `key` of the block at `pos` to `value`, as a furnace's tick sets its `lit` (`Level.setBlock` with `UPDATE_ALL`: neighbours and clients are told); true when the block changed, false when the block has no such property or value, or the property already has `value` (as `Level.setBlock` for an unchanged state). The block entity stays. API 18. |
@@ -653,4 +655,4 @@ Every hook point a native mod (`docs/native-mods.md`) or a trait mod (`crates/ho
 | `world_dir` | — |  | The open world's folder (`world/`, beside its `level.dat`): a server mod keeps its data in a folder of its own there, so the world's backups carry it. None when no world is open. |
 | `world_height` | 97 |  | The lowest block y and the height of the world in place (`LevelHeightAccessor.getMinY` and `getHeight`): how deep a quarry or a miner may dig. API 97. |
 
-430 hook points, 210 helpers; 53 of the hooks and 49 of the helpers reaching Lua.
+430 hook points, 212 helpers; 53 of the hooks and 49 of the helpers reaching Lua.

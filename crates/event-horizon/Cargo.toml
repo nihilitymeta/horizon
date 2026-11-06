@@ -11,6 +11,7 @@ autotests = false
 
 [dependencies]
 horizon-client = { path = "../horizon-client", default-features = false }
+event-horizon-dev-tools = { path = "../event-horizon-dev-tools" }
 event-horizon-extras = { path = "../event-horizon-extras", default-features = false }
 event-horizon-lua = { path = "../event-horizon-lua", default-features = false }
 event-horizon-websocket = { path = "../event-horizon-websocket" }

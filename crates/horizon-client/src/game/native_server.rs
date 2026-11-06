@@ -316,6 +316,13 @@ impl Game<'_> {
             _ => 1.62,
         }
     }
+    /// The single-player world's owner, as the serving state knows them
+    /// (`Serving::owner`): the player the developer tools' commands act
+    /// for. None where no serving state is (a dedicated server, a client).
+    /// API @API:dev_inspect_helpers@.
+    pub(super) fn native_server_owner(&self) -> Option<u128> {
+        self.serving.as_ref().map(|s| s.owner)
+    }
     /// The owner of a single-player world, by the uuid the hooks name them
     /// with: the integrated server's owner (the hub's guest for them; read
     /// from the serving state, as the hub is out of reach while a guest's

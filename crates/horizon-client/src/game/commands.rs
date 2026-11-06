@@ -2,7 +2,7 @@
 //! entity selectors resolved against the game, vanilla feedback and errors.
 mod admin;
 pub(super) mod compute;
-mod data;
+pub(super) mod data;
 mod inspect;
 mod lua_console;
 pub(super) use data::DataRef;

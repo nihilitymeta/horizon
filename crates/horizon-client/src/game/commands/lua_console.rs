@@ -371,7 +371,8 @@ impl Game<'_> {
                             )));
                         }
                     };
-                    super::inspect::remember(&targets);
+                    let dim = g.dim.id().to_owned();
+                    super::inspect::remember(&targets, &dim);
                     observe::add(&ids, view);
                     Ok(ids.len())
                 })?,
@@ -383,7 +384,8 @@ impl Game<'_> {
                     NbtPath::parse(&path).map_err(|e| lua_err(format!("{e:?}")))?;
                     let targets = g.lua_targets(&v).map_err(lua_err)?;
                     let ids: Vec<u32> = targets.iter().filter_map(|t| id_of(*t)).collect();
-                    super::inspect::remember(&targets);
+                    let dim = g.dim.id().to_owned();
+                    super::inspect::remember(&targets, &dim);
                     observe::add_path(&ids, &path);
                     Ok(ids.len())
                 })?,
