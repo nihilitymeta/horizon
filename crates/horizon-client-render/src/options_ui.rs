@@ -1296,7 +1296,6 @@ pub enum Page {
     Extras,
     /// PvP & HUD (`pvp`): the extras a PvP player sets, on their own page.
     Pvp,
-    ModConfigs,
     /// CreditsAndAttributionScreen.
     Credits,
     /// Horizon Settings: every page Horizon adds, as a mod's settings
@@ -1768,7 +1767,6 @@ fn horizon_page_tooltip(page: Page) -> Option<&'static str> {
         Page::Mods => "horizon.pages.mods.tooltip",
         Page::SplitSetup => "horizon.pages.split_setup.tooltip",
         Page::Music => "horizon.pages.music.tooltip",
-        Page::ModConfigs => "horizon.pages.mod_configs.tooltip",
         _ => return None,
     })
 }
@@ -2360,7 +2358,6 @@ impl OptionsUi {
             Page::Font => "options.font.title",
             Page::Packs => "resourcePack.title",
             Page::Mods => "horizon.pages.mods",
-            Page::ModConfigs => "horizon.pages.mod_configs",
             Page::NativeMod(_) => "Mod Settings",
             Page::ShaderPacks => "horizon.pages.shader_packs",
             Page::ShaderOptions | Page::NativePackOptions(..) => "horizon.pages.shader_options",
@@ -2549,7 +2546,7 @@ impl OptionsUi {
                 flush(&mut rows, &mut section);
                 rows
             }
-            Page::Mods | Page::ModConfigs => {
+            Page::Mods => {
                 if s.mods.installed.is_empty() {
                     return vec![Row::Header("horizon.mods.empty")];
                 }
