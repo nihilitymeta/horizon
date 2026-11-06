@@ -1,8 +1,0 @@
-{
-  "id": "zoom",
-  "title": "Dynamic FOV Zoom 1.0",
-  "description": "Smooth logarithmic FOV zoom with camera dampening. Its key is in Controls > Key Binds.",
-  "kind": "hook",
-  "default_on": false,
-  "setting": { "file": "extras", "key": "zoom", "on": "true", "off": "false" }
-}

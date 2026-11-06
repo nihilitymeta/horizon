@@ -140,7 +140,10 @@ pin, else on the installed version's commit (the game the player plays), after c
 `NATIVE_HOOKS_API` (read from GitHub) is at least the mod's; when it isn't and nothing pins, it builds on the commit the
 mod was tested on. In its own copy of the mod it sets `horizon_revision` to the commit it builds on. Horizon's
 own native mods (Zoom, FPS counter, Keystrokes, Minimap; horizon-rust/horizon-mods, `native/<name>/`) are made this way, so any of them build together
-with no re-release for each Nightly.
+with no re-release for each Nightly. Event Horizon's zoom, minimap, FPS counter and keystrokes are not one of
+those: they are the built-in native mod `crates/event-horizon-extras`, a trait mod the game's own program installs
+(`event_horizon::builtin_mods`, [extras.md](extras.md)); its engine hooks are the pending fragment
+`tools/native-hook-fragments/extras_helpers.json` until it has an API number.
 
 Hook and helper authors use [API fragments](../tools/native-hook-fragments/README.md) to request a number.
 

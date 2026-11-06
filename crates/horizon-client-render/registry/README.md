@@ -1,7 +1,7 @@
 # Feature Registry
 
 This folder holds one `<id>.json` file for each switchable feature that this build carries: the built-in native
-hook mods, such as zoom and the minimap, and the engine patches, such as sharpening, anti-lag and mesh shaders.
+hook mods, such as fullbright and dynamic lights, and the engine patches, such as sharpening, anti-lag and mesh shaders.
 
 `build.rs` collects the files, and `src/mod_registry.rs` reads them. The game uses them in three places:
 

@@ -1,19 +1,20 @@
-//! Horizon's optional extras (minimap, lighting, inventory tools): their
+//! Horizon's optional extras (lighting, inventory tools): their
 //! settings, kept in `horizon-extras.txt` next to `options.txt` so that file
 //! stays exactly vanilla's, and the logic behind them. Every extra is off by
 //! default; see `docs/extras.md`. Horizon's own switches outside the Extras page
-//! (No AI, Agent Control, Discord Rich Presence) are kept here too.
-use std::{collections::VecDeque, fs, path::Path};
+//! (No AI, Agent Control, Discord Rich Presence) are kept here too. The zoom,
+//! minimap, FPS counter and keystrokes extras are the built-in native mod
+//! `crates/event-horizon-extras`; their old lines in that file stay unread.
+use std::{fs, path::Path};
 
 pub const FILE: &str = "horizon-extras.txt";
 /// The name the options screen uses while the sort key waits for a key.
 pub const SORT_KEY: &str = "horizon.sort";
 /// The 3D skin layers line, here and in the `options.txt` that held it first.
 const SKIN_LAYERS_KEY: &str = "threeDSkinLayers";
-/// The name the options screen uses while the zoom key waits for a key.
-pub const ZOOM_KEY: &str = "horizon.zoom";
 
-/// The minimap's sizes in GUI pixels, and its zooms in blocks per pixel.
+/// The minimap's sizes in GUI pixels, and its zooms in blocks per pixel, as
+/// the built-in extras mod offers them and `native_minimap` clamps them.
 pub const MINIMAP_SIZES: [(u8, &str); 3] = [(64, "Small"), (96, "Medium"), (128, "Large")];
 pub const MINIMAP_ZOOMS: [f32; 4] = [0.5, 1.0, 2.0, 4.0];
 
@@ -48,7 +49,9 @@ impl Corner {
             Corner::BottomRight => "Bottom right",
         }
     }
-    fn parse(s: &str, default: Corner) -> Corner {
+    /// The corner `s` names (`top_left`...), or `default`. How the settings
+    /// files name a corner, and the built-in extras mod reads them.
+    pub fn parse(s: &str, default: Corner) -> Corner {
         Self::ALL
             .into_iter()
             .find(|c| c.name() == s)
@@ -71,15 +74,6 @@ pub struct Extras {
     pub fullbright: bool,
     /// Held, dropped and burning light sources light their surroundings (`dynamic_light`).
     pub dynamic_lights: bool,
-    pub zoom: bool,
-    /// A vanilla key name (`key.keyboard.z`).
-    pub zoom_key: String,
-    /// The zoom the key starts at.
-    pub zoom_level: u8,
-    /// Ease through vanilla's FOV easing (as the spyglass does).
-    pub zoom_smooth: bool,
-    /// Divide mouse turning by the zoom.
-    pub zoom_sensitivity: bool,
     /// Far terrain a zoom magnifies is planned finer, so a spyglass does not
     /// show the coarse cells it was given for an unzoomed screen
     /// (`lod::Aim`). Costs far tiles while the zoom is held and gives them
@@ -87,28 +81,11 @@ pub struct Extras {
     /// (`lodDistance`) and the view is actually zoomed. Off by default until
     /// a measurement shows the extra tiles land while the zoom is still held.
     pub lod_zoom_detail: bool,
-    /// The FPS counter and keystrokes extras are official mods now: their
-    /// old settings stay here, kept as they were.
-    pub fps: bool,
-    pub fps_corner: Corner,
-    /// Also show the minimum and 1% low.
-    pub fps_lows: bool,
-    pub keystrokes: bool,
-    pub keystrokes_corner: Corner,
-    /// Clicks per second under the mouse buttons.
-    pub keystrokes_cps: bool,
-    /// The official mods once installed for the extras they replace, by mod
-    /// id (`movedToMods`).
+    /// The extras that became the built-in native mod
+    /// (`crates/event-horizon-extras`) once had their settings here: the
+    /// lines stay unread, kept as they were (`movedToMods` says which mods
+    /// they became).
     pub moved: Vec<String>,
-    pub minimap: bool,
-    pub minimap_corner: Corner,
-    /// Side in GUI pixels (`MINIMAP_SIZES`).
-    pub minimap_size: u8,
-    pub minimap_round: bool,
-    /// Blocks per pixel (`MINIMAP_ZOOMS`).
-    pub minimap_zoom: f32,
-    /// Turn with the player (forward up) instead of north up.
-    pub minimap_rotate: bool,
     /// Retry lost multiplayer connections (`reconnect`).
     pub auto_reconnect: bool,
     /// Positional sounds leave a few static sound channels free for UI sounds
@@ -184,25 +161,8 @@ impl Default for Extras {
             pack_browser: false,
             fullbright: false,
             dynamic_lights: false,
-            zoom: false,
-            zoom_key: "key.keyboard.z".into(),
-            zoom_level: 4,
-            zoom_smooth: true,
-            zoom_sensitivity: true,
             lod_zoom_detail: false,
-            fps: false,
-            fps_corner: Corner::TopLeft,
-            fps_lows: false,
-            keystrokes: false,
-            keystrokes_corner: Corner::TopLeft,
-            keystrokes_cps: true,
             moved: Vec::new(),
-            minimap: false,
-            minimap_corner: Corner::TopRight,
-            minimap_size: 96,
-            minimap_round: false,
-            minimap_zoom: 1.0,
-            minimap_rotate: false,
             auto_reconnect: false,
             ui_sound_reserve: false,
             own_name_tag: false,
@@ -263,24 +223,7 @@ impl Extras {
                 "packBrowser" => e.pack_browser = flag(e.pack_browser),
                 "fullbright" => e.fullbright = flag(e.fullbright),
                 "dynamicLights" => e.dynamic_lights = flag(e.dynamic_lights),
-                "zoom" => e.zoom = flag(e.zoom),
-                "zoomKey" if value.starts_with("key.") => e.zoom_key = value.to_owned(),
-                "zoomLevel" => {
-                    if let Ok(v) = value.parse::<u8>() {
-                        e.zoom_level = v.clamp(2, 10);
-                    }
-                }
-                "zoomSmooth" => e.zoom_smooth = flag(e.zoom_smooth),
-                "zoomSensitivity" => e.zoom_sensitivity = flag(e.zoom_sensitivity),
                 "lodZoomDetail" => e.lod_zoom_detail = flag(e.lod_zoom_detail),
-                "fps" => e.fps = flag(e.fps),
-                "fpsCorner" => e.fps_corner = Corner::parse(value, e.fps_corner),
-                "fpsLows" => e.fps_lows = flag(e.fps_lows),
-                "keystrokes" => e.keystrokes = flag(e.keystrokes),
-                "keystrokesCorner" => {
-                    e.keystrokes_corner = Corner::parse(value, e.keystrokes_corner)
-                }
-                "keystrokesCps" => e.keystrokes_cps = flag(e.keystrokes_cps),
                 "movedToMods" => {
                     e.moved = value
                         .split(',')
@@ -289,20 +232,6 @@ impl Extras {
                         .map(str::to_owned)
                         .collect()
                 }
-                "minimap" => e.minimap = flag(e.minimap),
-                "minimapCorner" => e.minimap_corner = Corner::parse(value, e.minimap_corner),
-                "minimapSize" => {
-                    if let Some(&(v, _)) = MINIMAP_SIZES.iter().find(|s| s.0.to_string() == value) {
-                        e.minimap_size = v;
-                    }
-                }
-                "minimapShape" => e.minimap_round = value == "round",
-                "minimapZoom" => {
-                    if let Some(&z) = MINIMAP_ZOOMS.iter().find(|z| z.to_string() == value) {
-                        e.minimap_zoom = z;
-                    }
-                }
-                "minimapRotate" => e.minimap_rotate = flag(e.minimap_rotate),
                 "autoReconnect" => e.auto_reconnect = flag(e.auto_reconnect),
                 "uiSoundReserve" => e.ui_sound_reserve = flag(e.ui_sound_reserve),
                 "ownNameTag" => e.own_name_tag = flag(e.own_name_tag),
@@ -347,33 +276,12 @@ impl Extras {
     }
     pub fn serialize(&self) -> String {
         let mut text = format!(
-            "packBrowser:{}\nfullbright:{}\ndynamicLights:{}\nzoom:{}\nzoomKey:{}\nzoomLevel:{}\nzoomSmooth:{}\nzoomSensitivity:{}\nlodZoomDetail:{}\nfps:{}\nfpsCorner:{}\nfpsLows:{}\nkeystrokes:{}\nkeystrokesCorner:{}\nkeystrokesCps:{}\nmovedToMods:{}\nminimap:{}\nminimapCorner:{}\nminimapSize:{}\nminimapShape:{}\nminimapZoom:{}\nminimapRotate:{}\nautoReconnect:{}\nuiSoundReserve:{}\nownNameTag:{}\nhideBlockParticles:{}\nmouseTweaks:{}\nmouseTweaksWheel:{}\nsort:{}\nsortKey:{}\nchatAnimation:{}\nchatIndicator:{}\n{}:{}\nagentControl:{}\nreproKeys:{}\ndiscordPresence:{}\nsplitscreen:{}\nsplitscreenTwo:{}\nsplitscreenThree:{}\nsplitscreenNames:{}\nwheelCyclesSettings:{}\nmusicOff:{}\nmusicPage:{}\ncosmeticsMine:{}\n{}cosmeticsAuras:{}\n{}:{}\n",
+            "packBrowser:{}\nfullbright:{}\ndynamicLights:{}\nlodZoomDetail:{}\nmovedToMods:{}\nautoReconnect:{}\nuiSoundReserve:{}\nownNameTag:{}\nhideBlockParticles:{}\nmouseTweaks:{}\nmouseTweaksWheel:{}\nsort:{}\nsortKey:{}\nchatAnimation:{}\nchatIndicator:{}\n{}:{}\nagentControl:{}\nreproKeys:{}\ndiscordPresence:{}\nsplitscreen:{}\nsplitscreenTwo:{}\nsplitscreenThree:{}\nsplitscreenNames:{}\nwheelCyclesSettings:{}\nmusicOff:{}\nmusicPage:{}\ncosmeticsMine:{}\n{}cosmeticsAuras:{}\n{}:{}\n",
             bool_text(self.pack_browser),
             bool_text(self.fullbright),
             bool_text(self.dynamic_lights),
-            bool_text(self.zoom),
-            self.zoom_key,
-            self.zoom_level,
-            bool_text(self.zoom_smooth),
-            bool_text(self.zoom_sensitivity),
             bool_text(self.lod_zoom_detail),
-            bool_text(self.fps),
-            self.fps_corner.name(),
-            bool_text(self.fps_lows),
-            bool_text(self.keystrokes),
-            self.keystrokes_corner.name(),
-            bool_text(self.keystrokes_cps),
             self.moved.join(","),
-            bool_text(self.minimap),
-            self.minimap_corner.name(),
-            self.minimap_size,
-            if self.minimap_round {
-                "round"
-            } else {
-                "square"
-            },
-            self.minimap_zoom,
-            bool_text(self.minimap_rotate),
             bool_text(self.auto_reconnect),
             bool_text(self.ui_sound_reserve),
             bool_text(self.own_name_tag),
@@ -425,12 +333,11 @@ impl Extras {
             self.three_d_skin_layers = value == "true";
         }
     }
-    /// Binds the extra key `name` (`SORT_KEY`, `ZOOM_KEY`); false for
+    /// Binds the extra key `name` (`SORT_KEY`); false for
     /// another name (a vanilla mapping).
     pub fn set_key(&mut self, name: &str, value: String) -> bool {
         match name {
             SORT_KEY => self.sort_key = value,
-            ZOOM_KEY => self.zoom_key = value,
             _ => return false,
         }
         true
@@ -452,127 +359,14 @@ impl Extras {
 pub fn fov_target(vanilla: f32, zoom: f32) -> f32 {
     if zoom == 1.0 { vanilla } else { vanilla / zoom }
 }
-/// Frame times over the last few seconds: frames per second, the minimum
-/// and the 1% low, recomputed twice a second.
-pub struct FpsCounter {
-    /// (end time in seconds, frame milliseconds), oldest first.
-    frames: VecDeque<(f64, f32)>,
-    shown: FpsReading,
-    computed_at: f64,
-}
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct FpsReading {
-    pub fps: u32,
-    pub min: u32,
-    pub low: u32,
-}
-/// Seconds the minimum and 1% low look back.
-const LOW_WINDOW: f64 = 5.0;
-impl Default for FpsCounter {
-    fn default() -> Self {
-        Self {
-            frames: VecDeque::new(),
-            shown: FpsReading::default(),
-            computed_at: f64::NEG_INFINITY,
-        }
-    }
-}
-impl FpsCounter {
-    /// A frame that ended at `now` (seconds) and took `ms`.
-    pub fn record(&mut self, now: f64, ms: f32) {
-        self.frames.push_back((now, ms));
-        while self
-            .frames
-            .front()
-            .is_some_and(|&(t, _)| now - t > LOW_WINDOW)
-        {
-            self.frames.pop_front();
-        }
-        if now - self.computed_at >= 0.5 {
-            self.computed_at = now;
-            self.shown = self.compute(now);
-        }
-    }
-    fn compute(&self, now: f64) -> FpsReading {
-        let fps = self.frames.iter().filter(|&&(t, _)| now - t < 1.0).count() as u32;
-        let mut times: Vec<f32> = self.frames.iter().map(|f| f.1).collect();
-        if times.is_empty() {
-            return FpsReading::default();
-        }
-        times.sort_by(|a, b| b.total_cmp(a));
-        let to_fps = |ms: f32| (1000.0 / ms.max(0.001)).round() as u32;
-        // The 1% low: the frame rate of the 99th percentile frame time.
-        let low = times[(times.len() - 1) / 100];
-        FpsReading {
-            fps,
-            min: to_fps(times[0]),
-            low: to_fps(low),
-        }
-    }
-    pub fn reading(&self) -> FpsReading {
-        self.shown
-    }
-    pub fn clear(&mut self) {
-        *self = Self::default();
-    }
-}
-
-/// Clicks of one button in the last second.
-#[derive(Default)]
-pub struct Cps {
-    clicks: VecDeque<f64>,
-}
-impl Cps {
-    pub fn click(&mut self, now: f64) {
-        self.clicks.push_back(now);
-        self.forget(now);
-    }
-    fn forget(&mut self, now: f64) {
-        while self.clicks.front().is_some_and(|&t| now - t >= 1.0) {
-            self.clicks.pop_front();
-        }
-    }
-    pub fn per_second(&mut self, now: f64) -> usize {
-        self.forget(now);
-        self.clicks.len()
-    }
-}
 /// Two players sharing a window (`splitscreen_two`): halves this way.
 pub const SPLIT_TWO: [&str; 3] = ["Auto", "Side by side", "Top and bottom"];
 /// Three players sharing a window (`splitscreen_three`).
 pub const SPLIT_THREE: [&str; 3] = ["One wide on top", "One tall on the left", "Side by side"];
 
-fn cycle_corner(c: Corner, back: bool) -> Corner {
-    let all = Corner::ALL;
-    let idx = all.iter().position(|&x| x == c).unwrap_or(0);
-    let next = if back {
-        (idx + all.len() - 1) % all.len()
-    } else {
-        (idx + 1) % all.len()
-    };
-    all[next]
-}
-
 /// The settings the Extras page shows, one per row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Item {
-    Zoom,
-    ZoomKey,
-    ZoomLevel,
-    ZoomSmooth,
-    ZoomSensitivity,
-    Minimap,
-    MinimapCorner,
-    MinimapSize,
-    MinimapShape,
-    MinimapZoom,
-    MinimapRotate,
-    Fps,
-    FpsCorner,
-    FpsLows,
-    Keystrokes,
-    KeystrokesCorner,
-    KeystrokesCps,
     Fullbright,
     DynamicLights,
     OwnNameTag,
@@ -635,25 +429,6 @@ pub fn rows() -> Vec<Result<Item, &'static str>> {
         Err("horizon.extras.header.menus"),
         Ok(WheelCyclesSettings),
         Ok(PackBrowser),
-        Err("horizon.extras.header.zoom"),
-        Ok(Zoom),
-        Ok(ZoomLevel),
-        Ok(ZoomSmooth),
-        Ok(ZoomSensitivity),
-        Err("horizon.extras.header.minimap"),
-        Ok(Minimap),
-        Ok(MinimapCorner),
-        Ok(MinimapSize),
-        Ok(MinimapShape),
-        Ok(MinimapZoom),
-        Ok(MinimapRotate),
-        Err("horizon.extras.header.hud"),
-        Ok(Fps),
-        Ok(FpsCorner),
-        Ok(FpsLows),
-        Ok(Keystrokes),
-        Ok(KeystrokesCorner),
-        Ok(KeystrokesCps),
     ];
     if horizon_cosmetics::enabled() {
         rows.extend([
@@ -670,23 +445,6 @@ impl Item {
     /// The language key of the caption (`horizon.*`, assets/horizon/lang).
     pub fn caption_key(self) -> &'static str {
         match self {
-            Item::Zoom => "horizon.extras.zoom",
-            Item::ZoomKey => "horizon.extras.zoom_key",
-            Item::ZoomLevel => "horizon.extras.zoom_level",
-            Item::ZoomSmooth => "horizon.extras.zoom_smooth",
-            Item::ZoomSensitivity => "horizon.extras.zoom_sensitivity",
-            Item::Minimap => "horizon.extras.minimap",
-            Item::MinimapCorner => "horizon.extras.minimap_corner",
-            Item::MinimapSize => "horizon.extras.minimap_size",
-            Item::MinimapShape => "horizon.extras.minimap_shape",
-            Item::MinimapZoom => "horizon.extras.minimap_zoom",
-            Item::MinimapRotate => "horizon.extras.minimap_rotate",
-            Item::Fps => "horizon.extras.fps",
-            Item::FpsCorner => "horizon.extras.fps_corner",
-            Item::FpsLows => "horizon.extras.fps_lows",
-            Item::Keystrokes => "horizon.extras.keystrokes",
-            Item::KeystrokesCorner => "horizon.extras.keystrokes_corner",
-            Item::KeystrokesCps => "horizon.extras.keystrokes_cps",
             Item::Fullbright => "horizon.extras.fullbright",
             Item::DynamicLights => "horizon.extras.dynamic_lights",
             Item::OwnNameTag => "horizon.extras.own_name_tag",
@@ -716,23 +474,6 @@ impl Item {
     /// The language key of the description shown as the row's tooltip.
     pub fn description_key(self) -> &'static str {
         match self {
-            Item::Zoom => "horizon.extras.zoom.tooltip",
-            Item::ZoomKey => "horizon.extras.zoom_key.tooltip",
-            Item::ZoomLevel => "horizon.extras.zoom_level.tooltip",
-            Item::ZoomSmooth => "horizon.extras.zoom_smooth.tooltip",
-            Item::ZoomSensitivity => "horizon.extras.zoom_sensitivity.tooltip",
-            Item::Minimap => "horizon.extras.minimap.tooltip",
-            Item::MinimapCorner => "horizon.extras.minimap_corner.tooltip",
-            Item::MinimapSize => "horizon.extras.minimap_size.tooltip",
-            Item::MinimapShape => "horizon.extras.minimap_shape.tooltip",
-            Item::MinimapZoom => "horizon.extras.minimap_zoom.tooltip",
-            Item::MinimapRotate => "horizon.extras.minimap_rotate.tooltip",
-            Item::Fps => "horizon.extras.fps.tooltip",
-            Item::FpsCorner => "horizon.extras.fps_corner.tooltip",
-            Item::FpsLows => "horizon.extras.fps_lows.tooltip",
-            Item::Keystrokes => "horizon.extras.keystrokes.tooltip",
-            Item::KeystrokesCorner => "horizon.extras.keystrokes_corner.tooltip",
-            Item::KeystrokesCps => "horizon.extras.keystrokes_cps.tooltip",
             Item::Fullbright => "horizon.extras.fullbright.tooltip",
             Item::DynamicLights => "horizon.extras.dynamic_lights.tooltip",
             Item::OwnNameTag => "horizon.extras.own_name_tag.tooltip",
@@ -771,23 +512,6 @@ impl Item {
     /// `horizon.extras.*` in en_us.json.
     pub fn caption(self) -> &'static str {
         match self {
-            Item::Zoom => "Zoom",
-            Item::ZoomKey => "Zoom key",
-            Item::ZoomLevel => "Zoom level",
-            Item::ZoomSmooth => "Smooth zoom",
-            Item::ZoomSensitivity => "Dampen mouse",
-            Item::Minimap => "Minimap",
-            Item::MinimapCorner => "Minimap corner",
-            Item::MinimapSize => "Minimap size",
-            Item::MinimapShape => "Minimap shape",
-            Item::MinimapZoom => "Minimap zoom",
-            Item::MinimapRotate => "Rotate with player",
-            Item::Fps => "FPS counter",
-            Item::FpsCorner => "FPS corner",
-            Item::FpsLows => "FPS minimum & 1% low",
-            Item::Keystrokes => "Keystrokes",
-            Item::KeystrokesCorner => "Keystrokes corner",
-            Item::KeystrokesCps => "Mouse CPS",
             Item::Fullbright => "Fullbright",
             Item::DynamicLights => "Dynamic lights",
             Item::OwnNameTag => "Own name tag",
@@ -823,14 +547,10 @@ impl Item {
             SortKey => Sort,
             ChatIndicator => ChatAnimation,
             Pvp(o) => return o.parent().map(Pvp),
-            ZoomKey | ZoomLevel | ZoomSmooth | ZoomSensitivity => Zoom,
-            MinimapCorner | MinimapSize | MinimapShape | MinimapZoom | MinimapRotate => Minimap,
-            FpsCorner | FpsLows => Fps,
-            KeystrokesCorner | KeystrokesCps => Keystrokes,
             Fullbright | DynamicLights | OwnNameTag | HideBlockParticles | MouseTweaks | Sort
             | AutoReconnect | NoAi | AgentControl | ReproKeys | DiscordPresence | Splitscreen
             | ChatAnimation | WheelCyclesSettings | MusicPage | PackBrowser | CosmeticsMine
-            | CosmeticsOthers | CosmeticsAuras | Zoom | Minimap | Fps | Keystrokes => {
+            | CosmeticsOthers | CosmeticsAuras => {
                 return None;
             }
         })
@@ -838,27 +558,6 @@ impl Item {
     /// The English description: the fallback of [`Item::description_text`].
     pub fn description(self) -> &'static str {
         match self {
-            Item::Zoom => "Hold a key while playing to zoom the camera in.",
-            Item::ZoomKey => {
-                "The key to hold for zoom. Click, then press a key; Escape unbinds it."
-            }
-            Item::ZoomLevel => "How many times to magnify the view (2x to 10x).",
-            Item::ZoomSmooth => "Smoothly ease FOV in and out like spyglass.",
-            Item::ZoomSensitivity => {
-                "Scale down mouse sensitivity proportionally to zoom magnification."
-            }
-            Item::Minimap => "A live top-down terrain minimap in the corner of your screen.",
-            Item::MinimapCorner => "Which corner of the screen the minimap sits in.",
-            Item::MinimapSize => "The width and height of the minimap in GUI pixels.",
-            Item::MinimapShape => "Square or round circular minimap frame.",
-            Item::MinimapZoom => "Blocks per minimap pixel.",
-            Item::MinimapRotate => "Rotate the map with player yaw instead of locking North up.",
-            Item::Fps => "Show real-time frames per second in a corner.",
-            Item::FpsCorner => "Which corner to show the FPS counter in.",
-            Item::FpsLows => "Display minimum and 1% low FPS readings.",
-            Item::Keystrokes => "Show active movement keys and mouse clicks in a corner.",
-            Item::KeystrokesCorner => "Which corner to display keystrokes in.",
-            Item::KeystrokesCps => "Display clicks per second under mouse buttons.",
             Item::Fullbright => "Show blocks and entities at full light, even in dark areas.",
             Item::DynamicLights => {
                 "Torches and other light sources held, dropped or on fire light the blocks around them."
@@ -929,8 +628,6 @@ impl Item {
     pub fn cost(self) -> Option<crate::graphics_style::Cost> {
         use crate::graphics_style::Cost;
         match self {
-            Item::Zoom | Item::Fps | Item::Keystrokes => Some(Cost::None),
-            Item::Minimap => Some(Cost::Low),
             Item::Fullbright => Some(Cost::None),
             Item::UiSoundReserve => Some(Cost::None),
             Item::MusicPage => Some(Cost::None),
@@ -951,15 +648,6 @@ impl Item {
     /// On/off items and their value.
     pub fn switch(self, e: &Extras) -> Option<bool> {
         Some(match self {
-            Item::Zoom => e.zoom,
-            Item::ZoomSmooth => e.zoom_smooth,
-            Item::ZoomSensitivity => e.zoom_sensitivity,
-            Item::Minimap => e.minimap,
-            Item::MinimapRotate => e.minimap_rotate,
-            Item::Fps => e.fps,
-            Item::FpsLows => e.fps_lows,
-            Item::Keystrokes => e.keystrokes,
-            Item::KeystrokesCps => e.keystrokes_cps,
             Item::Fullbright => e.fullbright,
             Item::DynamicLights => e.dynamic_lights,
             Item::OwnNameTag => e.own_name_tag,
@@ -1005,94 +693,18 @@ impl Item {
                     }
                 }
             }
-            Item::ZoomKey => crate::keybinds::display_name(&e.zoom_key).plain(),
-            Item::ZoomLevel => format!("{}x", e.zoom_level),
-            Item::MinimapCorner => e.minimap_corner.label().into(),
-            Item::MinimapSize => MINIMAP_SIZES
-                .iter()
-                .find(|s| s.0 == e.minimap_size)
-                .map_or("Custom", |s| s.1)
-                .into(),
-            Item::MinimapShape => {
-                if e.minimap_round {
-                    "Round".into()
-                } else {
-                    "Square".into()
-                }
-            }
-            Item::MinimapZoom => format!("{} b/px", e.minimap_zoom),
-            Item::FpsCorner => e.fps_corner.label().into(),
-            Item::KeystrokesCorner => e.keystrokes_corner.label().into(),
             other => match other.switch(e) {
                 Some(true) => crate::lang::get_or("On", "On"),
                 _ => crate::lang::get_or("Off", "Off"),
             },
         }
     }
-    /// A click (`back` for the right button: it turns the three-way cosmetics button and the
-    /// zoom, minimap and corner pickers the other way; every other item left is a switch, so both
-    /// flip it). The sort and zoom keys bind instead.
+    /// A click (`back` for the right button: it turns the three-way cosmetics
+    /// button the other way; every other item is a switch, so both flip it).
+    /// The sort key binds instead.
     pub fn cycle(self, e: &mut Extras, back: bool) {
         match self {
-            Item::Zoom => e.zoom = !e.zoom,
-            Item::ZoomKey | Item::SortKey => {}
-            Item::ZoomLevel => {
-                e.zoom_level = if back {
-                    if e.zoom_level <= 2 {
-                        10
-                    } else {
-                        e.zoom_level - 1
-                    }
-                } else {
-                    if e.zoom_level >= 10 {
-                        2
-                    } else {
-                        e.zoom_level + 1
-                    }
-                };
-            }
-            Item::ZoomSmooth => e.zoom_smooth = !e.zoom_smooth,
-            Item::ZoomSensitivity => e.zoom_sensitivity = !e.zoom_sensitivity,
-            Item::Minimap => e.minimap = !e.minimap,
-            Item::MinimapCorner => {
-                e.minimap_corner = cycle_corner(e.minimap_corner, back);
-            }
-            Item::MinimapSize => {
-                let idx = MINIMAP_SIZES
-                    .iter()
-                    .position(|s| s.0 == e.minimap_size)
-                    .unwrap_or(1);
-                let next = if back {
-                    (idx + MINIMAP_SIZES.len() - 1) % MINIMAP_SIZES.len()
-                } else {
-                    (idx + 1) % MINIMAP_SIZES.len()
-                };
-                e.minimap_size = MINIMAP_SIZES[next].0;
-            }
-            Item::MinimapShape => e.minimap_round = !e.minimap_round,
-            Item::MinimapZoom => {
-                let idx = MINIMAP_ZOOMS
-                    .iter()
-                    .position(|&z| (z - e.minimap_zoom).abs() < 0.01)
-                    .unwrap_or(1);
-                let next = if back {
-                    (idx + MINIMAP_ZOOMS.len() - 1) % MINIMAP_ZOOMS.len()
-                } else {
-                    (idx + 1) % MINIMAP_ZOOMS.len()
-                };
-                e.minimap_zoom = MINIMAP_ZOOMS[next];
-            }
-            Item::MinimapRotate => e.minimap_rotate = !e.minimap_rotate,
-            Item::Fps => e.fps = !e.fps,
-            Item::FpsCorner => {
-                e.fps_corner = cycle_corner(e.fps_corner, back);
-            }
-            Item::FpsLows => e.fps_lows = !e.fps_lows,
-            Item::Keystrokes => e.keystrokes = !e.keystrokes,
-            Item::KeystrokesCorner => {
-                e.keystrokes_corner = cycle_corner(e.keystrokes_corner, back);
-            }
-            Item::KeystrokesCps => e.keystrokes_cps = !e.keystrokes_cps,
+            Item::SortKey => {}
             Item::Fullbright => e.fullbright = !e.fullbright,
             Item::DynamicLights => e.dynamic_lights = !e.dynamic_lights,
             Item::OwnNameTag => e.own_name_tag = !e.own_name_tag,
@@ -1126,7 +738,6 @@ impl Item {
     pub fn key_name(self) -> Option<&'static str> {
         match self {
             Item::SortKey => Some(SORT_KEY),
-            Item::ZoomKey => Some(ZOOM_KEY),
             _ => None,
         }
     }
@@ -1207,7 +818,7 @@ mod tests {
     fn everything_is_off_by_default_and_round_trips() {
         let d = Extras::default();
         assert!(!d.fullbright && !d.dynamic_lights);
-        assert!(!d.zoom && !d.fps && !d.keystrokes && !d.minimap && !d.auto_reconnect);
+        assert!(!d.auto_reconnect);
         assert!(!d.mouse_tweaks && !d.sort && !d.own_name_tag && !d.ui_sound_reserve);
         assert!(!d.hide_block_particles);
         assert!(!d.music_page && d.music_off.is_empty());
@@ -1220,19 +831,8 @@ mod tests {
         Item::DynamicLights.cycle(&mut e, false);
         assert_eq!(Item::DynamicLights.switch(&e), Some(true));
         assert_eq!(Extras::parse(&e.serialize()), e);
-        e.zoom = true;
-        e.zoom_key = "key.keyboard.c".into();
-        e.zoom_level = 6;
-        e.fps_corner = Corner::BottomRight;
-        e.keystrokes = true;
-        e.keystrokes_cps = false;
+        e.lod_zoom_detail = true;
         e.moved = vec!["fps_overlay".into(), "keystrokes".into()];
-        e.minimap = true;
-        e.minimap_size = 128;
-        e.minimap_round = true;
-        e.minimap_zoom = 0.5;
-        e.minimap_rotate = true;
-        e.minimap_corner = Corner::BottomLeft;
         e.auto_reconnect = true;
         Item::OwnNameTag.cycle(&mut e, false);
         assert_eq!(Item::OwnNameTag.switch(&e), Some(true));
@@ -1266,11 +866,13 @@ mod tests {
 
     #[test]
     fn bad_lines_keep_defaults() {
-        let e = Extras::parse("zoom:maybe\nzoomLevel:99\nfpsCorner:middle\nzoomKey:z\nnoise");
-        assert!(!e.zoom);
-        assert_eq!(e.zoom_level, 10);
-        assert_eq!(e.fps_corner, Corner::TopLeft);
-        assert_eq!(e.zoom_key, "key.keyboard.z");
+        let e = Extras::parse("sortKey:z\nsplitscreenTwo:9\nnoise");
+        assert_eq!(e.sort_key, "key.keyboard.unknown");
+        assert_eq!(e.splitscreen_two, 2);
+        // The extras that became the built-in native mod leave their old lines
+        // unread, in whatever shape they are.
+        let e = Extras::parse("zoom:maybe\nzoomLevel:99\nfpsCorner:middle\nminimap:true\n");
+        assert_eq!(e, Extras::default());
     }
 
     #[test]
@@ -1299,84 +901,12 @@ mod tests {
     }
 
     #[test]
-    fn fps_counter_reports_rate_minimum_and_low() {
-        let mut c = FpsCounter::default();
-        let mut t = 0.0;
-        // Two seconds at 100 fps with one 50 ms hitch.
-        for i in 0..200 {
-            let ms = if i == 150 { 50.0 } else { 10.0 };
-            t += f64::from(ms) / 1000.0;
-            c.record(t, ms);
-        }
-        c.computed_at = f64::NEG_INFINITY;
-        c.record(t + 0.01, 10.0);
-        let r = c.reading();
-        assert!((95..=101).contains(&r.fps), "{r:?}");
-        assert_eq!(r.min, 20);
-        assert_eq!(r.low, 100, "one frame in 200 is under the 1% mark");
-        // Hitches beyond 1% of frames pull the 1% low down.
-        let mut c = FpsCounter::default();
-        let mut t = 0.0;
-        for i in 0..100 {
-            let ms = if i % 25 == 0 { 40.0 } else { 10.0 };
-            t += f64::from(ms) / 1000.0;
-            c.record(t, ms);
-        }
-        c.computed_at = f64::NEG_INFINITY;
-        c.record(t, 10.0);
-        assert_eq!(c.reading().low, 25);
-    }
-
-    #[test]
-    fn old_frames_leave_the_window() {
-        let mut c = FpsCounter::default();
-        c.record(0.0, 100.0);
-        for i in 1..=700 {
-            c.record(f64::from(i) / 100.0, 10.0);
-        }
-        assert_eq!(c.reading().min, 100, "the 100 ms frame is 7 s old");
-    }
-
-    #[test]
-    fn cps_counts_the_last_second() {
-        let mut cps = Cps::default();
-        for i in 0..10 {
-            cps.click(f64::from(i) * 0.1);
-        }
-        assert_eq!(cps.per_second(0.95), 10);
-        assert_eq!(cps.per_second(1.25), 7);
-        assert_eq!(cps.per_second(3.0), 0);
-    }
-
-    #[test]
     fn items_cycle_through_their_values() {
         let mut e = Extras::default();
         Item::Sort.cycle(&mut e, true);
         assert_eq!(Item::Sort.value(&e), "On");
-        Item::Zoom.cycle(&mut e, false);
-        assert!(e.zoom);
-        Item::ZoomLevel.cycle(&mut e, false);
-        assert_eq!(e.zoom_level, 5);
-        Item::ZoomSmooth.cycle(&mut e, false);
-        assert!(!e.zoom_smooth);
-        Item::ZoomSensitivity.cycle(&mut e, false);
-        assert!(!e.zoom_sensitivity);
-        assert!(e.set_key(ZOOM_KEY, "key.keyboard.c".into()));
-        assert_eq!(e.zoom_key, "key.keyboard.c");
-        Item::Minimap.cycle(&mut e, false);
-        assert!(e.minimap);
-        Item::MinimapCorner.cycle(&mut e, false);
-        Item::MinimapShape.cycle(&mut e, false);
-        assert!(e.minimap_round);
-        Item::Fps.cycle(&mut e, false);
-        assert!(e.fps);
-        Item::Keystrokes.cycle(&mut e, false);
-        assert!(e.keystrokes);
-        // The minimap's old keys still parse, for the move to its mod.
-        assert_eq!(
-            Extras::parse("minimapSize:7\nminimapZoom:3").minimap_zoom,
-            1.0
-        );
+        assert!(e.set_key(SORT_KEY, "key.keyboard.r".into()));
+        assert_eq!(e.sort_key, "key.keyboard.r");
         for item in rows().into_iter().flatten() {
             assert!(!item.caption().is_empty() && !item.description().is_empty());
         }

@@ -1,10 +1,11 @@
 //! Horizon's extras in the game (`docs/extras.md`); a native mod's minimap
 //! (`native_minimap`: its tiles, image and HUD) and zoom (`native_zoom`) on the camera; clicks
 //! and frame times for mods (`native_clicks`, `native_frame_rate`).
-//! Each hook does nothing while its extra is off and no mod uses it.
+//! The zoom, minimap, FPS counter and keystrokes extras are a built-in native mod
+//! (`crates/event-horizon-extras`); each hook here does nothing while no mod uses it.
 use super::{Dim, Game, Screen, native_hooks::NativeMinimap};
 use horizon_client::{
-    extras::{Corner, Cps, FpsCounter, fov_target},
+    extras::{Corner, fov_target},
     extras_hud::{self, Corners},
     hud::{HudBatch, MINIMAP_SPRITE},
     minimap::{self, Layer, Minimap, View},
@@ -12,16 +13,17 @@ use horizon_client::{
     reconnect::{Retry, Tracker},
     title::Mode,
 };
-use std::time::Duration;
+use std::{collections::VecDeque, time::Duration};
 use winit::event::MouseButton;
 
 #[derive(Default)]
 pub(super) struct ExtrasState {
-    pub(super) zoom_held: bool,
-    fps: FpsCounter,
-    /// Left and right mouse buttons: held, and their clicks.
-    mouse: [bool; 2],
+    /// Left, right, middle, back and forward mouse buttons: held, for mods'
+    /// mappings and held-key questions (`native_mapping`, `native_key_down`).
+    pub(super) mouse: [bool; 5],
+    /// Left and right mouse buttons' clicks, for mods (`native_clicks`).
     cps: [Cps; 2],
+    fps: FrameRate,
     minimap: Minimap,
     /// The dimension the minimap's tiles belong to.
     minimap_dim: Option<Dim>,
@@ -31,6 +33,103 @@ pub(super) struct ExtrasState {
 /// CPU time the minimap's tiles may take per frame.
 const MINIMAP_BUDGET: Duration = Duration::from_micros(300);
 
+/// One of the five mouse buttons `ExtrasState` tracks, by index.
+pub(super) fn mouse_button_index(button: MouseButton) -> Option<usize> {
+    match button {
+        MouseButton::Left => Some(0),
+        MouseButton::Right => Some(1),
+        MouseButton::Middle => Some(2),
+        MouseButton::Back => Some(3),
+        MouseButton::Forward => Some(4),
+        MouseButton::Other(_) => None,
+    }
+}
+
+/// Frame times over the last few seconds: frames per second, the minimum
+/// and the 1% low, recomputed twice a second. Kept for mods
+/// (`native_frame_rate`, `native_frame_stats`); the FPS counter reads it
+/// through the host.
+struct FrameRate {
+    /// (end time in seconds, frame milliseconds), oldest first.
+    frames: VecDeque<(f64, f32)>,
+    shown: FpsReading,
+    computed_at: f64,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct FpsReading {
+    fps: u32,
+    min: u32,
+    low: u32,
+}
+/// Seconds the minimum and 1% low look back.
+const LOW_WINDOW: f64 = 5.0;
+impl Default for FrameRate {
+    fn default() -> Self {
+        Self {
+            frames: VecDeque::new(),
+            shown: FpsReading::default(),
+            computed_at: f64::NEG_INFINITY,
+        }
+    }
+}
+impl FrameRate {
+    /// A frame that ended at `now` (seconds) and took `ms`.
+    fn record(&mut self, now: f64, ms: f32) {
+        self.frames.push_back((now, ms));
+        while self
+            .frames
+            .front()
+            .is_some_and(|&(t, _)| now - t > LOW_WINDOW)
+        {
+            self.frames.pop_front();
+        }
+        if now - self.computed_at >= 0.5 {
+            self.computed_at = now;
+            self.shown = self.compute(now);
+        }
+    }
+    fn compute(&self, now: f64) -> FpsReading {
+        let fps = self.frames.iter().filter(|&&(t, _)| now - t < 1.0).count() as u32;
+        let mut times: Vec<f32> = self.frames.iter().map(|f| f.1).collect();
+        if times.is_empty() {
+            return FpsReading::default();
+        }
+        times.sort_by(|a, b| b.total_cmp(a));
+        let to_fps = |ms: f32| (1000.0 / ms.max(0.001)).round() as u32;
+        // The 1% low: the frame rate of the 99th percentile frame time.
+        let low = times[(times.len() - 1) / 100];
+        FpsReading {
+            fps,
+            min: to_fps(times[0]),
+            low: to_fps(low),
+        }
+    }
+    fn reading(&self) -> FpsReading {
+        self.shown
+    }
+}
+
+/// Clicks of one button in the last second.
+#[derive(Default)]
+struct Cps {
+    clicks: VecDeque<f64>,
+}
+impl Cps {
+    fn click(&mut self, now: f64) {
+        self.clicks.push_back(now);
+        self.forget(now);
+    }
+    fn forget(&mut self, now: f64) {
+        while self.clicks.front().is_some_and(|&t| now - t >= 1.0) {
+            self.clicks.pop_front();
+        }
+    }
+    fn per_second(&mut self, now: f64) -> usize {
+        self.forget(now);
+        self.clicks.len()
+    }
+}
+
 impl Game<'_> {
     fn extras_now(&self) -> f64 {
         self.started.elapsed().as_secs_f64()
@@ -38,26 +137,22 @@ impl Game<'_> {
     /// Mouse buttons while playing, for mods' clicks.
     pub(super) fn extras_mouse(&mut self, button: MouseButton, pressed: bool) {
         self.native_mouse_event(button, pressed);
-        let i = match button {
-            MouseButton::Left => 0,
-            MouseButton::Right => 1,
-            _ => return,
+        let Some(i) = mouse_button_index(button) else {
+            return;
         };
         self.extras.mouse[i] = pressed;
         // For mods (`input.clicks-per-second`, `native_clicks`).
-        if pressed {
-            let now = self.extras_now();
-            self.extras.cps[i].click(now);
+        if pressed && i < 2 {
+            self.extras.cps[i].click(self.extras_now());
         }
     }
-    /// Once per frame: the frame's time, and keys let go behind screens.
+    /// Once per frame: the frame's time, and buttons let go behind screens.
     pub(super) fn extras_frame(&mut self, elapsed: Duration) {
         // Under agent control the window may lack focus without pausing.
         let focused = self.focused || self.control.is_some();
         let playing = self.screen == Screen::Playing && self.title.is_none() && focused;
         if !playing {
-            self.extras.mouse = [false; 2];
-            self.extras.zoom_held = false;
+            self.extras.mouse = [false; 5];
         }
         self.update_minimap();
         // For mods (`render.frame-stats`, `native_frame_rate`).
@@ -84,7 +179,7 @@ impl Game<'_> {
         (r.fps, r.min, r.low)
     }
     /// Attack and use clicks in the last second, and whether each is held.
-    pub(super) fn mouse_reading(&mut self) -> ((u32, u32), [bool; 2]) {
+    pub(super) fn mouse_reading(&mut self) -> ((u32, u32), [bool; 5]) {
         let now = self.extras_now();
         let [l, r] = &mut self.extras.cps;
         let cps = (l.per_second(now) as u32, r.per_second(now) as u32);
@@ -166,22 +261,9 @@ impl Game<'_> {
         };
         Some((m.corner, m.size, view))
     }
-    /// The minimap shown: a native mod's (`native_minimap`) or Horizon's own extra.
+    /// The minimap shown: a native mod's (`native_minimap`).
     fn minimap_wanted(&self) -> Option<NativeMinimap> {
-        if let Some(m) = self.native_minimap_now() {
-            return Some(m);
-        }
-        if self.settings.extras.minimap {
-            Some(NativeMinimap {
-                corner: self.settings.extras.minimap_corner,
-                size: self.settings.extras.minimap_size as f32,
-                blocks_per_pixel: self.settings.extras.minimap_zoom,
-                rotate: self.settings.extras.minimap_rotate,
-                round: self.settings.extras.minimap_round,
-            })
-        } else {
-            None
-        }
+        self.native_minimap_now()
     }
     /// Refresh the minimap's tiles within the frame budget, recompose its
     /// image when the view or a tile changed, and queue the upload.
@@ -235,24 +317,12 @@ impl Game<'_> {
             rgba: self.extras.minimap.image.clone(),
         });
     }
-    /// A mod's zoom in effect (`native_zoom`) or Horizon's own extra: (factor, smooth, turning
+    /// A mod's zoom in effect (`native_zoom`): (factor, smooth, turning
     /// scale); none is 1.
     fn zoom_now(&self) -> (f32, bool, f64) {
-        if let Some(z) = self.native_zoom_now() {
-            return (z.factor, z.smooth, f64::from(z.turn));
-        }
-        if self.settings.extras.zoom && self.extras.zoom_held && self.screen == Screen::Playing {
-            let factor = (self.settings.extras.zoom_level as f32).max(1.0);
-            let smooth = self.settings.extras.zoom_smooth;
-            let turn = if self.settings.extras.zoom_sensitivity {
-                1.0 / factor as f64
-            } else {
-                1.0
-            };
-            (factor, smooth, turn)
-        } else {
-            (1.0, true, 1.0)
-        }
+        self.native_zoom_now().map_or((1.0, true, 1.0), |z| {
+            (z.factor, z.smooth, f64::from(z.turn))
+        })
     }
     /// The field-of-view modifier target, divided by a smooth zoom.
     pub(super) fn zoomed_fov_target(&self, vanilla: f32) -> f32 {
@@ -275,8 +345,6 @@ impl Game<'_> {
     /// The minimap and mods' corner panels, in the HUD layer (hidden with F1
     /// by the caller). The top left corner gives way to the debug screen.
     pub(super) fn draw_extras(&mut self, batch: &mut HudBatch) {
-        let (fps, min, low) = self.frame_reading();
-        let ((l_cps, r_cps), [l_down, r_down]) = self.mouse_reading();
         let map = self.minimap_shown();
         let visible = |corner| !(self.debug && corner == Corner::TopLeft);
         let mut corners = Corners::new(batch.width, batch.height, self.effect_rows_height());
@@ -300,74 +368,6 @@ impl Game<'_> {
             };
             extras_hud::draw_minimap(batch, atlas, &mut corners, &look);
         }
-        if self.settings.extras.fps && visible(self.settings.extras.fps_corner) {
-            let fps_text = format!("FPS: {fps}");
-            let min_text = format!("Min: {min}");
-            let low_text = format!("1% Low: {low}");
-            let mut lines = vec![(fps_text.as_str(), 0xFFFFFF)];
-            if self.settings.extras.fps_lows {
-                lines.push((min_text.as_str(), 0xAAAAAA));
-                lines.push((low_text.as_str(), 0xAAAAAA));
-            }
-            extras_hud::draw_lines(
-                batch,
-                atlas,
-                &mut corners,
-                self.settings.extras.fps_corner,
-                &lines,
-            );
-        }
-        if self.settings.extras.keystrokes && visible(self.settings.extras.keystrokes_corner) {
-            let playing = self.screen == Screen::Playing;
-            let held = |k| playing && self.keys.contains(&k);
-            let w = if held(winit::keyboard::KeyCode::KeyW) {
-                "W"
-            } else {
-                "_"
-            };
-            let a = if held(winit::keyboard::KeyCode::KeyA) {
-                "A"
-            } else {
-                "_"
-            };
-            let s = if held(winit::keyboard::KeyCode::KeyS) {
-                "S"
-            } else {
-                "_"
-            };
-            let d = if held(winit::keyboard::KeyCode::KeyD) {
-                "D"
-            } else {
-                "_"
-            };
-            let space = if held(winit::keyboard::KeyCode::Space) {
-                "[ === ]"
-            } else {
-                "[ --- ]"
-            };
-            let line1 = format!("  {w}  ");
-            let line2 = format!("{a} {s} {d}");
-            let l_lbl = if l_down { "LMB*" } else { "LMB" };
-            let r_lbl = if r_down { "RMB*" } else { "RMB" };
-            let line3 = if self.settings.extras.keystrokes_cps {
-                format!("{l_lbl}:{l_cps} {r_lbl}:{r_cps}")
-            } else {
-                format!("{l_lbl} {r_lbl}")
-            };
-            let lines = [
-                (line1.as_str(), 0xFFFFFF),
-                (line2.as_str(), 0xFFFFFF),
-                (space, 0xCCCCCC),
-                (line3.as_str(), 0xAAAAAA),
-            ];
-            extras_hud::draw_lines(
-                batch,
-                atlas,
-                &mut corners,
-                self.settings.extras.keystrokes_corner,
-                &lines,
-            );
-        }
         self.native_hud(batch, &mut corners);
     }
     /// The height the status effect icons take at the top right
@@ -382,5 +382,60 @@ impl Game<'_> {
                 .is_some_and(|d| d.category != horizon_client::brewing::Category::Beneficial)
         });
         if harmful { 50.0 } else { 25.0 }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fps_counter_reports_rate_minimum_and_low() {
+        let mut c = FrameRate::default();
+        let mut t = 0.0;
+        // Two seconds at 100 fps with one 50 ms hitch.
+        for i in 0..200 {
+            let ms = if i == 150 { 50.0 } else { 10.0 };
+            t += f64::from(ms) / 1000.0;
+            c.record(t, ms);
+        }
+        c.computed_at = f64::NEG_INFINITY;
+        c.record(t + 0.01, 10.0);
+        let r = c.reading();
+        assert!((95..=101).contains(&r.fps), "{r:?}");
+        assert_eq!(r.min, 20);
+        assert_eq!(r.low, 100, "one frame in 200 is under the 1% mark");
+        // Hitches beyond 1% of frames pull the 1% low down.
+        let mut c = FrameRate::default();
+        let mut t = 0.0;
+        for i in 0..100 {
+            let ms = if i % 25 == 0 { 40.0 } else { 10.0 };
+            t += f64::from(ms) / 1000.0;
+            c.record(t, ms);
+        }
+        c.computed_at = f64::NEG_INFINITY;
+        c.record(t, 10.0);
+        assert_eq!(c.reading().low, 25);
+    }
+
+    #[test]
+    fn old_frames_leave_the_window() {
+        let mut c = FrameRate::default();
+        c.record(0.0, 100.0);
+        for i in 1..=700 {
+            c.record(f64::from(i) / 100.0, 10.0);
+        }
+        assert_eq!(c.reading().min, 100, "the 100 ms frame is 7 s old");
+    }
+
+    #[test]
+    fn cps_counts_the_last_second() {
+        let mut cps = Cps::default();
+        for i in 0..10 {
+            cps.click(f64::from(i) * 0.1);
+        }
+        assert_eq!(cps.per_second(0.95), 10);
+        assert_eq!(cps.per_second(1.25), 7);
+        assert_eq!(cps.per_second(3.0), 0);
     }
 }

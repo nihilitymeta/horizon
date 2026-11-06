@@ -11,10 +11,12 @@ static MOD_API_LEVEL: [u8; 27] = horizon_mods::api_level::MARK;
 /// (`horizon_mods::feature_registry::MARK`).
 static FEATURE_REGISTRY: [u8; 27] = horizon_mods::feature_registry::MARK;
 
-/// The built-in mods in dispatch order: developer tools, then scripted mods.
+/// The built-in mods in dispatch order: the extras (zoom, the minimap, the
+/// FPS counter, keystrokes), then the developer tools, then scripted mods.
 pub fn builtin_mods(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
     let lua = event_horizon_lua::discover(args);
-    let mut mods = event_horizon_lua::dev_tools::mods(!lua.is_empty());
+    let mut mods = event_horizon_extras::mods();
+    mods.extend(event_horizon_lua::dev_tools::mods(!lua.is_empty()));
     mods.extend(lua);
     mods
 }

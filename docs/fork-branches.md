@@ -82,8 +82,12 @@ default. Options > Mods lists them, and `horizon-client --list-mods` prints them
 `horizon-mods.txt` carries `mod.<id>:true|false` lines, so switching a feature is writing one line. Format:
 [registry/README.md](../crates/horizon-client-render/registry/README.md).
 
-**Extras and key binds** (`archive/extras-keybinds`). The zoom, minimap, FPS counter and keystrokes hook mods are
-registry entries with their Extras rows. Zoom and minimap can be bound in the standard Key Binds screen.
+**Extras and key binds** (`archive/extras-keybinds`). The zoom, minimap, FPS counter and keystrokes extras are the built-in
+native mod `crates/event-horizon-extras` (issue #29): one trait mod, four rows in Options > Mods, each with its own
+`mod.<id>` switch (seeded from the old `horizon-extras.txt` lines) and settings page. The engine keeps the minimap's
+tiles and drawing, the zoom's field-of-view plumbing, the frame counter for mods and the keybind rows
+(`key.zoom`, `key.minimap`, bound in the standard Key Binds screen). Code: `crates/event-horizon-extras/`,
+`crates/horizon-client-render/src/mod_list.rs` (the switch seeding), `crates/horizon-client/src/game/extras.rs`.
 
 **Menus** (`archive/menus`). The Mods and Extras menus are two dedicated pages: installed mods, with a settings button
 only where a mod has one, and every mod's settings together. Fullbright, dynamic lights, inventory sort, mouse tweaks,

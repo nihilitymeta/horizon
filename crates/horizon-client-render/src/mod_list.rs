@@ -40,8 +40,8 @@ pub enum ModKind {
     Content,
     /// A native mod built into this game by the launcher (`docs/native-mods.md`).
     Native,
-    /// A native hook mod built into every game (zoom, minimap, the HUD counters):
-    /// `mod_registry::Kind::Hook`.
+    /// A native hook mod built into every game (fullbright, dynamic lights,
+    /// the inventory tools): `mod_registry::Kind::Hook`.
     Hook,
     /// An engine patch with a switch: `mod_registry::Kind::Engine`.
     Engine,
@@ -104,9 +104,19 @@ pub struct NativePage {
 
 impl ModList {
     pub fn load(dir: &Path) -> Self {
-        fs::read_to_string(dir.join(FILE))
+        let list = fs::read_to_string(dir.join(FILE))
             .map(|t| Self::parse(&t))
-            .unwrap_or_default()
+            .unwrap_or_default();
+        // The extras that became the built-in native mod
+        // (`crates/event-horizon-extras`) kept their switches in
+        // `horizon-extras.txt`; the `mod.<id>` line is the switch now, so a
+        // line the engine mirrored while they were extras carries the
+        // player's choice over, and a missing one is seeded from that file
+        // beside `options.txt` (off when it has no such line: a fresh
+        // install). Once a save writes the lines, this changes nothing.
+        let extras = fs::read_to_string(crate::logging::player_dir().join(crate::extras::FILE))
+            .unwrap_or_default();
+        with_moved_switches(list, &extras)
     }
     pub fn parse(text: &str) -> Self {
         let ids = |value: &str| -> BTreeSet<String> {
@@ -193,6 +203,41 @@ impl ModList {
     }
 }
 
+/// The extras that became the built-in native mod, each as (its mod id, its
+/// old `horizon-extras.txt` line).
+const MOVED_EXTRAS: [(&str, &str); 4] = [
+    ("zoom", "zoom"),
+    ("minimap", "minimap"),
+    ("fps_counter", "fps"),
+    ("keystrokes", "keystrokes"),
+];
+
+/// `list` with a `mod.<id>` line for each of the [`MOVED_EXTRAS`] that has
+/// none, taken from `extras` (the old `horizon-extras.txt`): the line says
+/// what the extra's switch said. A line that is already there (the engine
+/// mirrored the switches while they were extras) keeps its say.
+fn with_moved_switches(mut list: ModList, extras: &str) -> ModList {
+    let line = |key: &str| {
+        extras
+            .lines()
+            .filter_map(|l| l.split_once(':'))
+            .find(|(k, _)| k.trim() == key)
+            .map(|(_, v)| v.trim())
+    };
+    for (id, key) in MOVED_EXTRAS {
+        if list.enabled.contains(id) || list.disabled.contains(id) {
+            continue;
+        }
+        let on = line(key).is_some_and(|v| v == "true");
+        if on {
+            list.enabled.insert(id.to_owned());
+        } else {
+            list.disabled.insert(id.to_owned());
+        }
+    }
+    list
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,6 +248,29 @@ mod tests {
         assert_eq!(list.enabled.iter().collect::<Vec<_>>(), ["coords_hud"]);
         assert_eq!(ModList::parse(&list.serialize()), list);
         assert_eq!(ModList::default().serialize(), "");
+    }
+
+    #[test]
+    fn the_moved_extras_switches_carry_over_until_the_line_exists() {
+        // A player's old extras file decides the lines that are missing yet.
+        let list = ModList::parse("mod.zoom:true\n");
+        let list = with_moved_switches(list, "zoom:true\nfps:true\nkeystrokes:maybe\n");
+        assert!(list.enabled.contains("zoom"));
+        assert!(!list.enabled.contains("minimap"));
+        assert!(list.disabled.contains("minimap"));
+        assert!(list.enabled.contains("fps_counter"));
+        assert!(list.disabled.contains("keystrokes"), "an off extra");
+        // Once the line exists, the old file no longer moves the switch.
+        let list = ModList::parse("mod.zoom:false\n");
+        let list = with_moved_switches(list, "zoom:true\n");
+        assert!(list.disabled.contains("zoom"));
+        // A fresh install, with no extras file: everything off.
+        let list = with_moved_switches(ModList::default(), "");
+        assert!(
+            MOVED_EXTRAS
+                .iter()
+                .all(|&(id, _)| list.disabled.contains(id))
+        );
     }
 
     #[test]

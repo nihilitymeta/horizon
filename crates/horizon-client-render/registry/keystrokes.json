@@ -1,8 +1,0 @@
-{
-  "id": "keystrokes",
-  "title": "Keystrokes Input Display 1.0",
-  "description": "Shows movement, sprint, jump and mouse clicks as they happen.",
-  "kind": "hook",
-  "default_on": false,
-  "setting": { "file": "extras", "key": "keystrokes", "on": "true", "off": "false" }
-}

@@ -18281,15 +18281,12 @@ impl Game<'_> {
                             }
                             self.extras_mouse(button, pressed);
                             let m_name = horizon_client::keybinds::mouse_name(button);
-                            if self.settings.keys.get("key.zoom") == m_name {
-                                self.extras.zoom_held = pressed;
-                            }
                             if pressed && self.settings.keys.get("key.minimap") == m_name {
-                                self.settings.extras.minimap = !self.settings.extras.minimap;
-                                if !self.settings.extras.minimap {
-                                    self.settings.mods.disabled.insert("minimap".to_string());
+                                if self.settings.mods.disabled.remove("minimap") {
+                                    self.settings.mods.enabled.insert("minimap".to_string());
                                 } else {
-                                    self.settings.mods.disabled.remove("minimap");
+                                    self.settings.mods.enabled.remove("minimap");
+                                    self.settings.mods.disabled.insert("minimap".to_string());
                                 }
                                 self.settings.save(&Self::options_path());
                             }
@@ -18698,16 +18695,8 @@ impl Game<'_> {
                     {
                         return Ok(());
                     }
-                    // Zoom key handling: checks standard keybind key.zoom from Key Binds menu (or fallback C)
-                    let zoom_key_str = self.settings.keys.get("key.zoom");
-                    let is_zoom_key = horizon_client::keybinds::key_name(key)
-                        .is_some_and(|n| n == zoom_key_str)
-                        || (zoom_key_str == "key.keyboard.unknown" && key == KeyCode::KeyC);
-                    if is_zoom_key {
-                        self.extras.zoom_held =
-                            self.screen == Screen::Playing && event.state == ElementState::Pressed;
-                    }
-                    // Minimap toggle key: checks standard keybind key.minimap from Key Binds menu (or fallback M)
+                    // Minimap toggle key: checks standard keybind key.minimap from Key Binds menu (or fallback M).
+                    // The switch is the mod list's `mod.minimap` line, the built-in extras mod's.
                     let minimap_key_str = self.settings.keys.get("key.minimap");
                     let is_minimap_key = horizon_client::keybinds::key_name(key)
                         .is_some_and(|n| n == minimap_key_str)
@@ -18718,11 +18707,11 @@ impl Game<'_> {
                         && !event.repeat
                         && is_minimap_key
                     {
-                        self.settings.extras.minimap = !self.settings.extras.minimap;
-                        if !self.settings.extras.minimap {
-                            self.settings.mods.disabled.insert("minimap".to_string());
+                        if self.settings.mods.disabled.remove("minimap") {
+                            self.settings.mods.enabled.insert("minimap".to_string());
                         } else {
-                            self.settings.mods.disabled.remove("minimap");
+                            self.settings.mods.enabled.remove("minimap");
+                            self.settings.mods.disabled.insert("minimap".to_string());
                         }
                         self.settings.save(&Self::options_path());
                     }

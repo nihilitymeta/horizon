@@ -1054,6 +1054,7 @@ dependencies = [
 name = "event-horizon"
 version = "0.1.0"
 dependencies = [
+ "event-horizon-extras",
  "event-horizon-lua",
  "event-horizon-websocket",
  "horizon-client",
@@ -1067,6 +1068,13 @@ dependencies = [
 [[package]]
 name = "event-horizon-debug"
 version = "0.1.0"
+
+[[package]]
+name = "event-horizon-extras"
+version = "0.1.0"
+dependencies = [
+ "horizon-client",
+]
 
 [[package]]
 name = "event-horizon-lua"

@@ -1,8 +1,0 @@
-{
-  "id": "minimap",
-  "title": "Voxel Minimap & Radar 1.0",
-  "description": "In-game top-down live terrain mapping with an entity radar. Its key is in Controls > Key Binds.",
-  "kind": "hook",
-  "default_on": false,
-  "setting": { "file": "extras", "key": "minimap", "on": "true", "off": "false" }
-}

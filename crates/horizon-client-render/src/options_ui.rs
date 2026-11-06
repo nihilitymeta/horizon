@@ -46,16 +46,6 @@ fn track_name(id: &str) -> &str {
 fn mod_items(id: &str) -> &'static [crate::extras::Item] {
     use crate::extras::Item;
     match id {
-        "zoom" => &[Item::ZoomSmooth, Item::ZoomSensitivity, Item::ZoomLevel],
-        "minimap" => &[
-            Item::MinimapCorner,
-            Item::MinimapSize,
-            Item::MinimapShape,
-            Item::MinimapZoom,
-            Item::MinimapRotate,
-        ],
-        "fps_counter" => &[Item::FpsCorner, Item::FpsLows],
-        "keystrokes" => &[Item::KeystrokesCorner, Item::KeystrokesCps],
         "mouse_tweaks" => &[Item::MouseTweaksWheel],
         _ => &[],
     }
@@ -4323,37 +4313,6 @@ impl OptionsUi {
                                 self.selected_key = Some(name);
                             } else {
                                 item.cycle(&mut s.extras, self.shift);
-                                match item {
-                                    crate::extras::Item::Zoom => {
-                                        if !s.extras.zoom {
-                                            s.mods.disabled.insert("zoom".into());
-                                        } else {
-                                            s.mods.disabled.remove("zoom");
-                                        }
-                                    }
-                                    crate::extras::Item::Minimap => {
-                                        if !s.extras.minimap {
-                                            s.mods.disabled.insert("minimap".into());
-                                        } else {
-                                            s.mods.disabled.remove("minimap");
-                                        }
-                                    }
-                                    crate::extras::Item::Fps => {
-                                        if !s.extras.fps {
-                                            s.mods.disabled.insert("fps_counter".into());
-                                        } else {
-                                            s.mods.disabled.remove("fps_counter");
-                                        }
-                                    }
-                                    crate::extras::Item::Keystrokes => {
-                                        if !s.extras.keystrokes {
-                                            s.mods.disabled.insert("keystrokes".into());
-                                        } else {
-                                            s.mods.disabled.remove("keystrokes");
-                                        }
-                                    }
-                                    _ => {}
-                                }
                                 events.push(Event::Changed);
                             }
                         }
@@ -4944,9 +4903,6 @@ impl OptionsUi {
             };
             let keys = s.mods.keys.entry(m.id.clone()).or_default();
             keys.insert(key.clone(), value.clone());
-            if m.id == "zoom" {
-                s.extras.zoom_key = value;
-            }
             return vec![Event::Changed];
         }
         if !s.extras.set_key(name, value.clone()) && !s.horizon.set_key(name, value.clone()) {
@@ -8420,13 +8376,17 @@ mod tests {
         let mut s = Settings::default();
         s.mods.installed.push(crate::mod_list::Installed {
             kind: crate::mod_list::ModKind::Hook,
-            id: "zoom".into(),
-            title: "Cinematic Zoom".into(),
-            description: "Smooth FOV zoom".into(),
+            id: "mouse_tweaks".into(),
+            title: "Mouse Tweaks".into(),
+            description: "Inventory drag controls".into(),
             problem: None,
             dev: false,
             native: Some(crate::mod_list::NativePage {
-                keys: vec![["zoom".into(), "Zoom Key".into(), "key.keyboard.c".into()]],
+                keys: vec![[
+                    "wheel".into(),
+                    "Wheel Key".into(),
+                    "key.keyboard.unknown".into(),
+                ]],
                 buttons: Vec::new(),
             }),
         });
@@ -8456,9 +8416,7 @@ mod tests {
             .flatten()
             .collect();
         assert!(acts.contains(&Act::ToggleMod(0)));
-        assert!(acts.contains(&Act::Extra(crate::extras::Item::ZoomSmooth)));
-        assert!(acts.contains(&Act::Extra(crate::extras::Item::ZoomSensitivity)));
-        assert!(acts.contains(&Act::Extra(crate::extras::Item::ZoomLevel)));
+        assert!(acts.contains(&Act::Extra(crate::extras::Item::MouseTweaksWheel)));
 
         // The toggle's label is a translated line, not English in the code.
         let toggle = rows.iter().find_map(|r| match r {

@@ -8820,7 +8820,8 @@ impl Game<'_> {
             log.push((pos[0], pos[1], pos[2]));
         }
     }
-    /// Playing, with nothing over the world: keys and zoom apply.
+    /// Playing, with nothing over the world: keys and zoom apply. API
+    /// @API:extras_helpers@.
     pub(super) fn native_playing(&self) -> bool {
         self.screen == Screen::Playing
             && self.title.is_none()
@@ -8871,12 +8872,12 @@ impl Game<'_> {
     }
     /// Whether a box in `corner` shows: F3's debug screen takes both top
     /// corners (its left and right columns), and a bottom corner while one
-    /// of its charts is drawn there.
+    /// of its charts is drawn there. API @API:extras_helpers@.
     pub(super) fn native_corner_shown(&self, corner: Corner) -> bool {
         let charts = self.debug_charts.corners(!self.has_singleplayer_server());
         !debug_takes(corner, self.debug, charts)
     }
-    /// The width of `text` in GUI pixels.
+    /// The width of `text` in GUI pixels. API @API:extras_helpers@.
     pub(super) fn native_text_width(&self, text: &str) -> f32 {
         HudBatch::text_width(&self.gui.atlas, text)
     }
@@ -9199,6 +9200,13 @@ impl Game<'_> {
     pub(super) fn native_frame_rate(&self) -> (u32, u32, u32) {
         self.frame_reading()
     }
+    /// The frame counter for a mod's HUD (the same numbers
+    /// `native_frame_rate` gives): frames in the last second, the slowest
+    /// frame and the 1% low of the last 5 seconds, in frames per second.
+    /// API @API:extras_helpers@.
+    pub(super) fn native_frame_stats(&self) -> (u32, u32, u32) {
+        self.frame_reading()
+    }
     /// Attack and use clicks in the last second.
     pub(super) fn native_clicks(&mut self) -> (u32, u32) {
         self.mouse_reading().0
@@ -9213,6 +9221,19 @@ impl Game<'_> {
             None => self.mouse_reading().1[usize::from(name == "key.use")],
         };
         Some((down, label))
+    }
+    /// Whether the key a keybind is bound to is held: any mapping of Key
+    /// Binds (`key.zoom`, `key.minimap`, a vanilla one), its own choice or
+    /// its default. False when the mapping is unknown or unbound, and for a
+    /// mouse button `native_key` does not name. API @API:extras_helpers@.
+    pub(super) fn native_key_down(&self, mapping: &str) -> bool {
+        let bound = self.settings.keys.get(mapping);
+        if let Some(key) = keybinds::key_code(bound) {
+            return self.keys.contains(&key);
+        }
+        keybinds::mouse_button(bound)
+            .and_then(super::extras::mouse_button_index)
+            .is_some_and(|i| self.extras.mouse[i])
     }
     /// The key the player chose for a mod's key `name`, else `default`
     /// (`key.keyboard.z`), as the WebAssembly mods' keys were kept
