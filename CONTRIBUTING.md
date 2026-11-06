@@ -23,7 +23,7 @@ queue (the hub, or `/suggest` on Discord) rather than to issues, which are for b
 
   ```sh
   cargo run --release -p horizon-prepare -- --prepare --server-jar ~/Downloads/server.jar
-  cargo run --release -p horizon-client
+  cargo run --release -p event-horizon
   ```
 
 - **Launcher:** its own Cargo workspace in `launcher/` (`cd launcher && cargo run`; on NixOS, `nix-shell` first).

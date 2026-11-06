@@ -160,7 +160,7 @@ once per player and waking each connection's writer thread once per packet cost 
 
 To run it again (bots on another machine reached at `--connect`):
 
-    cargo build --release -p horizon-client --bin horizon-client -p horizon-server -p horizon-bots
+    cargo build --release -p event-horizon --bin horizon-client -p horizon-server -p horizon-bots
     python3 tools/server_bench.py --servers horizon,vanilla --bots 1,10,25,50,100 --behaviour walk,explore \
         --gamerule locator_bar=false --nice 19 --bots-via 'ssh macmini' --bots-bin /path/to/horizon-bots \
         --connect <this machine's address> --out results.json

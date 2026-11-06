@@ -4,6 +4,9 @@ Each section is one addition to upstream: what it does today, how you turn it on
 still planned. All of them are part of `engine-work`. Until 2026-11-04 each one lived on a branch of its own; the tag
 `archive/<name>` keeps that branch's last version.
 
+The `event-horizon` crate assembles the built-in mods and builds the `horizon-client` program. Its
+`builtin_mods` puts the developer tools before the Lua mods; `src/main.rs` handles program startup and mod checks.
+
 ## For mods
 
 **Mob AI hooks** (`archive/mob-ai-hooks`). Mobs declared in a content mod's data: `entity_type/<name>.json` copies any

@@ -70,7 +70,7 @@ def main():
         'compile-java')
     run(['java', '-cp', str(classes) + os.pathsep + dependencies, 'dev.horizonlab.parity.VanillaBoatAuthorityOracle',
          work / 'inputs.json', work / 'vanilla.json'], 'vanilla')
-    run(['cargo', 'build', '--profile', 'fast', '-p', 'horizon-client', '--bin', 'horizon-client'], 'compile-rust')
+    run(['cargo', 'build', '--profile', 'fast', '-p', 'event-horizon', '--bin', 'horizon-client'], 'compile-rust')
     binary = lab.cargo_target() / 'fast' / ('horizon-client.exe' if os.name == 'nt' else 'horizon-client')
     with (work / 'rust.log').open('w') as log:
         run_game([str(binary), '--headless', '--resources', str(lab.RESOURCES)], cwd=lab.ROOT,

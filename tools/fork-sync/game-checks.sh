@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The modkit's checks against the engine-work build in target/, one at a time, in a scratch game folder.
 # One at a time matters: a check that fails can leave its game running, and two games on one folder spoil each
-# other's world and log. Build first: cargo build --profile fast -p horizon-client -p horizon-client-lib,
+# other's world and log. Build first: cargo build --profile fast -p event-horizon -p horizon-client-lib,
 # and cargo build -p cargo-horizon-mod.
 #   tools/fork-sync/game-checks.sh [modkit folder]     # default: ~/src/horizon-modkit
 export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.local/bin:$PATH

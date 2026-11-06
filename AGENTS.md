@@ -40,7 +40,8 @@ Game workspace (root `Cargo.toml`); `launcher/` and `crates/horizon-telemetry-se
 
 | Crate | Owns |
 |---|---|
-| `horizon-client` | Gameplay library (`src/lib.rs`: `game.rs` + `game/`, `entry.rs`) and thin executable (`src/main.rs`). Also the dedicated server (`--dedicated`). Re-exports `horizon-client-lib` for existing mod paths. |
+| `horizon-client` | Gameplay library (`src/lib.rs`: `game.rs` + `game/`, `entry.rs`). Also the dedicated server (`--dedicated`). Re-exports `horizon-client-lib` for existing mod paths. |
+| `event-horizon` | Event Horizon's executable (`src/main.rs`, named `horizon-client`) and built-in mod assembly (`src/lib.rs`). |
 | `horizon-client-lib` | Reusable client systems, `horizon-ctl`, probes and their tests. Its manifest points to the existing sources under `crates/horizon-client/`; the library root is `src/client_lib.rs`. It never depends on gameplay. |
 | `horizon-items` | Blocks and items below gameplay: `blocks.rs` (block facts), `items.rs`, `item_data.rs` (components), `enchant.rs`, `cooldowns.rs`, `bundle.rs`, `item_nbt.rs`. Re-exported as `horizon_client::items`... |
 | `horizon-command` | Command parsing (Brigadier): the vanilla tree, argument types, selectors, suggestions, the tree's network form. Re-exported as `horizon_client::command` |
@@ -87,9 +88,9 @@ reads `README.md`, `launcher/links.json`, `docs/api/`, `roadmap/roadmap.json` an
 ```sh
 python3 tools/pr_ready.py                  # the self-check: fmt, clippy -D warnings, touched crates' tests, harnesses; paste its block in the PR
 python3 tools/pr_ready.py --quick          # same without harnesses
-cargo test -p horizon-client -p horizon-client-lib --lib --bins --tests   # skips the 104 examples (pr_ready does this); `--doc` separately
+cargo test -p horizon-client -p horizon-client-lib -p event-horizon --lib --bins --tests   # skips the 104 examples (pr_ready does this); `--doc` separately
 cargo test -p horizon-client-lib --lib mod_content::tests:: -- --ignored   # the 5 slow content-root tests, #[ignore]d; pr_ready runs them when mod content, assets, blocks or items change
-cargo build --profile fast -p horizon-client        # optimized, quick to link: use it to play or run lan_e2e
+cargo build --profile fast -p event-horizon        # optimized, quick to link: use it to play or run lan_e2e
 python3 tools/parity.py --changed origin/main       # the harnesses your branch can affect (CI's parity job)
 python3 tools/parity.py --changed-files paths.txt --list   # which harnesses cover these files, without running them
 python3 tools/parity.py mob_ai sculk       # named harnesses
@@ -139,10 +140,10 @@ python3 tools/agent_control_e2e.py         # horizon-ctl / MCP end to end
 
 `L:` = lib (`crates/horizon-client/src/`, or `crates/horizon-client-render/src/` for the modules that crate holds, under
 the same `horizon_client::<module>` paths), `G:` = gameplay (`crates/horizon-client/src/game/`), also in the lib in normal builds.
-Gameplay keeps its `horizon_client::<module>` imports through a self-crate alias. The executable
-contains only the allocator, mod API marker and a call to `entry::main`. For unit tests, the lib
-excludes `entry` and `game`, and the executable test target owns `game` so its process-wide test
-state stays separate from the library tests. This compiles gameplay twice for executable tests.
+Gameplay keeps its `horizon_client::<module>` imports through a self-crate alias. Event Horizon's
+`event-horizon` executable holds the allocator and API markers and calls `entry::main_with` with
+its built-in mods. For unit tests, the reusable lib excludes `entry` and `game`; gameplay tests
+run in the `horizon-client` library test target.
 
 | Subsystem | Files |
 |---|---|
@@ -199,7 +200,7 @@ Single player, LAN guests and dedicated servers all run the server code, so a fi
 Test the server thread when you touch player-facing gameplay:
 
 ```sh
-cargo run --profile fast -p horizon-client -- --resources .local/horizon-client/26.3 --world T               # server thread
+cargo run --profile fast -p event-horizon -- --resources .local/horizon-client/26.3 --world T               # server thread
 python3 tools/lan_e2e.py --check <name>                  # host on its server thread, guest is a server client
 python3 tools/parity.py dedicated_server server_entities server_player_damage
 ```

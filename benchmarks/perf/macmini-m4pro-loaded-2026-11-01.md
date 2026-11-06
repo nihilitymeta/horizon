@@ -11,7 +11,7 @@ they're the first Mac reports and show how each game behaves under heavy CPU con
 - **Machine:** Mac mini, Apple M4 Pro (10 performance + 4 efficiency cores, 20-core GPU), 64 GB, macOS 27.0.1. Screen
   1920x1080; the session was locked, so every game ran `offscreen` (Horizon renders into a texture; vanilla draws into a
   window nobody sees).
-- **Horizon:** main 1bd24e4042, `cargo build --release -p horizon-client`, Metal.
+- **Horizon:** main 1bd24e4042, `cargo build --release -p event-horizon`, Metal.
 - **Vanilla:** the 26.3 client jar with Fabric Loader and the driver mod, Java 25 (Temurin), `-Xmx2G` with the launcher's G1
   flags, OpenGL 4.1 (Apple's Metal-backed driver).
 - **Vanilla + mods:** the same with Sodium mc26.3-0.9.2, Lithium mc26.3-0.26.2, FerriteCore 9.0.0, ImmediatelyFast 1.17.1 and

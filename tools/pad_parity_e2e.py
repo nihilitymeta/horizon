@@ -15,7 +15,7 @@ Cases:
 - quick_move: Shift-click on an inventory slot moves the stack; so must the pad's Y.
 - screenshot: key.screenshot bound to the pad takes a screenshot as F2 does.
 
-Needs built fast binaries (`cargo build --profile fast -p horizon-client -p horizon-client-lib --bins`)
+Needs built fast binaries (`cargo build --profile fast -p event-horizon -p horizon-client-lib --bins`)
 and prepared resources in .local/horizon-client/26.3. Exit status 0 when every case matches.
 """
 import argparse

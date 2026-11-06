@@ -8,7 +8,7 @@
 
 How it works
 - `Game(players)` launches P1's game through horizon-ctl (`target/fast/horizon-ctl`, built with
-  `cargo build --profile fast -p horizon-client`) with `HORIZON_SPLIT=players`: the game adds the
+  `cargo build --profile fast -p event-horizon`) with `HORIZON_SPLIT=players`: the game adds the
   others itself, as P2, P3...
 - Every player has its own control socket (`c.sock`, `c.sock2`...). `g.ctl(n, words...)` sends one
   horizon-ctl command to player n (docs/horizon-ctl-commands.md).
@@ -1279,7 +1279,7 @@ def main():
     VERBOSE = args.verbose
     sys.stdout.reconfigure(line_buffering=True)
     if not CTL.exists():
-        sys.exit(f'{CTL} is missing: cargo build --profile fast -p horizon-client')
+        sys.exit(f'{CTL} is missing: cargo build --profile fast -p event-horizon')
     if not (RESOURCES / 'assets').exists():
         sys.exit(f'no prepared resources in {RESOURCES}')
     for name in args.only or [n for n in SCENARIOS if n != 'native_pointer']:

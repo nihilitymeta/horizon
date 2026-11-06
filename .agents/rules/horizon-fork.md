@@ -48,7 +48,7 @@ bindings that exist. Keep engine changes small in upstream's files, so upstream 
 
 - On macOS, Cargo is Homebrew's keg-only `rustup`: start each shell command with
   `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
-- The game: `cargo build --profile fast -p horizon-client -p horizon-client-lib`. Mod tooling:
+- The game: `cargo build --profile fast -p event-horizon -p horizon-client-lib`. Mod tooling:
   `cargo build -p cargo-horizon-mod`.
 - Before committing: `cargo fmt --all`, then `cargo clippy -p <crate> --tests` and `cargo nextest run -p <crate>`
   for each crate you touched, with `CARGO_INCREMENTAL=0`. Before a push of a large change:

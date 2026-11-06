@@ -1051,6 +1051,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "event-horizon"
+version = "0.1.0"
+dependencies = [
+ "horizon-client",
+ "horizon-core",
+ "horizon-mods",
+ "horizon-threads",
+ "serde_json",
+ "winresource",
+]
+
+[[package]]
 name = "event-horizon-observe"
 version = "0.1.0"
 dependencies = [
@@ -1583,7 +1595,6 @@ dependencies = [
  "ureq",
  "wgpu",
  "winit",
- "winresource",
  "zip",
 ]
 

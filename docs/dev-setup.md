@@ -65,7 +65,7 @@ skipped, and nothing says so.
 
 ```sh
 cd ~/src/horizon
-cargo build --profile fast -p horizon-client -p horizon-client-lib
+cargo build --profile fast -p event-horizon -p horizon-client-lib
 cargo build -p cargo-horizon-mod
 ```
 

@@ -61,7 +61,7 @@ Its rules on contributing (pull requests, claims, labels, release batches) are f
 cargo fmt --all
 python3 tools/pr_ready.py --quick              # fmt, clippy -D warnings, the touched crates' tests
 (cd launcher && cargo check)                   # only if you touched launcher/
-cargo build --profile fast -p horizon-client -p horizon-client-lib
+cargo build --profile fast -p event-horizon -p horizon-client-lib
 ```
 
 Then run the game once in a scratch `HORIZON_HOME` and use the feature. For a change the Lua mods can reach, run

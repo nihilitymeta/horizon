@@ -69,10 +69,10 @@ verified, it is reused and the named files aren't read. Two things no such launc
 ```sh
 cargo run --release -p horizon-prepare -- --prepare --server-jar ~/Downloads/server.jar
 cargo run --release -p horizon-prepare -- sounds
-cargo run --release -p horizon-client -- --render-distance 12
+cargo run --release -p event-horizon -- --render-distance 12
 ```
 
-Development builds that link quickly: `cargo build --profile fast -p horizon-client`.
+Development builds that link quickly: `cargo build --profile fast -p event-horizon`.
 
 Optional Windows allocator build features are documented in
 [Windows allocator experiments](windows-allocators.md).
@@ -120,7 +120,7 @@ local socket; under control, losing window focus does not pause the game or
 release held keys, so a script can play while you use other windows.
 
 ```sh
-cargo build --release -p horizon-client -p horizon-client-lib --bins
+cargo build --release -p event-horizon -p horizon-client-lib --bins
 C=target/release/horizon-ctl
 $C launch --world Survival --seed 5 --wait   # start the game, open or create the world, wait for it
 $C state                                     # player, world, screen, crosshair target
@@ -272,7 +272,7 @@ are out of scope. To play on another Linux machine
 without Rust, JDK or prepared resources, package a release build where they exist:
 
 ```sh
-cargo build --release -p horizon-client
+cargo build --release -p event-horizon
 python3 tools/package_native_client.py --out ~/builds/horizon
 ```
 

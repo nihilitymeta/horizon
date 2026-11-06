@@ -18,11 +18,11 @@ mimalloc. No frame-rate improvement is guaranteed.
 
 ```sh
 # Current mimalloc baseline, then add Segment Heap. Keep the same profile.
-cargo build --profile fast -p horizon-client --bin horizon-client
-cargo build --profile fast -p horizon-client --bin horizon-client --features windows-segment-heap
+cargo build --profile fast -p event-horizon --bin horizon-client
+cargo build --profile fast -p event-horizon --bin horizon-client --features windows-segment-heap
 # Older commands still build, but these repeat the two variants above.
-cargo build --profile fast -p horizon-client --bin horizon-client --features windows-mimalloc
-cargo build --profile fast -p horizon-client --bin horizon-client --features windows-segment-heap,windows-mimalloc
+cargo build --profile fast -p event-horizon --bin horizon-client --features windows-mimalloc
+cargo build --profile fast -p event-horizon --bin horizon-client --features windows-segment-heap,windows-mimalloc
 ```
 
 Copy each executable to a separate experiment directory before building the next

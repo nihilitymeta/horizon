@@ -96,7 +96,7 @@ def main():
     client, ctl_path = bindir / 'horizon-client', bindir / 'horizon-ctl'
     for binary in (client, ctl_path):
         if not binary.exists():
-            raise Failed(f'{binary} is missing; build it (cargo build --profile fast -p horizon-client '
+            raise Failed(f'{binary} is missing; build it (cargo build --profile fast -p event-horizon '
                          '-p horizon-client-lib --bins) or pass --bin-dir')
     resources = Path(args.resources).resolve()
     if not resources.exists():

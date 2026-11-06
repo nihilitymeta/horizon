@@ -12,9 +12,9 @@ from unittest import mock
 from tools import pr_ready
 
 PACKAGES = {"horizon-core": "crates/horizon-core", "horizon-client": "crates/horizon-client",
-            "horizon-theme": "crates/horizon-theme", "xtask": "xtask"}
+            "event-horizon": "crates/event-horizon", "horizon-theme": "crates/horizon-theme", "xtask": "xtask"}
 LIBRARIES = set(PACKAGES) - {"xtask"}
-DEPENDENCIES = {"horizon-client": {"horizon-core"}}
+DEPENDENCIES = {"horizon-client": {"horizon-core"}, "event-horizon": {"horizon-client"}}
 MODS = ""
 CLIPPY = pr_ready.CI_CLIPPY + " && " + pr_ready.CI_CLIPPY_SERVER
 # The bash on PATH: Windows' CreateProcess looks in System32 before PATH, so a bare "bash" there is WSL's
@@ -47,10 +47,14 @@ class PrReadyTests(unittest.TestCase):
                      "examples/probe/main.rs", "tests/lan_bot.rs"]:
             self.assertEqual(pr_ready.touched_crates({f"crates/horizon-client/{path}"}, packages),
                              ["horizon-client-lib"])
-        for path in ["src/lib.rs", "src/main.rs", "src/entry.rs", "src/game.rs", "src/game/combat.rs",
-                     "tests/launch_api.rs", "Cargo.toml", "build.rs"]:
+        for path in ["src/lib.rs", "src/entry.rs", "src/game.rs", "src/game/combat.rs", "Cargo.toml", "build.rs"]:
             self.assertEqual(pr_ready.touched_crates({f"crates/horizon-client/{path}"}, packages),
                              ["horizon-client"])
+        for path in ["src/main.rs", "tests/launch_api.rs"]:
+            self.assertEqual(pr_ready.touched_crates({f"crates/event-horizon/{path}"}, packages),
+                             ["event-horizon"])
+        self.assertEqual(pr_ready.touched_crates({"crates/horizon-client/windows-segment-heap.manifest"}, packages),
+                         ["event-horizon"])
 
     def test_which_workspace_builds_a_path(self):
         self.assertTrue(pr_ready.workspace_rust("crates/horizon-theme/fonts/x.ttf"))
@@ -213,8 +217,9 @@ class PrReadyTests(unittest.TestCase):
         self.assertEqual(by_name["doc tests"].command, "cargo test --locked -p horizon-core --doc")
 
     def test_clippy_is_ci_s_and_the_server_build_when_the_game_is_affected(self):
-        packages = {name: f"crates/{name}" for name in ("core", "world", "horizon-client", "unrelated")}
-        dependencies = {"world": {"core"}, "horizon-client": {"world"}, "unrelated": set()}
+        packages = {name: f"crates/{name}" for name in ("core", "world", "horizon-client", "event-horizon", "unrelated")}
+        dependencies = {"world": {"core"}, "horizon-client": {"world"},
+                        "event-horizon": {"horizon-client"}, "unrelated": set()}
         with mock.patch.object(pr_ready, "affected_here", return_value=[]):
             steps = pr_ready.plan(args(), "origin/main", {"crates/core/src/lib.rs"},
                                   packages, set(packages), dependencies)

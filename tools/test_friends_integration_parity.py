@@ -15,7 +15,7 @@ from integration_env import suite_lock
 
 
 if __name__ == '__main__':
-    subprocess.run(['cargo', 'build', '--locked', '--profile', 'fast', '-p', 'horizon-client', '-p', 'horizon-client-lib',
+    subprocess.run(['cargo', 'build', '--locked', '--profile', 'fast', '-p', 'event-horizon', '-p', 'horizon-client-lib',
                     '-p', 'horizon-relay', '--bin', 'horizon-client', '--bin', 'horizon-ctl',
                     '--bin', 'horizon-relay'], cwd=lab.ROOT, check=True)
     metadata = json.loads(subprocess.check_output(

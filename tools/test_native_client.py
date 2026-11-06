@@ -62,7 +62,7 @@ def main():
         if path.is_file()
     }
     environment = dict(os.environ, RUSTUP_TOOLCHAIN='stable')
-    subprocess.run(['cargo', 'build', '--locked', '-p', 'horizon-client'],
+    subprocess.run(['cargo', 'build', '--locked', '-p', 'event-horizon'],
                    cwd=lab.ROOT, env=environment, check=True, timeout=3600)
     metadata = json.loads(subprocess.check_output(
         ['cargo', 'metadata', '--locked', '--no-deps', '--format-version', '1'],

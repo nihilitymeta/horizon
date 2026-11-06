@@ -8,7 +8,7 @@ export PATH=/opt/homebrew/opt/rustup/bin:$PATH
 # Incremental caches speed up only small edits, and grow without limit.
 export CARGO_INCREMENTAL=0
 KNOWN="entities::drop_motion_tests::drops_match_vanillas_motion_bit_for_bit native_mods::tests::the_log_is_fresh_per_attempt_and_keeps_early_failures"
-PKGS=(-p horizon-client -p horizon-client-lib -p event-horizon-observe -p xtask)
+PKGS=(-p horizon-client -p horizon-client-lib -p event-horizon -p event-horizon-observe -p xtask)
 OUT=${1:-$HOME/sync-summary.txt}
 OUT=$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")
 : > "$OUT"

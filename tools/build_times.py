@@ -5,7 +5,7 @@
     python3 tools/build_times.py run --profiles dev --only incremental --crates horizon-items
     python3 tools/build_times.py compare before.json after.json
 
-`run` builds the game (`cargo build --locked -p horizon-client --profile P --timings`) and writes a JSON
+`run` builds the game (`cargo build --locked -p event-horizon --profile P --timings`) and writes a JSON
 report and a Markdown table under .local/build-times/reports/:
 
 - cold: a build from an empty target folder of its own (never target/), per profile. The timings page of
@@ -51,7 +51,7 @@ ROOT = lab.ROOT
 REPORT_FORMAT, REPORT_VERSION = "horizon-build-times", 1
 WORK = Path(".local") / "build-times"
 MARKER = ".horizon-build-times"
-PACKAGE = "horizon-client"
+PACKAGE = "event-horizon"
 PROFILES = ["dev", "fast"]
 # The files an edit goes to by default: large, often changed, and each in a different layer. horizon-client's
 # game.rs belongs to the game binary, the others to libraries the binary links. Any other crate in the

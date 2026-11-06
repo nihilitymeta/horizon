@@ -163,7 +163,7 @@ game built in `Game::new`, the integrated server on its own thread. On that base
 controllers), which links neither `libasound.so.2` nor `libudev.so.1`. `release.yml` builds it after the
 client archive (`xtask package-server`) and fails if `tools/check_imports.py --server` finds either library;
 CI lints the same build. `horizon-server` runs `horizon-engine` when it is beside it or on the PATH, else
-`horizon-client`. Build it yourself with `cargo build --release -p horizon-client --no-default-features`
+`horizon-client`. Build it yourself with `cargo build --release -p event-horizon --no-default-features`
 and copy `target/release/horizon-client` as `horizon-engine`. macOS and Windows have no such libraries to
 avoid, so they keep the one archive.
 

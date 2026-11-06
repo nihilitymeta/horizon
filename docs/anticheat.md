@@ -108,7 +108,7 @@ ones in this version.
   flagged, and nothing happens with the anticheat off.
 
 ```sh
-cargo build --profile fast -p horizon-client --bin horizon-client
+cargo build --profile fast -p event-horizon --bin horizon-client
 cargo build --profile fast -p horizon-bots
 python3 tools/anticheat_e2e.py --bin-dir target/fast
 python3 tools/server_bench.py --servers horizon --bots 60 --behaviour walk --anticheat   # its cost

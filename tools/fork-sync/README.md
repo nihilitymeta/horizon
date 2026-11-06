@@ -38,7 +38,7 @@ and checking the result. Run them in the one checkout, on `engine-work`
 
    ```sh
    tools/fork-sync/verify.sh
-   cargo build --profile fast -p horizon-client -p horizon-client-lib && cargo build -p cargo-horizon-mod
+   cargo build --profile fast -p event-horizon -p horizon-client-lib && cargo build -p cargo-horizon-mod
    tools/fork-sync/game-checks.sh
    tools/fork-sync/metal-launch.sh          # macOS
    ```

@@ -153,7 +153,7 @@ with. The coin is a fresh random key from the system, never the world's random.
 
 A native mod is built into the game it runs in ([native-mods.md](native-mods.md)). For the server: the source of the
 release the server runs, `horizon-mixins apply` with the `smp` bundle, then the server build
-(`cargo build --release --no-default-features -p horizon-client`), and `horizon-server`'s `[engine] path` set to
+(`cargo build --release --no-default-features -p event-horizon`), and `horizon-server`'s `[engine] path` set to
 the result. When to deploy it on the official server is the owners' decision; the mod's README holds the exact
 commands.
 

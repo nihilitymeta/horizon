@@ -87,7 +87,7 @@ jobs:
       - name: Build the game, horizon-ctl and cargo-horizon-mod
         shell: bash
         run: |
-          cargo build --release --locked -p horizon-client -p horizon-client-lib --bin horizon-client --bin horizon-ctl
+          cargo build --release --locked -p event-horizon -p horizon-client-lib --bin horizon-client --bin horizon-ctl
           cargo build --release --locked -p cargo-horizon-mod
       - name: The game starts
         shell: bash

@@ -4,8 +4,8 @@ The 40 areas changed most often in the 30 days to 2026-10-23 (commits on main to
 counted only for the game loop because nearly every gameplay change touches it). The crate map, how `Game` is
 organised and how to build and test are in [AGENTS.md](../AGENTS.md).
 
-Gameplay lives in the `horizon-client` library; `main.rs` is a thin executable calling
-`entry::main`. The reusable modules, control tool and probes belong to `horizon-client-lib`,
+Gameplay lives in the `horizon-client` library; Event Horizon's `event-horizon` program assembles
+the built-in mods and calls `entry::main_with`. The reusable modules, control tool and probes belong to `horizon-client-lib`,
 whose library root is `crates/horizon-client/src/client_lib.rs`. Source paths stay in place.
 The gameplay library re-exports the reusable API, keeping existing mod targets unchanged.
 Gameplay tests run in its library test target, separately from the reusable library's tests.
@@ -20,7 +20,7 @@ Checks: a bare name is a harness (`python3 tools/parity.py <name>`, script `tool
 
 For the full set of harnesses a file can affect, ask the runner:
 `printf '%s\n' <paths> > /tmp/p.txt && python3 tools/parity.py --changed-files /tmp/p.txt --list`.
-Client probes are built with `-p horizon-client-lib`; the game with `-p horizon-client`.
+Client probes are built with `-p horizon-client-lib`; the Event Horizon game with `-p event-horizon`.
 Because the probe library does not compile gameplay, its dep-info does not include `game.rs`
 or `game/`. Exact harness counts still depend on refreshed records and reachability; use the
 command above to inspect the selection rather than relying on historical counts.

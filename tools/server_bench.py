@@ -25,7 +25,7 @@ than 10 % apart isn't a fair comparison of its tick times.
 
 The vanilla side runs the pinned server jar from tools/lab.py prepare (your own copy). It needs Java 25. The
 Horizon side runs target/release/horizon-server with the engine beside it; build both first:
-    cargo build --release -p horizon-client --bin horizon-client -p horizon-server -p horizon-bots
+    cargo build --release -p event-horizon --bin horizon-client -p horizon-server -p horizon-bots
 
 Two more Java servers, both dev-only downloads into .local/server-bench/jars (never committed or shipped):
 - `paper`: Paper's newest build for the pinned version, from PaperMC's download API, checked against the

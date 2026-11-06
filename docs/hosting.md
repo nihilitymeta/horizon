@@ -64,7 +64,7 @@ the current Horizon Nightly from GitHub (the only build Horizon ships;
 - a `game-files` folder for the files you prepare, kept across updates.
 
 Options: `--version vX.Y.Z`, `--dir FOLDER`, `--bin FOLDER` (Windows: `-Version`, `-Dir`). Other systems,
-such as Linux on ARM, build from source: `cargo build --release -p horizon-client --bin horizon-client -p
+such as Linux on ARM, build from source: `cargo build --release -p event-horizon --bin horizon-client -p
 horizon-server` and keep both programs in one folder.
 
 The Horizon launcher also installs releases. Every release folder holds `horizon-server`, so you can run it

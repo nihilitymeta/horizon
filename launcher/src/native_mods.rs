@@ -2101,7 +2101,7 @@ fn pipeline(
                 if has_api {
                     api::PACKAGE
                 } else {
-                    "horizon-client"
+                    "event-horizon"
                 },
             ),
             "Compiling the game",
@@ -4004,7 +4004,7 @@ mod tests {
             Target::Client,
             Path::new("/native/target"),
             Profile::Performance,
-            "horizon-client",
+            "event-horizon",
         );
         let args: Vec<String> = cmd
             .get_args()
@@ -4019,7 +4019,7 @@ mod tests {
             ]
         );
         assert!(
-            args.ends_with(&["-p", "horizon-client", "--bin", "horizon-client"].map(String::from))
+            args.ends_with(&["-p", "event-horizon", "--bin", "horizon-client"].map(String::from))
         );
         let dir = cmd.get_current_dir().expect("a folder of its own");
         assert!(
@@ -4036,7 +4036,7 @@ mod tests {
             Target::Client,
             Path::new("/native/target"),
             Profile::Performance,
-            "horizon-client",
+            "event-horizon",
         );
         let args: Vec<_> = cmd.get_args().collect();
         assert_eq!(args[1], "--config");

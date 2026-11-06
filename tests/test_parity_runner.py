@@ -44,15 +44,16 @@ class ParityRunnerTests(unittest.TestCase):
         self.assertEqual(artifacts[0][3], selection)
 
     def test_old_broad_client_selections_include_the_moved_targets(self):
-        packages = {("bin", "horizon-client"): "horizon-client", ("bin", "horizon-ctl"): "horizon-client-lib",
+        packages = {("bin", "horizon-client"): "event-horizon", ("bin", "horizon-ctl"): "horizon-client-lib",
                     ("example", "client_probe"): "horizon-client-lib"}
         for flag in ["--bins", "--examples"]:
             command = ["cargo", "build", "-p", "horizon-client", "--no-default-features", flag]
             artifacts = parity.artifacts_of(command)
             before = [list(artifact[3]) for artifact in artifacts]
+            program = ["-p", "event-horizon"] if flag == "--bins" else []
             self.assertEqual(parity.prebuild_commands(artifacts, packages),
                              [["cargo", "build", "--locked", "--profile", "dev", "-p", "horizon-client",
-                               "--no-default-features", "-p", "horizon-client-lib", flag]])
+                               "--no-default-features", *program, "-p", "horizon-client-lib", flag]])
             self.assertEqual([artifact[3] for artifact in artifacts], before)
 
     def test_prebuild_repeats_each_harness_selection(self):

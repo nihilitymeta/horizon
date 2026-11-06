@@ -159,8 +159,9 @@ class ReachTests(unittest.TestCase):
 
     def test_old_broad_client_records_find_moved_ctl_and_probes(self):
         workspace(self.root, {
-            "crates/horizon-client/Cargo.toml": '[package]\nname = "horizon-client"\nautobins = false\nautoexamples = false\n'
-            '[[bin]]\nname = "horizon-client"\npath = "src/main.rs"\n',
+            "crates/horizon-client/Cargo.toml": '[package]\nname = "horizon-client"\nautobins = false\nautoexamples = false\n',
+            "crates/event-horizon/Cargo.toml": '[package]\nname = "event-horizon"\nautobins = false\n'
+            '[[bin]]\nname = "horizon-client"\npath = "../horizon-client/src/main.rs"\n',
             "crates/horizon-client/src/main.rs": "fn main() {}\n",
             "crates/horizon-client/src/bin/horizon-ctl.rs": "fn main() {}\n",
             "crates/horizon-client/examples/probe/main.rs": "fn main() {}\n",

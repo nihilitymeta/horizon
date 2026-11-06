@@ -25,7 +25,7 @@ timings; later builds are incremental):
 ```sh
 git clone https://github.com/whos-carmen/horizon.git && cd horizon
 git checkout engine-work
-cargo build --profile fast -p horizon-client -p horizon-client-lib
+cargo build --profile fast -p event-horizon -p horizon-client-lib
 target/fast/horizon-client --game-dir <a folder> --resources <the 26.3 folder above> --world "New World" --dev-tools \
   --dev-mod <path to horizon-modkit> --dev-mod <path to horizon-parasite-mod>
 ```
