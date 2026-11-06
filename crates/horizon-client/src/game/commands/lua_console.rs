@@ -1,5 +1,5 @@
 //! The Lua console's runtime (docs/dev-tools.md): a Luau state on the
-//! server thread that runs what the window queued (`dev_tools::console`)
+//! server thread that runs what the window queued (`dev_input::console`)
 //! once a server tick, after the levels ticked, with an `mc` table bound to
 //! this `Game` for the chunk's duration (`Lua::scope`): vanilla commands as
 //! the world's owner, entity data as `/data` reads and writes it, selectors,
@@ -7,7 +7,7 @@
 //! way. A script cannot keep a reference to the game: the scoped functions
 //! die with the scope, and `mc` is bound afresh each run.
 use super::{Game, Target, data::DataRef, inspect::id_of};
-use crate::dev_tools::console::{self, Kind, SCRIPTS_DIR, STOP_TICKS, TICKING};
+use crate::dev_input::console::{self, Kind, SCRIPTS_DIR, STOP_TICKS, TICKING};
 use horizon_client::{
     command::{Reader, selector},
     data_cmd::{self, Op},
@@ -435,7 +435,7 @@ impl Game<'_> {
                 "mods",
                 lua.create_function(|lua, ()| {
                     let list = lua.create_table()?;
-                    for m in crate::lua_mods::status() {
+                    for m in crate::dev_input::mods::status() {
                         let t = lua.create_table()?;
                         t.set("id", m.id)?;
                         t.set("source", m.source)?;
@@ -456,7 +456,7 @@ impl Game<'_> {
             mc.set(
                 "reload_mods",
                 lua.create_function(|_, id: Option<String>| {
-                    crate::lua_mods::request_reload(id.as_deref());
+                    crate::dev_input::mods::request_reload(id.as_deref());
                     Ok(())
                 })?,
             )?;

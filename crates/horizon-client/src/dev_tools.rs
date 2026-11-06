@@ -7,17 +7,12 @@
 //! the inspect stick (`horizon.dev.inspect`): they show only while it opened
 //! one.
 //!
-//! Three threads meet here. The window thread feeds egui its events
-//! ([`window_event`], from `Game::handle_window_event_inner`) and hands over
-//! each frame's input ([`frame`], from `Game::extras_frame`); the render
-//! thread runs egui and draws it in `world_drawn`, the renderer's hook point
-//! after the world and before the HUD, with the frame's device, queue,
-//! encoder and colour target; the server thread fills the brain snapshots
-//! (`mobs::observe`). The pointer is the game's until the tools' key frees it
-//! ([`holds_pointer`], which `Game::capture` obeys); while free, the mouse is
-//! the tools' and the keyboard is theirs only when a text field has focus.
+//! This is the windows' half: it draws with the shared state of
+//! [`crate::dev_input`] and never the other way round, so the two can move
+//! apart (#19).
 pub mod console;
 
+use crate::dev_input;
 use crate::gfx::native_render::{RenderHooks, WorldDrawnEvent};
 use crate::mobs::observe::{
     self, BrainSnapshot, GoalRow, HistoryTick, Inspected, InspectedBlock, Request, Series, View,
@@ -26,44 +21,13 @@ use crate::mod_api::{Hooks, Host, NativeBlockRim, VisualsEvent};
 use horizon_client_core::snbt::java_hash_order;
 use horizon_world::nbt::Tag;
 use horizon_world::snbt_text::to_snbt;
-use std::cell::RefCell;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
-use winit::event::{ElementState, WindowEvent};
-use winit::keyboard::PhysicalKey;
-use winit::window::Window;
+use std::sync::Mutex;
 
 /// The environment variable that turns the tools on (`1`); `--dev-tools` on
 /// the command line does the same (a launcher's game arguments).
 pub const ENV: &str = "HORIZON_DEV_TOOLS";
 /// The launch flag that turns the tools on.
 pub const FLAG: &str = "--dev-tools";
-/// `HORIZON_DEV_TOOLS_SCALE`: egui's zoom over the window's own scale. Unset,
-/// it follows the window's height in pixels: 1.0 below 1200, 1.5 up to 2000,
-/// 2.0 above (a 1440p or 4K window at scale 1 would otherwise be tiny).
-pub const SCALE_ENV: &str = "HORIZON_DEV_TOOLS_SCALE";
-
-static ENABLED: AtomicBool = AtomicBool::new(false);
-/// Whether the windows are installed: with the tools, or for the inspect stick.
-static INSTALLED: AtomicBool = AtomicBool::new(false);
-/// Whether this client told its server, since it joined, that it shows the
-/// windows (`observe_wire::Wire::Hello`).
-pub static HELLO: AtomicBool = AtomicBool::new(false);
-
-/// Whether this game draws the windows: a server may send it a guest's.
-pub fn installed() -> bool {
-    INSTALLED.load(Ordering::Relaxed)
-}
-static HOLDS_POINTER: AtomicBool = AtomicBool::new(false);
-/// The egui context, shared by the window thread (input) and the render thread (drawing).
-static CTX: OnceLock<egui::Context> = OnceLock::new();
-/// The frame's input, built on the window thread and taken by the render thread.
-static INPUT: Mutex<Option<egui::RawInput>> = Mutex::new(None);
-
-thread_local! {
-    /// egui-winit's event translation; the window thread's alone.
-    static WINIT: RefCell<Option<egui_winit::State>> = const { RefCell::new(None) };
-}
 
 /// The built-in mods of a plain `horizon-client`: the dev tools when asked
 /// for, and their windows alone when `scripted` (Lua mods are on, which may
@@ -73,7 +37,7 @@ pub fn mods(scripted: bool) -> Vec<Box<dyn Hooks>> {
     let mut mods: Vec<Box<dyn Hooks>> = Vec::new();
     let asked = std::env::var(ENV).is_ok_and(|v| v == "1") || std::env::args().any(|a| a == FLAG);
     if asked || scripted {
-        INSTALLED.store(true, Ordering::Relaxed);
+        dev_input::install();
         // Their key, Free Mouse for Dev Windows, shows in Key Binds.
         horizon_client::keybinds::show_dev_tools_key(true);
     }
@@ -84,247 +48,13 @@ pub fn mods(scripted: bool) -> Vec<Box<dyn Hooks>> {
         log::info!(
             "Horizon: developer tools on ({ENV}=1 or {FLAG}); Free Mouse for Dev Windows (Key Binds) frees the pointer"
         );
-        ENABLED.store(true, Ordering::Relaxed);
+        dev_input::enable();
         // The commands come with the tools and only then: they run Lua and
         // the owner's commands.
         horizon_client::command::vanilla::set_dev_tools_commands(true);
         mods.push(Box::new(DevTools::default()));
     }
     mods
-}
-
-/// Whether the tools are on (`HORIZON_DEV_TOOLS=1`).
-pub fn enabled() -> bool {
-    ENABLED.load(Ordering::Relaxed)
-}
-
-/// Whether the windows take input and draw now: the tools are on, or they
-/// are installed and the inspect stick opened a window.
-fn active() -> bool {
-    enabled() || (INSTALLED.load(Ordering::Relaxed) && (observe::showing() || holds_pointer()))
-}
-
-/// Whether the tools hold the pointer: freed by their key, so nothing in the
-/// game grabs it until the key is pressed again.
-pub fn holds_pointer() -> bool {
-    HOLDS_POINTER.load(Ordering::Relaxed)
-}
-
-/// The zoom the variable asks for, if any.
-fn scale_from_env() -> Option<f32> {
-    std::env::var(SCALE_ENV)
-        .ok()
-        .and_then(|v| v.parse::<f32>().ok())
-        .filter(|s| s.is_finite() && *s >= 0.25 && *s <= 8.0)
-}
-
-/// The zoom for a window `height` pixels tall, in points of the window's own scale.
-fn scale_for_height(height: f32) -> f32 {
-    if height >= 2000.0 {
-        2.0
-    } else if height >= 1200.0 {
-        1.5
-    } else {
-        1.0
-    }
-}
-
-fn ctx() -> &'static egui::Context {
-    CTX.get_or_init(|| {
-        let ctx = egui::Context::default();
-        ctx.set_zoom_factor(scale_from_env().unwrap_or(1.0));
-        ctx
-    })
-}
-
-/// Sets the zoom from the window's size once, unless the variable chose it.
-static ZOOM_SET: AtomicBool = AtomicBool::new(false);
-fn zoom_for(window: &Window) {
-    if ZOOM_SET.swap(true, Ordering::Relaxed) {
-        return;
-    }
-    if scale_from_env().is_none() {
-        let height = window.inner_size().height as f32 / window.scale_factor() as f32;
-        ctx().set_zoom_factor(scale_for_height(height));
-    }
-}
-
-fn with_winit<R>(window: &Window, f: impl FnOnce(&mut egui_winit::State) -> R) -> R {
-    WINIT.with(|cell| {
-        let mut slot = cell.borrow_mut();
-        let state = slot.get_or_insert_with(|| {
-            egui_winit::State::new(
-                ctx().clone(),
-                egui::ViewportId::ROOT,
-                window,
-                Some(window.scale_factor() as f32),
-                window.theme(),
-                None,
-            )
-        });
-        f(state)
-    })
-}
-
-/// What the tools did with a window event.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Input {
-    /// Not theirs: the game handles it.
-    Pass,
-    /// Theirs: the game skips it.
-    Consumed,
-    /// Their key: the pointer is now free (`true`) or the game's again.
-    Toggled { free: bool },
-}
-
-/// Whether `event` presses `key`, the binding Free Mouse for Dev Windows
-/// (`key.devTools`): a key, or a mouse button.
-fn presses(event: &WindowEvent, key: &str) -> bool {
-    match event {
-        WindowEvent::KeyboardInput {
-            event: k,
-            is_synthetic: false,
-            ..
-        } => {
-            k.state == ElementState::Pressed
-                && !k.repeat
-                && matches!(k.physical_key, PhysicalKey::Code(code)
-                    if crate::keybinds::key_name(code) == Some(key))
-        }
-        WindowEvent::MouseInput {
-            state: ElementState::Pressed,
-            button,
-            ..
-        } => crate::keybinds::mouse_name(*button) == key,
-        _ => false,
-    }
-}
-
-/// The binding Free Mouse for Dev Windows was pressed: the pointer is freed
-/// for the windows (only while `playing`), or given back. A window event's
-/// press comes here, and so does horizon-ctl's `key`, which skips the window.
-pub fn toggle(window: &Window, playing: bool) -> Input {
-    let held = holds_pointer();
-    if !held && !playing {
-        return Input::Pass;
-    }
-    HOLDS_POINTER.store(!held, Ordering::Relaxed);
-    if held {
-        // The pointer leaves egui with the grab: no hover stays lit.
-        with_winit(window, |s| {
-            s.egui_input_mut().events.push(egui::Event::PointerGone);
-        });
-    }
-    Input::Toggled { free: !held }
-}
-
-/// Whether the windows take a press of their key now (see [`toggle`]).
-pub fn takes_key() -> bool {
-    active()
-}
-
-/// A window event, before the game handles it. `playing` is whether the
-/// pointer would be the game's now (in the world, no screen): the key frees
-/// it only then, and takes it back from anywhere. `key` is the binding Free
-/// Mouse for Dev Windows (`key.devTools`, F8 unless rebound).
-pub fn window_event(
-    window: Option<&Window>,
-    event: &WindowEvent,
-    playing: bool,
-    key: &str,
-) -> Input {
-    if !active() {
-        return Input::Pass;
-    }
-    let Some(window) = window else {
-        return Input::Pass;
-    };
-    if presses(event, key) {
-        return toggle(window, playing);
-    }
-    // Modifiers are tracked even while the game has the pointer, so a text
-    // field typed into right after the key sees the right ones.
-    if let WindowEvent::ModifiersChanged(_) = event {
-        let _ = with_winit(window, |s| s.on_window_event(window, event));
-        return Input::Pass;
-    }
-    if !holds_pointer() {
-        return Input::Pass;
-    }
-    let response = with_winit(window, |s| s.on_window_event(window, event));
-    match event {
-        // The mouse is the tools' while it is free: a click beside their
-        // windows does nothing, and the key gives it back.
-        WindowEvent::CursorMoved { .. }
-        | WindowEvent::CursorEntered { .. }
-        | WindowEvent::CursorLeft { .. }
-        | WindowEvent::MouseInput { .. }
-        | WindowEvent::MouseWheel { .. } => Input::Consumed,
-        // Keys are theirs only when a text field has focus, so walking with
-        // the pointer free still works.
-        WindowEvent::KeyboardInput { .. } | WindowEvent::Ime(_) if response.consumed => {
-            Input::Consumed
-        }
-        _ => Input::Pass,
-    }
-}
-
-/// Whether a window of the tools was open last frame, for [`frame`].
-static HAD_WINDOWS: AtomicBool = AtomicBool::new(false);
-
-/// The world closed: the tools let the pointer go (the game frees it with
-/// the world and grabs it again when the next one opens) and forget that
-/// they had windows, which the store no longer lists (`observe::reset`).
-pub fn world_closed() {
-    HOLDS_POINTER.store(false, Ordering::Relaxed);
-    HELLO.store(false, Ordering::Relaxed);
-    HAD_WINDOWS.store(false, Ordering::Relaxed);
-}
-
-/// What [`frame`] asks of the game's pointer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PointerChange {
-    None,
-    /// The tools took the pointer (`/lua` opened the console): release it.
-    Release,
-    /// The tools let the pointer go (their last window closed): grab it back.
-    Grab,
-}
-
-/// Once a frame on the window thread: egui's input for the frame (events,
-/// time, the screen rectangle, the window's scale), kept for the render
-/// thread. A frame the render thread skipped keeps its events. The answer
-/// says whether the game should release or grab the pointer now.
-pub fn frame(window: Option<&Window>) -> PointerChange {
-    if !active() && !HAD_WINDOWS.load(Ordering::Relaxed) {
-        return PointerChange::None;
-    }
-    let Some(window) = window else {
-        return PointerChange::None;
-    };
-    zoom_for(window);
-    let windows = observe::showing() || console::OPEN.load(Ordering::Relaxed);
-    let had = HAD_WINDOWS.swap(windows, Ordering::Relaxed);
-    let mut change = PointerChange::None;
-    if console::WANT_POINTER.swap(false, Ordering::Relaxed) && !holds_pointer() {
-        HOLDS_POINTER.store(true, Ordering::Relaxed);
-        change = PointerChange::Release;
-    } else if holds_pointer() && had && !windows {
-        HOLDS_POINTER.store(false, Ordering::Relaxed);
-        with_winit(window, |s| {
-            s.egui_input_mut().events.push(egui::Event::PointerGone);
-        });
-        change = PointerChange::Grab;
-    }
-    let mut input = with_winit(window, |s| s.take_egui_input(window));
-    let mut slot = INPUT.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(previous) = slot.take() {
-        let mut events = previous.events;
-        events.append(&mut input.events);
-        input.events = events;
-    }
-    *slot = Some(input);
-    change
 }
 
 /// The egui wgpu renderer, made on the first frame for the frame's colour format.
@@ -1281,7 +1011,7 @@ impl Hooks for DevTools {
 impl RenderHooks for DevTools {
     fn world_drawn(&self, event: &mut WorldDrawnEvent<'_, '_>) {
         // Without the tools, egui runs only while the stick's window is open.
-        if !enabled() && !observe::showing() {
+        if !dev_input::enabled() && !observe::showing() {
             return;
         }
         let world = &mut *event.world;
@@ -1289,7 +1019,7 @@ impl RenderHooks for DevTools {
         if w == 0 || h == 0 {
             return;
         }
-        let ctx = ctx();
+        let ctx = dev_input::ctx();
         let mut painter = self.painter.lock().unwrap_or_else(|e| e.into_inner());
         let painter = match painter.as_mut() {
             Some(p) if p.format == world.color_format => p,
@@ -1304,20 +1034,16 @@ impl RenderHooks for DevTools {
         };
         // The window thread's input for this frame, or a bare one for a
         // frame drawn before it came (the sizes agree; only events are lost).
-        let input = INPUT
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-            .unwrap_or_else(|| {
-                let ppp = ctx.pixels_per_point();
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(w as f32 / ppp, h as f32 / ppp),
-                    )),
-                    ..Default::default()
-                }
-            });
+        let input = dev_input::take_input().unwrap_or_else(|| {
+            let ppp = ctx.pixels_per_point();
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(w as f32 / ppp, h as f32 / ppp),
+                )),
+                ..Default::default()
+            }
+        });
         let output = ctx.run_ui(input, |ui| self.ui(ui.ctx()));
         let screen = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [w, h],

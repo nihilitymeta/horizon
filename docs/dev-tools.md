@@ -15,8 +15,10 @@ The tools live on the `egui-tools` branch of whos-carmen/horizon. It is stacked 
 | The inspect stick and the block window | built |
 | The rest | [planned](#plan) |
 
-The code is in `crates/event-horizon-observe/` (the observation store and the wire), `crates/horizon-client/src/dev_tools.rs`,
-`dev_tools/console.rs`, `mobs/observe.rs`, `game/commands/inspect.rs` and `game/commands/lua_console.rs`.
+The code is in `crates/event-horizon-observe/` (the observation store and the wire), `crates/horizon-client/src/dev_input.rs`
+(the state the game and the tools share), `dev_input/console.rs` (the console's queues), `dev_input/mods.rs` (the scripted
+mods' status), `crates/horizon-client/src/dev_tools.rs` and `dev_tools/console.rs` (the windows), `mobs/observe.rs`,
+`game/commands/inspect.rs` and `game/commands/lua_console.rs`.
 
 ## Turning the tools on
 
@@ -86,7 +88,7 @@ While the mouse is free, it belongs to the tools:
 The keyboard stays the game's, so you can walk with the pointer free, except while a text field of the tools has
 focus. `Game::capture` refuses to grab the pointer while the tools hold it, so a screen that opens and closes in the
 meantime, such as the chat or the pause menu, leaves it free. The key takes the pointer back from anywhere, and so
-does closing the tools' last window (`dev_tools::frame` tells `extras_frame` to grab it).
+does closing the tools' last window (`dev_input::frame` tells `extras_frame` to grab it).
 
 `HORIZON_DEV_TOOLS_SCALE` sets egui's zoom over the window's own scale. When it is unset, the zoom follows the
 window's height: 1.0 below 1200 pixels, 1.5 up to 2000, and 2.0 above.
@@ -187,7 +189,7 @@ While the window is open, the block's collision boxes are drawn in the world in 
 in it.
 
 The console is a Luau state on the server thread (`game/commands/lua_console.rs`, mlua built from source). Once
-each server tick, after the levels have ticked, it runs what the window queued (`dev_tools/console.rs`).
+each server tick, after the levels have ticked, it runs what the window queued (`dev_input/console.rs`).
 
 The window:
 
@@ -204,7 +206,7 @@ pick, Up and Down recall the lines run before, as a shell does. The history is k
 What the line completes depends on where the cursor is:
 
 - inside an `mc.cmd("…")` string: the chat box's own completions, from the command tree that the server sent
-  (`Dispatcher::client_suggestions` on the window's game, asked once each frame through `dev_tools::console`)
+  (`Dispatcher::client_suggestions` on the window's game, asked once each frame through `dev_input::console`)
 - an entity argument, such as `mc.get("@e[ty`: the completions of `/tp`'s target
 - a path argument: common NBT keys; `mc.inspect`'s second argument: its views
 - anywhere else: the `mc` names and Lua's keywords
@@ -254,12 +256,12 @@ end)
 
 ### Scripted mods in the console
 
-The window's first section lists every Lua mod (`lua_mods::status`), with:
+The window's first section lists every Lua mod (`dev_input::mods::status`), with:
 
 - its source, its number of scripts, and how often it was reloaded
 - its handlers by hook, and its goals
 - its last error, in red: a failed load or reload, or a handler's error, until the next reload
-- a **reload** button (`lua_mods::request_reload`, served at the start of the next server tick)
+- a **reload** button (`dev_input::mods::request_reload`, served at the start of the next server tick)
 
 A mod's `horizon.log` and `print` lines, and its errors, appear in the console's output next to the console's own,
 tagged `[mod_id]`. In `/goals`, a Lua goal is named `mod_id:name`.
@@ -296,7 +298,7 @@ Its `RenderHooks::world_drawn` draws egui on the render thread, with the frame's
 target, through the renderer's own hook point for mods ([native-mods.md](native-mods.md#render-hook-points)).
 
 Input goes through `egui-winit` on the window thread. `Game::handle_window_event_inner` offers every window event to
-`dev_tools::window_event` first, and `Game::extras_frame` hands the frame's `RawInput` to the render thread.
+`dev_input::window_event` first, and `Game::extras_frame` hands the frame's `RawInput` to the render thread.
 `egui_wgpu::Renderer` is made on the first frame, for the frame's colour format.
 
 That route has costs, which come from the hook's design:

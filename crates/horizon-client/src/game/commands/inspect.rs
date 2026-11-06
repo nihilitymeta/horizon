@@ -207,7 +207,7 @@ impl Game<'_> {
         *TICKS.lock().unwrap_or_else(|e| e.into_inner()) = 0;
         observe::reset();
         super::lua_console::world_closed();
-        crate::dev_tools::world_closed();
+        crate::dev_input::world_closed();
     }
 
     /// A target as the tools watch it, and its id: a player is kept by
@@ -239,7 +239,7 @@ impl Game<'_> {
     /// `line`, and a note that this game shows no window when the tools
     /// are off on it (a server's, or one started without them).
     pub(super) fn with_tools_note(&self, mut line: Text) -> Text {
-        if !crate::dev_tools::enabled() {
+        if !crate::dev_input::enabled() {
             line.push(" ");
             line.push(Text::tr("horizon.dev_tools.no_window", &[]));
         }
@@ -744,8 +744,8 @@ impl Game<'_> {
             return;
         }
         let mut out = observe::take_outbox();
-        if crate::dev_tools::installed()
-            && !crate::dev_tools::HELLO.swap(true, std::sync::atomic::Ordering::Relaxed)
+        if crate::dev_input::installed()
+            && !crate::dev_input::HELLO.swap(true, std::sync::atomic::Ordering::Relaxed)
         {
             out.insert(0, Wire::Hello);
         }

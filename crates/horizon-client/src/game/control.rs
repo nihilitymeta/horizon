@@ -553,16 +553,16 @@ impl Game<'_> {
                 }
                 self.require_world()?;
                 // The dev windows' key (Free Mouse for Dev Windows), as a
-                // window's press of it is (`dev_tools::window_event`).
+                // window's press of it is (`dev_input::window_event`).
                 if action != "up"
-                    && crate::dev_tools::takes_key()
+                    && crate::dev_input::takes_key()
                     && horizon_client::keybinds::key_name(key)
                         == Some(self.settings.keys.get("key.devTools"))
                     && let Some(window) = self.window.clone()
                 {
                     let playing = self.screen == super::Screen::Playing && self.title.is_none();
-                    if let crate::dev_tools::Input::Toggled { free } =
-                        crate::dev_tools::toggle(&window, playing)
+                    if let crate::dev_input::Input::Toggled { free } =
+                        crate::dev_input::toggle(&window, playing)
                     {
                         if free {
                             self.capture(false);

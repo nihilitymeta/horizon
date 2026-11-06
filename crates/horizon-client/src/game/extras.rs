@@ -65,10 +65,10 @@ impl Game<'_> {
         self.extras.fps.record(now, elapsed.as_secs_f32() * 1000.0);
         // The tools' last window closed: the pointer is the game's again;
         // /lua opened the console: it is the tools'.
-        match crate::dev_tools::frame(self.window.as_deref()) {
-            crate::dev_tools::PointerChange::None => {}
-            crate::dev_tools::PointerChange::Release => self.capture(false),
-            crate::dev_tools::PointerChange::Grab => {
+        match crate::dev_input::frame(self.window.as_deref()) {
+            crate::dev_input::PointerChange::None => {}
+            crate::dev_input::PointerChange::Release => self.capture(false),
+            crate::dev_input::PointerChange::Grab => {
                 if self.screen == Screen::Playing && self.title.is_none() {
                     self.capture(true);
                 }

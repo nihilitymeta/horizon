@@ -16,7 +16,9 @@
 //!
 //! With the developer tools on (docs/dev-tools.md), each mod's `horizon.log`,
 //! `print` and errors also reach the Lua console's window, which lists the
-//! mods ([`status`]) and reloads one on demand ([`request_reload`]).
+//! mods ([`crate::dev_input::mods::status`]) and reloads one on demand
+//! ([`crate::dev_input::mods::request_reload`]).
+use crate::dev_input::mods::{ModStatus, reload_asked, reload_generation, set_error, set_status};
 use crate::mod_api::{
     AttachmentCodec, AttachmentType, BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
     BlockPos, BlockStateId, Compound, DataPackFilesEvent, EntityTickListenedEvent,
@@ -47,65 +49,11 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-/// What the developer tools show of one scripted mod (docs/dev-tools.md).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ModStatus {
-    /// The mod's id, or its path's file name when it did not load.
-    pub id: String,
-    /// The `.hmod` or folder.
-    pub source: String,
-    /// Scripts read from it.
-    pub scripts: usize,
-    /// Reloads done (`/reload`, the console).
-    pub reloads: u32,
-    /// Hook names with the count of handlers registered for each, sorted.
-    pub handlers: Vec<(String, usize)>,
-    /// Goal names (`horizon.goal`), sorted.
-    pub goals: Vec<String>,
-    /// The last error: a load or reload failure, or a handler's error, until the next reload.
-    pub error: Option<String>,
-}
-
-/// Every scripted mod's status, in load order.
-static STATUS: Mutex<Vec<ModStatus>> = Mutex::new(Vec::new());
-/// Reloads asked for from the developer tools: by mod id, or everyone with a
-/// new generation of `RELOAD_ALL`. Served on the server thread at the start
-/// of a tick.
-static RELOAD: Mutex<Vec<String>> = Mutex::new(Vec::new());
-static RELOAD_ALL: AtomicU32 = AtomicU32::new(0);
-
-/// The scripted mods and what is known of them, for the developer tools.
-pub fn status() -> Vec<ModStatus> {
-    STATUS.lock().unwrap_or_else(|e| e.into_inner()).clone()
-}
-
-/// Ask the mod `id` (None: every mod) to read its scripts again and run
-/// `init.lua` afresh at the next server tick, as `/reload` makes it do.
-pub fn request_reload(id: Option<&str>) {
-    match id {
-        Some(id) => RELOAD
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(id.to_owned()),
-        None => {
-            RELOAD_ALL.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-}
-
 /// A line for the developer tools' console, when they are on.
 fn to_console(error: bool, line: String) {
-    if crate::dev_tools::enabled() {
-        use crate::dev_tools::console::{Kind, push};
+    if crate::dev_input::enabled() {
+        use crate::dev_input::console::{Kind, push};
         push(if error { Kind::Err } else { Kind::Out }, line);
-    }
-}
-
-fn set_status(status: ModStatus) {
-    let mut all = STATUS.lock().unwrap_or_else(|e| e.into_inner());
-    match all.iter_mut().find(|s| s.id == status.id) {
-        Some(s) => *s = status,
-        None => all.push(status),
     }
 }
 
@@ -1426,7 +1374,7 @@ impl LuaMod {
             player_attachment,
             config_path,
             reloads: AtomicU32::new(0),
-            reload_seen: AtomicU32::new(RELOAD_ALL.load(Ordering::Relaxed)),
+            reload_seen: AtomicU32::new(reload_generation()),
         };
         m.install_api().map_err(|e| e.to_string())?;
         m.run(ENTRY).map_err(|e| e.to_string())?;
@@ -1581,14 +1529,7 @@ impl LuaMod {
 
     /// Whether the developer tools asked this mod to reload since last asked.
     fn reload_asked(&self) -> bool {
-        let all = RELOAD_ALL.load(Ordering::Relaxed);
-        let mut asked = self.reload_seen.swap(all, Ordering::Relaxed) != all;
-        let mut list = RELOAD.lock().unwrap_or_else(|e| e.into_inner());
-        if list.contains(&self.id) {
-            list.retain(|id| *id != self.id);
-            asked = true;
-        }
-        asked
+        reload_asked(&self.id, &self.reload_seen)
     }
 
     /// The status the developer tools show, with `error` as the last error.
@@ -1633,14 +1574,7 @@ impl LuaMod {
     fn error(&self, text: String) {
         log::error!("[lua:{}] {text}", self.id);
         to_console(true, format!("[{}] {text}", self.id));
-        if let Some(s) = STATUS
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .iter_mut()
-            .find(|s| s.id == self.id)
-        {
-            s.error = Some(text);
-        }
+        set_error(&self.id, text);
     }
 
     /// Something dropped or odd: the log and the console.
@@ -7316,7 +7250,12 @@ experimental = ["scripts"]
         );
         let m = LuaMod::load(&path, &[]).unwrap();
         m.publish(None);
-        let of = |m: &LuaMod| status().into_iter().find(|s| s.id == m.id()).unwrap();
+        let of = |m: &LuaMod| {
+            crate::dev_input::mods::status()
+                .into_iter()
+                .find(|s| s.id == m.id())
+                .unwrap()
+        };
         let s = of(&m);
         assert_eq!((s.scripts, s.reloads), (1, 0));
         assert_eq!(s.goals, ["stalk"]);
@@ -7338,9 +7277,9 @@ experimental = ["scripts"]
         assert!(of(&m).error.unwrap().contains("oops"));
         // The console asks for a reload, by id or for everyone: each is served once.
         assert!(!m.reload_asked());
-        request_reload(Some(m.id()));
+        crate::dev_input::mods::request_reload(Some(m.id()));
         assert!(m.reload_asked() && !m.reload_asked());
-        request_reload(None);
+        crate::dev_input::mods::request_reload(None);
         assert!(m.reload_asked() && !m.reload_asked());
         m.reload_now("the test");
         let s = of(&m);

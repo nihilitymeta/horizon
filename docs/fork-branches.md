@@ -45,7 +45,9 @@ per mod, libraries first (`depends`, `require`).
   snapshots as JSON lines.
 - `/lua` opens a console: a Luau state on the server thread with `mc.*` for commands, selectors and entity data. It
   also lists the scripted mods with their handlers and errors, and has a reload button.
-- Code: `crates/event-horizon-observe/` (the observation store and the wire), `crates/horizon-client/src/dev_tools.rs` and `dev_tools/`. Reference: [dev-tools.md](dev-tools.md).
+- Code: `crates/event-horizon-observe/` (the observation store and the wire), `crates/horizon-client/src/dev_input.rs` and
+  `dev_input/` (the state the game and the tools share), `crates/horizon-client/src/dev_tools.rs` and `dev_tools/` (the
+  windows). Reference: [dev-tools.md](dev-tools.md).
 
 **Content reload** (`archive/hot-reload`). Content mods reload without a restart. Run the game with `--dev-mod`
 pointing at the mod folder; no `.hmod` is needed.

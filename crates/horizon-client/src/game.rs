@@ -702,8 +702,8 @@ impl Options {
                 ),
                 // Horizon's own commands (/pregen), off by default as on vanilla.
                 "--pregen" => horizon_client::command::vanilla::set_horizon_commands(true),
-                // Read by `dev_tools::mods()` before the options are parsed; the
-                // commands follow it (docs/dev-tools.md).
+                // Read by the developer tools' `mods()` before the options are
+                // parsed; the commands follow it (docs/dev-tools.md).
                 "--dev-tools" => horizon_client::command::vanilla::set_dev_tools_commands(true),
                 _ => {
                     let value = args
@@ -8267,7 +8267,7 @@ impl Game<'_> {
         }
         // The developer tools hold the pointer (docs/dev-tools.md): nothing
         // grabs it until their key gives it back.
-        let capture = capture && !crate::dev_tools::holds_pointer();
+        let capture = capture && !crate::dev_input::holds_pointer();
         // MouseHandler.grabMouse never captures an inactive window, and vanilla
         // grabs only on `setScreen(null)`: the pack prompt and server dialogs
         // are screens over the world that keep the pointer.
@@ -17549,10 +17549,10 @@ impl Game<'_> {
         // it is free the mouse is theirs, and so is a text field's keyboard
         // (docs/dev-tools.md).
         {
-            use crate::dev_tools::{self, Input};
+            use crate::dev_input::{self, Input};
             let playing = self.screen == Screen::Playing && self.title.is_none();
             let key = self.settings.keys.get("key.devTools");
-            match dev_tools::window_event(self.window.as_deref(), &event, playing, key) {
+            match dev_input::window_event(self.window.as_deref(), &event, playing, key) {
                 Input::Pass => {}
                 Input::Consumed => return,
                 Input::Toggled { free } => {
