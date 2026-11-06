@@ -110,6 +110,7 @@ mod debug_stick;
 mod decorated_pot;
 mod dedicated;
 mod deflect;
+mod dev_tools;
 mod dialogs;
 mod discord;
 mod dispense_fixture;
@@ -706,8 +707,8 @@ impl Options {
                 // Horizon's own commands (/pregen), off by default as on vanilla.
                 "--pregen" => horizon_client::command::vanilla::set_horizon_commands(true),
                 // Read by the developer tools' `mods()` before the options are
-                // parsed; the commands follow it (docs/dev-tools.md).
-                "--dev-tools" => horizon_client::command::vanilla::set_dev_tools_commands(true),
+                // parsed; their commands follow it (docs/dev-tools.md).
+                "--dev-tools" => {}
                 _ => {
                     let value = args
                         .next()

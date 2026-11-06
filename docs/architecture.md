@@ -17,8 +17,8 @@ on the reusable library, so gameplay edits do not invalidate their builds.
 it at startup.
 `event-horizon-debug` holds the F3 overlay's pure helpers: the frame-time window and the process memory.
 `event-horizon-lua` holds the Lua runtime and the `/lua` console (a built-in mod of its own); `event-horizon-dev-tools`
-holds the developer tools (the egui windows and
-their server half); `event-horizon-extras` holds the zoom, minimap, FPS counter and keystrokes as one built-in native
+holds the developer tools (the egui windows, their server half and their commands, which are a mod's own);
+`event-horizon-extras` holds the zoom, minimap, FPS counter and keystrokes as one built-in native
 mod; `event-horizon` installs them.
 
 Paths: `L/` = `crates/horizon-client/src/`, `G/` = `crates/horizon-client/src/game/`, `W/` =

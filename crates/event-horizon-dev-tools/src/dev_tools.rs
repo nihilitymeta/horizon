@@ -19,8 +19,9 @@ use horizon_client::mobs::observe::{
     self, BrainSnapshot, GoalRow, HistoryTick, Inspected, InspectedBlock, Request, Series, View,
 };
 use horizon_client::mod_api::{
-    Hooks, Host, NativeBlockRim, ServerTickEvent, ServerTickPhase, VisualsEvent,
-    WorldLifecycleEvent, WorldPhase,
+    CommandsEvent, Flow, Hooks, Host, NativeBlockRim, PerformCommandEvent,
+    PerformConsoleCommandEvent, PlayerCommandEvent, RegisterCommandsEvent, ServerTickEvent,
+    ServerTickPhase, VisualsEvent, WorldLifecycleEvent, WorldPhase,
 };
 use horizon_client_core::snbt::java_hash_order;
 use horizon_world::nbt::Tag;
@@ -54,8 +55,7 @@ pub fn mods(scripted: bool) -> Vec<Box<dyn Hooks>> {
         );
         dev_input::enable();
         // The commands come with the tools and only then: they run Lua and
-        // the owner's commands.
-        horizon_client::command::vanilla::set_dev_tools_commands(true);
+        // the owner's commands (#34: the crate registers them as a mod's).
         mods.push(Box::new(DevTools::default()));
     }
     mods
@@ -972,6 +972,34 @@ impl DevTools {
 impl Hooks for DevTools {
     fn render(&self) -> Option<&dyn RenderHooks> {
         Some(self)
+    }
+    /// The tools' commands in the server's tree (#34): `/inspect`,
+    /// `/goals`, `/senses`, `/nav`, `/watch`, `/mobai log` and `/lua`,
+    /// with the tools on only.
+    fn register_commands(&self, _host: &mut dyn Host, event: &mut RegisterCommandsEvent<'_>) {
+        crate::commands::register(event);
+    }
+    /// The commands' names, for the chat box: a client completes them as
+    /// it does a mod's commands, before the server sends its own tree.
+    fn commands(&self, _host: &mut dyn Host, event: &mut CommandsEvent<'_>) {
+        crate::commands::names(event);
+    }
+    /// A player's command on the server: the tools' own, for the world's
+    /// owner; a guest is refused.
+    fn perform_command(&self, host: &mut dyn Host, event: &mut PerformCommandEvent<'_>) -> Flow {
+        crate::commands::perform(host, event)
+    }
+    /// The window's own player's command, as the LAN host's.
+    fn player_command(&self, host: &mut dyn Host, event: &mut PlayerCommandEvent<'_>) -> Flow {
+        crate::commands::player(host, event)
+    }
+    /// The server console's command: the console is the server's owner.
+    fn perform_console_command(
+        &self,
+        host: &mut dyn Host,
+        event: &mut PerformConsoleCommandEvent<'_>,
+    ) -> Flow {
+        crate::commands::console(host, event)
     }
     /// The server half's tick (#31): after every level ticked, on a world
     /// that runs. Drains the stick's requests and what the guests' clients

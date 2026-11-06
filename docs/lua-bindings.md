@@ -351,7 +351,7 @@ it as vanilla's commands. Call it at load, as goals are defined.
 - *usage*: the command's words, then its arguments, such as `"parasite count [kind:word]"`. `<name:kind>` is
   required: when it is missing, or an `integer` or `number` is not one, the player gets a usage line and the handler
   is not called. `[name:kind]` is optional. The kinds are `word`, `text` (the rest of the line, last), `integer`,
-  `number`, `boolean`, `player`, `item` and `block_pos`
+  `number`, `boolean`, `player`, `entities` (the multi-entity selector, `@e` or `@a`), `item` and `block_pos`
 - *level*: the operator level a player needs; 0 is everyone, and nil is 0
 - *fn*: called as `fn(player, args)`. *args* holds the arguments by name, numbers as numbers and the rest as words,
   and `args.raw`, the whole line. `horizon.feedback(text)` answers the player, and the host actions work

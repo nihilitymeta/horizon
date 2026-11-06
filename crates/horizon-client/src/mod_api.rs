@@ -403,8 +403,9 @@ pub struct NativeServerPlayer {
 /// `pay <player:player> <amount:integer>`, `balance [player:player]`,
 /// `eco give <player:player> <amount:integer>`. Kinds: `word`, `text` (the
 /// rest of the line, last), `integer`, `number`, `boolean`, `player`,
-/// `item`, `block_pos`. Usages of one command share their words; the
-/// server merges them into one tree.
+/// `entities` (the multi-entity selector, `@e` or `@a`), `item`,
+/// `block_pos`. Usages of one command share their words; the server merges
+/// them into one tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct NativeCommand {

@@ -43,7 +43,8 @@ per mod, libraries first (`depends`, `require`).
   the hook points in [api/hook-points.md](api/hook-points.md).
 
 **Developer tools** (`archive/egui-tools`). Tools drawn with egui over the world, on only with `--dev-tools` or
-`HORIZON_DEV_TOOLS=1`. Their commands exist only then, and only the host may use `/lua`. `F8` (the Free Mouse for Dev Windows binding) frees the mouse.
+`HORIZON_DEV_TOOLS=1`. Their commands exist only then, and only the host may use `/lua`. They are a mod's own
+commands, registered with the `register_commands` hook (#34). `F8` (the Free Mouse for Dev Windows binding) frees the mouse.
 
 - `/inspect <targets>` shows an entity's data as a tree, `/goals` a mob's goal selectors, `/senses` what it
   perceives, `/nav` its path drawn in the world, `/watch <targets> <path>` a number over time, and `/mobai log` AI
@@ -53,8 +54,8 @@ per mod, libraries first (`depends`, `require`).
   mod (`crates/event-horizon-lua/src/console.rs`) that reads and writes the world through the engine's generic host
   helpers.
 - Code: `crates/event-horizon-observe/` (the observation store and the wire), `crates/horizon-client/src/dev_input.rs` and
-  `dev_input/` (the state the game and the tools share), `crates/event-horizon-dev-tools/` (the windows and their
-  server half), `crates/event-horizon-lua/src/console.rs` (the console's runtime). Reference: [dev-tools.md](dev-tools.md).
+  `dev_input/` (the state the game and the tools share), `crates/event-horizon-dev-tools/` (the windows, their
+  server half and the commands), `crates/event-horizon-lua/src/console.rs` (the console's runtime). Reference: [dev-tools.md](dev-tools.md).
 
 **Content reload** (`archive/hot-reload`). Content mods reload without a restart. Run the game with `--dev-mod`
 pointing at the mod folder; no `.hmod` is needed.

@@ -17,8 +17,8 @@ The tools live on the `egui-tools` branch of whos-carmen/horizon. It is stacked 
 
 The code is in `crates/event-horizon-observe/` (the observation store and the wire), `crates/horizon-client/src/dev_input.rs`
 (the state the game and the tools share), `dev_input/console.rs` (the console's queues), `dev_input/mods.rs` (the scripted
-mods' status), `crates/event-horizon-dev-tools/` (the windows, the stick's server half and the guests' windows; the
-commands stay in `game/commands/inspect.rs` until #34), `crates/event-horizon-lua/src/console.rs` (the console's
+mods' status), `crates/event-horizon-dev-tools/` (the windows, the stick's server half, the guests' windows and the
+commands, which are a mod's own), `crates/event-horizon-lua/src/console.rs` (the console's
 runtime, a built-in mod) and `mobs/observe.rs`.
 
 ## Turning the tools on
@@ -37,24 +37,26 @@ commands. The windows draw only while the stick opened one, and a game without L
 
 ### Who can use them
 
-The commands exist only in a game started with the tools. `--dev-tools` and `HORIZON_DEV_TOOLS=1` call
-`vanilla::set_dev_tools_commands` and `tree_extra::register_dev_tools`, the same way `/pregen` exists only with
-`--pregen`. The commands run Lua and the owner's commands, so no LAN world or dedicated server has them unless its
-owner asked for them. The chat's command tree lists them under the same switch.
+The commands are a mod's own commands (#34): `event-horizon-dev-tools` registers them in the server's command tree
+with the `register_commands` hook, and runs them with the `perform_command` hook. They exist only in a game started
+with the tools: `--dev-tools` and `HORIZON_DEV_TOOLS=1` turn the tools on, and the commands come with them. The
+commands run Lua and the owner's commands, so no LAN world or dedicated server has them unless its owner asked for
+them. The chat's command tree lists them the same way it lists a mod's commands.
 
 The flag works in every build, release builds included. No `cfg(debug_assertions)` or Cargo feature guards the
 tools. This is a design decision: the switch is the flag, and only the person who starts the game can give it.
 
-Every command of the tools belongs to the world's owner alone (`Game::dev_tools_owner_only` compares the acting
-player with `Serving::owner`). A LAN guest of any permission level is refused with `horizon.dev_tools.owner_only`,
-because:
+Every command of the tools belongs to the world's owner alone (the handler compares the acting player with
+`Host::server_owner`, the serving game's owner). A LAN guest of any permission level is refused with
+`horizon.dev_tools.owner_only`, because:
 
 - the windows open on the host's screen
 - `/mobai log` writes to the host's disk
 - the console runs as the host
 
-The owner's own commands act through the hub as the owner, and pass. A dedicated server has no owner, so its console
-passes and every player is refused.
+The owner's own commands act through the hub as the owner, and pass. A LAN host's own window is the hub: its
+commands run there, with the `player_command` hook, and pass as well. A dedicated server has no owner, so its
+console passes and every player is refused.
 
 `mc.run` takes the name of a file in the scripts folder, and no path. A chunk that runs longer than two seconds is
 stopped by Luau's interrupt, so an endless loop does not freeze the server thread.
@@ -96,7 +98,7 @@ window's height: 1.0 below 1200 pixels, 1.5 up to 2000, and 2.0 above.
 
 ## The entity windows
 
-Each command except `/lua` takes an entity selector, for operators, as `/data` does. It opens one window for each
+Each command except `/lua` takes an entity selector, as `/data` does. It opens one window for each
 entity. `… clear` closes that kind of window everywhere, and a window's **stop** button closes it alone. `/inspect`
 with no arguments lists what is watched.
 
@@ -109,7 +111,7 @@ because it is gone, unloaded or the game is paused, keeps its last data, marked 
 
 | Command | Window |
 |---|---|
-| `/inspect <targets>` | Shows the data that `/data get entity` prints, read with the same `data_of` once each server tick (`game/commands/inspect.rs`, from the end of `tick_server`). The data is a tree: compounds and lists fold, and leaves show their SNBT value, such as `20.0f`, `1b` or `"minecraft:zombie"`. Keys come in the order `/data` prints them. Hovering a node shows its NBT path, which `/data get entity <target> <path>` takes. A filter box narrows the tree to matching keys, and a fold has the whole SNBT line. Each number has a **watch** button, which opens its `/watch` chart with that path: no path to type. What mods keep on the entity (a mob's `mob.data`, a player's data) shows under `horizon:attachments`, as the save writes it, so its numbers have watch buttons too; `/data get entity` itself still prints vanilla's tags only |
+| `/inspect <targets>` | Shows the data that `/data get entity` prints, read with the same `data_of` once each server tick (`crates/event-horizon-dev-tools/src/inspect.rs`, from the end of `tick_server`). The data is a tree: compounds and lists fold, and leaves show their SNBT value, such as `20.0f`, `1b` or `"minecraft:zombie"`. Keys come in the order `/data` prints them. Hovering a node shows its NBT path, which `/data get entity <target> <path>` takes. A filter box narrows the tree to matching keys, and a fold has the whole SNBT line. Each number has a **watch** button, which opens its `/watch` chart with that path: no path to type. What mods keep on the entity (a mob's `mob.data`, a player's data) shows under `horizon:attachments`, as the save writes it, so its numbers have watch buttons too; `/data get entity` itself still prints vanilla's tags only |
 | `/goals <targets>` | Shows a mob's two goal selectors as tables, with each goal's priority, name, state (running or idle) and flags. A history strip for each goal marks where it ran over the last 1200 AI ticks; hover for that tick's running set. Taken after the mob's AI step (`mobs/observe.rs`, from `mobs/ai.rs`). The **log** button starts `/mobai log` for this mob, and the window names the file while it is written; **stop log** closes that file only |
 | `/senses <targets>` | Shows what the mob perceives: its target, who hurt it last, its follow range, the nearest player and whether they are in range, its mood (aggressive, panicking, idle ticks), its home, its health, and this tick's line-of-sight checks (who, and whether they were seen) |
 | `/nav <targets>` | Shows the navigation kind, destination and speed, whether the mob is stuck, its move control and movement input, and the path's nodes. It also draws the path in the world, as outlines of the blocks under the nodes, through the `visuals` hook (`NativeBlockRim`). A node is where the feet go, usually air, and an outline takes the block's shape. Green marks the next node, yellow the six after it, and red the target. The game draws eight outlines a frame, within 32 blocks |
@@ -117,8 +119,8 @@ because it is gone, unloaded or the game is paused, keeps its last data, marked 
 | `/mobai log <targets>` | Writes the mob's AI snapshot, everything that `/goals`, `/senses` and `/nav` show, as one JSON line each server tick to `dev-tools/logs/mobai-<name>-<id>-<time>.jsonl` under the game folder, for comparing offline. `/mobai log stop` closes the files |
 
 A button in a window can't do what only the game does, such as opening a file, from the render thread. It asks
-(`observe::request`), and the game does it at the end of its next server tick (`dev_requests` in
-`game/commands/inspect.rs`).
+(`observe::request`), and the game does it at the end of its next server tick (`requests` in
+`crates/event-horizon-dev-tools/src/inspect.rs`).
 
 ## The inspect stick
 
@@ -146,7 +148,8 @@ Who may use it:
   when it doesn't.
 
 The windows open the same way with and without `--dev-tools`. The stick's request goes through `observe::request`,
-and the server thread handles it at the end of its tick (`stick_used` in `game/commands/inspect.rs`).
+and the server thread handles it at the end of its tick (`stick_used` in
+`crates/event-horizon-dev-tools/src/inspect.rs`).
 
 ### A guest's windows
 
@@ -193,7 +196,7 @@ The console is a Luau state on the server thread (`crates/event-horizon-lua/src/
 source), a built-in mod that runs on the server tick. Once each server tick, after the levels have ticked, it runs
 what the window queued (`dev_input/console.rs`). It reads and writes the world through the engine's generic host
 helpers (`select_ids`, `entity_data_in_place`, `set_entity_data`, `entity_name_in_place`, `run_command_as_owner`,
-`level_dimension`), so the engine's own code keeps only the `/lua` command and the window's completions.
+`level_dimension`), so the engine's own code keeps only the window's completions.
 
 The window:
 
@@ -273,8 +276,8 @@ tagged `[mod_id]`. In `/goals`, a Lua goal is named `mod_id:name`.
 ## Commands in the chat
 
 The chat box completes and colours the tools' commands as it does vanilla's. The command tree that a player gets is
-vanilla's commands report plus `horizon_commands` in `lan/commands.rs`, where Horizon's own commands must be listed. A
-guest sees the commands in the tree, at level 2 as `/data` is, but the server refuses them, as described under
+vanilla's commands report plus the mods' commands, which the tools' crate registers as a mod's own
+(`register_commands`). A guest sees the commands in the tree, but the server refuses them, as described under
 [Who can use them](#who-can-use-them).
 
 The commands' chat feedback is translated (`horizon.dev_tools.*` in `assets/horizon/lang/en_us.json`). The labels in

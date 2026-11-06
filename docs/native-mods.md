@@ -2095,7 +2095,7 @@ For mods that run where the world is simulated: a dedicated server, a LAN host, 
   players. A usage is words, then arguments `<name:kind>`, optional ones last in brackets:
   `NativeCommand::new("pay <player:player> <amount:integer>")`, `NativeCommand::op("eco set <player:player>
   <amount:integer>", 3)` for operators of level 3. Kinds: `word`, `text` (the rest of the line, last), `integer`,
-  `number`, `boolean`, `player`, `item`, `block_pos`. The usages of one command merge into one tree, which every
+  `number`, `boolean`, `player`, `entities` (the multi-entity selector, `@e` or `@a`), `item`, `block_pos`. The usages of one command merge into one tree, which every
   player receives after vanilla's (filtered by their level, as vanilla's is), so their chat box completes and colours
   it. A name vanilla has, or a usage that doesn't parse, is left out with a warning in the log.
 - **`native_armor_stand_manipulate(player, name, stand_id, slot, cancel)`**: a player takes an item from an armor stand or

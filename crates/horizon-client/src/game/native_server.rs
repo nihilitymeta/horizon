@@ -50,6 +50,8 @@ fn parser(kind: &str) -> Option<(&'static str, Value)> {
             "minecraft:entity",
             json!({"amount": "single", "type": "players"}),
         ),
+        // The multi-entity selector (`@e`, `@a`): every entity it names.
+        "entities" => ("minecraft:entity", json!({"amount": "multiple"})),
         "item" => ("minecraft:item_stack", Value::Null),
         "block_pos" => ("minecraft:block_pos", Value::Null),
         _ => return None,
@@ -1536,6 +1538,27 @@ mod tests {
         assert!(c["pay"].get("permissions").is_none());
         assert_eq!(levels["eco"], 3);
         assert_eq!(levels["pay"], 0);
+    }
+
+    #[test]
+    fn a_multi_entity_argument_is_the_entity_parser() {
+        let (t, levels, problems) = tree(&[
+            NativeCommand::new("inspect <targets:entities>"),
+            NativeCommand::new("inspect clear"),
+        ]);
+        assert!(problems.is_empty(), "{problems:?}");
+        let c = &t["children"];
+        assert_eq!(
+            c["inspect"]["children"]["targets"]["parser"],
+            "minecraft:entity"
+        );
+        assert_eq!(
+            c["inspect"]["children"]["targets"]["properties"]["amount"],
+            "multiple"
+        );
+        assert_eq!(c["inspect"]["children"]["targets"]["executable"], true);
+        assert_eq!(c["inspect"]["children"]["clear"]["executable"], true);
+        assert_eq!(levels["inspect"], 0);
     }
 
     #[test]

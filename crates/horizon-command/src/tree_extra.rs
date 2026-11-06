@@ -6,7 +6,7 @@
 use super::{
     Dispatcher, Suggests,
     args::ArgType,
-    vanilla::{ENTITIES, ENTITY, GAMEMASTERS, PLAYER, PLAYERS},
+    vanilla::{ENTITY, GAMEMASTERS, PLAYER, PLAYERS},
 };
 
 const ADMINS: u8 = 3;
@@ -311,45 +311,4 @@ pub fn register_dedicated(d: &mut Dispatcher, root: usize) {
     }
     let reload = d.literal(whitelist, "reload");
     d.executes(reload, "whitelist.reload");
-}
-
-/// Horizon's developer tools (docs/dev-tools.md), only in a game started
-/// with them (`vanilla::set_dev_tools_commands`): inspect|goals|senses|nav <targets>|clear,
-/// watch <targets> <path> | watch clear, mobai log <targets> | mobai log stop, lua [<code>].
-pub fn register_dev_tools(d: &mut Dispatcher, root: usize) {
-    for (name, clear_id) in [
-        ("inspect", "inspect.clear"),
-        ("goals", "goals.clear"),
-        ("senses", "senses.clear"),
-        ("nav", "nav.clear"),
-    ] {
-        let cmd = d.literal(root, name);
-        d.requires(cmd, GAMEMASTERS);
-        if name == "inspect" {
-            d.executes(cmd, "inspect.list");
-        }
-        let t = d.argument(cmd, "targets", ENTITIES);
-        d.executes(t, name);
-        let clear = d.literal(cmd, "clear");
-        d.executes(clear, clear_id);
-    }
-    let watch = d.literal(root, "watch");
-    d.requires(watch, GAMEMASTERS);
-    let t = d.argument(watch, "targets", ENTITIES);
-    let path = d.argument(t, "path", ArgType::NbtPath);
-    d.executes(path, "watch");
-    let clear = d.literal(watch, "clear");
-    d.executes(clear, "watch.clear");
-    let mobai = d.literal(root, "mobai");
-    d.requires(mobai, GAMEMASTERS);
-    let log = d.literal(mobai, "log");
-    let t = d.argument(log, "targets", ENTITIES);
-    d.executes(t, "mobai.log");
-    let stop = d.literal(log, "stop");
-    d.executes(stop, "mobai.log.stop");
-    let lua = d.literal(root, "lua");
-    d.requires(lua, GAMEMASTERS);
-    d.executes(lua, "lua.toggle");
-    let code = d.argument(lua, "code", ArgType::Greedy);
-    d.executes(code, "lua.run");
 }
