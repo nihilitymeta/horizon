@@ -9229,7 +9229,7 @@ impl Game<'_> {
     pub(super) fn native_key_down(&self, mapping: &str) -> bool {
         let bound = self.settings.keys.get(mapping);
         if let Some(key) = keybinds::key_code(bound) {
-            return self.keys.contains(&key);
+            return self.physical_keys.contains(&key) || self.keys.contains(&key);
         }
         keybinds::mouse_button(bound)
             .and_then(super::extras::mouse_button_index)
