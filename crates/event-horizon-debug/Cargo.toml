@@ -1,0 +1,10 @@
+[package]
+name = "event-horizon-debug"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Event Horizon's debug overlay helpers: the frame-time window and the process memory"
+
+[lints]
+workspace = true

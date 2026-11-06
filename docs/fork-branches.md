@@ -88,7 +88,8 @@ only where a mod has one, and every mod's settings together. Fullbright, dynamic
 auto reconnect and own name tag are registered as hook mods.
 
 **Debug overlay** (`archive/debug-overlay`). F3 shows process memory and frame lows. Code:
-`crates/horizon-client/src/debug_overlay.rs`, `debug_chart.rs`.
+`crates/horizon-client/src/debug_overlay.rs`, `debug_chart.rs`; the pure helpers:
+`crates/event-horizon-debug/`.
 
 **Event Horizon's own name and no telemetry** (since 2026-11-04). The title screen says `Event Horizon 26.3 (Rust)`.
 The game and the launcher send nothing to Horizon's servers, the "I'm playing" ping included, unless

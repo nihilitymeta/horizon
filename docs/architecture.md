@@ -14,6 +14,7 @@ on the reusable library, so gameplay edits do not invalidate their builds.
 `horizon-transport` holds the generic transport traits and process-wide registry used by the protocol and LAN code.
 `event-horizon-websocket` implements and registers the WebSocket connector and server door; `event-horizon` installs
 it at startup.
+`event-horizon-debug` holds the F3 overlay's pure helpers: the frame-time window and the process memory.
 
 Paths: `L/` = `crates/horizon-client/src/`, `G/` = `crates/horizon-client/src/game/`, `W/` =
 `crates/horizon-world/src/`, `K/` = `crates/horizon-client-core/src/`, `C/` = `crates/horizon-command/src/`,

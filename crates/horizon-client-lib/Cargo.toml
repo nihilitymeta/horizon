@@ -31,6 +31,8 @@ horizon-protocol = { path = "../horizon-protocol" }
 horizon-transport = { path = "../horizon-transport" }
 # Event Horizon's developer tools: the observation store and the wire (docs/dev-tools.md).
 event-horizon-observe = { path = "../event-horizon-observe" }
+# The F3 overlay's pure helpers: the frame-time window and the process memory.
+event-horizon-debug = { path = "../event-horizon-debug" }
 # server.properties, eula.txt and the user lists, shared with horizon-server.
 horizon-server-files = { path = "../horizon-server-files" }
 # The dedicated server's anticheat, off unless server.toml's [anticheat] turns it on (docs/anticheat.md).

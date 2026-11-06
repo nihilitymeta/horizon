@@ -1064,6 +1064,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "event-horizon-debug"
+version = "0.1.0"
+
+[[package]]
 name = "event-horizon-observe"
 version = "0.1.0"
 dependencies = [
@@ -1561,6 +1565,7 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "egui-winit",
+ "event-horizon-debug",
  "event-horizon-websocket",
  "flate2",
  "fs4",
@@ -1643,6 +1648,7 @@ dependencies = [
  "ab_glyph",
  "bytemuck",
  "chrono",
+ "event-horizon-debug",
  "event-horizon-observe",
  "event-horizon-websocket",
  "flate2",

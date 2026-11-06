@@ -27,6 +27,8 @@ horizon-hdr = { path = "../horizon-hdr" }
 horizon-world = { path = "../horizon-world" }
 horizon-protocol = { path = "../horizon-protocol" }
 horizon-transport = { path = "../horizon-transport" }
+# The F3 overlay's pure helpers: the frame-time window and the process memory.
+event-horizon-debug = { path = "../event-horizon-debug" }
 # server.properties, eula.txt and the user lists, shared with horizon-server.
 horizon-server-files = { path = "../horizon-server-files" }
 # The dedicated server's anticheat, off unless server.toml's [anticheat] turns it on (docs/anticheat.md).
