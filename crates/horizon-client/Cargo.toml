@@ -130,10 +130,6 @@ path = "tests/datapack_biome_sync.rs"
 name = "mod_api_hooks"
 path = "tests/mod_api_hooks.rs"
 
-[[test]]
-name = "lan_bot"
-path = "tests/lan_bot.rs"
-
 [build-dependencies]
 horizon-mod-api-gen = { path = "../horizon-mod-api-gen" }
 

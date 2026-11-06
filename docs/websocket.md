@@ -7,9 +7,13 @@ your own.
 
 Vanilla clients can't join over a WebSocket. They join the same server over TCP as before.
 
-The implementation lives in `crates/event-horizon-websocket`. The program registers it at startup. The generic
-blocking, polled, connector and server-door extension points live in `crates/horizon-transport`; the protocol and
-LAN crates use those extension points without depending on WebSocket code.
+The implementation lives in `crates/event-horizon-websocket`. The generic blocking, polled, connector and
+server-door extension points live in `crates/horizon-transport`; the protocol and LAN crates use those
+extension points without depending on WebSocket code.
+
+A program that builds its own binary calls `event_horizon_websocket::install()` once, before it reads an
+address or accepts a connection. `event-horizon` does this at startup. A program that doesn't loses `ws://`
+and `wss://` addresses (they read as invalid) and takes TCP players only.
 
 ## How it works
 
