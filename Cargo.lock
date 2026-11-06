@@ -1051,6 +1051,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "event-horizon-observe"
+version = "0.1.0"
+dependencies = [
+ "horizon-world",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "fdeflate"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1605,6 +1614,7 @@ dependencies = [
  "ab_glyph",
  "bytemuck",
  "chrono",
+ "event-horizon-observe",
  "flate2",
  "fs4",
  "gilrs",

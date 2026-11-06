@@ -15,8 +15,8 @@ The tools live on the `egui-tools` branch of whos-carmen/horizon. It is stacked 
 | The inspect stick and the block window | built |
 | The rest | [planned](#plan) |
 
-The code is in `crates/horizon-client/src/dev_tools.rs`, `dev_tools/console.rs`, `mobs/observe.rs`,
-`game/commands/inspect.rs` and `game/commands/lua_console.rs`.
+The code is in `crates/event-horizon-observe/` (the observation store and the wire), `crates/horizon-client/src/dev_tools.rs`,
+`dev_tools/console.rs`, `mobs/observe.rs`, `game/commands/inspect.rs` and `game/commands/lua_console.rs`.
 
 ## Turning the tools on
 
@@ -151,7 +151,7 @@ A LAN guest or a dedicated server's player uses the stick as the owner does, and
 screen. Nothing opens on the host's.
 
 1. A Horizon client that has the windows (Lua mods are on, or `--dev-tools`) says so once it joins: `Wire::Hello`
-   on the custom payload channel `horizon:dev_tools` (`mobs/observe_wire.rs`). A vanilla client never sends it, and
+   on the custom payload channel `horizon:dev_tools` (`crates/event-horizon-observe/src/wire.rs`). A vanilla client never sends it, and
    is never sent a page.
 2. The guest's click reaches the server's hooks as any click does. The server reads the page the stick shows, the
    same data the host's windows read, and sends it to that client as JSON. A mob shown this way is snapshot after
@@ -283,6 +283,11 @@ need the C++ cimgui build. Both libraries work the same way, with a function tha
 tools lose nothing.
 
 ## How it is wired
+
+The windows read a store of their own, in the `event-horizon-observe` crate: the types they show, the process-wide
+statics that keep them, the bounded name interner and the wire a server and a guest's client speak. The crate holds no
+game code, so it is read and tested on its own. `horizon-client-lib` depends on it; `mobs/observe.rs` keeps the game's
+part, the snapshot a mob's AI step takes, and re-exports the rest under the path the callers use.
 
 The tools are a built-in trait mod. `dev_tools::mods()` gives `entry::main` a `Hooks` object when the tools are on,
 or when Lua mods are, for the inspect stick. A game with neither has no `Hooks` object, so the engine's paths for a
