@@ -29,7 +29,7 @@ pub const ENV: &str = "HORIZON_DEV_TOOLS";
 /// The launch flag that turns the tools on.
 pub const FLAG: &str = "--dev-tools";
 
-/// The built-in mods of a plain `horizon-client`: the dev tools when asked
+/// The built-in mods of a plain `event-horizon` game: the dev tools when asked
 /// for, and their windows alone when `scripted` (Lua mods are on, which may
 /// use the inspect stick). A game without either has no mod here, so the
 /// hooks' fast paths for a game without mods stay.

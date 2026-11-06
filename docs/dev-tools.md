@@ -17,7 +17,7 @@ The tools live on the `egui-tools` branch of whos-carmen/horizon. It is stacked 
 
 The code is in `crates/event-horizon-observe/` (the observation store and the wire), `crates/horizon-client/src/dev_input.rs`
 (the state the game and the tools share), `dev_input/console.rs` (the console's queues), `dev_input/mods.rs` (the scripted
-mods' status), `crates/horizon-client/src/dev_tools.rs` and `dev_tools/console.rs` (the windows), `mobs/observe.rs`,
+mods' status), `crates/event-horizon-lua/src/dev_tools.rs` and `dev_tools/console.rs` (the windows), `mobs/observe.rs`,
 `game/commands/inspect.rs` and `game/commands/lua_console.rs`.
 
 ## Turning the tools on
