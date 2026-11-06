@@ -67,7 +67,7 @@ Every preview and stable API has tests that run old users against the current co
 
 | API | The test |
 | --- | --- |
-| Content mods | the content template builds and checks with `cargo horizon-mod`, and `mod_content`'s tests load content mods; a line is served as long as they pass |
+| Content mods | the content template builds and checks with `cargo horizon-mod`, and the content mod tests load content mods (`horizon-mods`'s `declarations` tests and `horizon-client`'s `mod_content` tests); a line is served as long as they pass |
 | Native mods | hook points are only ever added, and tests keep each one hookable (`tests::hook_points_stay_hookable` and `tests::loot_table_load_stays_hookable`, `game/native_hooks.rs`) |
 | Agent control | a transcript per protocol version: commands and the reply keys each must have |
 | Server | `api::ROUTES` against `route()` (generated reference); a `server.toml` from each release line parses to the same settings; golden replies per endpoint |

@@ -1,5 +1,6 @@
 use super::*;
 use crate::{assets::Assets, blocks::BlockFacts, items::Items};
+use horizon_mods::content::Content;
 
 #[test]
 fn renames_ids_keys_and_states() {
@@ -4489,60 +4490,4 @@ fn a_root_built_over_itself_is_built_over_its_base() {
     );
     assert_eq!(states(&root), 4);
     let _ = fs::remove_dir_all(&scratch);
-}
-
-/// Built again while the game runs, the root carries the declarations the
-/// game started with, mod by mod, and the data the mods have now.
-#[test]
-fn a_rebuild_keeps_the_startup_declarations() {
-    use horizon_mods::content::{Block, Item};
-    let block = |id: &str| Block {
-        id: id.into(),
-        template: "minecraft:test".into(),
-        ..Default::default()
-    };
-    let item = |id: &str| Item {
-        id: id.into(),
-        template: "minecraft:test".into(),
-        ..Default::default()
-    };
-    let with = |id: &str, blocks: &[Block], items: &[Item]| {
-        let mut content = Content::declared(id);
-        content.blocks = blocks.to_vec();
-        content.items = items.to_vec();
-        ContentMod {
-            id: id.into(),
-            content,
-        }
-    };
-    let startup = startup_declarations(&[
-        with("a", &[block("a:x")], &[]),
-        with("b", &[], &[item("b:y")]),
-        with("d", &[], &[]),
-    ]);
-    // a changed, b is gone, c is new with a block, d and e declare nothing.
-    let mut now = vec![
-        with("a", &[block("a:x"), block("a:z")], &[]),
-        with("c", &[block("c:w")], &[]),
-        with("d", &[], &[]),
-        with("e", &[], &[]),
-    ];
-    let notices = keep_startup_declarations(&mut now, &startup);
-    let ids: Vec<&str> = now.iter().map(|m| m.id.as_str()).collect();
-    assert_eq!(ids, ["a", "d", "e", "b"]);
-    assert_eq!(now[0].content.blocks, [block("a:x")]);
-    assert_eq!(now[3].content.items, [item("b:y")]);
-    assert!(now[3].content.is_empty());
-    assert_eq!(notices.len(), 3, "{notices:?}");
-    for (notice, id) in notices.iter().zip(["a", "c", "b"]) {
-        assert!(notice.starts_with(&format!("mod {id}:")), "{notice}");
-        assert!(notice.contains("restart"), "{notice}");
-    }
-    // The same declarations again: nothing to say.
-    let mut same = vec![
-        with("a", &[block("a:x")], &[]),
-        with("b", &[], &[item("b:y")]),
-    ];
-    assert!(keep_startup_declarations(&mut same, &startup).is_empty());
-    assert_eq!(same.len(), 2);
 }

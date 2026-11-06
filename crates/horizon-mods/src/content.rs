@@ -732,6 +732,12 @@ impl Content {
     }
 }
 
+/// A content mod to put in the root: its id and content.
+pub struct ContentMod {
+    pub id: String,
+    pub content: Content,
+}
+
 pub struct FileReader<'a> {
     from: ReadFrom<'a>,
     registered: &'a BTreeMap<String, Vec<u8>>,

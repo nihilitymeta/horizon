@@ -6,6 +6,7 @@ use horizon_client::{
     mod_list::{self, Installed},
     text::Text,
 };
+use horizon_mods::declarations::Declarations;
 use std::path::PathBuf;
 
 #[derive(Default)]
@@ -68,27 +69,20 @@ pub(super) fn register_standalone_models() {
 /// root `content_root` builds carries the same (`keep_startup_declarations`),
 /// since the block states, the item table and the mob effect, entity type and
 /// menu type registries were read from it once and stay until restart.
-static FIXED_DECLARATIONS: std::sync::OnceLock<
-    std::collections::BTreeMap<String, horizon_client::mod_content::Declarations>,
-> = std::sync::OnceLock::new();
+static FIXED_DECLARATIONS: std::sync::OnceLock<std::collections::BTreeMap<String, Declarations>> =
+    std::sync::OnceLock::new();
 /// What the last root `content_root` built was built from: the startup menu
 /// may build several (a Mods switch reloads everything) before a game starts.
-static LAST_DECLARATIONS: std::sync::Mutex<
-    std::collections::BTreeMap<String, horizon_client::mod_content::Declarations>,
-> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+static LAST_DECLARATIONS: std::sync::Mutex<std::collections::BTreeMap<String, Declarations>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
 
 /// The content mod that declares the block `id`, and the block's template:
 /// what the game runs on (`FIXED_DECLARATIONS`), or the last root built
 /// before a game started.
 pub(super) fn block_declared_by(id: &str) -> Option<(String, String)> {
-    let find =
-        |all: &std::collections::BTreeMap<String, horizon_client::mod_content::Declarations>| {
-            all.iter()
-                .find_map(|(m, d)| d.block_template(id).map(|t| (m.clone(), t.to_string())))
-        };
     match FIXED_DECLARATIONS.get() {
-        Some(fixed) => find(fixed),
-        None => find(&*LAST_DECLARATIONS.lock().ok()?),
+        Some(fixed) => horizon_mods::declarations::block_declared_by(fixed, id),
+        None => horizon_mods::declarations::block_declared_by(&*LAST_DECLARATIONS.lock().ok()?, id),
     }
 }
 

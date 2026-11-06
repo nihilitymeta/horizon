@@ -63,6 +63,11 @@ pointing at the mod folder; no `.hmod` is needed.
 
 The mod-content cache is stamped on each file's size and time, so an edited file shows at the next reload.
 
+A mod's declarations (its blocks, items, mob effects, entity types and menu types) load once, when the game starts,
+and stay until a restart: a root built again while the game runs carries the declarations the game started with.
+Code: `crates/horizon-mods/src/declarations.rs` (the declarations and what a reload keeps of them),
+`crates/horizon-client/src/mod_content.rs` (the root build), `crates/horizon-client/src/game/mods.rs` (the calls).
+
 **Recipe book** (`archive/recipe-book`). A content mod's recipes (`data/<id>/recipe/`, from files or
 `scripts/registry.lua`) are in the recipe book and known to `/recipe give`, as vanilla's are. Code:
 `crates/horizon-client/src/recipe_book.rs`.
