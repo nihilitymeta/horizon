@@ -5,7 +5,8 @@ counted only for the game loop because nearly every gameplay change touches it).
 organised and how to build and test are in [AGENTS.md](../AGENTS.md).
 
 Gameplay lives in the `horizon-client` library; Event Horizon's `event-horizon` program assembles
-the built-in mods and calls `entry::main_with`. The reusable modules, control tool and probes belong to `horizon-client-lib`,
+the built-in mods behind any native ones and calls `entry::main_with`. Its `run` is the startup
+the launcher's generated native-mod executable shares. The reusable modules, control tool and probes belong to `horizon-client-lib`,
 whose library root is `crates/horizon-client/src/client_lib.rs`. Source paths stay in place.
 The gameplay library re-exports the reusable API, keeping existing mod targets unchanged.
 Gameplay tests run in its library test target, separately from the reusable library's tests.

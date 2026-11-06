@@ -3155,6 +3155,16 @@ depends on, else in bundle order). The package is not a
 `[[crate]]`: it depends on the game instead of the game depending on it. A bundle with no
 injections, state, bridges, modules, mixin crates or post-build steps skips horizon-mixins.
 
+A game built on an Event Horizon revision runs Event Horizon's own mods too, behind the trait
+mods. A revision that shares its startup with the generated executable (`event_horizon::run`)
+gives the built game the marks the launcher reads, `--check-mod` (so `cargo horizon-mod check`
+runs against the built game) and `--list-mods`, and the built-in mods — the developer tools, then
+the scripted mods — after every trait mod. The trait mods keep the first places: a panic in a hook
+names its mod by its place in the list, only the trait mods' ids are known when the executable is
+generated, and the built-in mods are discovered at run time, so no id names them. A revision
+without that shared startup — plain Horizon, or an older Event Horizon — links the trait mods
+alone, as before.
+
 ### Dependencies between trait mods
 
 A mod can publish functions and statics from its `[api]` package for another mod to call:
