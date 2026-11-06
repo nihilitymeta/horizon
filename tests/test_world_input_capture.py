@@ -102,6 +102,9 @@ impl Window {
 struct Mouse { ignore_first: bool }
 impl Mouse { fn set_ignore_first_move(&mut self) { self.ignore_first = true; } }
 struct Remote;
+mod dev_input {
+    pub fn holds_pointer() -> bool { false }
+}
 #[derive(Default)]
 struct Options { offscreen: bool }
 #[derive(Default)]
