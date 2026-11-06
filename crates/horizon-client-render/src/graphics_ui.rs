@@ -103,7 +103,6 @@ pub enum H {
     HdrLighting,
     BatteryMode,
     ShadowCache,
-    AntiLag,
     GraphicsApi,
     TranslucentBatching,
     HdrSmoothGradients,
@@ -467,11 +466,6 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
                             "Efficient sleeps until the next frame; Precise spins, like vanilla.",
                         ),
                         h(
-                            H::AntiLag,
-                            None,
-                            "AMD Anti-Lag 2: dynamically paces the CPU frame to reduce input latency.",
-                        ),
-                        h(
                             H::GraphicsApi,
                             None,
                             "Vulkan, then DirectX 12 (Windows) or OpenGL (Linux) where it fails. Next start.",
@@ -568,14 +562,6 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
                         Item::Horizon(H::GraphicsApi | H::TranslucentBatching)
                     )
                 });
-            }
-        }
-    }
-    // Anti-Lag 2 is Vulkan on AMD: the row is only there where the device offers it.
-    if !crate::graphics::anti_lag_offered() {
-        for (_, groups) in &mut pages {
-            for (_, rows) in groups {
-                rows.retain(|r| r.item != Item::Horizon(H::AntiLag));
             }
         }
     }
@@ -850,7 +836,6 @@ impl H {
             }
             H::BatteryMode => labelled("Battery Mode", on_off(g.battery)),
             H::ShadowCache => labelled("Shadow Cache", on_off(g.shadow_cache)),
-            H::AntiLag => labelled("AMD Anti-Lag", on_off(g.anti_lag)),
             H::GraphicsApi => labelled("Graphics API", g.api.label()),
             // These two are greyed out where the device can't (`Item::blocked`): Off, as
             // they are there, while the saved value waits for a device that can.
@@ -973,7 +958,6 @@ impl H {
             H::HdrLighting => g.hdr_lighting = !g.hdr_lighting,
             H::BatteryMode => g.battery = !g.battery,
             H::ShadowCache => g.shadow_cache = !g.shadow_cache,
-            H::AntiLag => g.anti_lag = !g.anti_lag,
             H::GraphicsApi => g.api = step(GraphicsApi::choices(), g.api, back),
             H::TranslucentBatching => g.translucent_batching = !g.translucent_batching,
             H::HdrSmoothGradients => g.hdr_smooth_gradients = !g.hdr_smooth_gradients,
@@ -1046,9 +1030,6 @@ impl Item {
             {
                 Some("Your GPU or graphics API doesn't support it.")
             }
-            Item::Horizon(H::AntiLag) if !crate::graphics::anti_lag_offered() => {
-                Some("Your GPU or driver doesn't support AMD Anti-Lag 2.")
-            }
             _ => None,
         }
     }
@@ -1080,7 +1061,6 @@ impl Item {
             Item::Horizon(H::HdrLighting) => g.hdr_lighting,
             Item::Horizon(H::BatteryMode) => g.battery,
             Item::Horizon(H::ShadowCache) => g.shadow_cache,
-            Item::Horizon(H::AntiLag) => g.anti_lag,
             Item::Horizon(H::TranslucentBatching) => {
                 g.translucent_batching && crate::graphics::translucent_batching_offered()
             }
@@ -1151,7 +1131,6 @@ impl Item {
                     | H::FrameGeneration
                     | H::BatteryMode
                     | H::ShadowCache
-                    | H::AntiLag
                     | H::GraphicsApi
                     | H::TranslucentBatching
                     | H::HdrSmoothGradients

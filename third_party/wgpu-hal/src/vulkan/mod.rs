@@ -328,51 +328,6 @@ struct DeviceExtensionFunctions {
     mesh_shading: Option<ext::mesh_shader::Device>,
     #[cfg_attr(not(unix), allow(dead_code))]
     external_memory_fd: Option<khr::external_memory_fd::Device>,
-    anti_lag_update: Option<PfnVkAntiLagUpdateAMD>,
-}
-
-pub type PfnVkAntiLagUpdateAMD = unsafe extern "system" fn(vk::Device, *const VkAntiLagDataAMD);
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct VkPhysicalDeviceAntiLagFeaturesAMD {
-    pub s_type: vk::StructureType,
-    pub p_next: *mut std::ffi::c_void,
-    pub anti_lag: vk::Bool32,
-}
-
-impl Default for VkPhysicalDeviceAntiLagFeaturesAMD {
-    fn default() -> Self {
-        Self {
-            s_type: vk::StructureType::from_raw(1000476000),
-            p_next: std::ptr::null_mut(),
-            anti_lag: vk::FALSE,
-        }
-    }
-}
-
-unsafe impl Send for VkPhysicalDeviceAntiLagFeaturesAMD {}
-unsafe impl Sync for VkPhysicalDeviceAntiLagFeaturesAMD {}
-unsafe impl vk::ExtendsDeviceCreateInfo for VkPhysicalDeviceAntiLagFeaturesAMD {}
-unsafe impl vk::ExtendsPhysicalDeviceFeatures2 for VkPhysicalDeviceAntiLagFeaturesAMD {}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct VkAntiLagPresentationInfoAMD {
-    pub s_type: vk::StructureType,
-    pub p_next: *mut std::ffi::c_void,
-    pub stage: u32,
-    pub frame_index: u64,
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct VkAntiLagDataAMD {
-    pub s_type: vk::StructureType,
-    pub p_next: *const std::ffi::c_void,
-    pub mode: u32,
-    pub max_fps: u32,
-    pub p_presentation_info: *const VkAntiLagPresentationInfoAMD,
 }
 
 struct RayTracingDeviceExtensionFunctions {
@@ -618,30 +573,6 @@ impl Drop for Device {
 }
 
 impl Device {
-    pub fn supports_anti_lag(&self) -> bool {
-        self.shared.extension_fns.anti_lag_update.is_some()
-    }
-
-    pub unsafe fn anti_lag_update(&self, stage: u32, frame_index: u64, max_fps: u32, enabled: bool) {
-        if let Some(pfn) = self.shared.extension_fns.anti_lag_update {
-            let pres_info = VkAntiLagPresentationInfoAMD {
-                s_type: vk::StructureType::from_raw(1000476002),
-                p_next: std::ptr::null_mut(),
-                stage,
-                frame_index,
-            };
-            let data = VkAntiLagDataAMD {
-                s_type: vk::StructureType::from_raw(1000476001),
-                p_next: std::ptr::null(),
-                mode: if enabled { 1 } else { 2 },
-                max_fps,
-                p_presentation_info: if enabled { &pres_info } else { std::ptr::null() },
-            };
-            unsafe {
-                pfn(self.shared.raw.handle(), &data);
-            }
-        }
-    }
 }
 
 /// Semaphores for forcing queue submissions to run in order.

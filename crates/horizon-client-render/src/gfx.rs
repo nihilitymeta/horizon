@@ -1427,11 +1427,6 @@ pub struct Renderer {
     oit: Option<oit::Oit>,
     /// Advance animated block textures (Horizon setting; vanilla always does).
     pub animated_textures: bool,
-    /// AMD Anti-Lag 2 (VK_AMD_anti_lag) active state.
-    pub anti_lag: bool,
-    anti_lag_frame: std::sync::atomic::AtomicU64,
-    anti_lag_input_called: std::sync::atomic::AtomicBool,
-    anti_lag_active: std::sync::atomic::AtomicBool,
     present_modes: Vec<wgpu::PresentMode>,
     /// CPU copies of the section and far tile meshes uploaded while `render-capture` is on
     /// (`keep_capture_copies`, or `HORIZON_RENDER_CAPTURE` at creation); `None` otherwise.
@@ -2507,18 +2502,11 @@ impl Renderer {
             surface.configure(&device, &config);
             let hdr_output = hdr::output(&caps);
             crate::graphics::offer_hdr(hdr_output.is_some());
-            let anti_lag_supported = horizon_hdr::supports_anti_lag(&device);
-            crate::graphics::offer_anti_lag(anti_lag_supported);
             if previous.is_none() {
                 log::info!(
                     "Horizon renderer: HDR output {}",
                     hdr_output.map_or("not offered by this display", hdr::Output::name)
                 );
-                if anti_lag_supported {
-                    log::info!("Horizon renderer: AMD Anti-Lag 2 active (VK_AMD_anti_lag)");
-                } else {
-                    log::info!("Horizon renderer: AMD Anti-Lag 2 not available");
-                }
             }
             (config, caps.present_modes.clone(), hdr_output)
         } else {
@@ -4706,10 +4694,6 @@ impl Renderer {
             oit: None,
             fullbright: false,
             animated_textures: true,
-            anti_lag: false,
-            anti_lag_frame: std::sync::atomic::AtomicU64::new(1),
-            anti_lag_input_called: std::sync::atomic::AtomicBool::new(false),
-            anti_lag_active: std::sync::atomic::AtomicBool::new(false),
             present_modes,
             capture_copies: std::env::var_os("HORIZON_RENDER_CAPTURE")
                 .is_some()
@@ -4779,19 +4763,6 @@ impl Renderer {
         let format = self.frame_format;
         self.core_lines =
             program.and_then(|program| core_lines::CoreLines::new(&self.device, format, program));
-    }
-    /// AMD Anti-Lag 2 (VK_AMD_anti_lag) input stage update.
-    pub fn anti_lag_input(&self) {
-        if crate::graphics::anti_lag_offered() && self.anti_lag {
-            let idx = self
-                .anti_lag_frame
-                .load(std::sync::atomic::Ordering::Relaxed);
-            horizon_hdr::anti_lag_update(&self.device, 0, idx, 0, true);
-            self.anti_lag_input_called
-                .store(true, std::sync::atomic::Ordering::Relaxed);
-            self.anti_lag_active
-                .store(true, std::sync::atomic::Ordering::Relaxed);
-        }
     }
     /// LevelRenderer.submitBlockOutline: the buffer holds `edges` per stroke, the black
     /// secondary stroke first when high contrast is on.
@@ -10487,30 +10458,6 @@ impl Renderer {
             }
             if first_frame {
                 startup_step(format_args!("presenting the first frame"));
-            }
-            if crate::graphics::anti_lag_offered() {
-                if self.anti_lag {
-                    if !self
-                        .anti_lag_input_called
-                        .swap(false, std::sync::atomic::Ordering::Relaxed)
-                    {
-                        let idx = self
-                            .anti_lag_frame
-                            .load(std::sync::atomic::Ordering::Relaxed);
-                        horizon_hdr::anti_lag_update(&self.device, 0, idx, 0, true);
-                    }
-                    let idx = self
-                        .anti_lag_frame
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    horizon_hdr::anti_lag_update(&self.device, 1, idx, 0, true);
-                    self.anti_lag_active
-                        .store(true, std::sync::atomic::Ordering::Relaxed);
-                } else if self
-                    .anti_lag_active
-                    .swap(false, std::sync::atomic::Ordering::Relaxed)
-                {
-                    horizon_hdr::anti_lag_update(&self.device, 0, 0, 0, false);
-                }
             }
             self.queue.present(surface_frame);
             if self.hdr.is_some()

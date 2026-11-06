@@ -6,18 +6,6 @@
 #[cfg(target_os = "linux")]
 pub mod wayland;
 
-/// Prepares the graphics environment before Vulkan initialization.
-/// On Linux, enables Mesa's Anti-Lag layer (`ENABLE_LAYER_MESA_ANTI_LAG=1`) if not already set.
-pub fn init_graphics_env() {
-    #[cfg(target_os = "linux")]
-    if std::env::var_os("ENABLE_LAYER_MESA_ANTI_LAG").is_none() {
-        // Safety: called before any worker threads or Vulkan runtime are started.
-        unsafe {
-            std::env::set_var("ENABLE_LAYER_MESA_ANTI_LAG", "1");
-        }
-    }
-}
-
 /// Opens a Vulkan device with `VK_EXT_hdr_metadata` too, when the GPU offers
 /// it, so [`set_metadata`] can tell the compositor the real peak brightness.
 /// `None` leaves opening to wgpu.
@@ -108,43 +96,4 @@ pub fn set_metadata(
     }
     #[cfg(target_os = "macos")]
     let _ = (device, surface, paper_white, peak, black);
-}
-
-/// Returns true if the device supports AMD Anti-Lag 2 (`VK_AMD_anti_lag`).
-pub fn supports_anti_lag(device: &wgpu::Device) -> bool {
-    #[cfg(not(target_os = "macos"))]
-    {
-        use wgpu::hal::api::Vulkan;
-        if let Some(hal_device) = unsafe { device.as_hal::<Vulkan>() } {
-            return hal_device.supports_anti_lag();
-        }
-    }
-    #[cfg(target_os = "macos")]
-    let _ = device;
-    false
-}
-
-/// Updates AMD Anti-Lag 2 state:
-/// - `stage`: 0 for input, 1 for presentation
-/// - `frame_index`: monotonic frame sequence number
-/// - `max_fps`: frame limit or 0 for none
-/// - `enabled`: whether Anti-Lag is active
-pub fn anti_lag_update(
-    device: &wgpu::Device,
-    stage: u32,
-    frame_index: u64,
-    max_fps: u32,
-    enabled: bool,
-) {
-    #[cfg(not(target_os = "macos"))]
-    {
-        use wgpu::hal::api::Vulkan;
-        if let Some(hal_device) = unsafe { device.as_hal::<Vulkan>() } {
-            unsafe {
-                hal_device.anti_lag_update(stage, frame_index, max_fps, enabled);
-            }
-        }
-    }
-    #[cfg(target_os = "macos")]
-    let _ = (device, stage, frame_index, max_fps, enabled);
 }

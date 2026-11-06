@@ -38,7 +38,7 @@ Its rules on contributing (pull requests, claims, labels, release batches) are f
 ### 4. Event Horizon's own rules
 
 - **Both platforms.** Everything must compile on Linux (Vulkan) and macOS (Metal). Backend-specific code (`VK_*`
-  extensions, HDR metadata, Anti-Lag) sits behind runtime checks or `#[cfg]`, and does nothing elsewhere.
+  extensions, HDR metadata) sits behind runtime checks or `#[cfg]`, and does nothing elsewhere.
 - **A switchable feature** declares its switch in one file, `crates/horizon-client-render/registry/<id>.json`
   ([format](../crates/horizon-client-render/registry/README.md)). Options > Mods lists it. Never hard-code a
   feature's switch in the launcher.

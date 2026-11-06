@@ -104,9 +104,6 @@ auto reconnect and own name tag are registered as hook mods.
 The game and the launcher send nothing to Horizon's servers, the "I'm playing" ping included, unless
 `HORIZON_TELEMETRY_URL` names a server (`crates/horizon-telemetry/src/lib.rs`, `endpoint`).
 
-**Anti-Lag 2** (`archive/anti-lag`). AMD Anti-Lag 2 through `VK_AMD_anti_lag`, with Vulkan and an AMD driver only;
-it does nothing elsewhere. Graphics > Advanced > Frames; registers `anti_lag`.
-
 **WebSocket transport** (`archive/websocket`). A multiplayer transport over `ws://` and `wss://`, so a world can be
 reached through Cloudflare Tunnels and other HTTP-only relays. It covers the door's limits and settings and a tunnel
 player's forwarded address, and F3 shows the transport and path. Code: `crates/event-horizon-websocket/`; generic

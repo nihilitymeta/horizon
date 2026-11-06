@@ -30,5 +30,5 @@ target/fast/horizon-client --game-dir <a folder> --resources <the 26.3 folder ab
   --dev-mod <path to horizon-modkit> --dev-mod <path to horizon-parasite-mod>
 ```
 
-The GPU needs Vulkan or DirectX 12 on Windows, Metal on a Mac, Vulkan or OpenGL 3.3 on Linux. `anti-lag` and the
-HDR code are Vulkan-only and inert elsewhere; nothing in `engine-work` needs a particular GPU to build.
+The GPU needs Vulkan or DirectX 12 on Windows, Metal on a Mac, Vulkan or OpenGL 3.3 on Linux. The HDR code is
+Vulkan-only and inert elsewhere; nothing in `engine-work` needs a particular GPU to build.

@@ -147,7 +147,6 @@ pub struct PhysicalDeviceFeatures {
 
     shader_draw_parameters: Option<vk::PhysicalDeviceShaderDrawParametersFeatures<'static>>,
 
-    pub(super) anti_lag: Option<super::VkPhysicalDeviceAntiLagFeaturesAMD>,
 }
 
 impl PhysicalDeviceFeatures {
@@ -237,9 +236,6 @@ impl PhysicalDeviceFeatures {
             info = info.push_next(feature);
         }
         if let Some(ref mut feature) = self.shader_draw_parameters {
-            info = info.push_next(feature);
-        }
-        if let Some(ref mut feature) = self.anti_lag {
             info = info.push_next(feature);
         }
         info
@@ -650,17 +646,6 @@ impl PhysicalDeviceFeatures {
                     vk::PhysicalDeviceShaderDrawParametersFeatures::default()
                         .shader_draw_parameters(needed),
                 )
-            } else {
-                None
-            },
-            anti_lag: if enabled_extensions.contains(&c"VK_AMD_anti_lag")
-                && phd_features.anti_lag.as_ref().map_or(false, |f| f.anti_lag != 0)
-            {
-                Some(super::VkPhysicalDeviceAntiLagFeaturesAMD {
-                    s_type: vk::StructureType::from_raw(1000476000),
-                    p_next: std::ptr::null_mut(),
-                    anti_lag: vk::TRUE,
-                })
             } else {
                 None
             },
@@ -1377,11 +1362,6 @@ impl PhysicalDeviceProperties {
             extensions.push(ext::memory_budget::NAME);
         } else {
             log::debug!("VK_EXT_memory_budget is not available.")
-        }
-
-        // Optional `VK_AMD_anti_lag`
-        if self.supports_extension(c"VK_AMD_anti_lag") {
-            extensions.push(c"VK_AMD_anti_lag");
         }
 
         // Require `VK_KHR_draw_indirect_count` if the associated feature was requested
@@ -2226,13 +2206,6 @@ impl super::InstanceShared {
                 features2 = features2.push_next(next);
             }
 
-            if capabilities.supports_extension(c"VK_AMD_anti_lag") {
-                let next = features
-                    .anti_lag
-                    .insert(super::VkPhysicalDeviceAntiLagFeaturesAMD::default());
-                features2 = features2.push_next(next);
-            }
-
             unsafe { get_device_properties.get_physical_device_features2(phd, &mut features2) };
             features2.features
         } else {
@@ -2692,17 +2665,6 @@ impl super::Adapter {
         } else {
             None
         };
-        let anti_lag_update_fn = if enabled_extensions.contains(&c"VK_AMD_anti_lag") {
-            unsafe {
-                self.instance
-                    .raw
-                    .get_device_proc_addr(raw_device.handle(), c"vkAntiLagUpdateAMD".as_ptr())
-                    .map(|f| std::mem::transmute(f))
-            }
-        } else {
-            None
-        };
-
         let naga_options = {
             use naga::back::spv;
 
@@ -2957,7 +2919,6 @@ impl super::Adapter {
                 ray_tracing_pipelines: ray_tracing_pipeline_fns,
                 mesh_shading: mesh_shading_fns,
                 external_memory_fd: external_memory_fd_fn,
-                anti_lag_update: anti_lag_update_fn,
             },
             pipeline_cache_validation_key,
             vendor_id: self.phd_capabilities.properties.vendor_id,

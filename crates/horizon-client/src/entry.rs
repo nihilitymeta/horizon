@@ -12,7 +12,6 @@ pub fn main_with(mods: crate::mod_api::Mods) {
     if crate::mod_api::MODS.set(mods).is_err() {
         log::warn!("Trait mods already installed; ignoring the second list");
     }
-    horizon_hdr::init_graphics_env();
     horizon_threads::configure_allocator();
     horizon_client::telemetry::mark_start();
     horizon_client::spans::startup::init(std::time::Instant::now());
