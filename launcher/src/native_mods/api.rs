@@ -227,8 +227,13 @@ pub(super) fn stage(
         deps.insert(format!("mod_{i}"), toml::Value::Table(dep));
         members.push(relative);
     }
-    // Beside event-horizon, so its build script (the Windows stack size and icon, for the
-    // `horizon-client` binary this package owns now) finds `packaging/` where it looks.
+    // Beside the program crates, so either build script finds `packaging/` where it looks.
+    let event_build = stage.join("crates/event-horizon/build.rs").is_file();
+    let build = if event_build {
+        "../event-horizon/build.rs"
+    } else {
+        "../horizon-client/build.rs"
+    };
     let game = stage.join(GAME);
     fs::create_dir_all(game.join("src")).map_err(|e| e.to_string())?;
     let mut manifest = toml::Table::new();
@@ -239,9 +244,15 @@ pub(super) fn stage(
             ("version".into(), "0.1.0".into()),
             ("edition".into(), "2024".into()),
             ("publish".into(), false.into()),
-            ("build".into(), "../event-horizon/build.rs".into()),
+            ("build".into(), build.into()),
         ])),
     );
+    if !event_build {
+        let client = read(&stage.join("crates/horizon-client/Cargo.toml"))?;
+        if let Some(dependencies) = client.get("build-dependencies") {
+            manifest.insert("build-dependencies".into(), dependencies.clone());
+        }
+    }
     let windows = toml::Table::from_iter([(
         "build-dependencies".into(),
         toml::Value::Table(toml::Table::from_iter([(
@@ -384,6 +395,8 @@ mod tests {
         let bundle = super::super::bundle(&dir, None).unwrap();
         let stage_dir = dir.join("workspace");
         fs::create_dir_all(stage_dir.join("crates/horizon-client")).unwrap();
+        fs::create_dir_all(stage_dir.join("crates/event-horizon")).unwrap();
+        fs::write(stage_dir.join("crates/event-horizon/build.rs"), "").unwrap();
         fs::write(stage_dir.join("Cargo.toml"), "[workspace]\nmembers = []\n").unwrap();
         fs::write(
             stage_dir.join("crates/horizon-client/Cargo.toml"),
@@ -457,6 +470,32 @@ mod tests {
         assert!(main().contains(r#"name_mods(&["example"]);"#));
         let game = read(&stage_dir.join(GAME).join("Cargo.toml")).unwrap();
         assert!(game.get("build-dependencies").is_none());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn older_sources_keep_the_client_build_script_and_dependencies() {
+        let dir = fixture("[mod]\nid = 'example'\nversion = '1'\n[api]\npath = 'engine'\n");
+        let bundle = super::super::bundle(&dir, None).unwrap();
+        let stage_dir = dir.join("workspace");
+        fs::create_dir_all(stage_dir.join("crates/horizon-client")).unwrap();
+        fs::write(stage_dir.join("Cargo.toml"), "[workspace]\nmembers = []\n").unwrap();
+        fs::write(
+            stage_dir.join("crates/horizon-client/Cargo.toml"),
+            "[package]\nname = 'horizon-client'\nversion = '0.1.0'\n[build-dependencies]\nhorizon-mod-api-gen = { path = '../horizon-mod-api-gen' }\n",
+        )
+        .unwrap();
+        let resolution = super::super::dependencies::Resolution { order: vec![0] };
+        stage(&stage_dir, &[bundle], &[vec![]], &resolution).unwrap();
+        let game = read(&stage_dir.join(GAME).join("Cargo.toml")).unwrap();
+        assert_eq!(
+            game["package"]["build"].as_str(),
+            Some("../horizon-client/build.rs")
+        );
+        assert_eq!(
+            game["build-dependencies"]["horizon-mod-api-gen"]["path"].as_str(),
+            Some("../horizon-mod-api-gen")
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 

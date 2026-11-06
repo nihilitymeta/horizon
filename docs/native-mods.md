@@ -1759,7 +1759,7 @@ trusting native code is the player's decision, never an agent's.
    changed into `native/stage/`, so Cargo, which goes by file times, recompiles only the crates the mods touch.
    With mods' crates, their dependencies are checked against Horizon's `Cargo.lock` ("The mod's crate").
 5. **Compile**: `cargo build --locked --profile <fast|release> [--config ...] [--features horizon-client/mods] -p
-   horizon-client`, into `native/target/`, with one of three build profiles:
+   event-horizon`, into `native/target/`, with one of three build profiles:
 
    | Profile | Cargo profile | Use |
    |---|---|---|

@@ -1116,6 +1116,14 @@ fn has_mods_feature(source: &Path) -> bool {
     value.get("features").and_then(|f| f.get("mods")).is_some()
 }
 
+fn program_package(source: &Path) -> &'static str {
+    if source.join("crates/event-horizon/Cargo.toml").is_file() {
+        "event-horizon"
+    } else {
+        "horizon-client"
+    }
+}
+
 /// The profile the source at `source` builds with: `chosen`, except that one built on
 /// `[profile.fast]` becomes `Release` (the release's own) for a revision whose Cargo.toml has none.
 fn profile_of(source: &Path, chosen: Profile) -> Profile {
@@ -2101,7 +2109,7 @@ fn pipeline(
                 if has_api {
                     api::PACKAGE
                 } else {
-                    "event-horizon"
+                    program_package(&stage)
                 },
             ),
             "Compiling the game",
@@ -3990,6 +3998,16 @@ mod tests {
         gone.sort();
         assert_eq!(gone, ["native-a", "native-f"]);
         assert!(stale(builds[..4].to_vec(), "native-a", &[]).is_empty());
+    }
+
+    #[test]
+    fn the_program_package_matches_the_staged_source() {
+        let stage = dir("program-package");
+        assert_eq!(program_package(&stage), "horizon-client");
+        fs::create_dir_all(stage.join("crates/event-horizon")).unwrap();
+        fs::write(stage.join("crates/event-horizon/Cargo.toml"), "").unwrap();
+        assert_eq!(program_package(&stage), "event-horizon");
+        fs::remove_dir_all(stage).unwrap();
     }
 
     #[test]

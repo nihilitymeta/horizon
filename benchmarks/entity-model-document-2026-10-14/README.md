@@ -14,7 +14,7 @@ From the repository root:
 python3 benchmarks/entity-model-document-2026-10-14/generate_fixture.py /tmp/horizon-entity-model-document-fixture.json
 ENTITY_MODEL_BENCH_DOCUMENT=/tmp/horizon-entity-model-document-fixture.json \
   CARGO_TARGET_DIR=/home/bob/Documents/horizon/target \
-  cargo test -p event-horizon --profile fast --bin horizon-client \
+  cargo test -p horizon-client --profile fast --bin horizon-client \
   entity_model_document_benchmark -- --ignored --nocapture
 ```
 
@@ -67,10 +67,10 @@ for both variants, warmup count, document size and selected model count are in
 ```sh
 cargo fmt --all -- --check
 CARGO_TARGET_DIR=/home/bob/Documents/horizon/target \
-  cargo test -p event-horizon --profile fast --bin horizon-client \
+  cargo test -p horizon-client --profile fast --bin horizon-client \
   entity_model_loading_tests -- --nocapture
 CARGO_TARGET_DIR=/home/bob/Documents/horizon/target \
-  cargo clippy -p event-horizon --profile fast --lib --bin horizon-client --tests -- -D warnings
+  cargo clippy -p horizon-client --profile fast --lib --bin horizon-client --tests -- -D warnings
 ```
 
 The regular tests cover full/sparse documents, unrelated layers, a missing file,

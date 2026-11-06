@@ -228,6 +228,7 @@ class PrReadyTests(unittest.TestCase):
         self.assertEqual({step.name: step for step in unrelated}["clippy"].command, pr_ready.CI_CLIPPY)
         by_name = {step.name: step for step in steps}
         self.assertEqual(by_name["clippy"].command, CLIPPY)
+        self.assertIn("-p horizon-client -p event-horizon --all-targets", pr_ready.CI_CLIPPY_SERVER)
         self.assertEqual(by_name["tests: core"].command, "cargo test --locked -p core --tests")
         self.assertEqual(by_name["doc tests"].command, "cargo test --locked -p core --doc")
 

@@ -290,7 +290,7 @@ def parity_summary(output):
 # CI's verify job (.github/workflows/ci.yml): clippy over the whole workspace, and over the server build (the game
 # without sound or controllers).
 CI_CLIPPY = "cargo clippy --workspace --all-targets --locked -- -D warnings"
-CI_CLIPPY_SERVER = "cargo clippy -p event-horizon --all-targets --locked --no-default-features -- -D warnings"
+CI_CLIPPY_SERVER = "cargo clippy -p horizon-client -p event-horizon --all-targets --locked --no-default-features -- -D warnings"
 
 
 # CI installs the current stable each run (rustup toolchain install stable), and Rust ships one every six weeks

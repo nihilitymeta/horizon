@@ -5,7 +5,7 @@ Run date: 2026-11-01T14:09:25Z.
 ## Setup
 
 - Hardware: Intel Core i7-3770S (8 threads); Intel HD Graphics 4000 (IVB GT2) with Intel Mesa 26.2.4-arch1.1; Vulkan; 1366x768 @ 60 Hz; Linux / Hyprland Wayland.
-- Build: `cargo build --profile fast -p event-horizon (successful)`.
+- Build: `cargo build --profile fast -p horizon-client (successful)`.
 - Scene: 300 static armor stands behind a 33-wide x 31-high stone wall at 3.5 blocks from camera, with a 1-wide x 4-high center opening.
 - Same seed-1234 scene per pass; 1366x768 fullscreen, render distance 2, immediate presentation, VSync off, 260 FPS cap.
 - Camera: Fixed at the initial spawn X/Z, feet y=100, yaw 0 and pitch 0. Time was set to 6000 at scene setup and then advanced normally.
