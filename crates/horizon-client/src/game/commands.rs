@@ -5,6 +5,7 @@ pub(super) mod compute;
 mod data;
 mod inspect;
 mod lua_console;
+pub(super) use data::DataRef;
 pub(super) use data::place_summoned;
 mod effects;
 pub(super) mod execute;

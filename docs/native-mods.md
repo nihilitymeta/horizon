@@ -2059,6 +2059,21 @@ stamped; the existing hook stays version 1.
 
 A native server tick hook can call `native_server_block` with its context, a dimension id and a block position. It returns the block name and state properties from a loaded chunk. It does not load a chunk or open a dimension. Reads outside that hook, from a stale context, from unavailable dimensions or outside the world bounds return an error.
 
+### Generic host helpers (draft)
+
+Some helpers answer for any native mod, not for one hook point. They live in `tools/native-hook-fragments/dev_helpers.json` as a pending fragment, so they have no API number yet.
+
+- `entity_data(dimension, id)` returns the entity's data as `/data get entity` prints it: its compound without `id`. A player is named by their network entity id.
+- `entity_name_at(dimension, id)` returns the entity's name as plain text.
+- `entity_is_mob(dimension, id)` tells a living mob from an item, a player and any other entity.
+- `block_info(dimension, pos, face)` returns a block's state and properties, its block entity's data, the light on the block and on the face, its biome, the power it receives and gives, its scheduled ticks, its tags, the mod that declares it, and its collision and outline boxes.
+- `player_sneaking(uuid)` and `player_permission(uuid)` return a player's sneak and operator level. A player the game does not know has neither.
+- `send_payload(player, channel, bytes)` sends bytes to a player on the engine's own channel.
+
+An unknown dimension and an unknown player answer with nothing: `None` for the reads, `false` for `entity_is_mob` and `send_payload`.
+
+`send_payload` takes the engine's channel `horizon:dev_tools` only, and a payload of at most 1 MiB, the limit the engine's own wire carries. A mod cannot take over a channel of a client. The bytes go to the player through the game's own send, so a player who is not on gets nothing. The set of players whose clients showed the windows stays with the caller that keeps it.
+
 ### Neighbour observations (draft)
 
 `native_neighbor_changed` observes each authoritative server `neighborChanged` before the block handles it. It supplies the dimension, position, current state ID, changed block ID and moved flag. Resolve IDs with the level's registries during the hook; the hook does not load chunks or change the update queue.

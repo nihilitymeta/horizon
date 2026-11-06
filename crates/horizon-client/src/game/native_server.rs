@@ -30,6 +30,14 @@ pub(crate) struct NativeSidebar {
 /// server's scoreboard never holds it.
 const SIDEBAR_OBJECTIVE: &str = "horizon:native_sidebar";
 
+/// The operator level of the player `uuid` among `players`.
+fn player_permission(players: &[NativeServerPlayer], uuid: u128) -> Option<u8> {
+    players
+        .iter()
+        .find(|p| p.uuid == uuid)
+        .map(|p| p.permission)
+}
+
 /// The brigadier parser of an argument kind, and its properties.
 fn parser(kind: &str) -> Option<(&'static str, Value)> {
     Some(match kind {
@@ -261,6 +269,31 @@ impl Game<'_> {
             },
         );
         players
+    }
+    /// Whether the player `uuid` holds sneak (`Player.isShiftKeyDown`): a hub
+    /// guest's from the hub, the window's own player's (or the guest whose
+    /// state is swapped in for their action) from their pose. None for a
+    /// player the game doesn't know. API @API:dev_helpers@.
+    pub(super) fn native_player_sneaking(&self, uuid: u128) -> Option<bool> {
+        if let Some(g) = self
+            .lan
+            .as_ref()
+            .and_then(|host| host.hub.guests.iter().find(|g| g.uuid == uuid))
+        {
+            return Some(g.sneaking);
+        }
+        let own = self.native_acting_player().is_some_and(|p| p.uuid == uuid)
+            || (self.remote.is_none() && self.serving.is_none() && uuid == self.owner_uuid());
+        match &self.player {
+            Some(p) if own => Some(p.pose == horizon_client::pose::Pose::Crouching),
+            _ => None,
+        }
+    }
+    /// The operator level of the player `uuid` (0 to 4): a hub guest's from
+    /// the hub, the window's own player's 4 in single player. None for a
+    /// player the game doesn't know. API @API:dev_helpers@.
+    pub(super) fn native_player_permission(&self, uuid: u128) -> Option<u8> {
+        player_permission(&self.native_level_players(), uuid)
     }
     /// The eye height of the server player `uuid`, from their pose
     /// (`Avatar.POSES`: standing 1.62, crouching 1.27, swimming, gliding or
@@ -1328,6 +1361,26 @@ impl Game<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_player_the_game_does_not_know_has_no_permission() {
+        let player = NativeServerPlayer {
+            uuid: 7,
+            name: "Steve".into(),
+            permission: 2,
+            dimension: "minecraft:overworld".into(),
+            position: [0.0; 3],
+            game_mode: 0,
+            health: 20.0,
+            yaw: 0.0,
+            pitch: 0.0,
+            entity_id: 3,
+            address: String::new(),
+        };
+        assert_eq!(player_permission(std::slice::from_ref(&player), 7), Some(2));
+        assert_eq!(player_permission(std::slice::from_ref(&player), 8), None);
+        assert_eq!(player_permission(&[], 7), None);
+    }
 
     fn tree(commands: &[NativeCommand]) -> (Value, HashMap<String, u8>, Vec<String>) {
         command_tree(commands, |name| name == "give")

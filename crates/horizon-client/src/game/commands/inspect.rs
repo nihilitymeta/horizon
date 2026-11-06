@@ -829,81 +829,23 @@ impl Game<'_> {
 
     /// What the block window shows of the block at `pos`, clicked on `face`.
     fn block_snapshot(&mut self, pos: [i32; 3], face: [i32; 3]) -> BlockSnapshot {
-        use horizon_core::position::{BlockPos, ChunkPos};
-        let [x, y, z] = pos;
-        let state = self.world.block(x, y, z);
-        let (name, properties) = match self.pack.assets.registry.state(state) {
-            Some(s) => (
-                s.name.clone(),
-                s.properties
-                    .iter()
-                    .map(|(k, v)| (k.to_string(), v.to_string()))
-                    .collect(),
-            ),
-            None => (String::new(), Vec::new()),
-        };
-        let entity = self.data_of(&DataRef::Block(pos)).ok();
-        let light = |l: u8| [l & 15, l >> 4];
-        let at = BlockPos::new(x, y, z);
-        let (power, strong) = self.with_level(|b, level, ticks| {
-            (
-                b.best_neighbor_signal(level, ticks, at),
-                b.direct_signals(level, ticks, at),
-            )
-        });
-        let now = self.world.game_time;
-        let mut scheduled = Vec::new();
-        let chunk = ChunkPos {
-            x: x >> 4,
-            z: z >> 4,
-        };
-        for (kind, ticks) in [
-            ("block", &self.block_ticks.blocks),
-            ("fluid", &self.block_ticks.fluids),
-        ] {
-            if let Some(c) = ticks.chunk(chunk) {
-                for t in c.queued().iter().filter(|t| t.pos == at) {
-                    scheduled.push((kind.to_string(), t.trigger_tick - now, t.priority as i32));
-                }
-            }
-        }
-        let tags = horizon_client::debug_overlay::tag_lines(&self.items().block_tags, &name);
-        let collision = self
-            .block_collision_shape(pos)
-            .boxes()
-            .iter()
-            .map(|b| {
-                let (min, max) = (b.min_position(), b.max_position());
-                [
-                    f64::from(x) + min.x,
-                    f64::from(y) + min.y,
-                    f64::from(z) + min.z,
-                    f64::from(x) + max.x,
-                    f64::from(y) + max.y,
-                    f64::from(z) + max.z,
-                ]
-            })
-            .collect();
+        let info = self.block_info_at(pos, face);
         BlockSnapshot {
-            properties,
-            entity,
-            light: light(self.world.light(x, y, z)),
-            face_light: light(self.world.light(x + face[0], y + face[1], z + face[2])),
-            biome: self.biome_name_at(horizon_core::geometry::Vec3::new(
-                f64::from(x) + 0.5,
-                f64::from(y) + 0.5,
-                f64::from(z) + 0.5,
-            )),
-            power,
-            strong,
-            random_ticks: self.res.behaviours().is_randomly_ticking(state),
-            scheduled,
-            tags,
-            declared_by: crate::game::mods::block_declared_by(&name),
-            collision,
-            outline: self.outline_boxes(pos),
+            name: info.name,
+            properties: info.properties,
+            entity: info.entity,
+            light: info.light,
+            face_light: info.face_light,
+            biome: info.biome,
+            power: info.power,
+            strong: info.strong,
+            random_ticks: info.random_ticks,
+            scheduled: info.scheduled,
+            tags: info.tags,
+            declared_by: info.declared_by,
+            collision: info.collision,
+            outline: info.outline,
             taken: std::time::Instant::now(),
-            name,
         }
     }
 }

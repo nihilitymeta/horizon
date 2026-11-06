@@ -5,6 +5,7 @@
 //! reaches `native_net_from_client` once the hub is back, and what a mod sends
 //! a player leaves at the tick's end, from whichever hook sent it.
 use super::{Game, lan::LanHost};
+use horizon_client::mobs::observe_wire;
 use horizon_client::mod_api::ServerboundPlayPacket;
 use horizon_protocol::{
     mod_net::{self, Message},
@@ -40,6 +41,22 @@ fn payload(channel: &str, data: &[u8]) -> Result<Vec<u8>, String> {
         data: data.to_vec(),
     })
     .map_err(|e| e.to_string())
+}
+
+/// The channels a mod may send a payload on: the engine's own only, so a mod
+/// cannot take over a channel of a client.
+fn payload_channel_ok(channel: &str) -> bool {
+    channel == observe_wire::CHANNEL
+}
+
+/// Whether a payload of `len` bytes fits the wire the engine's clients read.
+fn payload_size_ok(len: usize) -> bool {
+    len <= observe_wire::MAX
+}
+
+/// Whether a payload of `len` bytes may go out on `channel` at all.
+fn payload_allowed(channel: &str, len: usize) -> bool {
+    payload_channel_ok(channel) && payload_size_ok(len)
 }
 
 impl Game<'_> {
@@ -217,6 +234,24 @@ impl Game<'_> {
         self.send(packet);
         Ok(())
     }
+
+    /// Sends `data` on `channel` to `player` (`ClientboundCustomPayloadPacket`):
+    /// only the engine's own channel (`horizon:dev_tools`) and only a payload
+    /// the engine's wire can carry (1 MiB), so a mod cannot send anything
+    /// else to a client. False for another channel, a bigger payload and a
+    /// player who is not on. API @API:dev_helpers@.
+    pub(super) fn native_send_payload(&mut self, player: u128, channel: &str, data: &[u8]) -> bool {
+        if !payload_allowed(channel, data.len()) {
+            return false;
+        }
+        self.native_send(
+            player,
+            C::CustomPayload(CustomPayload {
+                channel: channel.to_owned(),
+                data: data.to_vec(),
+            }),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -224,7 +259,9 @@ mod tests {
     use super::super::{
         Audio, Game, Options, Progress, Settings, execution_role::ExecutionRole, load_resources,
     };
-    use super::{CustomPayload, S, quiet};
+    use super::{
+        CustomPayload, S, observe_wire, payload_allowed, payload_channel_ok, payload_size_ok, quiet,
+    };
     use horizon_protocol::{connection::Pipe, packets::configuration::Ping};
 
     /// A mod's packet goes out only from a joined player, and a custom
@@ -281,5 +318,21 @@ mod tests {
                 .is_err()
         );
         assert!(game.native_send_packet(S::Pong(Ping { id: 7 })).is_ok());
+    }
+
+    #[test]
+    fn a_payload_goes_out_on_the_engine_channel_only_and_within_its_limit() {
+        assert!(payload_channel_ok("horizon:dev_tools"));
+        assert!(!payload_channel_ok("horizon:other"));
+        assert!(!payload_channel_ok("minecraft:brand"));
+        assert!(!payload_channel_ok(""));
+
+        assert!(payload_size_ok(0));
+        assert!(payload_size_ok(observe_wire::MAX));
+        assert!(!payload_size_ok(observe_wire::MAX + 1));
+
+        assert!(payload_allowed("horizon:dev_tools", 4));
+        assert!(!payload_allowed("horizon:other", 4));
+        assert!(!payload_allowed("horizon:dev_tools", observe_wire::MAX + 1));
     }
 }
