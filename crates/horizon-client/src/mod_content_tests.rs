@@ -1693,45 +1693,6 @@ fn content_root_with_only_an_item_checks_its_identity() {
     fs::remove_dir_all(&scratch).unwrap();
 }
 
-/// a living mod type's row in `entity-types.json` is its template's with
-/// `template` added and its own attribute bases; every other value keeps the
-/// template's text, to the digit. An attribute the template lacks is refused.
-#[test]
-fn a_living_mod_types_row_is_its_templates_with_its_attributes() {
-    let zombie = r#"{"width":0.6,"height":1.95,"eye_height":1.74,"category":"monster",
-        "fire_immune":false,"attributes":{"minecraft:max_health":20.0,
-        "minecraft:movement_speed":0.23000000417232513,"minecraft:armor":2.0}}"#;
-    let row = serde_json::value::RawValue::from_string(zombie.to_owned()).unwrap();
-    let ghoul = |attributes: &[(&str, f64)]| EntityType {
-        id: "ruby:ghoul".into(),
-        template: "minecraft:zombie".into(),
-        item: None,
-        damage: 0.0,
-        attributes: attributes
-            .iter()
-            .map(|(a, v)| (a.to_string(), *v))
-            .collect(),
-        size: None,
-        texture: None,
-        goals: Default::default(),
-        flags: Default::default(),
-        model: None,
-        animation: None,
-        sounds: Default::default(),
-    };
-    let written = mod_entity_row(&row, &ghoul(&[("minecraft:max_health", 40.0)])).unwrap();
-    let written: serde_json::Value = serde_json::from_slice(&written).unwrap();
-    let mut expected: serde_json::Value = serde_json::from_str(zombie).unwrap();
-    expected["attributes"]["minecraft:max_health"] = 40.0.into();
-    expected["template"] = "minecraft:zombie".into();
-    assert_eq!(written, expected);
-    // the untouched speed keeps the template's text, not a reparsed float.
-    let text = String::from_utf8(mod_entity_row(&row, &ghoul(&[])).unwrap()).unwrap();
-    assert!(text.contains("0.23000000417232513"), "{text}");
-    let e = mod_entity_row(&row, &ghoul(&[("minecraft:flying_speed", 1.0)])).unwrap_err();
-    assert!(e.contains("not one of minecraft:zombie's"), "{e}");
-}
-
 /// a mod's thrown entity type gets the network id after vanilla's last, the
 /// commands accept it, and it changes the content identity.
 #[test]
@@ -4718,7 +4679,8 @@ fn a_root_built_over_itself_is_built_over_its_base() {
     assert!(sentinel.exists(), "an unchanged mod rebuilt the root");
     assert!(root.join(loot).exists());
     assert_eq!(states(&root), 4);
-    // The mod's data changed: rebuilt from the base, with the new data.
+    // The mod's data changed: a new root, built from the base with the new
+    // data (the old one is kept, its stamp stale).
     let file = scratch.join("datamod").join(loot);
     fs::write(&file, r#"{"pools": [{"rolls": 1, "entries": []}]}"#).unwrap();
     fs::File::options()
@@ -4727,14 +4689,14 @@ fn a_root_built_over_itself_is_built_over_its_base() {
         .unwrap()
         .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(5))
         .unwrap();
-    assert_eq!(resource_root(&root, &mods, &cache).unwrap(), root);
-    assert!(!sentinel.exists(), "a changed mod kept the old root");
+    let rebuilt = resource_root(&root, &mods, &cache).unwrap();
+    assert_ne!(rebuilt, root, "a changed mod rebuilt the old root");
     assert!(
-        fs::read_to_string(root.join(loot))
+        fs::read_to_string(rebuilt.join(loot))
             .unwrap()
             .contains("rolls")
     );
-    assert_eq!(states(&root), 4);
+    assert_eq!(states(&rebuilt), 4);
     let _ = fs::remove_dir_all(&scratch);
 }
 

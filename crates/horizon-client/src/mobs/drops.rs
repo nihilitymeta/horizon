@@ -490,10 +490,15 @@ pub fn die(
         out.push(slot_drop(m, "mainhand", stack));
         clear_slot(m, "mainhand");
     }
-    if let Some(table) = death_loot_table(m, d.mob_drops)
-        .into_iter()
+    // The first table the loot data has (a mod mob's own, else its template's);
+    // the first candidate when it has none, so a mob still drops its equipment.
+    let tables = death_loot_table(m, d.mob_drops);
+    let table = tables
+        .iter()
         .find(|t| d.loot.has_table(t))
-    {
+        .or_else(|| tables.first())
+        .cloned();
+    if let Some(table) = table {
         let params = EntityLootParams {
             this: this.clone(),
             damage: d.damage.clone(),
@@ -545,6 +550,15 @@ pub fn die(
             }
             out.push(slot_drop(m, slot, stack));
             clear_slot(m, slot);
+        }
+        // Piglin.dropCustomDeathLoot: everything in its inventory, its
+        // admired item included, whoever killed it.
+        if s == Species::Piglin {
+            for stack in m.extra.inventory.drain(..) {
+                let mut item = loot_stack(&stack.item, stack.count as i32);
+                item.damage = stack.damage as i32;
+                out.push(Drop::Item(item));
+            }
         }
         // Enderman.dropCustomDeathLoot: after Monster's, the carried block.
         if s == Species::Enderman

@@ -890,7 +890,48 @@ impl Plan<'_> {
             }
             out.extend(serde_json::to_vec(&t.id).map_err(|e| e.to_string())?);
             out.push(b':');
-            out.extend(mod_entity_row(row, t)?);
+            if t.is_mob() {
+                let mut v: serde_json::Value =
+                    serde_json::from_str(row.get()).map_err(|e| e.to_string())?;
+                if let Some(size) = &t.size {
+                    v["width"] = size.width.into();
+                    v["height"] = size.height.into();
+                    v["eye_height"] = match size.eye_height {
+                        Some(e) => e.into(),
+                        // The template's eyes, at the same fraction of the height.
+                        None => {
+                            let (h, e) = (
+                                v["height"].as_f64().unwrap_or(1.8),
+                                v["eye_height"].as_f64().unwrap_or(1.6),
+                            );
+                            (e / h.max(f64::EPSILON) * size.height).into()
+                        }
+                    };
+                }
+                if !t.attributes.is_empty() {
+                    let attrs = v["attributes"].as_object_mut().ok_or_else(|| {
+                        format!("{}: the template's row has no attributes", t.template)
+                    })?;
+                    for (key, value) in &t.attributes {
+                        attrs.insert(format!("minecraft:{key}"), (*value).into());
+                    }
+                }
+                v["horizon"] = serde_json::json!({
+                    "template": t.template,
+                    "texture": t.texture,
+                    "goals": match t.goals {
+                        horizon_mods::content::Goals::Template => "template",
+                        horizon_mods::content::Goals::None => "none",
+                    },
+                    "flags": t.flags,
+                    "model": t.model,
+                    "animation": t.animation,
+                    "sounds": t.sounds,
+                });
+                out.extend(serde_json::to_vec(&v).map_err(|e| e.to_string())?);
+            } else {
+                out.extend(row.get().as_bytes());
+            }
         }
         out.push(b'}');
         Ok(out)
@@ -925,42 +966,6 @@ impl Plan<'_> {
             })
             .collect()
     }
-}
-
-/// A mod entity type's row in `entity-types.json`: its template's `row` with
-/// `template` added and the type's attribute bases in place of the
-/// template's. The other values keep the template's text.
-fn mod_entity_row(
-    row: &serde_json::value::RawValue,
-    t: &EntityType,
-) -> std::result::Result<Vec<u8>, String> {
-    use serde_json::value::{RawValue, to_raw_value};
-    type Raw = BTreeMap<String, Box<RawValue>>;
-    let fail = |e: serde_json::Error| format!("{}: {e}", t.template);
-    let mut fields: Raw = serde_json::from_str(row.get()).map_err(fail)?;
-    if !t.attributes.is_empty() {
-        let mut attributes: Raw = match fields.get("attributes") {
-            Some(a) => serde_json::from_str(a.get()).map_err(fail)?,
-            None => Raw::new(),
-        };
-        for (id, value) in &t.attributes {
-            // Refused rather than added: the mob reads the attributes its
-            // template's class has, so an extra one would do nothing.
-            let Some(base) = attributes.get_mut(id) else {
-                return Err(format!(
-                    "{}: attribute {id} is not one of {}'s",
-                    t.id, t.template
-                ));
-            };
-            *base = to_raw_value(value).map_err(fail)?;
-        }
-        fields.insert(
-            "attributes".into(),
-            to_raw_value(&attributes).map_err(fail)?,
-        );
-    }
-    fields.insert("template".into(), to_raw_value(&t.template).map_err(fail)?);
-    serde_json::to_vec(&fields).map_err(fail)
 }
 
 impl<'a> Plan<'a> {

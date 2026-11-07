@@ -707,7 +707,11 @@ impl MobTypes {
         // template's with the mod's values, and `horizon` naming the template.
         if let Some(rows) = types.as_object() {
             for (id, t) in rows {
-                let Some(template) = t["horizon"]["template"].as_str() else {
+                // Our writer's `horizon` object, or upstream's flat `template` row.
+                let Some(template) = t["horizon"]["template"]
+                    .as_str()
+                    .or_else(|| t["template"].as_str())
+                else {
                     continue;
                 };
                 let Some(def) = species::ALL
