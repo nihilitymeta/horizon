@@ -9,7 +9,7 @@ inside content mods, developer tools, and a few game and launcher additions. Mod
 **[horizon-modkit](https://github.com/whos-carmen/horizon-modkit)**. Mod work happens in the mod's own repository;
 come here for engine work, or to build the game that runs it.
 
-**Upstream base:** [`1989b1b59`](https://github.com/horizon-rust/horizon/commit/1989b1b59) (2026-11-04). Event
+**Upstream base:** [`a5ea46ce3`](https://github.com/horizon-rust/horizon/commit/a5ea46ce3) (2026-11-07). Event
 Horizon follows upstream when upstream has something it wants: upstream is merged into `engine-work`
 ([how](docs/fork-workflow.md#syncing-upstream)).
 
