@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The Flatpak's name in AppStream-aware places (GNOME Software, KDE Discover, `flatpak list`): "Event Horizon", so it
+     reads apart from a Horizon launcher installed beside it. The desktop entry says the same. -->
+<component type="desktop-application">
+  <id>dev.playhorizon.HorizonLauncher</id>
+  <name>Event Horizon</name>
+  <summary>Install, prepare and play Event Horizon</summary>
+  <project_license>MIT</project_license>
+  <metadata_license>CC0-1.0</metadata_license>
+  <description>
+    <p>
+      Event Horizon's launcher: installs and updates the game, prepares its data from your own Minecraft: Java Edition
+      install, and starts it. Minecraft: Java Edition 26.3 rewritten in Rust.
+    </p>
+  </description>
+  <launchable type="desktop-id">dev.playhorizon.HorizonLauncher.desktop</launchable>
+  <url type="homepage">https://playhorizon.dev</url>
+  <url type="bugtracker">https://github.com/whos-carmen/horizon/issues</url>
+  <developer id="dev.playhorizon">
+    <name>Event Horizon</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.2.0" date="2026-11-07"/>
+  </releases>
+</component>

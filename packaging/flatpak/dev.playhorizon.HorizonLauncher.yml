@@ -1,0 +1,63 @@
+# Packages the Linux launcher as a Flatpak: one file to install (`flatpak install horizon-launcher.flatpak`), with the
+# libraries from the freedesktop runtime rather than the player's distribution, and the JRE the vanilla exporters and
+# `horizon-prepare` run on. The release workflow's Linux run builds it with `packaging/flatpak/build.sh`; it is not a
+# Flathub submission, so the sandbox is as wide as a launcher needs (the player's own folders, the network, the GPU).
+#
+# The binary is built inside the SDK, so it links the runtime's libraries and no distribution's; `horizon-launcher.sh`
+# is the command, which points the launcher at the player's own data folder (so versions, worlds and settings are the
+# ones a distribution build uses) and at the bundled JRE. Built without `HORIZON_LAUNCHER_TAG`, the launcher is a
+# "built by hand" build: it never replaces itself, and `flatpak update` is how it updates.
+app-id: dev.playhorizon.HorizonLauncher
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: horizon-launcher
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.openjdk21
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=wayland
+  - --socket=x11
+  - --socket=pulseaudio
+  - --device=dri
+  # The player's own folders: the Minecraft install the vanilla exporters read, the versions and worlds the launcher
+  # writes, and the game's own files. A launcher is the program that manages them; a narrower sandbox would hide the
+  # installation the player already has.
+  - --filesystem=home
+  # Sign-in uses the system browser through the portal; notifications and the keyring are the launcher's own.
+  - --talk-name=org.freedesktop.portal.Desktop
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.freedesktop.secrets
+  - --env=XCURSOR_PATH=/run/host/user-share/icons:/run/host/share/icons
+modules:
+  - name: horizon-launcher
+    buildsystem: simple
+    build-options:
+      # Cargo fetches the launcher's crates while it builds. The bundle itself needs no network beyond its own
+      # version checks.
+      build-args:
+        - --share=network
+    build-commands:
+      # Rust from rustup's stable channel, the toolchain the release workflow builds with: the SDK's rust extension lags
+      # behind it, and crates in this workspace already need a newer one. One shell, since `buildsystem: simple` runs
+      # each command in its own.
+      - |
+        set -eu
+        export RUSTUP_HOME=/run/build/horizon-launcher/rustup CARGO_HOME=/run/build/horizon-launcher/cargo
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+        export PATH="$CARGO_HOME/bin:$PATH"
+        cd launcher
+        cargo build --release --locked
+      - install -Dm755 launcher/target/release/horizon-launcher /app/lib/horizon-launcher/horizon-launcher
+      - install -Dm755 packaging/flatpak/horizon-launcher.sh /app/bin/horizon-launcher
+      - install -Dm644 packaging/flatpak/dev.playhorizon.HorizonLauncher.desktop /app/share/applications/dev.playhorizon.HorizonLauncher.desktop
+      - install -Dm644 packaging/flatpak/dev.playhorizon.HorizonLauncher.metainfo.xml /app/share/metainfo/dev.playhorizon.HorizonLauncher.metainfo.xml
+      - install -Dm644 packaging/icons/hicolor/512x512/apps/horizon.png /app/share/icons/hicolor/512x512/apps/dev.playhorizon.HorizonLauncher.png
+      # The JRE the launcher offers as an installed runtime: `horizon-prepare`'s exporters and the game's own
+      # `run` need one, and a sandbox sees no distribution's. The extension's own installer puts a minimal JRE at
+      # /app/jre, the `JAVA_HOME` the command sets.
+      - /usr/lib/sdk/openjdk21/install.sh
+    sources:
+      - type: archive
+        path: horizon-source.tar.gz

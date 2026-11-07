@@ -1,7 +1,8 @@
 name: event horizon release
 # Event Horizon's releases (docs/event-horizon-releases.md): the game and the launcher for Windows x64 and Linux x86_64,
-# built on GitHub's runners and published as a GitHub release, which the launchers' GitHub sources install. Only the
-# programs are built here: the game files (exporters, prepared data) come from Horizon's own releases.
+# built on GitHub's runners and published as a GitHub release, which the launchers' GitHub sources install. Linux also
+# gets the launcher as a Flatpak bundle (packaging/flatpak/). Only the programs are built here: the game files
+# (exporters, prepared data) come from Horizon's own releases.
 # - A version of your choosing: push a tag eh-v<version> on engine-work.
 #     git tag eh-v0.1.0 && git push origin eh-v0.1.0
 # - A nightly, eh-nightly-<date>: every day at 09:00 UTC (4am Eastern in winter, 5am in summer), from engine-work, when it
@@ -118,6 +119,28 @@ jobs:
           name: ${{ matrix.name }}
           path: dist/event-horizon-${{ matrix.name }}.*
           if-no-files-found: error
+  # The Linux launcher as one Flatpak bundle (packaging/flatpak/): built in the freedesktop SDK so it links the
+  # runtime's libraries rather than a distribution's, with the JRE the vanilla exporters need. Its own job: a
+  # flatpak-builder problem must not hold the game's release, and a red job here is seen on the run.
+  flatpak:
+    needs: decide
+    if: needs.decide.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder
+          flatpak-builder --version
+      - name: Build the launcher bundle
+        run: packaging/flatpak/build.sh dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: horizon-launcher-flatpak
+          path: dist/horizon-launcher.flatpak
+          if-no-files-found: error
   publish:
     needs: [decide, build]
     runs-on: ubuntu-latest
@@ -143,3 +166,22 @@ jobs:
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$title" \
             --notes "$title, built from $GITHUB_SHA. Install it from the launcher's GitHub sources (docs/event-horizon-releases.md)." \
             dist/event-horizon-* dist/SHA256SUMS
+
+  # The Flatpak goes on the release once it exists: the game's release is not held back by it (a red `flatpak` job is
+  # visible on the run), and a missing bundle only means the release has one file fewer.
+  publish-flatpak:
+    needs: [decide, build, flatpak, publish]
+    if: needs.publish.result == 'success' && needs.flatpak.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: horizon-launcher-flatpak
+          path: dist
+      - name: Put the bundle on the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.decide.outputs.tag }}
+        run: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" dist/horizon-launcher.flatpak

@@ -18,6 +18,10 @@ Each archive, `event-horizon-windows-x64.zip` and `event-horizon-linux-x86_64.ta
 `SHA256SUMS` lists its checksum. Another platform is another row in the workflow's matrix: Linux x86_64 builds
 on GitHub's runners as it is, with the system libraries the workflow installs for it.
 
+The Linux releases hold one more file, `horizon-launcher.flatpak`: the same launcher for Flatpak, built in the
+freedesktop runtime with its own JRE (`packaging/flatpak/`). It is called **Event Horizon** in menus and in
+`flatpak list`, so it reads apart from a Horizon launcher installed beside it.
+
 A release holds only programs. The game's data files (the exporters and the data they prepare) come from one of
 Horizon's own releases: they are built with Minecraft's files, which can't be on GitHub's runners.
 
@@ -56,6 +60,11 @@ choosing (matching `horizon-mod.toml`), and its own `NIGHTLY_PAUSED` variable on
    code-signed: choose More info, then Run anyway.
 2. Sign in with a Microsoft account that owns Minecraft: Java Edition.
 3. Install one Horizon version, for its game files: Versions, the newest Nightly, Install.
+
+On Linux the launcher is also one file to install rather than unpack: download `horizon-launcher.flatpak` and run
+`flatpak install horizon-launcher.flatpak`, then start **Event Horizon** from the menu. It carries its own JRE, keeps
+its versions in the same `~/.local/share/horizon-launcher` a distribution build uses, and updates with
+`flatpak update` rather than by itself.
 
 The launcher's Versions page lists Event Horizon's builds in a section of their own, above Horizon's: a release as
 **Event Horizon 0.1.0**, a build you made from the checkout as **Event Horizon · local <commit>**. Its **GitHub
