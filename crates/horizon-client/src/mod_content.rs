@@ -930,7 +930,21 @@ impl Plan<'_> {
                 });
                 out.extend(serde_json::to_vec(&v).map_err(|e| e.to_string())?);
             } else {
-                out.extend(row.get().as_bytes());
+                // A thrown type's row is the template's text with `template`
+                // naming it, the rest untouched to the digit.
+                let raw = row.get().trim();
+                let inner = raw
+                    .strip_prefix('{')
+                    .and_then(|r| r.strip_suffix('}'))
+                    .unwrap_or(raw)
+                    .trim();
+                out.extend(format!("{{\"template\":").into_bytes());
+                out.extend(serde_json::to_vec(&t.template).map_err(|e| e.to_string())?);
+                if !inner.is_empty() {
+                    out.push(b',');
+                    out.extend(inner.as_bytes());
+                }
+                out.push(b'}');
             }
         }
         out.push(b'}');
