@@ -938,7 +938,7 @@ impl Plan<'_> {
                     .and_then(|r| r.strip_suffix('}'))
                     .unwrap_or(raw)
                     .trim();
-                out.extend(format!("{{\"template\":").into_bytes());
+                out.extend_from_slice(b"{\"template\":");
                 out.extend(serde_json::to_vec(&t.template).map_err(|e| e.to_string())?);
                 if !inner.is_empty() {
                     out.push(b',');
