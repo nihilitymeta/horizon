@@ -3041,7 +3041,7 @@ per-player helpers for these (a NeoForge mod sends `ServerPlayer.connection.send
   particles need `state`, item, trail and vibration particles aren't sent, a mod's own type
   (`ParticleOptions::named`) reaches only a Horizon client. Queued as `native_play_sound_to`, with the same answers.
   Bundles need `"hooks": @API:send_particles_to@`.
-- Helper **`native_title(uuid, title, subtitle, fade_in, stay, fade_out)`** (`host.title`): a title and subtitle in
+- Helper **`native_title_text(uuid, title, subtitle, fade_in, stay, fade_out)`** (`host.title_text`): a title and subtitle in
   the middle of that player's screen, as `/title` and Adventure's `showTitle`: the times (in ticks; vanilla's default
   is 10, 70, 20), the subtitle and the title, in that order, replacing a title shown before; an empty subtitle shows
   none. Sent at once, as `native_tell`: also inside a player's hook for the acting player, whose packets go after the
@@ -4114,7 +4114,7 @@ It names the level it means by its `dimension` (`minecraft:overworld`), as `nati
 `crates/horizon-client/src/game/native_machines.rs`: helpers for a mod's machines on a server, in the level in place.
 These are what Create's drill, saw, harvester and deployer need.
 
-- `native_machine_destroy_block(pos, tool, collect)` (`Host::destroy_block`) is `Level.destroyBlock(pos, true)` with
+- `native_machine_destroy_block(pos, tool, collect)` (`Host::machine_destroy_block`) is `Level.destroyBlock(pos, true)` with
   the loot rolled for `tool` and no player (`Block.dropResources(state, level, pos, blockEntity, null, tool)`).
   It shows the break particles and plays the sound, and the block entity's contents go into the drops as a player's
   break puts them. An ore gives experience as with no tool, and the block's fluid takes its place. Mods' loot changes
