@@ -12,6 +12,53 @@ in vanilla's Anvil format.
 in the README scores each subsystem against vanilla and lists what is still
 missing; [Rust rewrite status](rust-parity.md) has the details.
 
+On Windows, the launcher uses a stable executable path for each game home across
+release and native-mod updates. Its private runtime copy lives under the launcher's
+data folder in `run/<home key>/game/`; installed versions remain intact. Opening a
+world to other machines can still require an initial Windows Firewall permission.
+The launcher does not create firewall rules or change network-profile settings.
+
+## musl Linux: manual installation
+
+On x86-64 musl distributions, download `horizon-linux-musl-x86_64.tar.gz` from the
+[Nightly release](https://github.com/horizon-rust/horizon/releases/tag/nightly), when available. This optional
+build is omitted if its build fails. The launcher does not install or update it. Its desktop gameplay and
+vanilla parity are still unverified; see the [musl build limitations](release-flow.md#builds).
+
+You need a working X11 or Wayland desktop, musl, libgcc, ALSA and libudev. For Vulkan, install both the loader
+(`libvulkan.so.1`) and your GPU's driver. On Alpine, the common runtime packages are:
+
+```sh
+sudo apk add musl libgcc alsa-lib eudev-libs vulkan-loader
+```
+
+Install the appropriate Mesa/Vulkan driver and window-system libraries for your desktop separately; OpenGL
+also needs a working musl-compatible OpenGL/EGL stack. NVIDIA's proprietary userspace drivers require glibc
+and cannot be loaded by this build; see [Alpine's GPU requirements](https://wiki.alpinelinux.org/wiki/Requirements).
+
+Resource preparation needs a **musl-compatible system JDK 25** (including `java` and `javac`). Mojang's bundled
+Linux Java runtime needs glibc. Install JDK 25 from your distribution or another musl-compatible provider,
+set `JAVA_HOME` to that JDK, and check `"$JAVA_HOME/bin/java" -version`. You also need your own Minecraft Java
+Edition 26.3 installation and its server jar. Download the server jar yourself from the `downloads.server.url`
+in that version's launcher JSON. Horizon's preparer does not download it.
+
+Extract the archive and, inside its folder, run the following with your actual paths:
+
+```sh
+./horizon-prepare --prepare --minecraft-dir /path/to/minecraft --server-jar /path/to/server.jar
+./horizon-prepare sounds --minecraft-dir /path/to/minecraft
+./horizon-client --resources "$PWD/.local/horizon-client/26.3"
+```
+
+The sounds command copies the sounds from your Minecraft installation's asset store. If that store is
+incomplete, obtain the missing assets through your Minecraft launcher first. Preparation details and alternative
+layouts are described below.
+
+Updates are manual: download and extract the next musl archive, prepare its resources, and use that version's
+programs. Keep your saves in a separate `HORIZON_HOME` and point each version at it. Back up saves before
+updating. The bundled `horizon-server` also refuses automatic updates because the server update archives use
+glibc. An absent musl archive is not a reason to install the glibc archive on a musl system.
+
 ## Run from a checkout
 
 Use current stable Rust (1.90+) and JDK 25 (Python 3.10+ only for the development
@@ -74,6 +121,10 @@ cargo run --release -p event-horizon -- --render-distance 12
 
 Development builds that link quickly: `cargo build --profile fast -p event-horizon`.
 
+`HORIZON_OCCLUSION_PROFILE=1` enables detailed entity-occlusion phase and bounds-scan timings
+in `horizon-ctl stats` and `bench`. The normal benchmark keeps these CPU-clock reads disabled;
+query, cache-hit and cull counters remain available without profiling.
+
 Optional Windows allocator build features are documented in
 [Windows allocator experiments](windows-allocators.md).
 
@@ -109,7 +160,10 @@ listening; `HORIZON_AUDIO=1` opens it there anyway, so send it to a null sink
 (`PIPEWIRE_PROPS='{ target.object=<sink> node.dont-fallback=true }'`). Don't
 mute a test run's stream in the mixer: PipeWire remembers the mute for every
 later `horizon-client`. The launcher starts the game as "Horizon" for that
-reason.
+reason. On Linux, Horizon requests a 1024-frame fixed buffer for lower latency;
+if your audio server underruns (e.g. PipeWire with `min-quantum` ≥ 1024), set
+`HORIZON_AUDIO_BUFFER=2048` or `HORIZON_AUDIO_BUFFER=default` to use the backend's
+default buffer size.
 
 ### Agent control (`horizon-ctl` and MCP)
 
@@ -241,7 +295,10 @@ the inventory screen and places one, through the CLI and through MCP.
 constant speed and replies with the same summary as `bench` (avg/1%-low FPS and
 p50/p95/p99/max frame times), plus CPU and GPU time per frame; [the graphics
 benchmark](graphics.md#benchmark) is built on it. Frame times include waits for
-presentation, so `bench` reports what is on screen.
+presentation, so `bench` reports what is on screen. With asynchronous entity
+culling active, the summary also includes `async_occlusion_culling`: cache hits
+and misses, worker time, queued and skipped queries, budget limits, and entity
+vertices culled.
 
 ### Discord Rich Presence
 
@@ -267,9 +324,9 @@ the large one; there are no game-mode images yet.
 
 ### Play on another of your machines
 
-Horizon targets Linux on x86-64 with an NVIDIA GPU (Vulkan); macOS and Windows
-are out of scope. To play on another Linux machine
-without Rust, JDK or prepared resources, package a release build where they exist:
+Horizon targets desktop Linux, macOS and Windows (see [Windows ARM64](windows-arm64.md)).
+To play on another machine without Rust, JDK or prepared resources,
+package a release build where they exist:
 
 ```sh
 cargo build --release -p event-horizon

@@ -66,6 +66,15 @@ bind = ""                    # the control API: "" a free port on 127.0.0.1; or 
 token = ""                   # its token (16 characters or more); "" a new random one at every start
 allow_public = false         # true lets bind be any address; the token is then all that guards the server
 
+# A proxy handing players over between servers (docs/server.md). Not vanilla's accepts-transfers (the transfer packet).
+[transfer]
+enabled = false              # true: take a proxy's player-* requests; needs Velocity forwarding (forwarding.secret)
+expect_seconds = 10          # how long a player the proxy announced is waited for, when it names no time
+max_expect_seconds = 60      # the longest the proxy may ask for
+max_expected = 64            # players waited for at once
+max_freeze_seconds = 30      # the longest a player stays frozen while it is handed over
+max_hold_seconds = 60        # the longest a player arriving from another server is held before it is dropped
+
 # Post the chat, joins, leaves and deaths to a Discord channel, drawn like the in-game chat (docs/hosting.md)
 [discord]
 webhook = ""                 # the channel's webhook URL (a secret: anyone with it can post there); "" off
@@ -94,6 +103,10 @@ enabled = true               # false pauses it and keeps the webhook
 # mute_after = 2             # the hit (within window_minutes) that mutes for mute_minutes; 0: never
 # tempban_after = 3          # the hit that bans for tempban_hours; 0: never
 # words_file = ""            # your own list, in the format of the built-in one; "": the built-in list
+
+# Fights follow 26.3's rules. For 1.8.9's (no attack cooldown or sweep, 1.8 weapon damage; docs/pvp.md):
+# [combat]
+# legacy = true
 "##;
 
 /// Each typed setting: its section, its name, and the vanilla key it writes.
@@ -141,6 +154,9 @@ pub struct Config {
     pub panel: Panel,
     #[serde(default)]
     pub api: Api,
+    /// A proxy's hand-overs (docs/server.md), passed to the game as `--transfers`.
+    #[serde(default)]
+    pub transfer: Transfer,
     /// Chat and players posted to a Discord channel (discord.rs).
     #[serde(default)]
     pub discord: crate::discord::Settings,
@@ -150,6 +166,25 @@ pub struct Config {
     /// The game reads this section itself (docs/chat-filter.md); written only when it isn't the default.
     #[serde(default, skip_serializing_if = "chat_filter_default")]
     pub chat_filter: horizon_chat_filter::Config,
+    /// A one-time prune of barely visited chunks before a start (prune.rs); written only when set.
+    #[serde(default, skip_serializing_if = "crate::prune::Settings::is_default")]
+    pub prune_chunks: crate::prune::Settings,
+    /// The game reads this section itself (docs/pvp.md); written only when it isn't the default.
+    #[serde(default, skip_serializing_if = "Combat::is_default")]
+    pub combat: Combat,
+}
+
+/// `[combat]`: `legacy = true` resolves the players' melee hits by 1.8.9's rules (no attack cooldown or sweep,
+/// 1.8.9 weapon damage). The game reads it from the same file (game/dedicated.rs, `load_combat`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Combat {
+    pub legacy: bool,
+}
+impl Combat {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// The game reads this section itself too (docs/chat-filter.md).
@@ -297,6 +332,68 @@ pub fn private(ip: std::net::IpAddr) -> bool {
     }
 }
 
+/// `[transfer]`: a proxy moving players between this server and others (docs/server.md, the game's
+/// `lan/arrivals.rs`). Off by default. The supervisor passes it to the game as `--transfers`, not as a
+/// server.properties key, which stays vanilla's; and it is not vanilla's `accepts-transfers`, which is about the
+/// transfer packet.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Transfer {
+    pub enabled: bool,
+    pub expect_seconds: u32,
+    pub max_expect_seconds: u32,
+    pub max_expected: u32,
+    pub max_freeze_seconds: u32,
+    pub max_hold_seconds: u32,
+}
+
+impl Default for Transfer {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            expect_seconds: 10,
+            max_expect_seconds: 60,
+            max_expected: 64,
+            max_freeze_seconds: 30,
+            max_hold_seconds: 60,
+        }
+    }
+}
+
+impl Transfer {
+    fn check(&self) -> Result<(), String> {
+        for (name, n) in [
+            ("expect_seconds", self.expect_seconds),
+            ("max_expect_seconds", self.max_expect_seconds),
+            ("max_expected", self.max_expected),
+            ("max_freeze_seconds", self.max_freeze_seconds),
+            ("max_hold_seconds", self.max_hold_seconds),
+        ] {
+            if n == 0 {
+                return Err(format!("transfer.{name} must be above zero"));
+            }
+        }
+        if self.expect_seconds > self.max_expect_seconds {
+            return Err("transfer.expect_seconds is above transfer.max_expect_seconds".into());
+        }
+        Ok(())
+    }
+
+    /// The game's `--transfers` value, when the section turns transfers on.
+    pub fn engine_arg(&self) -> Option<String> {
+        self.enabled.then(|| {
+            format!(
+                "expect_seconds={},max_expect_seconds={},max_expected={},max_freeze_seconds={},max_hold_seconds={}",
+                self.expect_seconds,
+                self.max_expect_seconds,
+                self.max_expected,
+                self.max_freeze_seconds,
+                self.max_hold_seconds
+            )
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Backups {
@@ -420,9 +517,11 @@ impl Config {
         crate::backup::interval(&self.backups.every)?;
         self.panel.address()?;
         self.api.check()?;
+        self.transfer.check()?;
         self.discord.check()?;
         self.anticheat.check()?;
         self.chat_filter.check()?;
+        self.prune_chunks.check()?;
         if self.server.port == 0 {
             return Err("server.port must be a port number from 1 to 65535".into());
         }
@@ -531,11 +630,17 @@ pub fn render(config: &Config) -> String {
         ("api", "bind"),
         ("api", "token"),
         ("api", "allow_public"),
+        ("transfer", "enabled"),
+        ("transfer", "expect_seconds"),
+        ("transfer", "max_expect_seconds"),
+        ("transfer", "max_expected"),
+        ("transfer", "max_freeze_seconds"),
+        ("transfer", "max_hold_seconds"),
     ] {
         set(&mut doc, section, field, &table[section][field]);
     }
     let mut text = doc.to_string();
-    for section in ["anticheat", "chat_filter"] {
+    for section in ["anticheat", "chat_filter", "prune_chunks", "combat"] {
         if let Some(settings) = table.get(section) {
             let mut only = toml::Table::new();
             only.insert(section.into(), settings.clone());
@@ -680,6 +785,33 @@ mod tests {
         assert_eq!(render(&Config::default()), TEMPLATE);
     }
 
+    /// `[transfer]` is off by default, passes nothing to the game then, and is checked when it is read.
+    #[test]
+    fn transfers_are_off_by_default_and_checked() {
+        assert_eq!(Config::default().transfer.engine_arg(), None);
+        let on = TEMPLATE.replace(
+            "enabled = false              # true: take",
+            "enabled = true               # true: take",
+        );
+        let config = Config::parse(&on).unwrap();
+        assert_eq!(
+            config.transfer.engine_arg().as_deref(),
+            Some(
+                "expect_seconds=10,max_expect_seconds=60,max_expected=64,max_freeze_seconds=30,max_hold_seconds=60"
+            )
+        );
+        assert_eq!(Config::parse(&render(&config)).unwrap(), config);
+        for (from, to) in [
+            ("expect_seconds = 10 ", "expect_seconds = 0  "),
+            ("max_expect_seconds = 60", "max_expect_seconds = 5 "),
+            ("max_freeze_seconds = 30", "max_freeze_seconds = 0 "),
+        ] {
+            let bad = on.replace(from, to);
+            assert_ne!(bad, on, "{from} is in the template");
+            assert!(Config::parse(&bad).is_err(), "{to} was taken");
+        }
+    }
+
     #[test]
     fn the_chat_filter_is_on_unless_its_section_turns_it_off() {
         assert!(Config::default().chat_filter.enabled);
@@ -720,6 +852,20 @@ mod tests {
         assert_eq!(Config::parse(&render(&c)).unwrap(), c);
         assert!(Config::parse("[anticheat]\nenable = true\n").is_err());
         assert!(Config::parse("[anticheat.timer]\nalert = -1\n").is_err());
+    }
+
+    #[test]
+    fn legacy_combat_is_off_unless_its_section_turns_it_on() {
+        assert!(!Config::default().combat.legacy);
+        assert!(!TEMPLATE.lines().any(|l| l.trim() == "[combat]"));
+        let on = Config::parse(&format!("{TEMPLATE}\n[combat]\nlegacy = true\n")).unwrap();
+        assert!(on.combat.legacy);
+        // Kept when the file is written again, and left out while off.
+        assert_eq!(Config::parse(&render(&on)).unwrap(), on);
+        let off = render(&Config::default());
+        assert!(!off.lines().any(|l| l.trim() == "[combat]"), "{off}");
+        assert!(Config::parse("[combat]\nlegacy = 1\n").is_err());
+        assert!(Config::parse("[combat]\nlegcy = true\n").is_err());
     }
 
     #[test]

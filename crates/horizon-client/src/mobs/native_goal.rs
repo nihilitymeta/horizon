@@ -107,7 +107,9 @@ impl MobView {
             target_position: target
                 .as_ref()
                 .map(|t| [t.position.x, t.position.y, t.position.z]),
-            target_in_melee_range: target.as_ref().is_some_and(|t| m.within_melee_range(t)),
+            target_in_melee_range: target
+                .as_ref()
+                .is_some_and(|t| w.is_some_and(|w| m.within_melee_range(w, t))),
             navigation_done: m.ai.nav.is_done(),
             nearest_player: w.and_then(|w| w.nearest_player).map(|p| [p.x, p.y, p.z]),
             home: m.ai.home,

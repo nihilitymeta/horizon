@@ -161,6 +161,7 @@ impl Game<'_> {
             assets: &self.pack.assets,
             collision_binding: self.collision,
             resources: self.motion,
+            health: &self.health_resources,
         }
         .no_player_collision(bounds)
         .unwrap_or(false);
@@ -384,6 +385,9 @@ impl TeleportConsumeWorld for Teleporter<'_, '_> {
             let high = shape.min_y + shape.logical_height - 1;
             let y = to[1].clamp(f64::from(shape.min_y), f64::from(high));
             *target = Vec3::new(to[0], y, to[2]);
+        }
+        if !cancel {
+            horizon_client::lan::hub::teleport_cause(Some("chorus_fruit"));
         }
         Ok(!cancel)
     }

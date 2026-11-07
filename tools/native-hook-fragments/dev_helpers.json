@@ -1,15 +1,32 @@
 {
   "hooks": [],
   "helpers": [
-    {"name": "entity_data", "target": "horizon_client::game::native_entity_data::Game<'_>::native_entity_data"},
-    {"name": "entity_name_at", "target": "horizon_client::game::native_entity_data::Game<'_>::native_entity_name_at"},
-    {"name": "entity_is_mob", "target": "horizon_client::game::native_entity_data::Game<'_>::native_entity_is_mob"},
-    {"name": "block_info", "target": "horizon_client::game::native_block_info::Game<'_>::native_block_info"},
-    {"name": "send_payload", "target": "horizon_client::game::native_net::Game<'_>::native_send_payload"},
-    {"name": "player_sneaking", "target": "horizon_client::game::native_server::Game<'_>::native_player_sneaking"},
-    {"name": "player_permission", "target": "horizon_client::game::native_server::Game<'_>::native_player_permission"}
+    {
+      "name": "entity_data",
+      "target": "horizon_client::game::native_entity_data::Game<'_>::native_entity_data"
+    },
+    {
+      "name": "entity_name_at",
+      "target": "horizon_client::game::native_entity_data::Game<'_>::native_entity_name_at"
+    },
+    {
+      "name": "entity_is_mob",
+      "target": "horizon_client::game::native_entity_data::Game<'_>::native_entity_is_mob"
+    },
+    {
+      "name": "block_info",
+      "target": "horizon_client::game::native_block_info::Game<'_>::native_block_info"
+    },
+    {
+      "name": "send_payload",
+      "target": "horizon_client::game::native_net::Game<'_>::native_send_payload"
+    },
+    {
+      "name": "player_sneaking",
+      "target": "horizon_client::game::native_server::Game<'_>::native_player_sneaking"
+    }
   ],
-  "rust_summary": "generic host helpers for any native mod: an entity's data, name and kind in a dimension, a block's facts, a payload to a player on the engine's own channel, and a player's sneak and permission.",
+  "rust_summary": "generic host helpers for any native mod: an entity's data, name and kind in a dimension, a block's facts, a payload to a player on the engine's own channel, and a player's sneak.",
   "doc_summary": "generic helpers for any native mod: `entity_data(dimension, id)` (an entity's data as `/data get entity` prints it, players by their network id), `entity_name_at(dimension, id)`, `entity_is_mob(dimension, id)`, `block_info(dimension, pos, face)` (a block's state, block entity data, light, biome, power, scheduled ticks, tags, declaring mod and boxes), `send_payload(player, channel, bytes)` (the engine's `horizon:dev_tools` channel only, up to 1 MiB), `player_sneaking(uuid)` and `player_permission(uuid)`. Bundles need \"hooks\": @API:dev_helpers@.",
   "comments": [
     "crates/horizon-client/src/game/native_entity_data.rs",

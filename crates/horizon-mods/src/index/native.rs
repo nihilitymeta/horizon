@@ -87,6 +87,7 @@ impl Manifest {
             version: Some(self.version.clone()),
             api: self.api(),
             game: Some(self.game.clone()),
+            hooks: self.hooks,
             ..Facts::default()
         }
     }

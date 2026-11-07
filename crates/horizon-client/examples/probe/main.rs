@@ -10,6 +10,7 @@ mod dispatch;
 
 use dispatch::{args, args_os};
 
+mod allay_interaction_fixture;
 mod ambient_fixture;
 mod arrow_probe;
 mod audio_attributes_fixture;
@@ -32,6 +33,7 @@ mod cloud_fixture;
 mod command_parse_fixture;
 mod container_screen_probe;
 mod container_title_fixture;
+mod conversion_tags_fixture;
 mod creative_mining_probe;
 mod creative_search_fixture;
 mod cushion_placement_probe;
@@ -41,6 +43,7 @@ mod entity_anim_fixture;
 mod entity_components_probe;
 mod entity_death_loot_fixture;
 mod entity_particles_probe;
+mod entity_sound_packet_fixture;
 mod environment_fixture;
 mod finalize_spawn_fixture;
 mod fire_starter_sound_probe;
@@ -57,6 +60,7 @@ mod inline_object_fixture;
 mod input_probe;
 mod interaction_input_fixture;
 mod lan_probe;
+mod late_entity_pair_fixture;
 mod light_parity;
 mod lore_tooltip_fixture;
 mod marker_particles_probe;
@@ -87,6 +91,7 @@ mod scoreboard_fixture;
 mod screen_layout_fixture;
 mod section_mesh_fixture;
 mod server_files_probe;
+mod sheep_dye_fixture;
 mod situational_music_fixture;
 mod skin_image_fixture;
 mod sound_engine_fixture;
@@ -94,6 +99,7 @@ mod sound_event_fixture;
 mod spawn_rules_fixture;
 mod sprint_probe;
 mod squid_client_probe;
+mod stack_foil_fixture;
 mod storage_menu_fixture;
 mod subtitle_fixture;
 mod tab_list_fixture;
@@ -135,6 +141,7 @@ probes! {
     command_parse_fixture,
     container_screen_probe,
     container_title_fixture,
+    conversion_tags_fixture,
     creative_search_fixture,
     emitter_particles_probe,
     enchanting_fixture,
@@ -191,6 +198,10 @@ probes! {
     server_files_probe,
     situational_music_fixture,
     skin_image_fixture,
+    late_entity_pair_fixture,
+    sheep_dye_fixture,
+    allay_interaction_fixture,
+    entity_sound_packet_fixture,
     sound_engine_fixture,
     sound_event_fixture,
     spawn_rules_fixture,
@@ -206,6 +217,7 @@ probes! {
     trading_fixture,
     trident_probe,
     translucency_fixture,
+    stack_foil_fixture,
     vehicle_container_fixture,
     weather_fixture,
     world_border_render_fixture,

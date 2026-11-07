@@ -348,6 +348,7 @@ struct ItemFile {
     #[serde(default)]
     components: BTreeMap<String, serde_json::Value>,
     crafting_remainder: Option<String>,
+    place_block: Option<String>,
 }
 
 /// An item the mod adds: a vanilla template item's components under a new
@@ -365,6 +366,9 @@ pub struct Item {
     /// What it leaves in the crafting grid (`Item.Properties.craftRemainder`):
     /// a vanilla item or one of the mod's own.
     pub crafting_remainder: Option<String>,
+    /// An ordinary `BlockItem` binding to a vanilla block or this namespace's block.
+    /// Components still come from `template`; placement retains this item's identity.
+    pub place_block: Option<String>,
 }
 
 /// `MobEffectCategory`.
@@ -389,8 +393,14 @@ pub struct MobEffect {
 }
 
 /// the vanilla entity types a mod's type may copy: thrown item
-/// projectiles (`ThrowableItemProjectile`).
-pub const ENTITY_TEMPLATES: [&str; 1] = ["minecraft:snowball"];
+/// projectiles (`ThrowableItemProjectile`), then living mobs
+/// ([`LIVING_TEMPLATES`]).
+pub const ENTITY_TEMPLATES: [&str; 4] = [
+    "minecraft:snowball",
+    "minecraft:villager",
+    "minecraft:wandering_trader",
+    "minecraft:zombie",
+];
 
 /// the vanilla mobs a mod entity type may copy (`template`): the game's
 /// species, each with its model, sounds, movement and goals.
@@ -641,6 +651,10 @@ impl EntityType {
     /// Whether the type copies a mob rather than a thrown item.
     pub fn is_mob(&self) -> bool {
         !ENTITY_TEMPLATES.contains(&self.template.as_str())
+    }
+    /// [`EntityType::is_mob`] under the name the merged upstream calls use.
+    pub fn is_living(&self) -> bool {
+        self.is_mob()
     }
 }
 
@@ -1160,6 +1174,7 @@ impl Content {
                 rarity: file.rarity,
                 components: file.components,
                 crafting_remainder: file.crafting_remainder,
+                place_block: file.place_block,
             };
             check_item(&item).map_err(|e| format!("{name}: {e}"))?;
             if !ids.insert(item.id.clone()) {
@@ -1387,6 +1402,13 @@ fn check_item(item: &Item) -> Result<(), String> {
     }
     if item.max_stack_size.is_some_and(|n| !(1..=99).contains(&n)) {
         return Err("max_stack_size is 1 to 99".into());
+    }
+    if let Some(block) = &item.place_block
+        && (!namespaced_id(block)
+            || block.split_once(':').map(|(ns, _)| ns) != item.id.split_once(':').map(|(ns, _)| ns)
+                && !vanilla_id(block))
+    {
+        return Err("place_block is a vanilla block or a block in this item's namespace".into());
     }
     check_components(&item.components, &["max_stack_size", "rarity"])
 }
@@ -1855,6 +1877,49 @@ experimental = ["scripts"]
         let content = package.and_then(|p| Content::read(&path, &p.manifest));
         std::fs::remove_dir_all(&dir).unwrap();
         content
+    }
+
+    #[test]
+    fn place_block_checks_files_and_native_declarations() {
+        for (i, target) in ["ruby:frame", "minecraft:stone"].iter().enumerate() {
+            let text = format!(r#"{{"template":"minecraft:stick","place_block":"{target}"}}"#);
+            let content = hmod(
+                &format!("place-block-{i}"),
+                MANIFEST_TEXT,
+                &[("data/ruby/horizon/item/empty_frame.json", text.as_bytes())],
+            )
+            .unwrap();
+            assert_eq!(content.items[0].place_block.as_deref(), Some(*target));
+        }
+        for (i, target) in ["stone", "other:frame", "ruby:Bad", "ruby:"]
+            .iter()
+            .enumerate()
+        {
+            let text = format!(r#"{{"template":"minecraft:stick","place_block":"{target}"}}"#);
+            assert!(
+                hmod(
+                    &format!("bad-place-block-{i}"),
+                    MANIFEST_TEXT,
+                    &[("data/ruby/horizon/item/empty_frame.json", text.as_bytes())]
+                )
+                .is_err()
+            );
+            let mut content = Content::declared("ruby");
+            assert!(
+                content
+                    .declare(
+                        &[],
+                        &[Item {
+                            id: "ruby:empty_frame".into(),
+                            template: "minecraft:stick".into(),
+                            place_block: Some((*target).into()),
+                            ..Default::default()
+                        }]
+                    )
+                    .is_err()
+            );
+            assert!(content.items.is_empty());
+        }
     }
 
     #[test]
@@ -2376,6 +2441,86 @@ experimental = ["scripts"]
         ];
         let e = hmod("type-shared", MANIFEST_TEXT, files).unwrap_err();
         assert!(e.contains("already throws another entity type"), "{e}");
+    }
+
+    #[test]
+    fn living_entity_types_copy_a_mob_with_their_own_attributes() {
+        let files: &[(&str, &[u8])] = &[
+            (
+                "data/ruby/horizon/entity_type/ghoul.json",
+                br#"{"template": "minecraft:zombie",
+                     "attributes": {"minecraft:max_health": 40, "minecraft:movement_speed": 0.3}}"#,
+            ),
+            (
+                "data/ruby/horizon/entity_type/settler.json",
+                br#"{"template": "minecraft:villager"}"#,
+            ),
+            (
+                "data/ruby/horizon/entity_type/merchant.json",
+                br#"{"template": "minecraft:wandering_trader"}"#,
+            ),
+        ];
+        let content = hmod("living", MANIFEST_TEXT, files).unwrap();
+        let types: Vec<_> = content
+            .entity_types
+            .iter()
+            .map(|t| {
+                let attributes: Vec<_> =
+                    t.attributes.iter().map(|(a, v)| (a.as_str(), *v)).collect();
+                (
+                    t.id.as_str(),
+                    t.template.as_str(),
+                    t.is_living(),
+                    attributes,
+                )
+            })
+            .collect();
+        assert_eq!(
+            types,
+            [
+                (
+                    "ruby:ghoul",
+                    "minecraft:zombie",
+                    true,
+                    vec![
+                        ("minecraft:max_health", 40.0),
+                        ("minecraft:movement_speed", 0.3)
+                    ]
+                ),
+                ("ruby:merchant", "minecraft:wandering_trader", true, vec![]),
+                ("ruby:settler", "minecraft:villager", true, vec![]),
+            ]
+        );
+        let zombie = |rest: &str| format!(r#"{{"template": "minecraft:zombie"{rest}}}"#);
+        for (case, file, why) in [
+            (
+                "living-item",
+                zombie(r#", "item": "ruby:gem""#),
+                "a living type has no item or damage",
+            ),
+            (
+                "living-damage",
+                zombie(r#", "damage": 2"#),
+                "a living type has no item or damage",
+            ),
+            (
+                "living-attribute-id",
+                zombie(r#", "attributes": {"max_health": 40}"#),
+                "is an attribute id",
+            ),
+            (
+                "living-attribute-value",
+                zombie(r#", "attributes": {"minecraft:max_health": "40"}"#),
+                "invalid type",
+            ),
+        ] {
+            let files: &[(&str, &[u8])] = &[
+                ("data/ruby/horizon/item/gem.json", ITEM),
+                ("data/ruby/horizon/entity_type/a.json", file.as_bytes()),
+            ];
+            let e = hmod(case, MANIFEST_TEXT, files).unwrap_err();
+            assert!(e.contains(why), "{case}: {e}");
+        }
     }
 
     #[test]

@@ -41,9 +41,9 @@ pub enum ModKind {
     /// A native mod built into this game by the launcher (`docs/native-mods.md`).
     Native,
     /// A native hook mod built into every game (fullbright, dynamic lights,
-    /// the inventory tools): `mod_registry::Kind::Hook`.
+    /// the inventory tools): `mod_mirror::Kind::Hook`.
     Hook,
-    /// An engine patch with a switch: `mod_registry::Kind::Engine`.
+    /// An engine patch with a switch: `mod_mirror::Kind::Engine`.
     Engine,
 }
 
@@ -67,11 +67,11 @@ impl ModKind {
     }
 }
 
-impl From<crate::mod_registry::Kind> for ModKind {
-    fn from(kind: crate::mod_registry::Kind) -> Self {
+impl From<crate::mod_mirror::Kind> for ModKind {
+    fn from(kind: crate::mod_mirror::Kind) -> Self {
         match kind {
-            crate::mod_registry::Kind::Hook => Self::Hook,
-            crate::mod_registry::Kind::Engine => Self::Engine,
+            crate::mod_mirror::Kind::Hook => Self::Hook,
+            crate::mod_mirror::Kind::Engine => Self::Engine,
         }
     }
 }
@@ -186,6 +186,16 @@ impl ModList {
     /// Turns installed mod `i` on or off (a dev mod stays on). A native mod's
     /// line says `false` when off, so that the launcher's next build leaves
     /// it out, and `true` when on again.
+    /// Turn the installed mod `id` on (nothing when it isn't installed).
+    pub fn turn_on(&mut self, id: &str) {
+        let Some(m) = self.installed.iter().find(|m| m.id == id && !m.dev) else {
+            return;
+        };
+        if m.native.is_some() {
+            self.disabled.remove(&m.id);
+        }
+        self.enabled.insert(m.id.clone());
+    }
     pub fn toggle(&mut self, i: usize) {
         let Some(m) = self.installed.get(i).filter(|m| !m.dev) else {
             return;

@@ -16,6 +16,39 @@ mod skip;
 
 pub use hash::{Names, NoNames};
 
+/// How deep values may sit inside one another while an item is decoded: stacks in a stack's components (a
+/// bundle in a bundle, a use_remainder's use_remainder) and a mob effect's hidden effects. Those codecs
+/// call each other with no limit of their own. In vanilla a payload nested past the stack ends in a
+/// StackOverflowError, which the decoder turns into a disconnect; in Rust a stack overflow aborts the
+/// process, so a single packet from a peer would end the game, or a whole server and all its players.
+/// Real items stay far below it (a survival bundle holds bundles about 16 deep at most).
+const MAX_NESTING: u32 = 64;
+
+thread_local! {
+    static NESTING: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// One level of [`MAX_NESTING`] while it lives. Counted per thread rather than in the [`Reader`], because a
+/// delimited or rewritten component is read through a reader of its own.
+struct Nested;
+impl Nested {
+    fn enter() -> Result<Self> {
+        NESTING.with(|n| {
+            let depth = n.get();
+            if depth >= MAX_NESTING {
+                return Err(crate::Error::new("item data nested too deeply"));
+            }
+            n.set(depth + 1);
+            Ok(Nested)
+        })
+    }
+}
+impl Drop for Nested {
+    fn drop(&mut self) {
+        NESTING.with(|n| n.set(n.get() - 1));
+    }
+}
+
 /// minecraft:data_component_type registry ids (26.3).
 pub mod component {
     pub const CUSTOM_DATA: i32 = 0;
@@ -55,6 +88,10 @@ pub mod component {
     pub const WRITTEN_BOOK_CONTENT: i32 = 57;
     pub const TRIM: i32 = 58;
     pub const INSTRUMENT: i32 = 63;
+    pub const PROVIDES_TRIM_MATERIAL: i32 = 64;
+    pub const DAMAGE_TYPE: i32 = 8;
+    pub const CHICKEN_VARIANT: i32 = 104;
+    pub const ZOMBIE_NAUTILUS_VARIANT: i32 = 106;
     pub const LODESTONE_TRACKER: i32 = 69;
     pub const FIREWORK_EXPLOSION: i32 = 70;
     pub const FIREWORKS: i32 = 71;
@@ -616,8 +653,15 @@ impl Component {
             }
             Self::TooltipDisplay { hide, hidden } => {
                 w.bool(*hide);
-                w.varint(hidden.len() as i32);
-                hidden.iter().for_each(|h| w.varint(ids::component(*h)));
+                // Without the components an older client being written for lacks.
+                let kept = || {
+                    hidden
+                        .iter()
+                        .map(|h| ids::component(*h))
+                        .filter(|h| *h >= 0)
+                };
+                w.varint(kept().count() as i32);
+                kept().for_each(|h| w.varint(h));
             }
             Self::Stacks(stacks) => {
                 w.varint(stacks.len() as i32);
@@ -724,6 +768,8 @@ fn read_added<'a>(
     raw: i32,
     r: &mut Reader<'a>,
 ) -> Result<Option<(i32, Component, std::borrow::Cow<'a, [u8]>)>> {
+    // Every way a stack holds another passes through here.
+    let _nested = Nested::enter()?;
     if let Some(name) = ids::dropped_component(raw) {
         skip_dropped(name, r)?;
         return Ok(None);
@@ -764,10 +810,17 @@ fn older_layout(kind: i32, r: &mut Reader) -> Result<Older> {
     use component::*;
     let quirks = ids::quirks();
     Ok(match kind {
-        // EitherHolder.streamCodec: ByteBufCodecs.either(the song's holder, its ResourceKey), a flag set
-        // for the holder. A key names a song of the server's registry that the pinned holder can't point
-        // to without its numbering.
-        JUKEBOX_PLAYABLE if quirks.either_holder_song_and_tag_resistance => {
+        // EitherHolder.streamCodec: ByteBufCodecs.either(the holder, its ResourceKey), a flag set for the
+        // holder, which then reads as the pinned one does. A key names an entry of the server's registry
+        // that the pinned holder can't point to without its numbering.
+        DAMAGE_TYPE
+        | INSTRUMENT
+        | PROVIDES_TRIM_MATERIAL
+        | JUKEBOX_PLAYABLE
+        | CHICKEN_VARIANT
+        | ZOMBIE_NAUTILUS_VARIANT
+            if quirks.either_holders_and_tag_resistance =>
+        {
             if r.bool()? {
                 Older::Pinned
             } else {
@@ -776,7 +829,7 @@ fn older_layout(kind: i32, r: &mut Reader) -> Result<Older> {
             }
         }
         // TagKey.streamCodec: the tag's id. A HolderSet names a tag behind a 0.
-        DAMAGE_RESISTANT if quirks.either_holder_song_and_tag_resistance => {
+        DAMAGE_RESISTANT if quirks.either_holders_and_tag_resistance => {
             let tag = r.string(32767)?;
             let mut w = Writer::new();
             w.varint(0);
@@ -928,21 +981,29 @@ impl Codec<Option<Stack>> for Slot {
         read_stack(r, false)
     }
     fn write(v: &Option<Stack>, w: &mut Writer) {
-        let Some(s) = v else {
+        // An item an older client has no stand-in for reaches it as nothing.
+        let item = v.as_ref().map_or(-1, |s| ids::item(s.item));
+        let Some(s) = v.as_ref().filter(|_| item >= 0) else {
             w.varint(0);
             return;
         };
         w.varint(s.count);
-        w.varint(ids::item(s.item));
-        w.varint(s.added.len() as i32);
-        w.varint(s.removed.len() as i32);
-        for (kind, c) in &s.added {
-            w.varint(ids::component(*kind));
-            c.write(*kind, w);
-        }
-        for kind in &s.removed {
-            w.varint(ids::component(*kind));
-        }
+        w.varint(item);
+        write_patch(s, w);
+    }
+}
+
+/// A stack's components, without those an older client being written for lacks.
+fn write_patch(s: &Stack, w: &mut Writer) {
+    let has = |kind: i32| ids::component(kind) >= 0;
+    w.varint(s.added.iter().filter(|(k, _)| has(*k)).count() as i32);
+    w.varint(s.removed.iter().filter(|k| has(**k)).count() as i32);
+    for (kind, c) in s.added.iter().filter(|(k, _)| has(*k)) {
+        w.varint(ids::component(*kind));
+        c.write(*kind, w);
+    }
+    for kind in s.removed.iter().filter(|k| has(**k)) {
+        w.varint(ids::component(*kind));
     }
 }
 
@@ -1064,15 +1125,7 @@ impl Codec<Stack> for Template {
     fn write(s: &Stack, w: &mut Writer) {
         w.varint(ids::item(s.item));
         w.varint(s.count);
-        w.varint(s.added.len() as i32);
-        w.varint(s.removed.len() as i32);
-        for (kind, c) in &s.added {
-            w.varint(ids::component(*kind));
-            c.write(*kind, w);
-        }
-        for kind in &s.removed {
-            w.varint(ids::component(*kind));
-        }
+        write_patch(s, w);
     }
 }
 
@@ -1142,6 +1195,51 @@ mod tests {
         let mut r = Reader::new(&w.data);
         assert_eq!(C::read(&mut r).unwrap(), v);
         assert_eq!(r.remaining(), 0);
+    }
+
+    /// A stack holding bundles `depth` deep, each the only stack in the one around it.
+    fn nested_bundles(depth: usize) -> Vec<u8> {
+        // count (or item) 1, item (or count) 1, one added component, none removed: bundle_contents, one stack.
+        let level = [1, 1, 1, 0, component::BUNDLE_CONTENTS as u8, 1];
+        let mut bytes = level.repeat(depth);
+        bytes.extend([1, 1, 0, 0]);
+        bytes
+    }
+
+    /// Decodes `bytes` as a slot on a thread with the 2 MiB stack network threads get.
+    fn read_on_network_stack(bytes: Vec<u8>) -> Result<Option<Stack>> {
+        std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(move || Slot::read(&mut Reader::new(&bytes)))
+            .unwrap()
+            .join()
+            .unwrap()
+    }
+
+    #[test]
+    fn items_nested_without_end_are_refused_instead_of_overflowing_the_stack() {
+        // About 1.2 MB, under the 2 MiB frame cap: without a limit this aborts the process.
+        assert!(read_on_network_stack(nested_bundles(200_000)).is_err());
+        // A potion whose effect hides an effect that hides another, 200,000 times over.
+        let mut potion = vec![1, 1, 1, 0, component::POTION_CONTENTS as u8, 0, 0, 1, 5];
+        potion.extend([0, 1, 0, 0, 0, 1].repeat(200_000));
+        potion.extend([0, 1, 0, 0, 0, 0, 0]);
+        assert!(read_on_network_stack(potion).is_err());
+    }
+
+    #[test]
+    fn deeply_nested_bundles_still_decode() {
+        let bytes = nested_bundles(MAX_NESTING as usize);
+        let mut stack = read_on_network_stack(bytes.clone()).unwrap().unwrap();
+        let mut depth = 0;
+        while let Some(Component::Stacks(inner)) = stack.component(component::BUNDLE_CONTENTS) {
+            stack = inner[0].clone();
+            depth += 1;
+        }
+        assert_eq!(depth, MAX_NESTING);
+        // A refused stack leaves nothing counted behind on its thread.
+        assert!(Slot::read(&mut Reader::new(&nested_bundles(MAX_NESTING as usize + 1))).is_err());
+        assert!(Slot::read(&mut Reader::new(&bytes)).unwrap().is_some());
     }
 
     #[test]
@@ -1462,6 +1560,47 @@ mod tests {
             let mut w = Writer::new();
             Slot::write(&stack, &mut w);
             assert_eq!(w.data, bytes, "component {kind}");
+        }
+    }
+
+    #[test]
+    fn negative_holder_ids_and_holder_set_sizes_are_refused() {
+        // Vanilla 26.3's ByteBufCodecs.holder looks a nonzero id up with
+        // `byIdOrThrow(id - 1)`, and holderSet sizes its list with `new ArrayList(size)`:
+        // neither takes a negative value. `1` is a valid value at the same place.
+        let slot = |kind: i32, component: &[u8]| {
+            // Count 1, item 1, one added component, none removed.
+            let mut w = Writer::new();
+            for v in [1, 1, 1, 0, kind] {
+                w.varint(v);
+            }
+            w.data.extend_from_slice(component);
+            let mut r = Reader::new(&w.data);
+            Slot::read(&mut r).map(|stack| (stack, r.remaining()))
+        };
+        for (value, valid) in [(1, true), (-1, false), (i32::MIN, false)] {
+            let mut v = Writer::new();
+            v.varint(value);
+            // kinetic_weapon: default fields, then a sound holder (`value`) and no hit sound.
+            let mut kinetic = vec![10, 0, 0, 0, 0, 0, 0, 0, 0, 0x3f, 0x80, 0, 0, 1];
+            kinetic.extend_from_slice(&v.data);
+            kinetic.push(0);
+            // can_break: one predicate whose blocks are a holder set (`value`, an empty
+            // list when 1), with no properties, NBT or component matchers.
+            let mut can_break = vec![1, 1];
+            can_break.extend_from_slice(&v.data);
+            can_break.extend([0, 0, 0, 0]);
+            for (kind, bytes) in [(39, kinetic), (component::CAN_BREAK, can_break)] {
+                let read = slot(kind, &bytes);
+                if valid {
+                    assert!(
+                        matches!(read, Ok((Some(_), 0))),
+                        "component {kind}: {read:?}"
+                    );
+                } else {
+                    assert!(read.is_err(), "component {kind} with {value}: {read:?}");
+                }
+            }
         }
     }
 

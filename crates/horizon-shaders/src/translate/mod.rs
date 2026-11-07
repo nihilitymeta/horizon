@@ -50,7 +50,9 @@ pub struct Interface {
     /// The uniform block at binding 0: its size and each value's name, GLSL type and offset.
     /// Ours come first: `hz_target` (the target's width, height, 1/width, 1/height), and the
     /// fixed-function fog the compatibility `gl_Fog` reads (OQ-28): `hz_fog_color` (vanilla's fog
-    /// colour) and `hz_fog` (density, start, end, 1 / (end - start)).
+    /// colour) and `hz_fog` (density, start, end, 1 / (end - start)), then `hz_depth_linear`:
+    /// 1 where `shadowtex0`, `shadowtex1`, `shadow` and `watershadow` (x to w) read through a
+    /// plain sampler filter linearly, 0 where they take the nearest texel.
     pub uniform_size: u32,
     pub uniforms: Vec<Uniform>,
     /// std140 initial contents; runtime values overwrite their members each frame.
@@ -89,6 +91,8 @@ pub struct Image {
 pub struct ComputeProgram {
     pub module: naga::Module,
     pub interface: Interface,
+    /// Non-fatal translation diagnostics, located in the authored source.
+    pub notes: Vec<Error>,
     pub work_groups: Option<[u32; 3]>,
     pub work_groups_render: [f32; 2],
 }
@@ -119,7 +123,7 @@ pub struct Sampler {
     pub binding: u32,
 }
 
-/// A program that failed, at a pack file and line.
+/// A translation diagnostic at a pack file and line.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Error {
     pub file: String,
@@ -131,6 +135,8 @@ pub struct Program {
     pub vertex: naga::Module,
     pub fragment: naga::Module,
     pub interface: Interface,
+    /// Non-fatal translation diagnostics, located in the authored source.
+    pub notes: Vec<Error>,
 }
 
 /// Where the program draws, which decides the conventions of 5.5.
@@ -152,7 +158,8 @@ pub struct GbuffersInputs {
     /// `hz_MultiTexCoord1` and `hz_Normal` (the compatibility inputs), run first in `main`.
     pub body: String,
     /// The value of each attribute a pack may declare (`mc_Entity`, `vaPosition`...), as a GLSL
-    /// expression of the declared type's size; an attribute not listed reads zero.
+    /// expression of the declared type's size; an attribute not listed reads zero. Terrain
+    /// also supplies `mc_chunkFade`, an implicit float input rather than a declared attribute.
     pub attributes: Vec<(String, String)>,
     /// GLSL statements run last in `main`, with `gl_Position` in wgpu's clip space.
     pub after: String,
@@ -162,6 +169,10 @@ pub struct GbuffersInputs {
     /// The program may read `currentRenderedItemId` without declaring it, as Iris 1.11.7
     /// lets the hand's (observed with probe packs; terrain's may not).
     pub item_id_declared: bool,
+    /// The depth test sees the far plane (window depth 1) unless the program writes
+    /// `gl_FragDepth`, while `gl_FragCoord.z` stays the geometry's own: the sky shows only where
+    /// nothing else drew, and reads its own depth as in Iris 1.11.7.
+    pub far_depth: bool,
 }
 
 /// A fragment stays when its output 0's alpha compares to `reference` as `op` says (a GLSL
@@ -305,6 +316,20 @@ fn translate(
             }
         }
     }
+    // A game-given attribute may read the previous frame's matrices (`at_velocity`): they join
+    // the block when the pack declares that attribute, whether or not it declares them.
+    if let Some(inputs) = gbuffers {
+        for (name, _, _) in &v.attributes {
+            let Some((_, given)) = inputs.attributes.iter().find(|a| &a.0 == name) else {
+                continue;
+            };
+            for matrix in ["gbufferPreviousModelView", "gbufferPreviousProjection"] {
+                if given.contains(matrix) {
+                    uniforms.insert(matrix.to_owned(), "mat4".to_owned());
+                }
+            }
+        }
+    }
     let mut samplers: BTreeMap<String, String> = BTreeMap::new();
     for stage in [&v, &f] {
         for (name, ty, at) in &stage.uniforms {
@@ -432,6 +457,12 @@ fn translate(
         }
     }
 
+    // Terrain's fade input is supplied without a pack declaration. Inject it only when
+    // the renderer provides the actual value; other geometry and authored globals keep
+    // their existing behavior.
+    let chunk_fade = gbuffers
+        .and_then(|g| g.attributes.iter().find(|(n, _)| n == "mc_chunkFade"))
+        .filter(|_| uses_name(&vertex.code, "mc_chunkFade") && !v.globals.contains("mc_chunkFade"));
     let header = |stage: &Stage| {
         let mut h = resources(&uniforms, &samplers, &images);
         if let Some(reference) = alpha_test_ref {
@@ -462,6 +493,9 @@ fn translate(
         if let (Some(inputs), ShaderStage::Vertex) = (gbuffers, stage.kind) {
             h.push_str(&inputs.declarations);
             h.push('\n');
+            if chunk_fade.is_some() {
+                h.push_str("float mc_chunkFade;\n");
+            }
         }
         h.push_str(&stage.prelude());
         h
@@ -479,6 +513,9 @@ fn translate(
             vertex_main.push_str(&matrices);
             vertex_main.push_str(&inputs.body);
         }
+    }
+    if let Some((_, value)) = chunk_fade {
+        writeln!(vertex_main, "    mc_chunkFade = {value};").unwrap();
     }
     for (name, value, ty) in &v.attributes {
         let value = match gbuffers {
@@ -537,6 +574,9 @@ fn translate(
     for name in &f.inits {
         writeln!(fragment_main, "    {name} = hz_init_{name}();").unwrap();
     }
+    if gbuffers.is_some_and(|g| g.far_depth) {
+        fragment_main.push_str("    gl_FragDepth = 1.0;\n");
+    }
     fragment_main.push_str("    hz_main();\n");
     for copy in &f.out_copies {
         writeln!(fragment_main, "    {copy}").unwrap();
@@ -577,7 +617,7 @@ fn translate(
         (Ok(v), Ok(f)) => (v, f),
         (a, b) => return Err(a.err().into_iter().chain(b.err()).flatten().collect()),
     };
-    let initial_values = defaults::merge([(&v, &vertex), (&f, &fragment)])?;
+    let (initial_values, notes) = defaults::merge([(&v, &vertex), (&f, &fragment)])?;
     let (uniform_size, offsets) = block_layout(&fragment);
     let uniforms = offsets
         .into_iter()
@@ -599,6 +639,7 @@ fn translate(
     mark_atomic(&vertex, &mut images);
     mark_atomic(&fragment, &mut images);
     Ok(Program {
+        notes,
         interface: Interface {
             uniform_size,
             initial_values,
@@ -663,7 +704,7 @@ fn resources(
     images: &[Image],
 ) -> String {
     let mut h = String::from("#version 450\n");
-    h.push_str("layout(set = 0, binding = 0) uniform HzUniforms { vec4 hz_target; vec4 hz_fog_color; vec4 hz_fog;");
+    h.push_str("layout(set = 0, binding = 0) uniform HzUniforms { vec4 hz_target; vec4 hz_fog_color; vec4 hz_fog; vec4 hz_depth_linear;");
     for (name, ty) in uniforms {
         match ty.as_str() {
             "bool" => write!(h, " int hz_bool_{name};"),
@@ -791,7 +832,7 @@ pub fn translate_compute(compute: &Preprocessed) -> Result<ComputeProgram, Vec<E
         std::mem::take(&mut errors)
     })?;
     let (uniform_size, offsets) = block_layout(&module);
-    let initial_values = defaults::merge([(&c, &module)])?;
+    let (initial_values, notes) = defaults::merge([(&c, &module)])?;
     let mut interface = Interface {
         uniform_size,
         initial_values,
@@ -818,6 +859,7 @@ pub fn translate_compute(compute: &Preprocessed) -> Result<ComputeProgram, Vec<E
     };
     mark_atomic(&module, &mut interface.images);
     Ok(ComputeProgram {
+        notes,
         module,
         interface,
         work_groups,
@@ -1255,6 +1297,7 @@ fn compile(stage: &Stage, text: &str, header_lines: usize) -> Result<naga::Modul
         }
     };
     end_returns_give_zero(&mut module);
+    lengths_of_loaded_arrays(&mut module);
     Validator::new(ValidationFlags::all(), Capabilities::all())
         .subgroup_operations(naga::valid::SubgroupOperationSet::all())
         .subgroup_stages(naga::valid::ShaderStages::all())
@@ -1272,6 +1315,37 @@ fn compile(stage: &Stage, text: &str, header_lines: usize) -> Result<naga::Modul
             vec![at(&text, span, message)]
         })?;
     Ok(module)
+}
+
+/// `block.member.length()` of a buffer block's runtime-sized array: naga's frontend loads the
+/// array and takes the length of the loaded value, which its validator refuses, since a
+/// runtime-sized array can't be loaded. The length is taken of the array's pointer instead. The
+/// load's slot becomes that length, and the old length expression a plain conversion of it, so
+/// every handle and emitted range stays as it was.
+fn lengths_of_loaded_arrays(module: &mut naga::Module) {
+    use naga::Expression as E;
+    let functions = module.functions.iter_mut().map(|(_, f)| f);
+    for f in functions.chain(module.entry_points.iter_mut().map(|e| &mut e.function)) {
+        let loads: Vec<_> = f
+            .expressions
+            .iter()
+            .filter_map(|(at, e)| match *e {
+                E::ArrayLength(loaded) => match f.expressions[loaded] {
+                    E::Load { pointer } => Some((at, loaded, pointer)),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        for (at, loaded, pointer) in loads {
+            f.expressions[loaded] = E::ArrayLength(pointer);
+            f.expressions[at] = E::As {
+                expr: loaded,
+                kind: naga::ScalarKind::Uint,
+                convert: Some(4),
+            };
+        }
+    }
 }
 
 /// GLSL lets a function that returns a value reach its end without a `return`: what it returns
@@ -1891,6 +1965,7 @@ mod tests {
                 ("hz_target", "vec4"),
                 ("hz_fog_color", "vec4"),
                 ("hz_fog", "vec4"),
+                ("hz_depth_linear", "vec4"),
                 ("frameCounter", "int"),
                 ("hideGUI", "bool"),
                 ("viewWidth", "float")
@@ -2335,6 +2410,58 @@ in VertexData {{ {member} }} vIn;
         }
     }
 
+    /// `at_velocity`, given by the game from the previous frame's view, brings
+    /// `gbufferPreviousModelView` into the block when the pack declares the attribute, and only
+    /// then.
+    #[test]
+    fn a_game_attribute_brings_the_previous_view_it_reads() {
+        let translate = |declares: bool| {
+            let attribute = if declares {
+                "attribute vec3 at_velocity;\n"
+            } else {
+                ""
+            };
+            let read = if declares { "at_velocity" } else { "vec3(0.0)" };
+            let vsh = format!(
+                "#version 120\n{attribute}varying vec3 v;\nvoid main() {{\n    gl_Position = ftransform();\n    v = {read};\n}}\n"
+            );
+            let fsh = "#version 120\nvarying vec3 v;\nvoid main() {\n    gl_FragData[0] = vec4(v, 1.0);\n}\n";
+            let files = [
+                ("shaders/gbuffers_entities.vsh", vsh.as_str()),
+                ("shaders/gbuffers_entities.fsh", fsh),
+            ];
+            let pack = Pack::from_zip_bytes("P.zip", zip(&files)).unwrap();
+            let m = Macros::standard();
+            let game = GbuffersInputs {
+                declarations: "layout(location = 0) in vec3 game_pos;\n\
+                               vec3 game_velocity(mat4 now, mat4 then) { return (now * vec4(game_pos, 1.0) - then * vec4(game_pos, 1.0)).xyz; }\n"
+                    .into(),
+                body: "    hz_Vertex = vec4(game_pos, 1.0);\n    hz_Color = vec4(1.0);\n".into(),
+                attributes: vec![(
+                    "at_velocity".into(),
+                    "game_velocity(gbufferModelView, gbufferPreviousModelView)".into(),
+                )],
+                ..Default::default()
+            };
+            let p = translate_gbuffers(
+                &preprocess(&pack, "gbuffers_entities.vsh", &m),
+                &preprocess(&pack, "gbuffers_entities.fsh", &m),
+                Target::Buffers,
+                &game,
+            )
+            .unwrap_or_else(|e| panic!("{e:?}"));
+            p.interface
+                .uniforms
+                .iter()
+                .any(|u| u.name == "gbufferPreviousModelView")
+        };
+        assert!(
+            translate(true),
+            "declared at_velocity: the previous view is in the block"
+        );
+        assert!(!translate(false), "no at_velocity: no previous view");
+    }
+
     #[test]
     fn gbuffers_programs_read_the_games_vertices() {
         let vsh = "#version 120\nattribute vec4 mc_Entity;\nattribute vec2 mc_midTexCoord;\nvarying vec2 uv;\nvarying vec2 light;\n\
@@ -2564,6 +2691,36 @@ in VertexData {{ {member} }} vIn;
     /// `textureGatherOffsets` (GLSL 4.60, 8.9.4), which naga lacks: offsets from a `const`
     /// array or a constructor, a component, an unsigned texture and the depth compare form, in a
     /// pack function that takes the sampler too; every form must reach SPIR-V.
+    #[test]
+    fn shadow_depth_reads_through_a_plain_sampler_translate() {
+        // One function given a colour buffer and a shadow depth, direct reads with a level, a
+        // texel offset and a projection, and a local named like a depth sampler elsewhere.
+        let fsh = "#version 330 compatibility\nuniform sampler2D colortex0;\n\
+                   uniform sampler2D shadowtex1;\nuniform sampler2D shadow;\n\
+                   vec4 tap(sampler2D s, vec2 p) {\n    \
+                   return texture2D(s, p) + texture2DLod(s, p, 0.0) + texture2DProj(s, vec3(p, 1.0));\n}\n\
+                   float lit(vec2 p) { float shadow = texture2D(shadowtex1, p).r; return shadow * 0.5; }\n\
+                   void main() {\n    vec2 uv = gl_FragCoord.xy / 64.0;\n    \
+                   gl_FragData[0] = tap(colortex0, uv) + tap(shadowtex1, uv) + texture(shadow, uv)\n        \
+                   + textureOffset(shadow, uv, ivec2(1, 0)) + textureProj(shadow, vec4(uv, 0.0, 1.0))\n        \
+                   + vec4(lit(uv));\n}\n";
+        let p = program(
+            &[("composite.vsh", VSH_120), ("composite.fsh", fsh)],
+            Target::Buffers,
+        )
+        .unwrap_or_else(|e| panic!("{e:?}"));
+        let info = Validator::new(ValidationFlags::all(), Capabilities::all())
+            .validate(&p.fragment)
+            .unwrap();
+        let entry = &p.fragment.entry_points[0];
+        let pipeline = naga::back::spv::PipelineOptions {
+            shader_stage: entry.stage,
+            entry_point: entry.name.clone(),
+        };
+        naga::back::spv::write_vec(&p.fragment, &info, &Default::default(), Some(&pipeline))
+            .unwrap();
+    }
+
     #[test]
     fn texture_gather_offsets_translate() {
         let fsh = "#version 430\nuniform sampler2D colortex0;\nuniform usampler2D colortex5;\n\
@@ -3200,6 +3357,21 @@ in VertexData {{ {member} }} vIn;
             .into();
         assert_eq!(buffer_layout(&p.fragment, 2), (expected.clone(), 64));
         assert_eq!(buffer_layout(&p.vertex, 2), (expected, 64));
+    }
+
+    /// `.length()` of a runtime-sized array in a named buffer block translates: naga's validator
+    /// refused the load its frontend makes there.
+    #[test]
+    fn the_length_of_a_named_blocks_runtime_array_translates() {
+        let csh = "#version 430\nlayout(local_size_x = 1) in;\n\
+                   struct Point { vec4 at; };\n\
+                   layout(std430, binding = 1) buffer Points { int n; Point p[]; } points;\n\
+                   layout(std430, binding = 2) buffer Counts { float f[]; } counts;\n\
+                   void main() {\n    int n = points.p.length();\n    \
+                   counts.f[0] = float(n + counts.f.length());\n}\n";
+        let pack = Pack::from_zip_bytes("P.zip", zip(&[("shaders/deferred_a.csh", csh)])).unwrap();
+        translate_compute(&preprocess(&pack, "deferred_a.csh", &Macros::standard()))
+            .unwrap_or_else(|e| panic!("{e:?}"));
     }
 
     /// A block without an instance name: its member is named alone.

@@ -387,6 +387,21 @@ pub fn native_server_player(
         pitch,
         entity_id,
         address,
+        latency: 0,
+        protocol: horizon_protocol::PROTOCOL_VERSION,
+        xp_level: 0,
+        xp_progress: 0.0,
+        on_ground: false,
+        flying: false,
+        may_fly: false,
+        invulnerable: false,
+        walk_speed: 0.1,
+        fly_speed: 0.05,
+        sneaking: false,
+        eye_height: 1.62,
+        selected_slot: 0,
+        nickname: None,
+        hidden: None,
     }
 }
 /// Builds `PerformCommandEvent` for the workspace's own tests: the struct is

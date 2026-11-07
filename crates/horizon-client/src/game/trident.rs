@@ -253,6 +253,8 @@ impl Game<'_> {
             .unwrap_or_else(|| self.items().get(&stack.item).map_or(250, |i| i.max_damage))
     }
     /// `TridentItem.use`: start the throw unless one more use would break it.
+    /// Returns false for `InteractionResult.FAIL` (about to break, or Riptide
+    /// while dry) so callers neither dip the hand nor consume the click.
     pub(super) fn use_trident(&mut self, stack: &ItemStack) -> bool {
         if &*stack.item != "minecraft:trident" {
             return false;
@@ -260,7 +262,7 @@ impl Game<'_> {
         let max = self.trident_max_damage(stack);
         let riptide = stack.enchantment_level("minecraft:riptide") > 0;
         if stack.damage >= max.saturating_sub(1) || (riptide && !self.in_water_or_rain()) {
-            return true;
+            return false;
         }
         self.start_using_item();
         true
@@ -369,10 +371,10 @@ impl Game<'_> {
         if stack.damage >= self.trident_max_damage(&stack).saturating_sub(1) {
             return;
         }
-        let at = self
-            .player
-            .as_ref()
-            .map(|p| [p.position.x, p.position.y, p.position.z]);
+        // Counted (on the server) before the throw or the spin.
+        if self.remote.is_none() {
+            self.award_stat("used", "minecraft:trident", 1);
+        }
         if riptide > 0 {
             // `hurtWithoutBreaking` and the sound belong to the server; a server's
             // client only launches.
@@ -414,7 +416,7 @@ impl Game<'_> {
             }
             if !server_client {
                 let sound = format!("minecraft:item.trident.riptide_{}", riptide.min(3));
-                self.audio.play(&sound, at, 1.0, 1.0);
+                self.play_player_bound_sound(&sound, 7, 1.0, 1.0, false);
                 if let (Some(player), Some(name)) =
                     (self.lan_acting_uuid, self.lan_acting_name.clone())
                 {
@@ -480,8 +482,14 @@ impl Game<'_> {
             deflected_by: None,
         });
         self.player_projectile_shot();
-        self.audio
-            .play("minecraft:item.trident.throw", at, 1.0, 1.0);
+        self.audio.play_bound(
+            "minecraft:item.trident.throw",
+            7,
+            1.0,
+            1.0,
+            horizon_client::sound_engine::SoundEntity::new(id, [start.x, start.y, start.z], false),
+            None,
+        );
     }
     /// The thrower's `PLAYER_HURT_ENTITY` for a trident hit: run as the
     /// guest that threw it, and not at all once they have left.
@@ -501,6 +509,42 @@ impl Game<'_> {
         };
         self.as_guest(&mut host, conn, |g| {
             g.player_hit(victim, "minecraft:trident", Some(direct), damage)
+        });
+        self.lan = Some(host);
+    }
+    /// The connection of the guest whose entity id is `id`.
+    fn trident_guest_conn(&self, id: u32) -> Option<u32> {
+        self.lan
+            .as_ref()?
+            .hub
+            .guests
+            .iter()
+            .find(|g| g.entity_id as u32 == id)
+            .map(|g| g.conn)
+    }
+    /// `ThrownTrident.onHitEntity` on the guest `conn`: the hurt runs as them and
+    /// `ServerPlayer.hurtServer` refuses it when the `pvp` game rule or their
+    /// teams forbid it (`canHarmPlayer`); the trident bounces off either way.
+    fn trident_hits_guest(&mut self, t: &ThrownTrident, conn: u32, damage: f32) {
+        let Some(mut host) = self.lan.take() else {
+            return;
+        };
+        let team_of = |game: &Self, name: &str| game.score.board.players_team(name).cloned();
+        let attacker = match t.guest {
+            Some(c) => host.hub.guest(c).and_then(|g| team_of(self, &g.name)),
+            None => self.player_team().cloned(),
+        };
+        let target = host.hub.guest(conn).and_then(|g| team_of(self, &g.name));
+        let refused = !(self.ui.rules.bool("pvp")
+            && horizon_client::scoreboard::teams_allow_damage(target.as_ref(), attacker.as_ref()));
+        let shooter = self.player_attacker(&host, t.guest);
+        let from = [t.previous.x, t.previous.y, t.previous.z];
+        self.guest_hit_by(&mut host, conn, |g| {
+            g.combat.refuse_player_hit = refused;
+            g.combat.projectile_attacker = shooter;
+            g.mob_hits_player(damage, from, "minecraft:trident");
+            g.combat.refuse_player_hit = false;
+            g.combat.projectile_attacker = None;
         });
         self.lan = Some(host);
     }
@@ -616,6 +660,17 @@ impl Game<'_> {
             }
             // ThrownTrident.tick: Loyalty needs its owner, who is in this level.
             let owner_eye = catchers.iter().find(|c| c.guest == t.guest).map(|c| c.eye);
+            // `isAcceptibleReturnOwner` fails for a dead or spectating owner: the
+            // trident drops as an item when it can be picked up, then goes.
+            if t.loyalty > 0
+                && (t.dealt_damage || t.no_physics)
+                && catchers.iter().any(|c| c.guest == t.guest && !c.touches)
+            {
+                if !t.creative_only {
+                    self.spawn_at_location(t.position, f64::from(0.1f32), t.stack.clone());
+                }
+                continue;
+            }
             if t.loyalty > 0
                 && (t.dealt_damage || t.no_physics)
                 && let Some(owner_eye) = owner_eye
@@ -668,6 +723,21 @@ impl Game<'_> {
                             && hit_mob.is_none_or(|(_, best)| d < best)
                         {
                             hit_mob = Some((m.id, d));
+                        }
+                    }
+                }
+                // The other players of a served world are targets too (their own
+                // trident passes its thrower).
+                if !t.dealt_damage {
+                    for (who, b) in self.lan_projectile_targets() {
+                        if let Who::Mob(id) = who
+                            && self
+                                .trident_guest_conn(id)
+                                .is_some_and(|c| Some(c) != t.guest)
+                            && let Some(d) = segment_box(t.position, t.velocity, b.inflate(grow))
+                            && hit_mob.is_none_or(|(_, best)| d < best)
+                        {
+                            hit_mob = Some((id, d));
                         }
                     }
                 }
@@ -737,6 +807,10 @@ impl Game<'_> {
                             .find(|m| m.id == id)
                             .map(|m| m.kind.id.clone())
                             .or_else(|| {
+                                self.trident_guest_conn(id)
+                                    .map(|_| "minecraft:player".to_owned())
+                            })
+                            .or_else(|| {
                                 self.boats
                                     .iter()
                                     .find(|b| b.id == id)
@@ -791,6 +865,10 @@ impl Game<'_> {
                             self.hurt_boat(i, damage, creative);
                         } else if let Some(i) = self.carts.iter().position(|c| c.id == id) {
                             self.hurt_cart(i, damage, creative, false);
+                        }
+                        // ThrownTrident.onHitEntity on another player.
+                        if let Some(conn) = self.trident_guest_conn(id) {
+                            self.trident_hits_guest(&t, conn, damage);
                         }
                         // `minecraft:post_attack` of Channeling, on the victim.
                         if let Some(at) = hurt_at

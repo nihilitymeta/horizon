@@ -1,11 +1,18 @@
 {
   "hooks": [],
   "helpers": [
-    {"name": "playing", "target": "horizon_client::game::native_hooks::Game<'_>::native_playing"},
-    {"name": "key_down", "target": "horizon_client::game::native_hooks::Game<'_>::native_key_down"},
-    {"name": "text_width", "target": "horizon_client::game::native_hooks::Game<'_>::native_text_width"},
-    {"name": "frame_stats", "target": "horizon_client::game::native_hooks::Game<'_>::native_frame_stats"},
-    {"name": "corner_shown", "target": "horizon_client::game::native_hooks::Game<'_>::native_corner_shown"}
+    {
+      "name": "key_down",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_key_down"
+    },
+    {
+      "name": "frame_stats",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_frame_stats"
+    },
+    {
+      "name": "corner_shown",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_corner_shown"
+    }
   ],
   "rust_summary": "generic host helpers for HUD mods (`native_playing`, `native_key_down`, `native_text_width`, `native_frame_stats`, `native_corner_shown`).",
   "doc_summary": "generic helpers for any HUD mod: `playing()` (keys and zoom apply), `key_down(mapping)` (whether a keybind's key, such as `key.zoom`, is held; false when unknown), `text_width(text)` (GUI pixels), `frame_stats()` (frames per second, the slowest frame, the 1% low) and `corner_shown(corner)`. Bundles need \"hooks\": @API:extras_helpers@."

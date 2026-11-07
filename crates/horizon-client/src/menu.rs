@@ -1279,10 +1279,9 @@ impl Menu {
         };
     }
 
-    /// `Item.onCraftedBy` of a taken cartography result
-    /// (`MapItem.onCraftedPostProcess`): the post processing goes, and on a
-    /// level with maps the stack names the scaled or locked copy.
-    fn map_crafted(env: &Env, stack: &mut ItemStack) {
+    /// `MapItem.onCraftedPostProcess`, shared by menu takes and system crafting:
+    /// remove the directive and name the level's scaled or locked saved copy.
+    pub fn map_crafted(maps: Option<&dyn Maps>, stack: &mut ItemStack) {
         if &*stack.item != "minecraft:filled_map" {
             return;
         }
@@ -1291,7 +1290,7 @@ impl Menu {
         };
         stack.data_mut().map_post_processing = None;
         let id = stack.data().and_then(|d| d.map_id);
-        if let (Some(maps), Some(id)) = (env.maps, id)
+        if let (Some(maps), Some(id)) = (maps, id)
             && let Some(new) = maps.derive(id, post == 1)
         {
             stack.data_mut().map_id = Some(new);
@@ -1769,6 +1768,14 @@ impl Menu {
         self.containers[RESULT][0] = result;
     }
 
+    /// A station's take sound, gated by its menu's `lastSoundTime`: once per
+    /// tick, so a shift-click that takes many results plays it once.
+    fn take_sound(&mut self, sound: &'static str) {
+        if !self.sounds.contains(&sound) {
+            self.sounds.push(sound);
+        }
+    }
+
     /// `ResultSlot.onTake` and the other `Slot.onTake` overrides.
     fn on_take(&mut self, env: &Env, s: usize, taken: &ItemStack) {
         if self.slots[s].role == Role::Potion {
@@ -1797,7 +1804,7 @@ impl Menu {
             if self.remove(env, 0, 1).is_some() {
                 self.stone_setup_result(env, self.data[0]);
             }
-            self.sounds.push("minecraft:ui.stonecutter.take_result");
+            self.take_sound("minecraft:ui.stonecutter.take_result");
             return;
         }
         if self.slots[s].role == Role::GrindResult {
@@ -1852,8 +1859,7 @@ impl Menu {
             // onCraftedBy is the caller's (map_crafted).
             self.remove(env, 0, 1);
             self.remove(env, 1, 1);
-            self.sounds
-                .push("minecraft:ui.cartography_table.take_result");
+            self.take_sound("minecraft:ui.cartography_table.take_result");
             self.slot_changed(env, s);
             return;
         }
@@ -1864,7 +1870,7 @@ impl Menu {
             if self.containers[MAIN][0].is_none() || self.containers[MAIN][1].is_none() {
                 self.data[0] = -1;
             }
-            self.sounds.push("minecraft:ui.loom.take_result");
+            self.take_sound("minecraft:ui.loom.take_result");
             return;
         }
         if matches!(self.kind, Kind::CrafterBlock) && self.slots[s].container == MAIN {
@@ -1972,7 +1978,7 @@ impl Menu {
         let mut result = self.try_remove(env, s, amount, max_amount)?;
         self.on_take(env, s, &result);
         if self.slots[s].role == Role::CartoResult {
-            Self::map_crafted(env, &mut result);
+            Self::map_crafted(env.maps, &mut result);
         }
         Some(result)
     }
@@ -2383,7 +2389,7 @@ impl Menu {
                 after_take = true;
                 if index == 2 {
                     // onCraftedBy edits the result in its slot first.
-                    Self::map_crafted(env, &mut stack);
+                    Self::map_crafted(env.maps, &mut stack);
                     self.containers[RESULT][0] = Some(stack.clone());
                     if !self.move_to(env, &mut stack, 3, 39, true) {
                         return None;
@@ -2850,7 +2856,7 @@ impl Menu {
                 copy.count = Self::max_stack(env, stack);
                 // The cartography result's safeClone runs onCraftedBy.
                 if self.slots[slot_index as usize].role == Role::CartoResult {
-                    Self::map_crafted(env, &mut copy);
+                    Self::map_crafted(env.maps, &mut copy);
                 }
                 self.carried = Some(copy);
             }
@@ -2926,7 +2932,7 @@ impl Menu {
                         self.on_take(env, s, &taken);
                         if self.slots[s].role == Role::CartoResult {
                             // onTake's onCraftedBy edits the carried stack.
-                            Self::map_crafted(env, &mut taken);
+                            Self::map_crafted(env.maps, &mut taken);
                             self.carried = Some(taken);
                         }
                     }
@@ -2960,7 +2966,7 @@ impl Menu {
                             self.on_take(env, s, &taken);
                             if self.slots[s].role == Role::CartoResult {
                                 // onCraftedBy edits the taken stack, not the carried one.
-                                Self::map_crafted(env, &mut taken);
+                                Self::map_crafted(env.maps, &mut taken);
                             }
                         }
                     } else {
@@ -2989,7 +2995,7 @@ impl Menu {
                     if self.slots[target].role == Role::CartoResult
                         && let Some(stack) = self.containers[PLAYER][inv_slot].as_mut()
                     {
-                        Self::map_crafted(env, stack);
+                        Self::map_crafted(env.maps, stack);
                     }
                 }
             }
@@ -3465,6 +3471,34 @@ pub(crate) mod tests {
                     stack("oak_planks", 4).unwrap()
                 )]
             );
+        });
+    }
+
+    /// `StonecutterMenu`'s `lastSoundTime`: a shift-click crafting a whole
+    /// stack plays the take sound once, not once per item.
+    #[test]
+    fn a_stonecutter_shift_click_plays_the_take_sound_once() {
+        with_menu(Kind::Stonecutter, |env, menu| {
+            menu.creative = false;
+            menu.set_slot(env, 0, stack("granite", 60));
+            let polished = menu
+                .stone
+                .recipes
+                .iter()
+                .position(|&r| {
+                    &*env.station_recipes.stonecutting[r].result.item
+                        == "minecraft:polished_granite"
+                })
+                .expect("granite cuts into polished granite");
+            assert!(menu.button(env, polished as i32));
+            menu.click(env, 1, 0, Input::QuickMove).unwrap();
+            assert_eq!(menu.slot(0), None);
+            let made: u32 = (2..menu.slot_count())
+                .filter_map(|i| menu.slot(i))
+                .map(|s| s.count)
+                .sum();
+            assert_eq!(made, 60);
+            assert_eq!(menu.sounds, ["minecraft:ui.stonecutter.take_result"]);
         });
     }
 
@@ -3944,6 +3978,7 @@ pub(crate) mod tests {
                     count: 4,
                     damage: 0,
                     extra: None,
+                    components: None,
                 },
             },
         ));
@@ -3992,6 +4027,7 @@ pub(crate) mod tests {
                     count: 4,
                     damage: 0,
                     extra: None,
+                    components: None,
                 },
             },
         ));
@@ -4041,6 +4077,7 @@ pub(crate) mod tests {
                     count: 4,
                     damage: 0,
                     extra: None,
+                    components: None,
                 },
             },
         ));
@@ -4094,6 +4131,7 @@ pub(crate) mod tests {
                     count: 1,
                     damage: 0,
                     extra: None,
+                    components: None,
                 },
             }),
         ));

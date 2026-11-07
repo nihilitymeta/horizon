@@ -407,6 +407,16 @@ impl BlockEntities {
             self.add(pos);
         }
     }
+    /// [`Self::retain`] for unloading chunks: removes the block entities at
+    /// the positions `gone` names and changes none it keeps, so those that
+    /// sleep stay asleep (a moving player unloads chunks most ticks).
+    pub fn unload(&mut self, mut gone: impl FnMut(&Pos) -> bool) {
+        let asleep = std::mem::take(&mut self.asleep);
+        self.retain(|p, _| !gone(p));
+        self.asleep = asleep;
+        let map = &self.map;
+        self.asleep.retain(|p| map.contains_key(p));
+    }
     /// Removes the block entities `keep` refuses, and their slots
     /// (`clearAllBlockEntities` of unloaded chunks).
     pub fn retain(&mut self, mut keep: impl FnMut(&Pos, &mut BlockEntity) -> bool) {
@@ -528,6 +538,11 @@ impl BlockEntities {
         });
         Arc::clone(&self.tickers)
     }
+    /// How many block entities tick (`Level.blockEntityTickers`, the slots still live), as of
+    /// the last [`Self::tickers`]: what a diagnostics mod counts.
+    pub fn ticking_len(&self) -> usize {
+        self.live.len()
+    }
     /// Whether a slot from `tickers` still ticks.
     pub fn is_live(&self, (pos, slot): (Pos, u32)) -> bool {
         self.live.get(&pos) == Some(&slot) && self.map.contains_key(&pos)
@@ -556,6 +571,24 @@ mod tests {
             .iter()
             .map(|(p, _)| *p)
             .collect()
+    }
+
+    /// Unloading a chunk removes its block entities and leaves the others'
+    /// sleep alone; `retain`, which may change what it keeps, wakes them all.
+    #[test]
+    fn unloading_a_chunk_keeps_the_others_asleep() {
+        let mut b = level();
+        let (kept, gone) = ((1, 64, 1), (17, 64, 1));
+        b.insert(kept, hopper());
+        b.insert(gone, hopper());
+        b.sleep(kept);
+        b.sleep(gone);
+        b.unload(|p| p.0 >> 4 == 1);
+        assert!(b.get(&gone).is_none());
+        assert!(!b.is_asleep(&gone));
+        assert!(b.is_asleep(&kept));
+        b.retain(|_, _| true);
+        assert!(!b.is_asleep(&kept));
     }
 
     fn near(b: &BlockEntities, x: f64, z: f64, radius: f64) -> Vec<Pos> {
