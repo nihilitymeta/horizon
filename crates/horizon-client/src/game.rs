@@ -18807,6 +18807,12 @@ impl Game<'_> {
                     } else {
                         Vec::new()
                     };
+                    if self.options.spikes.is_some() {
+                        horizon_client::spans::tally(&frame_spans);
+                        if let Some(line) = horizon_client::spans::take_tally() {
+                            log::info!("Horizon: {line}");
+                        }
+                    }
                     if let Some(threshold) = self.options.spikes
                         && let Some(r) = self.renderer.as_ref()
                     {

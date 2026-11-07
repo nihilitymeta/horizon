@@ -195,6 +195,78 @@ pub fn take_raw() -> Vec<Span> {
 pub fn take() -> Vec<Span> {
     merge(&take_raw())
 }
+thread_local! {
+    static TALLY: RefCell<Tally> = const {
+        RefCell::new(Tally {
+            frames: 0,
+            start: None,
+            sums: Vec::new(),
+        })
+    };
+}
+struct Tally {
+    frames: usize,
+    start: Option<Instant>,
+    sums: Vec<Span>,
+}
+/// Adds one frame's spans ([`take_raw`]) to the running averages
+/// [`take_tally`] reports: the slow-frame line names the spikes, this names
+/// what every frame is made of, which is what the frame rate is.
+pub fn tally(raw: &[Span]) {
+    TALLY.with(|t| {
+        let mut t = t.borrow_mut();
+        if t.start.is_none() {
+            t.start = Some(Instant::now());
+        }
+        t.frames += 1;
+        for span in merge(raw) {
+            match t.sums.iter_mut().find(|s| s.name == span.name) {
+                Some(sum) => {
+                    sum.ms += span.ms;
+                    sum.cpu_ms += span.cpu_ms;
+                }
+                None => t.sums.push(span),
+            }
+        }
+    });
+}
+/// The frames tallied since the last report, as an average frame, once five
+/// seconds have passed: `frame stats: 300 frames in 5.0 s, 13.2 ms a frame:
+/// renderer 6.1, update_world 4.2, ...`. None before the window ends.
+pub fn take_tally() -> Option<String> {
+    const WINDOW: Duration = Duration::from_secs(5);
+    TALLY.with(|t| {
+        let mut t = t.borrow_mut();
+        let elapsed = t.start?.elapsed();
+        if elapsed < WINDOW || t.frames == 0 {
+            return None;
+        }
+        let frames = t.frames as f32;
+        let mut sums = std::mem::take(&mut t.sums);
+        let total: f32 = sums
+            .iter()
+            .filter(|s| s.depth == 0)
+            .map(|s| s.ms)
+            .sum::<f32>()
+            / frames;
+        sums.sort_by(|a, b| b.ms.total_cmp(&a.ms));
+        let list: Vec<String> = sums
+            .iter()
+            .filter(|s| s.ms / frames >= 0.1)
+            .map(|s| format!("{} {:.1}", s.name, s.ms / frames))
+            .collect();
+        let line = format!(
+            "frame stats: {} frames in {:.1} s, {:.1} ms a frame: {}",
+            t.frames,
+            elapsed.as_secs_f32(),
+            total,
+            list.join(", ")
+        );
+        t.frames = 0;
+        t.start = Some(Instant::now());
+        Some(line)
+    })
+}
 /// What a frame spent its time in, from its spans as recorded ([`take_raw`]): the slowest of
 /// the outermost spans (summed by name, as a frame can tick several times), then the slowest
 /// span inside it while that one took at least half of it, and so on. The path of names
