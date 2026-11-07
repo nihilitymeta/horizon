@@ -202,6 +202,24 @@ const DETAIL_LEVEL: u8 = 2;
 /// The most chunks one detail request asks for, one request each 250 ms:
 /// generated ones arrive at the decoration threads' pace, cached ones at once.
 const DETAIL_REQUEST: usize = 512;
+/// The most time one frame spends applying finished far-terrain results. A
+/// detail batch (up to `DETAIL_REQUEST` chunks) applying in one go took
+/// 120 ms frames while moving into new terrain (`HORIZON_SPIKES`); spread
+/// over frames, the far terrain appears a second later and no frame stalls.
+const RESULT_BUDGET: std::time::Duration = std::time::Duration::from_millis(2);
+/// [`RESULT_BUDGET`], `HORIZON_LOD_RESULT_MS` overriding it for a profile.
+fn result_budget() -> std::time::Duration {
+    static BUDGET: std::sync::OnceLock<std::time::Duration> = std::sync::OnceLock::new();
+    *BUDGET.get_or_init(|| {
+        std::env::var("HORIZON_LOD_RESULT_MS")
+            .ok()
+            .and_then(|value| value.trim().parse::<f64>().ok())
+            .filter(|ms| *ms >= 0.0)
+            .map_or(RESULT_BUDGET, |ms| {
+                std::time::Duration::from_secs_f64(ms / 1000.0)
+            })
+    })
+}
 /// Top solid face and optional fluid face, in absolute block coordinates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Surface {
@@ -1041,7 +1059,13 @@ impl ReducedColumns {
             return &self.columns[z * 16 + x];
         }
         let level = width.trailing_zeros() as usize - 1;
-        let reduced = self.levels[level].get_or_init(|| {
+        let reduced = self.level(level);
+        &reduced[(z / width) * (16 / width) + x / width]
+    }
+    /// The cells `2 << level` blocks wide, built once.
+    fn level(&self, level: usize) -> &Vec<Column> {
+        self.levels[level].get_or_init(|| {
+            let width = 2usize << level;
             let columns = &self.columns;
             (0..16 / width)
                 .flat_map(|z| {
@@ -1049,8 +1073,19 @@ impl ReducedColumns {
                         .map(move |x| Column::reduced(columns, x * width, z * width, width))
                 })
                 .collect()
-        });
-        &reduced[(z / width) * (16 / width) + x / width]
+        })
+    }
+    /// The same with all four levels built, on the worker that made it: a
+    /// detail's application reads every level, and building them on the
+    /// frame thread cost about 0.4 ms a chunk — 120 ms for one
+    /// `DETAIL_REQUEST` batch (`HORIZON_SPIKES`'s `lod_detail`). Built beside
+    /// the sampling, that work is spread over the far-terrain threads and the
+    /// frame only writes the cells in.
+    fn with_levels(self) -> Self {
+        for level in 0..4 {
+            let _ = self.level(level);
+        }
+        self
     }
 }
 enum Job {
@@ -1468,7 +1503,11 @@ impl Lod {
                         'work: loop {
                             for (key, columns) in sampler.drain_details() {
                                 if tx
-                                    .send(Done::Detail(key, ReducedColumns::new(columns), asked))
+                                    .send(Done::Detail(
+                                        key,
+                                        ReducedColumns::new(columns).with_levels(),
+                                        asked,
+                                    ))
                                     .is_err()
                                 {
                                     break 'work;
@@ -1514,7 +1553,7 @@ impl Lod {
                                     };
                                     let columns = summarize(&chunk, kinds);
                                     sampler.observed(key, &columns);
-                                    Done::Observed(key, ReducedColumns::new(columns))
+                                    Done::Observed(key, ReducedColumns::new(columns).with_levels())
                                 }
                                 Job::RequestDetail {
                                     chunks,
@@ -2369,7 +2408,7 @@ impl Lod {
             });
         }
         let mut meshes = Vec::new();
-        crate::spans::time("lod_results", || self.receive(&mut meshes));
+        crate::spans::time("lod_results", || self.receive(&mut meshes, result_budget()));
         crate::spans::time("lod_retiring", || self.prune_retiring());
         // Uploaded over frames in this order (`Renderer::upload_lods`): a
         // tile is meshed clipped around its finer ones, so they go first,
@@ -2494,7 +2533,8 @@ impl Lod {
         }
         self.wanted_stale = true;
     }
-    fn receive(&mut self, meshes: &mut Vec<(TileKey, SectionMesh)>) {
+    fn receive(&mut self, meshes: &mut Vec<(TileKey, SectionMesh)>, budget: std::time::Duration) {
+        let start = std::time::Instant::now();
         while let Ok(done) = self.results.try_recv() {
             match done {
                 // Read before a `refresh` over it since: asked again (its
@@ -2527,6 +2567,12 @@ impl Lod {
                         self.mesh_cancel.remove(&key);
                     }
                 }
+            }
+            // A detail batch (up to `DETAIL_REQUEST` chunks) applies over
+            // frames: the first of a slow frame's 120 ms is enough, and the
+            // rest waits in the channel rather than stalling the frame.
+            if start.elapsed() >= budget {
+                break;
             }
         }
     }
