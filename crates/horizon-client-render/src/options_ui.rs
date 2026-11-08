@@ -2760,12 +2760,17 @@ impl OptionsUi {
                         // open world's chunks were decoded with: changing it
                         // mid-world remaps their ids (Forge/Fabric freeze the
                         // registry before a world opens). A native, hook or
-                        // engine mod toggles live, so it stays available.
-                        let content = m.kind == crate::mod_list::ModKind::Content;
-                        if self.in_world && content {
+                        // engine mod toggles live, so it stays available, as
+                        // does a content mod of assets and data only in a
+                        // world this game serves (`mods_live`, filled by the
+                        // game).
+                        let frozen = self.in_world
+                            && m.kind == crate::mod_list::ModKind::Content
+                            && !self.mods_live.contains(&m.id);
+                        if frozen {
                             label = label.append(tr("horizon.mods.in_world"));
                         }
-                        let dead = m.dev || m.id.is_empty() || self.in_world && content;
+                        let dead = m.dev || m.id.is_empty() || frozen;
                         // Keys live on the Key Binds screen, so only a mod with settings of
                         // its own (a native mod's buttons, a hook mod's Extras rows) has a
                         // settings page worth a second button.
@@ -2806,17 +2811,6 @@ impl OptionsUi {
                 let open =
                     |key: &str, page: Page| button(0.0, 0.0, 150.0, tr(key), Act::Push(page));
                 vec![
-                    Row::Buttons(
-                        open("horizon.pages.open.graphics", Page::Graphics),
-                        Some(open(
-                            "horizon.pages.open.graphics_advanced",
-                            Page::GraphicsAdvanced,
-                        )),
-                    ),
-                    Row::Buttons(
-                        open("horizon.pages.open.shader_packs", Page::ShaderPacks),
-                        Some(open("horizon.pages.open.controller", Page::Controller)),
-                    ),
                     Row::Buttons(
                         button(
                             0.0,
@@ -7317,19 +7311,26 @@ mod tests {
     #[test]
     fn in_a_world_only_live_mod_toggles_stay_active() {
         let mut s = Settings::default();
-        let installed =
-            |id: &str, native: Option<crate::mod_list::NativePage>| crate::mod_list::Installed {
+        let installed = |id: &str,
+                         kind: crate::mod_list::ModKind,
+                         native: Option<crate::mod_list::NativePage>| {
+            crate::mod_list::Installed {
                 id: id.into(),
-                kind: crate::mod_list::ModKind::Engine,
+                kind,
                 title: id.into(),
                 description: String::new(),
                 problem: None,
                 dev: false,
                 native,
-            };
+            }
+        };
         s.mods.installed = vec![
-            installed("content", None),
-            installed("native", Some(crate::mod_list::NativePage::default())),
+            installed("content", crate::mod_list::ModKind::Content, None),
+            installed(
+                "native",
+                crate::mod_list::ModKind::Native,
+                Some(crate::mod_list::NativePage::default()),
+            ),
         ];
         let mut ui = OptionsUi::default();
         let toggles = |ui: &mut OptionsUi, s: &Settings| {
@@ -7346,15 +7347,21 @@ mod tests {
                 })
                 .collect::<Vec<_>>()
         };
+        // The page lists the native section before the content one, whatever
+        // order the mods were installed in.
         ui.open_at(false, Page::Mods);
-        assert_eq!(toggles(&mut ui, &s), [(0, true), (1, true)]);
+        assert_eq!(toggles(&mut ui, &s), [(1, true), (0, true)]);
         ui.open_at(true, Page::Mods);
-        assert_eq!(toggles(&mut ui, &s), [(0, false), (1, true)]);
+        assert_eq!(toggles(&mut ui, &s), [(1, true), (0, false)]);
         // A content mod of assets and data only reloads live in a world this
         // game serves (`mods_live`, filled by the game).
-        s.mods.installed.push(installed("data_only", None));
+        s.mods.installed.push(installed(
+            "data_only",
+            crate::mod_list::ModKind::Content,
+            None,
+        ));
         ui.mods_live.insert("data_only".into());
-        assert_eq!(toggles(&mut ui, &s), [(0, false), (1, true), (2, true)]);
+        assert_eq!(toggles(&mut ui, &s), [(1, true), (0, false), (2, true)]);
     }
 
     /// An Extras or PvP & HUD label wider than half a row takes the whole row, so every label
@@ -7607,7 +7614,6 @@ mod tests {
             pushes(&mut ui),
             [
                 Page::Extras,
-                Page::SplitSetup,
                 Page::Pvp,
                 Page::SplitSetup,
                 Page::Studio,
@@ -8487,7 +8493,7 @@ mod tests {
         add("fullbright", ModKind::Hook, Vec::new());
         add("tool", ModKind::Native, vec!["Setting".into()]);
         add("cas", ModKind::Engine, Vec::new());
-        add("zoom", ModKind::Hook, Vec::new());
+        add("mouse_tweaks", ModKind::Hook, Vec::new());
         let mut ui = OptionsUi::default();
         ui.show(Page::Mods);
         let rows = ui.list_rows(&s);
