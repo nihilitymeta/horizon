@@ -31,6 +31,10 @@ finish-args:
   - --talk-name=org.freedesktop.Notifications
   - --talk-name=org.freedesktop.secrets
   - --env=XCURSOR_PATH=/run/host/user-share/icons:/run/host/share/icons
+  # Microsoft sign-in: Horizon's own Azure app, as `HORIZON_MSA_CLIENT_ID` in the distribution build
+  # (launcher/src/account.rs). `build.sh` puts the release's value here; without one the launcher says it has no
+  # sign-in.
+  - --env=HORIZON_MSA_CLIENT_ID=@MSA_CLIENT_ID@
 modules:
   - name: horizon-launcher
     buildsystem: simple
@@ -39,6 +43,12 @@ modules:
       # version checks.
       build-args:
         - --share=network
+      env:
+        # The release this bundle was built for (the release workflow's tag and time), so the launcher names itself
+        # `Event Horizon <version>` rather than a build by hand. Empty when a developer builds it in a checkout.
+        HORIZON_LAUNCHER_TAG: '@LAUNCHER_TAG@'
+        HORIZON_LAUNCHER_VERSION: '@LAUNCHER_VERSION@'
+        HORIZON_LAUNCHER_BUILT: '@LAUNCHER_BUILT@'
     build-commands:
       # Rust from rustup's stable channel, the toolchain the release workflow builds with: the SDK's rust extension lags
       # behind it, and crates in this workspace already need a newer one. One shell, since `buildsystem: simple` runs

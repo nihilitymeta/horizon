@@ -39,11 +39,25 @@ trap 'rm -rf "$work"' EXIT
 tar -C "$repo" -czf "$work/horizon-source.tar.gz" \
   --exclude=./.git --exclude=./target --exclude=./.local --exclude=./launcher/target \
   --exclude=./.flatpak-builder .
-cp "$here/dev.playhorizon.HorizonLauncher.yml" "$work/manifest.yml"
+# The release this bundle is built for, when one knows it (`HORIZON_LAUNCHER_TAG` and its version, as the release
+# workflow has them): the launcher then names itself `Event Horizon <version>` instead of a build by hand.
+manifest="$work/manifest.yml"
+sed -e "s|@LAUNCHER_TAG@|${HORIZON_LAUNCHER_TAG:-}|" \
+  -e "s|@LAUNCHER_VERSION@|${HORIZON_LAUNCHER_VERSION:-}|" \
+  -e "s|@LAUNCHER_BUILT@|${HORIZON_LAUNCHER_BUILT:-}|" \
+  "$here/dev.playhorizon.HorizonLauncher.yml" >"$manifest"
+# The Azure app the launcher signs in with (`HORIZON_MSA_CLIENT_ID`, the release workflow's variable): a bundle built
+# without it can list an account but cannot start the game, so a missing one is said out loud.
+if [ -n "${HORIZON_MSA_CLIENT_ID:-}" ]; then
+  sed -i "s|@MSA_CLIENT_ID@|$HORIZON_MSA_CLIENT_ID|" "$manifest"
+else
+  echo "packaging/flatpak/build.sh: HORIZON_MSA_CLIENT_ID is not set: this launcher cannot sign in to Microsoft" >&2
+  sed -i '/@MSA_CLIENT_ID@/d' "$manifest"
+fi
 
 # `--install-deps-from`: the runtime, SDK and the two extensions, into this user's installation, when missing.
 flatpak-builder "$install" --install-deps-from=flathub --force-clean --disable-rofiles-fuse \
-  --state-dir "$work/state" --repo "$out/repo" "$work/build" "$work/manifest.yml" >"$out/flatpak-builder.log" 2>&1 ||
+  --state-dir "$work/state" --repo "$out/repo" "$work/build" "$manifest" >"$out/flatpak-builder.log" 2>&1 ||
   {
     echo "packaging/flatpak/build.sh: flatpak-builder failed; its log:" >&2
     tail -40 "$out/flatpak-builder.log" >&2

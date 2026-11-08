@@ -135,7 +135,18 @@ jobs:
           sudo apt-get install -y --no-install-recommends flatpak flatpak-builder
           flatpak-builder --version
       - name: Build the launcher bundle
-        run: packaging/flatpak/build.sh dist
+        # The Microsoft sign-in app (`docs/event-horizon-sign-in.md`): a bundle built without it lists an account but
+        # cannot refresh its token, so the launcher says it has no sign-in. Set the repository variable to bake it in.
+        env:
+          HORIZON_MSA_CLIENT_ID: ${{ vars.HORIZON_MSA_CLIENT_ID }}
+          HORIZON_LAUNCHER_TAG: ${{ needs.decide.outputs.tag }}
+          HORIZON_LAUNCHER_VERSION: ${{ needs.decide.outputs.tag }}
+        run: |
+          [[ -n "$HORIZON_MSA_CLIENT_ID" ]] || echo "::warning::HORIZON_MSA_CLIENT_ID is not set: this launcher can't sign in to Microsoft"
+          # The launcher's own version reads `Event Horizon 0.2.0`-style: the tag without `eh-`, and the build's time.
+          export HORIZON_LAUNCHER_VERSION="${HORIZON_LAUNCHER_VERSION#eh-}"
+          export HORIZON_LAUNCHER_BUILT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          packaging/flatpak/build.sh dist
       - uses: actions/upload-artifact@v7
         with:
           name: horizon-launcher-flatpak
