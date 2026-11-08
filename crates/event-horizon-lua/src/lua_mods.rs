@@ -426,7 +426,7 @@ fn carried_in(stacks: &[Option<ItemStack>]) -> Vec<(String, u32)> {
 
 /// An item stack as a table: `id`, `count`, `damage`, `plain` (no
 /// components beyond count and damage).
-fn item_table_of(lua: &Lua, stack: &ItemStack) -> mlua::Result<Table> {
+pub(crate) fn item_table_of(lua: &Lua, stack: &ItemStack) -> mlua::Result<Table> {
     let t = lua.create_table()?;
     t.set("id", &*stack.item)?;
     t.set("count", stack.count)?;
@@ -2898,7 +2898,7 @@ const UPDATE_ALL: i32 = 3;
 /// The most columns one `horizon.fill` makes: 256 by 256 blocks.
 const FILL_COLUMNS: i64 = 65536;
 
-fn dimension_id(dimension: LevelDimension) -> &'static str {
+pub(crate) fn dimension_id(dimension: LevelDimension) -> &'static str {
     match dimension {
         LevelDimension::Overworld => "minecraft:overworld",
         LevelDimension::Nether => "minecraft:the_nether",

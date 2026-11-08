@@ -83,8 +83,8 @@ fn owned_mut_scalar(ty: &str) -> bool {
 
 /// The macro's seed tag for a field: the tag names the runtime arm, the
 /// type only picks among the shapes a converter covers. `ty` is the field's
-/// canonical native type from the model.
-fn seed_tag(conv: &Conv, ty: &str) -> &'static str {
+/// canonical native type from the model, `key` the struct key for `Struct`.
+fn seed_tag(conv: &Conv, ty: &str, key: Option<&str>) -> String {
     match conv {
         Conv::Plain => {
             if ty.contains("String") || ty.contains("str") {
@@ -139,35 +139,153 @@ fn seed_tag(conv: &Conv, ty: &str) -> &'static str {
             }
         }
         Conv::MutStrVec => "str_seq",
+        Conv::Struct => return struct_shape(ty, key.unwrap_or("?")).0,
+        Conv::Bytes => return "s_bytes".into(),
+        Conv::PathStr => return "s_path".into(),
+        Conv::TextVal => return "s_text".into(),
+        Conv::TextOpt => return "s_opt_text".into(),
+        Conv::PreLogin => return "s_defer".into(),
+        Conv::StateProps => return "state_props_note".into(),
     }
+    .to_owned()
 }
 
 /// The write-back tag for a mutable field: `None` transcribes no tag, and
 /// the runtime's catch-all expands it to nothing. `ty` picks the dereference
-/// like the seed does.
-fn write_tag(conv: &Conv, ty: &str) -> Option<&'static str> {
+/// like the seed does, `key` the struct shape for `Struct`.
+fn write_tag(conv: &Conv, ty: &str, key: Option<&str>) -> Option<String> {
     match conv {
-        Conv::MutScalar => Some(if owned_mut_scalar(ty) {
-            "mut_scalar"
+        Conv::MutScalar => Some(
+            if owned_mut_scalar(ty) {
+                "mut_scalar"
+            } else {
+                "mut_scalar_ref"
+            }
+            .to_owned(),
+        ),
+        Conv::MutString => Some("mut_string".into()),
+        Conv::MutOptString => Some("mut_opt_string".into()),
+        Conv::MutPos => Some("mut_pos".into()),
+        Conv::MutVec3 => Some("mut_vec3".into()),
+        Conv::MutPair => Some("mut_pair".into()),
+        Conv::MutStrVec => Some(if ty.contains("str") {
+            "mut_strvec_static".into()
         } else {
-            "mut_scalar_ref"
+            "mut_strvec".into()
         }),
-        Conv::MutString => Some("mut_string"),
-        Conv::MutOptString => Some("mut_opt_string"),
-        Conv::MutPos => Some("mut_pos"),
-        Conv::MutVec3 => Some("mut_vec3"),
-        Conv::MutPair => Some("mut_pair"),
-        Conv::MutStrVec => Some("mut_strvec"),
+        Conv::Struct => struct_shape(ty, key.unwrap_or("?")).1,
+        Conv::TextVal => Some("w_text".into()),
+        Conv::TextOpt => Some("w_opt_text".into()),
+        Conv::PreLogin => Some("w_defer".into()),
         _ => None,
     }
 }
 
 /// The macro's replace reader for an out shape.
-fn read_tag(read: ReplaceRead) -> &'static str {
+fn read_tag(read: ReplaceRead, ret: &str) -> String {
     match read {
-        ReplaceRead::Int | ReplaceRead::Bool => "value",
-        ReplaceRead::Pair => "pair",
-        ReplaceRead::Item => "item",
+        ReplaceRead::Int | ReplaceRead::Bool => "value".into(),
+        ReplaceRead::Pair => "pair".into(),
+        ReplaceRead::Item => "item".into(),
+        ReplaceRead::Struct => {
+            format!("struct_out({})", replace_spelling(ret))
+        }
+        ReplaceRead::StructVec => {
+            format!("struct_vec_out({})", replace_spelling(ret))
+        }
+        ReplaceRead::Bytes => "bytes_out".into(),
+        ReplaceRead::AnswerState => "answer_state".into(),
+    }
+}
+
+/// The native spelling of a replace out's converted type, for the macro's
+/// type parameter.
+fn replace_spelling(ret: &str) -> String {
+    let norm: String = ret.chars().filter(|c| !c.is_whitespace()).collect();
+    let inner = norm
+        .strip_prefix("Option<")
+        .and_then(|k| k.strip_suffix('>'))
+        .unwrap_or(&norm);
+    let inner = inner
+        .strip_prefix("Vec<")
+        .and_then(|k| k.strip_suffix('>'))
+        .unwrap_or(inner);
+    struct_spelling_inner(inner)
+}
+
+/// The macro's type parameter for a struct key: the resolving path, since
+/// the expansion site (the hand-written Lua mod) names only what it
+/// imports. Tuples of primitives and arrays resolve on their own; the one
+/// named tuple with imports uses the runtime alias.
+fn struct_spelling_inner(inner: &str) -> String {
+    match inner {
+        "Value" => "serde_json::Value".to_owned(),
+        "Map" => "serde_json::Map<String, serde_json::Value>".to_owned(),
+        "(String,Compound)" => "crate::generated_runtime::NamedTag".to_owned(),
+        "(&'staticstr,&'staticstr)" => "(&'static str, &'static str)".to_owned(),
+        "&'staticstr" => "&'static str".to_owned(),
+        "UseAnimation" => "horizon_world::consumable::UseAnimation".to_owned(),
+        "Duration" => "std::time::Duration".to_owned(),
+        "SocketAddr" => "std::net::SocketAddr".to_owned(),
+        "ItemCost" => "horizon_client::merchant::ItemCost".to_owned(),
+        "AnvilCraft" => "horizon_client::menu::AnvilCraft".to_owned(),
+        _ if inner.starts_with('[') || inner.starts_with('&') || inner.starts_with('(') => {
+            inner.to_owned()
+        }
+        _ => format!("horizon_client::mod_api::{inner}"),
+    }
+}
+
+/// The seed and write-back tags of a struct field: the key's wrapper picks
+/// the sequence arm, the parameter type's borrow the value arm, and the
+/// inner type is the runtime's type parameter.
+fn struct_shape(ty: &str, key: &str) -> (String, Option<String>) {
+    let norm: String = ty.chars().filter(|c| !c.is_whitespace()).collect();
+    let seed = |arm: &str, inner: &str| format!("{arm}({})", struct_spelling_inner(inner));
+    let write = |arm: &str, inner: &str| Some(format!("{arm}({})", struct_spelling_inner(inner)));
+    fn inner_of(key: &str) -> &str {
+        if let Some(k) = key.strip_prefix("Vec<").and_then(|k| k.strip_suffix('>')) {
+            return k;
+        }
+        if let Some(k) = key.strip_prefix("&[").and_then(|k| k.strip_suffix(']')) {
+            return k;
+        }
+        if let Some(k) = key
+            .strip_prefix("Option<")
+            .and_then(|k| k.strip_suffix('>'))
+        {
+            return k;
+        }
+        key
+    }
+    if key.starts_with("Vec<") {
+        let inner = inner_of(key);
+        return (seed("s_vec", inner), write("w_vec", inner));
+    }
+    if key.starts_with("&[") {
+        let inner = inner_of(key);
+        return (seed("s_slice", inner), None);
+    }
+    if key.starts_with("Option<") {
+        let inner = inner_of(key);
+        if norm.starts_with("&mut") {
+            return (seed("s_opt", inner), write("w_optmut", inner));
+        }
+        return (seed("s_opt", inner), None);
+    }
+    match key {
+        "NativeMapInfo" => ("s_mapinfo".into(), None),
+        "NativeNoteBlockChange" => ("s_notechange".into(), None),
+        "SoundPlayback" => ("s_sound".into(), None),
+        _ => {
+            if norm.starts_with("&mut") {
+                (seed("s_mut", key), write("w_mut", key))
+            } else if norm.starts_with('&') {
+                (seed("s_ref", key), None)
+            } else {
+                (seed("s_val", key), None)
+            }
+        }
     }
 }
 
@@ -185,7 +303,7 @@ fn extra_tags(model: &Model) -> Vec<String> {
     model
         .extras
         .iter()
-        .map(|e| format!("{}: {}", e.name, seed_tag(&e.conv, "?")))
+        .map(|e| format!("{}: {}", e.name, seed_tag(&e.conv, "?", None)))
         .collect()
 }
 
@@ -201,8 +319,8 @@ fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
         .iter()
         .map(|f| {
             let ty = tys.get(&f.name).map(String::as_str).unwrap_or("?");
-            let seed = seed_tag(&f.conv, ty);
-            match write_tag(&f.conv, ty) {
+            let seed = seed_tag(&f.conv, ty, f.key.as_deref());
+            match write_tag(&f.conv, ty, f.key.as_deref()) {
                 Some(write) => format!("{}: {seed} => {write}", f.name),
                 None => format!("{}: {seed}", f.name),
             }
@@ -218,7 +336,22 @@ fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
         kind_tt(model),
     );
     if let Some(o) = &model.out {
-        out.push_str(&format!(", {} : {}, {}", o.name, read_tag(o.read), o.ret));
+        // The return type names the converted shape, so it resolves where
+        // the hand-written mod expands the table (structs live in `mod_api`,
+        // not in its imports).
+        let ret = match o.read {
+            ReplaceRead::Struct => format!("Option<{}>", replace_spelling(&o.ret)),
+            ReplaceRead::StructVec => {
+                format!("Option<Vec<{}>>", replace_spelling(&o.ret))
+            }
+            _ => o.ret.clone(),
+        };
+        out.push_str(&format!(
+            ", {} : {}, {}",
+            o.name,
+            read_tag(o.read, &o.ret),
+            ret
+        ));
     }
     out.push_str(");");
     out
@@ -263,6 +396,11 @@ fn dispatch_call(model: &Model, tys: &BTreeMap<String, String>, kind_rust: Optio
             if s.mutable {
                 bindings.push(format!("    let mut {} = {};", param.name, s.rust));
                 args.push(format!("&mut {}", param.name));
+            } else if ty.trim_start().starts_with("&mut") {
+                // A `&mut` sample with no write (an empty option): the
+                // dispatch still needs a binding to borrow mutably.
+                bindings.push(format!("    let mut {} = {};", param.name, s.rust));
+                args.push(format!("&mut {}", param.name));
             } else {
                 args.push(s.rust);
             }
@@ -290,7 +428,7 @@ fn dispatch_call(model: &Model, tys: &BTreeMap<String, String>, kind_rust: Optio
         args.push(format!("&mut {}", out.name));
     }
     let call = format!(
-        "    dispatch_{}({host_arg}&mods, {});",
+        "    dispatch_{}({host_arg}&firing_mods, {});",
         model.name,
         args.join(", ")
     );
@@ -363,17 +501,27 @@ fn handler_body(model: &Model, tys: &BTreeMap<String, String>, kind_lua: Option<
                 lua_read(&field.name)
             ));
         } else {
-            lines.extend(assert_lines(&field.conv, &field.name, &s.lua, n));
+            lines.extend(assert_lines(
+                &field.conv,
+                &field.name,
+                &s.lua,
+                field.key.as_deref(),
+                n,
+            ));
         }
         if let Some(write) = s.write_lua {
             lines.push(mutate_line(&field.conv, &field.name, &write));
         }
     }
+    if lines.is_empty() {
+        // A handler with nothing to check still proves the event exists.
+        lines.push("    assert(event ~= nil, \"event\")".to_owned());
+    }
     if model.contract == "cancel" {
         lines.push("    horizon.cancel()".to_owned());
     }
     if let Some(out) = &model.out {
-        let (rust, lua) = replace_sample(out.read, 0);
+        let (rust, lua) = replace_sample(out.read, &out.ret, 0);
         let _ = rust;
         lines.push(format!(
             "    assert(event.{} == nil, \"replace seed\")",
@@ -386,6 +534,7 @@ fn handler_body(model: &Model, tys: &BTreeMap<String, String>, kind_lua: Option<
             &extra.conv,
             &extra.name,
             "\"minecraft:stone\"",
+            None,
             0,
         ));
     }
@@ -410,13 +559,20 @@ fn rust_asserts(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String> {
         if let Some(write) = s.write_rust {
             lines.push(match &field.conv {
                 Conv::MutStrVec => format!(
-                    "    assert_eq!({0}, vec![\"test:edited\".to_owned(), \"test:added\".to_owned()]);",
+                    "    assert_eq!({0}, vec![\"test:edited\".to_owned(), \"test:seed2\".to_owned(), \"test:added\".to_owned()]);",
                     field.name
                 ),
+                Conv::PreLogin => format!("    assert_eq!({}.len(), 1);", field.name),
                 // A bare `true`/`false` is a bool write-back: `assert!` reads
                 // better and keeps clippy's `bool_assert_comparison` quiet.
                 _ if write == "true" => format!("    assert!({});", field.name),
                 _ if write == "false" => format!("    assert!(!{});", field.name),
+                // Sequences compare through `Debug`: not every element
+                // implements `PartialEq` (a spawn entry has none).
+                _ if write.starts_with("vec![") => format!(
+                    "    assert_eq!(format!(\"{{:?}}\", {}), format!(\"{{:?}}\", {write}));",
+                    field.name
+                ),
                 _ => format!("    assert_eq!({}, {write});", field.name),
             });
         }
@@ -424,7 +580,7 @@ fn rust_asserts(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String> {
     if let Some(out) = &model.out
         && model.contract == "replace"
     {
-        let (rust, _) = replace_sample(out.read, 0);
+        let (rust, lua) = replace_sample(out.read, &out.ret, 0);
         match out.read {
             ReplaceRead::Item => {
                 lines.push(format!(
@@ -433,6 +589,20 @@ fn rust_asserts(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String> {
                 ));
                 lines.push("    assert_eq!(&*replaced.item, \"test:result\");".to_owned());
                 lines.push("    assert_eq!(replaced.count, 1);".to_owned());
+            }
+            ReplaceRead::AnswerState => {
+                let _ = rust;
+                let _ = lua;
+                let state_idx = model
+                    .dispatch_params
+                    .iter()
+                    .position(|p| p.name == "state")
+                    .unwrap_or(0);
+                lines.push(format!(
+                    "    assert_eq!({}, Some(Some(BlockStateId({}))));",
+                    out.name,
+                    8 + state_idx
+                ));
             }
             _ => lines.push(format!("    assert_eq!({}, Some({rust}));", out.name)),
         }
@@ -478,7 +648,7 @@ fn test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
                 "    let (m, id, _dir) = loaded(\"gen_{}\", {lua:?});\n",
                 model.name
             ));
-            out.push_str("    let mods = boxed(m);\n");
+            out.push_str("    let firing_mods = boxed(m);\n");
             let call = dispatch_call(model, tys, None);
             for binding in &call.bindings {
                 out.push_str(binding);
@@ -502,7 +672,7 @@ fn test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
                 "    let (m, id, _dir) = loaded(\"gen_{}\", {lua:?});\n",
                 model.name
             ));
-            out.push_str("    let mods = boxed(m);\n");
+            out.push_str("    let firing_mods = boxed(m);\n");
             // K2 (and gone) must not fire the K1 handler: any assert would
             // trip `no_error`.
             for (label, kind_arg) in [("K2", Some(plan.k2)), ("gone", plan.gone)]
@@ -570,6 +740,8 @@ fn class_line(name: &str, class: &Class) -> String {
         Class::Adapter(whys) => format!("adapter: {}", whys.join("; ")),
         Class::Tick => "tick: a `ticks` parameter (level-tick host)".to_owned(),
         Class::Cannot(why) => format!("cannot: {why}"),
+        Class::Handle(ty) => format!("handle: {name}: a {ty} handle needs its own design"),
+        Class::Protocol => format!("protocol: {name}: raw packets need their own design"),
     };
     format!("    (\"{name}\", \"{detail}\"),")
 }
@@ -601,7 +773,8 @@ fn format_snippet(text: &str) -> Result<String, String> {
 pub fn run(check: bool) -> Result<(), String> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let classes = classify(&root)?;
-    let (mut generated, mut adapter, mut tick, mut cannot) = (0, 0, 0, 0);
+    let (mut generated, mut adapter, mut tick, mut cannot, mut handle, mut protocol) =
+        (0, 0, 0, 0, 0, 0);
     let mut kinded = 0;
     for hc in &classes {
         match &hc.class {
@@ -614,10 +787,12 @@ pub fn run(check: bool) -> Result<(), String> {
             Class::Adapter(_) => adapter += 1,
             Class::Tick => tick += 1,
             Class::Cannot(_) => cannot += 1,
+            Class::Handle(_) => handle += 1,
+            Class::Protocol => protocol += 1,
         }
     }
     println!(
-        "lua-hooks: {generated} generated ({kinded} kind-filtered), {adapter} adapter, {tick} tick-host, {cannot} cannot-be-exposed ({} total)",
+        "lua-hooks: {generated} generated ({kinded} kind-filtered), {adapter} adapter, {handle} handle, {protocol} protocol, {tick} tick-host, {cannot} cannot-be-exposed ({} total)",
         classes.len()
     );
 
@@ -664,6 +839,7 @@ pub fn run(check: bool) -> Result<(), String> {
     text.push_str("];\n\n");
     text.push_str("#[cfg(test)]\nmod test_support;\n\n");
     text.push_str("#[cfg(test)]\nmod spike_tests;\n\n");
+    text.push_str("#[cfg(test)]\nmod round3_tests;\n\n");
     text.push_str("/// The generated hooks, for `horizon.on`'s name check.\n");
     text.push_str("pub const GENERATED_HOOK_NAMES: &[&str] = &[\n");
     for name in &names {
@@ -688,7 +864,11 @@ pub fn run(check: bool) -> Result<(), String> {
         "    use super::{GENERATED_HOOK_NAMES, GENERATED_KIND_HOOK_NAMES, HOOK_CLASSIFICATION};\n",
     );
     text.push_str("    use super::test_support::*;\n");
-    text.push_str("    use horizon_client::mod_api::*;\n\n");
+    text.push_str("    use horizon_client::mod_api::*;\n");
+    text.push_str("    use horizon_client::menu::AnvilCraft;\n");
+    text.push_str("    use horizon_client::merchant::ItemCost;\n");
+    text.push_str("    use horizon_world::consumable::UseAnimation;\n");
+    text.push_str("    use std::time::Duration;\n\n");
     text.push_str("    #[test]\n    fn generated_classification_names_every_hook_once() {\n");
     text.push_str("        let mut seen = std::collections::HashSet::new();\n");
     text.push_str("        for (name, _) in HOOK_CLASSIFICATION {\n");
@@ -718,7 +898,7 @@ pub fn run(check: bool) -> Result<(), String> {
     text.push_str("    #[test]\n    fn generated_no_handler_does_no_lua_work() {\n");
     text.push_str("        const LUA: &str = \"-- nothing registered\";\n");
     text.push_str("        let (m, id, dir) = loaded(\"gen_no_handler\", LUA);\n");
-    text.push_str("        let mods = boxed(m);\n");
+    text.push_str("        let firing_mods = boxed(m);\n");
     for block in &quiet {
         for line in block.lines() {
             text.push_str("    ");

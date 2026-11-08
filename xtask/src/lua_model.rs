@@ -119,6 +119,22 @@ pub enum Conv {
     MutPair,
     /// `&mut Vec<String>`: a sequence table, written back.
     MutStrVec,
+    /// A `LuaStruct` type (plain struct, tuple, fieldless-enum name, text,
+    /// JSON, duration, address, block position...): the runtime converts by
+    /// the field's shape; `s_*`/`w_*` tags carry the native type.
+    Struct,
+    /// `&[u8]`: a Lua string (Luau strings are byte-safe).
+    Bytes,
+    /// `&Path`: its text.
+    PathStr,
+    /// `&mut Text`: the plain string plus the `_component` table.
+    TextVal,
+    /// `&mut Option<Text>`: nil or the plain string plus `_component`.
+    TextOpt,
+    /// `&mut Vec<Receiver<..>>`: `{count}` in, `refuse` out.
+    PreLogin,
+    /// A state field's `_props` note: seeded beside the state itself.
+    StateProps,
 }
 
 /// How a `replace` out value reads back: nil stays `None`, a table or value
@@ -129,6 +145,14 @@ pub enum ReplaceRead {
     Bool,
     Pair,
     Item,
+    /// `Option<T>` for a `LuaStruct` `T`: nil or its table.
+    Struct,
+    /// `Option<Vec<T>>` for a `LuaStruct` `T`: nil or its sequence.
+    StructVec,
+    /// `Option<Vec<u8>>`: nil or a Lua string.
+    Bytes,
+    /// A placement answer: nil or a state of the placed block's own block.
+    AnswerState,
 }
 
 /// One event-table field of a generated hook.
@@ -138,6 +162,9 @@ pub struct Field {
     pub conv: Conv,
     /// The `.d.lua` type of the field (`?` already applied).
     pub ts: String,
+    /// The `LuaStruct` key, for `Conv::Struct` fields: what the runtime,
+    /// samples and asserts look up.
+    pub key: Option<String>,
 }
 
 /// An extra event-table field with no native parameter: the spike's hand
@@ -215,6 +242,11 @@ pub enum Class {
     Tick,
     /// No event-table mapping exists: the reason.
     Cannot(String),
+    /// A live handle only a design of its own can expose: the type name
+    /// (`ModBlockEntity`, `Mob`).
+    Handle(String),
+    /// Raw protocol packets: a design of their own, not field tables.
+    Protocol,
 }
 
 pub struct HookClass {
@@ -271,6 +303,20 @@ fn is_vec_of(ty: &syn::Type, elem: &str) -> bool {
     false
 }
 
+/// A `Vec` of borrowed string slices (`&str`, any lifetime): the seed reads
+/// them like owned strings, the write interns them back to `&'static str`.
+fn is_vec_of_str_ref(ty: &syn::Type) -> bool {
+    if let syn::Type::Path(p) = ty
+        && let Some(seg) = p.path.segments.last()
+        && seg.ident == "Vec"
+        && let syn::PathArguments::AngleBracketed(args) = &seg.arguments
+        && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
+    {
+        return matches!(inner, syn::Type::Reference(r) if is_path(&r.elem, "str"));
+    }
+    false
+}
+
 /// A canonical rendering of a type, for the return types the generated code
 /// repeats and the samples the tests build. Spacing follows `prettyplease`;
 /// only the shape matters.
@@ -314,8 +360,12 @@ pub fn ty_str(ty: &syn::Type) -> String {
             out + &segs.join("::")
         }
         syn::Type::Reference(r) => format!(
-            "&{}{}",
+            "&{}{}{}",
             if r.mutability.is_some() { "mut " } else { "" },
+            r.lifetime
+                .as_ref()
+                .map(|l| format!("'{} ", l.ident))
+                .unwrap_or_default(),
             ty_str(&r.elem)
         ),
         syn::Type::Array(a) => {
@@ -388,10 +438,15 @@ impl Lifetimes {
     fn visit(&mut self, ty: &syn::Type) {
         match ty {
             syn::Type::Reference(r) => {
-                if self.in_mut {
-                    self.b = true;
-                } else {
-                    self.a = true;
+                // `'static` needs no event lifetime parameter (command names,
+                // emissive layers); only elided and named-short lifetimes do.
+                let is_static = r.lifetime.as_ref().is_some_and(|l| l.ident == "static");
+                if !is_static {
+                    if self.in_mut {
+                        self.b = true;
+                    } else {
+                        self.a = true;
+                    }
                 }
                 let outer = self.in_mut;
                 self.in_mut |= r.mutability.is_some();
@@ -435,55 +490,13 @@ fn event_lifetimes(fields: &[syn::Type]) -> String {
         if is_copied_mut(ty) {
             continue;
         }
-        let mut field = ty.clone();
-        strip_lifetimes(&mut field);
-        lt.visit(&field);
+        // The original lifetimes: `'static` borrows take no parameter.
+        lt.visit(ty);
     }
     match (lt.a, lt.b) {
         (_, true) => "<'_, '_>".to_owned(),
         (true, false) => "<'_>".to_owned(),
         (false, false) => String::new(),
-    }
-}
-
-/// The elided lifetime, parsed rather than built (xtask has no direct
-/// `proc-macro2` dependency to make a span with).
-fn parse_tick_lifetime() -> syn::Lifetime {
-    syn::parse_str("'_").unwrap()
-}
-
-/// Replace every lifetime with `'_`, as the trait's event structs do.
-fn strip_lifetimes(ty: &mut syn::Type) {
-    match ty {
-        syn::Type::Reference(r) => {
-            r.lifetime = Some(parse_tick_lifetime());
-            strip_lifetimes(&mut r.elem);
-        }
-        syn::Type::Path(p) => {
-            for seg in &mut p.path.segments {
-                if let syn::PathArguments::AngleBracketed(args) = &mut seg.arguments {
-                    for arg in &mut args.args {
-                        match arg {
-                            syn::GenericArgument::Type(t) => strip_lifetimes(t),
-                            syn::GenericArgument::Lifetime(l) => {
-                                *l = parse_tick_lifetime();
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-        syn::Type::Array(a) => strip_lifetimes(&mut a.elem),
-        syn::Type::Slice(s) => strip_lifetimes(&mut s.elem),
-        syn::Type::Tuple(t) => {
-            for e in &mut t.elems {
-                strip_lifetimes(e);
-            }
-        }
-        syn::Type::Paren(p) => strip_lifetimes(&mut p.elem),
-        syn::Type::Group(g) => strip_lifetimes(&mut g.elem),
-        _ => {}
     }
 }
 
@@ -539,24 +552,31 @@ fn field_of(hook: &str, param: &str, ty: &syn::Type, host: Host, is_out: bool) -
     if ident.as_deref() == Some("char") {
         return adapter("a `char` needs its string form");
     }
-    // Rich text never crosses as text: only its plain form would, and a
-    // hand-written converter would have to pick it.
+    // Rich text crosses as its plain string plus the component table.
     if matches!(ident.as_deref(), Some("Text")) {
-        return adapter("rich text needs its plain form");
+        return FieldOutcome::Conv(Conv::TextVal, "string".into());
     }
     if matches!(ident.as_deref(), Some("Compound" | "Value" | "Map")) {
-        return adapter("a compound needs the nbt table");
+        let ts = struct_ts(ident.as_deref().unwrap_or("?"));
+        return FieldOutcome::Conv(Conv::Struct, ts.into());
     }
     if let Some(inner_t) = option_inner(inner) {
         let inner_id = last_ident(inner_t);
         if matches!(inner_id.as_deref(), Some("Text")) {
-            return adapter("rich text needs its plain form");
+            return FieldOutcome::Conv(Conv::TextOpt, "string?".into());
         }
         if matches!(inner_id.as_deref(), Some("Compound" | "Value")) {
-            return adapter("a compound needs the nbt table");
+            let ts = struct_ts(inner_id.as_deref().unwrap_or("?"));
+            return FieldOutcome::Conv(Conv::Struct, format!("{ts}?"));
         }
     }
-    // Tuples never map to an event-table field.
+    // Tuples map by their elements: a sequence in order.
+    if matches!(inner, syn::Type::Tuple(_))
+        && let Some((key, ts)) = tuple_struct(inner)
+    {
+        let _ = key;
+        return FieldOutcome::Conv(Conv::Struct, ts);
+    }
     if matches!(inner, syn::Type::Tuple(_)) {
         return adapter("a tuple needs its table form");
     }
@@ -581,15 +601,26 @@ fn field_of(hook: &str, param: &str, ty: &syn::Type, host: Host, is_out: bool) -
                 return FieldOutcome::Conv(Conv::OptPlain, format!("{ts}?"));
             }
             Some("Direction") => {
-                return adapter("an optional direction needs its name");
+                let ts = struct_ts("Direction");
+                return FieldOutcome::Conv(Conv::Struct, format!("{ts}?"));
             }
             Some("Hand") => {
-                return adapter("an optional hand needs its name");
+                let ts = struct_ts("Hand");
+                return FieldOutcome::Conv(Conv::Struct, format!("{ts}?"));
             }
             Some("BlockPos") => {
                 return adapter("an optional pos needs its table form");
             }
-            _ => {}
+            _ => {
+                // Borrows keep their own arms below (`Option<&ItemStack>`
+                // seeds like an optional stack); only owned inners struct up.
+                if !matches!(inner_t, syn::Type::Reference(_))
+                    && let Some(key) = struct_key_of(inner_t)
+                {
+                    let ts = struct_ts_owned(&key);
+                    return FieldOutcome::Conv(Conv::Struct, format!("{ts}?"));
+                }
+            }
         }
         if let syn::Type::Array(array) = inner_t {
             let is_i32x3 = is_path(&array.elem, "i32")
@@ -633,14 +664,31 @@ fn field_of(hook: &str, param: &str, ty: &syn::Type, host: Host, is_out: bool) -
         Some("BlockPos") => FieldOutcome::Conv(Conv::PosStruct, "Vec3".into()),
         Some("BlockStateId") => match host {
             Host::Level | Host::LevelMut => FieldOutcome::Conv(Conv::StateLevel, "string".into()),
-            Host::GameMut => FieldOutcome::Conv(Conv::StateGame, "string".into()),
+            Host::GameMut | Host::GameRef => FieldOutcome::Conv(Conv::StateGame, "string".into()),
             _ => adapter("a block state needs a host to name it"),
         },
         Some("BlockId") => adapter("a block id needs its name"),
-        Some("Direction") => adapter("a direction needs its name"),
-        Some("Hand") => adapter("a hand needs its name"),
+        Some("Path" | "PathBuf") => FieldOutcome::Conv(Conv::PathStr, "string".into()),
+        Some("Direction" | "Hand" | "UseAnimation") => {
+            let ts = struct_ts(ident.as_deref().unwrap_or("?"));
+            FieldOutcome::Conv(Conv::Struct, ts.into())
+        }
         Some("ItemStack") if borrowed => FieldOutcome::Conv(Conv::Item, "Item".into()),
         Some("ItemStack") => FieldOutcome::Conv(Conv::Item, "Item".into()),
+        Some("ModBlockEntity" | "Mob") => FieldOutcome::Adapter(format!(
+            "{}: handle: a {} handle needs its own design",
+            hook,
+            ident.as_deref().unwrap_or("?")
+        )),
+        Some("ClientboundPlayPacket" | "ServerboundPlayPacket") => FieldOutcome::Adapter(format!(
+            "{hook}: protocol: raw packets need their own design"
+        )),
+        Some(id) if struct_key_of(inner).is_some() => {
+            let _ = id;
+            let key = struct_key_of(inner).unwrap_or_default();
+            let ts = struct_ts_owned(&key);
+            FieldOutcome::Conv(Conv::Struct, ts)
+        }
         _ => array_or_other_of(hook, param, ty, inner, borrowed, host, adapter, cannot),
     }
 }
@@ -746,12 +794,41 @@ fn mut_of(
     adapter: impl Fn(&str) -> FieldOutcome,
     cannot: impl Fn(&str) -> FieldOutcome,
 ) -> FieldOutcome {
+    // The pre-login gate: mods answer refusals through it, never by
+    // waiting on the Lua thread.
+    if let Some(arg) = single_generic_arg(elem, &["Receiver"])
+        && last_ident(arg).as_deref() == Some("Receiver")
+    {
+        return FieldOutcome::Conv(Conv::PreLogin, "{ count: number, refuse: string? }".into());
+    }
+    // The pre-login gate travels as `&mut Vec<Receiver<..>>`.
+    if single_generic_arg(elem, &["Vec"])
+        .is_some_and(|e| last_ident(e).as_deref() == Some("Receiver"))
+    {
+        return FieldOutcome::Conv(Conv::PreLogin, "{ count: number, refuse: string? }".into());
+    }
     if mentions_stack(elem) {
+        if let Some(key) = struct_key_of(elem) {
+            let ts = struct_ts(&key);
+            return FieldOutcome::Conv(Conv::Struct, ts.into());
+        }
         return adapter(if is_out {
             "a stack out needs its table form"
         } else {
             "a mutable stack needs its table form"
         });
+    }
+    if is_path(elem, "Text") {
+        return FieldOutcome::Conv(Conv::TextVal, "string".into());
+    }
+    if let Some(opt) = option_inner(elem)
+        && last_ident(opt).as_deref() == Some("Text")
+    {
+        return FieldOutcome::Conv(Conv::TextOpt, "string?".into());
+    }
+    if let Some(key) = struct_key_of(elem) {
+        let ts = struct_ts(&key);
+        return FieldOutcome::Conv(Conv::Struct, ts.into());
     }
     if let Some(why) = wrapped_reason(elem) {
         return adapter(why);
@@ -778,7 +855,7 @@ fn mut_of(
             _ => {}
         }
     }
-    if is_vec_of(elem, "String") {
+    if is_vec_of(elem, "String") || is_vec_of_str_ref(elem) {
         return FieldOutcome::Conv(Conv::MutStrVec, "{ string }".into());
     }
     if let syn::Type::Array(array) = elem {
@@ -842,7 +919,19 @@ fn array_or_other_of(
                 return FieldOutcome::Conv(Conv::Pair, "Vec2".into());
             }
             (2, "i32") => {
-                return adapter("a 2D int array needs its table form");
+                return FieldOutcome::Conv(Conv::Struct, struct_ts("[i32;2]").into());
+            }
+            (3, "bool") => {
+                return FieldOutcome::Conv(Conv::Struct, struct_ts("[bool;3]").into());
+            }
+            (2, "usize") => {
+                return FieldOutcome::Conv(Conv::Struct, struct_ts("[usize;2]").into());
+            }
+            _ if len == 8
+                && let syn::Type::Array(inner) = &*array.elem
+                && is_path(&inner.elem, "f32") =>
+            {
+                return FieldOutcome::Conv(Conv::Struct, struct_ts("[[f32;4];8]").into());
             }
             _ => return adapter("an array needs its table form"),
         }
@@ -856,7 +945,11 @@ fn array_or_other_of(
             return FieldOutcome::Conv(Conv::StrSeq, "{ string }".into());
         }
         if is_path(&slice.elem, "u8") {
-            return adapter("bytes need their table form");
+            return FieldOutcome::Conv(Conv::Bytes, "string".into());
+        }
+        if let Some(key) = struct_key_of(inner) {
+            let ts = struct_ts_owned(&key);
+            return FieldOutcome::Conv(Conv::Struct, ts);
         }
         if is_path(&slice.elem, "BlockPos") {
             return adapter("a block list needs its table form");
@@ -881,6 +974,1180 @@ fn single_generic_arg<'t>(ty: &'t syn::Type, names: &[&str]) -> Option<&'t syn::
         return Some(t);
     }
     None
+}
+
+/// The `LuaStruct` key of a native type, when the runtime converts it: plain
+/// structs and tuples by Rust name, fieldless enums likewise, fixed arrays
+/// and the JSON types by shape. Anything else (render borrows, handles, the
+/// mesh a test cannot read) stays an adapter or cannot.
+fn struct_key_of(ty: &syn::Type) -> Option<String> {
+    const STRUCTS: &[&str] = &[
+        "Duration",
+        "SocketAddr",
+        "Direction",
+        "Hand",
+        "UseAnimation",
+        "Corner",
+        "NativeFluidAction",
+        "NativeConfigKind",
+        "Text",
+        "Compound",
+        "Value",
+        "Map",
+        "ItemStack",
+        "BlockPos",
+        "LevelDimension",
+        "NativeZoom",
+        "NativeMinimap",
+        "NativeMod",
+        "NativeScreen",
+        "ModContainer",
+        "ModFluidTanks",
+        "ModEnergyBuffer",
+        "ItemEnergyBuffer",
+        "NativeMapInfo",
+        "NativeMapDecoration",
+        "NativeDataMapType",
+        "NativeConfig",
+        "NativeConfigFile",
+        "SpawnEntry",
+        "RecipeBookCategory",
+        "NativeReloadListener",
+        "Suggestion",
+        "ItemCost",
+        "MerchantOffer",
+        "AnvilCraft",
+        "NativeNoteBlockChange",
+        "NativeFluidStack",
+        "NativeFluidDrain",
+        "NativeFluidTankView",
+        "Music",
+        "MusicLayer",
+        "SoundPlayback",
+        "TickSpan",
+        "BlockProperties",
+        "PlacementContext",
+        "FluidState",
+    ];
+    const ARRAYS: &[&str] = &[
+        "[i32;2]",
+        "[bool;3]",
+        "[usize;2]",
+        "[[f32;4];8]",
+        "[f32;2]",
+        "[i32;3]",
+        "[f64;3]",
+    ];
+    const OPT_STRUCTS: &[&str] = &[
+        "Music",
+        "NativeZoom",
+        "NativeMinimap",
+        "NativeScreen",
+        "ModContainer",
+        "ModFluidTanks",
+        "ModEnergyBuffer",
+        "ItemEnergyBuffer",
+        "ItemStack",
+        "ItemCost",
+        "NativeFluidStack",
+        "[f64;3]",
+        "Direction",
+    ];
+    if let Some(inner) = option_inner(ty) {
+        let last = last_ident(inner);
+        let id = last.as_deref().unwrap_or_default();
+        if OPT_STRUCTS.contains(&id) {
+            return Some(format!("Option<{id}>"));
+        }
+        if let Some((key, _)) = tuple_struct(inner) {
+            return Some(format!("Option<{key}>"));
+        }
+        // A named tuple alias: the seed and sample use the tuple form.
+        if last_ident(inner).as_deref() == Some("NativeDispensed") {
+            return Some("Option<(Option<ItemStack>,i32)>".to_owned());
+        }
+        if let syn::Type::Array(_) = inner {
+            let key = ty_str(inner).replace(' ', "");
+            if ARRAYS.contains(&key.as_str()) {
+                return Some(format!("Option<{key}>"));
+            }
+        }
+        if let syn::Type::Path(_) = inner
+            && let Some(key) = struct_key_of(inner)
+            && key.starts_with("Vec<")
+        {
+            return Some(format!("Option<{key}>"));
+        }
+        return None;
+    }
+    if let syn::Type::Array(_) = ty {
+        let key = ty_str(ty).replace(' ', "");
+        if ARRAYS.contains(&key.as_str()) {
+            return Some(key);
+        }
+        return None;
+    }
+    if let syn::Type::Slice(s) = ty {
+        if is_path(&s.elem, "u8") || is_path(&s.elem, "BlockPos") || is_path(&s.elem, "TickSpan") {
+            return Some(format!("&[{}]", ty_str(&s.elem).replace(' ', "")));
+        }
+        if let syn::Type::Array(a) = &*s.elem
+            && is_path(&a.elem, "i32")
+            && matches!(&a.len, syn::Expr::Lit(l) if matches!(&l.lit, syn::Lit::Int(n) if n.base10_digits() == "3"))
+        {
+            return Some("&[[i32;3]]".to_owned());
+        }
+        if let Some((key, _)) = tuple_struct(&s.elem) {
+            return Some(format!("&[{key}]"));
+        }
+        return None;
+    }
+    if let syn::Type::Reference(r) = ty {
+        if r.lifetime.as_ref().is_some_and(|l| l.ident == "static") && is_path(&r.elem, "str") {
+            return Some("&'static str".to_owned());
+        }
+        return struct_key_of(&r.elem);
+    }
+    if let Some((key, _)) = tuple_struct(ty) {
+        return Some(key);
+    }
+    if let syn::Type::Path(_) = ty
+        && let Some(id) = last_ident(ty)
+    {
+        if STRUCTS.contains(&id.as_str()) {
+            return Some(id);
+        }
+        // A named tuple alias: the seed and sample use the tuple form.
+        if id == "NativeDispensed" {
+            return Some("(Option<ItemStack>,i32)".to_owned());
+        }
+        if id == "Vec"
+            && let Some(elem) = single_generic_arg(ty, &["Vec"])
+            && let Some(key) = struct_key_of(elem)
+            && !matches!(key.as_str(), "String" | "Option<String>" | "&'static str")
+        {
+            return Some(format!("Vec<{key}>"));
+        }
+    }
+    None
+}
+
+/// The `.d.lua` type of a `LuaStruct` key.
+fn struct_ts(key: &str) -> &'static str {
+    match key {
+        "Duration" => "number",
+        "SocketAddr" => "string",
+        "&'static str" => "string",
+        "Direction" => "\"down\" | \"up\" | \"north\" | \"south\" | \"west\" | \"east\"",
+        "Option<Direction>" => "\"down\" | \"up\" | \"north\" | \"south\" | \"west\" | \"east\"?",
+        "Hand" => "\"main\" | \"off\"",
+        "UseAnimation" => {
+            "\"none\" | \"eat\" | \"drink\" | \"block\" | \"bow\" | \"trident\" | \"crossbow\" | \"spyglass\" | \"toot_horn\" | \"brush\" | \"bundle\" | \"spear\""
+        }
+        "Corner" => "\"top_left\" | \"top_right\" | \"bottom_left\" | \"bottom_right\"",
+        "NativeFluidAction" => "\"simulate\" | \"execute\"",
+        "NativeConfigKind" => "\"client\" | \"common\" | \"server\"",
+        "Text" => "{ text: string, component: Component? }",
+        "Compound" => "Data",
+        "Value" | "Map" => "Data",
+        "ItemStack" => "Item",
+        "Option<ItemStack>" => "Item?",
+        "ItemCost" => "{ stack: Item }",
+        "Option<ItemCost>" => "{ stack: Item }?",
+        "BlockPos" => "Vec3",
+        "LevelDimension" => "string",
+        "NativeZoom" => "{ factor: number, smooth: boolean, turn: number }",
+        "NativeMinimap" => {
+            "{ corner: string, size: number, blocks_per_pixel: number, rotate: boolean, round: boolean }"
+        }
+        "NativeMod" => {
+            "{ id: string, title: string, description: string, keys: {{ key: string, label: string, default: string }} }"
+        }
+        "NativeScreen" => {
+            "{ width: number, height: number, slots: {{ x: number, y: number }?}, inventory_y: number, inventory_x: number, own_labels: boolean, own_background: boolean }"
+        }
+        "ModContainer" => {
+            "{ slots: number, faces: {{ number }}, inputs: { number }, outputs: { number }, menu: string? }"
+        }
+        "ModFluidTanks" => {
+            "{ tanks: { number }, faces: {{ number }}, inputs: { number }, outputs: { number } }"
+        }
+        "ModEnergyBuffer" => {
+            "{ capacity: number, max_insert: number, max_extract: number, insert_faces: { boolean }, extract_faces: { boolean } }"
+        }
+        "ItemEnergyBuffer" => "{ capacity: number, max_insert: number, max_extract: number }",
+        "NativeMapInfo" => {
+            "{ id: number, center: { x: number, z: number }, scale: number, dimension: string, locked: boolean, in_frame: boolean }"
+        }
+        "NativeMapDecoration" => {
+            "{ sprite: string, x: number, y: number, rot: number, shown_on_frame: boolean }"
+        }
+        "NativeDataMapType" => "{ id: string, registry: string }",
+        "NativeConfig" => "{ mod_id: string, kind: string, file: string, default: string }",
+        "NativeConfigFile" => {
+            "{ mod_id: string, kind: string, file: string, path: string, text: string }"
+        }
+        "SpawnEntry" => {
+            "{ entity: string, weight: number, min: number, max: number, constant: boolean }"
+        }
+        "RecipeBookCategory" => "{ id: string, recipe_type: string, icon: string }",
+        "NativeReloadListener" => "{ id: string, folder: string }",
+        "Suggestion" => {
+            "{ range: { start: number, end: number }, text: string, tooltip: string?, int_value: number? }"
+        }
+        "MerchantOffer" => {
+            "{ base_cost_a: { stack: Item }, cost_b: { stack: Item }?, result: Item, uses: number, max_uses: number, reward_exp: boolean, special_price_diff: number, demand: number, price_multiplier: number, xp: number }"
+        }
+        "AnvilCraft" => "{ left: Item?, right: Item?, output: Item }",
+        "NativeNoteBlockChange" => {
+            "{ dimension: string, pos: Vec3, instrument: string, old_note: number }"
+        }
+        "NativeFluidStack" => "{ fluid: string, amount: number, components: Data }",
+        "Option<NativeFluidStack>" => "{ fluid: string, amount: number, components: Data }?",
+        "NativeFluidDrain" => {
+            "{ kind: string, amount: number?, stack: { fluid: string, amount: number, components: Data }? }"
+        }
+        "NativeFluidTankView" => {
+            "{ tank: number, content: { fluid: string, amount: number, components: Data }?, capacity: number, can_fill: boolean, can_drain: boolean }"
+        }
+        "Music" => {
+            "{ sound: string, min_delay: number, max_delay: number, replace_current_music: boolean }"
+        }
+        "Option<Music>" => {
+            "{ sound: string, min_delay: number, max_delay: number, replace_current_music: boolean }?"
+        }
+        "MusicLayer" => "{ sound: string, volume: number }",
+        "SoundPlayback" => {
+            "{ instance: number, identifier: string, source: number, position: Vec3, relative: boolean, starting: boolean }"
+        }
+        "TickSpan" => "{ name: string, ms: number, cpu_ms: number, depth: number }",
+        "BlockProperties" => "{ [string]: string }",
+        "PlacementContext" => {
+            "{ pos: Vec3, hit_pos: Vec3, face: string, hit: Vec3, inside: boolean, yaw: number, pitch: number, sneaking: boolean, item: string, replace_clicked: boolean }"
+        }
+        "FluidState" => "{ kind: string, amount: number, falling: boolean }",
+        "Option<[f64;3]>" => "Vec3?",
+        "Option<[f32;2]>" => "Vec2?",
+        "Option<(i32,u32)>" => "{ value: number, max: number }?",
+        "NativeDispensed" | "(Option<ItemStack>,i32)" => "{ remainder: Item?, event: number }",
+        "[i32;2]" => "{ x: number, z: number }",
+        "[bool;3]" => "{ boolean }",
+        "[usize;2]" => "{ start: number, end: number }",
+        "(usize,usize)" => "{ start: number, end: number }",
+        "[[f32;4];8]" => "{ { x: number, y: number, z: number, w: number } }",
+        "[i32;3]" | "[f64;3]" | "[f32;3]" => "Vec3",
+        "[f32;2]" => "Vec2",
+        "(Text,u32)" => "{ text: string, component: Component?, count: number }",
+        "(i32,u32)" => "{ value: number, max: number }",
+        "(i32,i32)" => "{ min: number, max: number }",
+        "(String,Value)" => "{ path: string, data: Data }",
+        "(String,Compound)" => "{ name: string, tag: Data }",
+        "(&'staticstr,&'staticstr)" => "{ a: string, b: string }",
+        _ => "any",
+    }
+}
+
+/// The smoke-test seed, handler literal, edited pair and leaf asserts of a
+/// `LuaStruct` key: what dispatch builds, what the handler sees, what the
+/// handler writes back, and what the Rust side checks.
+#[derive(Clone)]
+struct StructSample {
+    rust: String,
+    lua: String,
+    write_rust: Option<String>,
+    write_lua: Option<String>,
+    leaves: Vec<(String, String)>,
+}
+
+impl StructSample {
+    fn clone_write(&self) -> Option<(String, String)> {
+        match (&self.write_rust, &self.write_lua) {
+            (Some(rust), Some(lua)) => Some((rust.clone(), lua.clone())),
+            _ => None,
+        }
+    }
+}
+
+/// Two elements for a sequence sample: the seeds at `n` and `n + 1`, the
+/// write at `n + 50`. Slices seed `&[..]`; vecs seed `vec![..]`.
+fn struct_vec_sample(inner: &str, field: &str, n: usize, borrowed: bool) -> StructSample {
+    let e1 =
+        struct_sample(inner, field, n).unwrap_or_else(|| panic!("no struct sample for {inner}"));
+    let e2 = struct_sample(inner, field, n + 1)
+        .unwrap_or_else(|| panic!("no struct sample for {inner}"));
+    let e3 = struct_sample(inner, field, n + 50)
+        .unwrap_or_else(|| panic!("no struct sample for {inner}"));
+    let rust = if borrowed {
+        format!("&[{}, {}]", e1.rust, e2.rust)
+    } else {
+        format!("vec![{}, {}]", e1.rust, e2.rust)
+    };
+    let mut leaves = Vec::new();
+    for (suffix, value) in &e1.leaves {
+        leaves.push((format!("[1]{suffix}"), value.clone()));
+    }
+    for (suffix, value) in &e2.leaves {
+        leaves.push((format!("[2]{suffix}"), value.clone()));
+    }
+    // The write-back element prefers its edited pair (a tooltip line
+    // reads back as the spans form, not the seed's literal); an
+    // option's clear (`None`) is a field write, not an element.
+    let edited = match &e3.write_rust {
+        Some(rust) if rust != "None" => e3.write_lua.clone().map(|lua| (rust.clone(), lua)),
+        _ => None,
+    };
+    let (wrust, wlua) = edited.unwrap_or((e3.rust, e3.lua));
+    StructSample {
+        rust,
+        lua: format!("{{ {}, {} }}", e1.lua, e2.lua),
+        write_rust: Some(format!("vec![{wrust}]")),
+        write_lua: Some(format!("{{ {wlua} }}")),
+        leaves,
+    }
+}
+
+fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
+    if let Some(inner) = key
+        .strip_prefix("Option<")
+        .and_then(|k| k.strip_suffix('>'))
+    {
+        let s = struct_sample(inner, field, n)?;
+        return Some(StructSample {
+            rust: format!("Some({})", s.rust),
+            lua: s.lua,
+            write_rust: Some("None".into()),
+            write_lua: Some("nil".into()),
+            leaves: s.leaves,
+        });
+    }
+    if let Some(inner) = key.strip_prefix("Vec<").and_then(|k| k.strip_suffix('>')) {
+        return Some(struct_vec_sample(inner, field, n, false));
+    }
+    if let Some(inner) = key.strip_prefix("&[").and_then(|k| k.strip_suffix(']')) {
+        return Some(struct_vec_sample(inner, field, n, true));
+    }
+    let mutable = |rust: String, lua: String, write_rust: String, write_lua: String| StructSample {
+        rust,
+        lua,
+        write_rust: Some(write_rust),
+        write_lua: Some(write_lua),
+        leaves: Vec::new(),
+    };
+    let fixed = |rust: String, lua: String, leaves: Vec<(String, String)>| StructSample {
+        rust,
+        lua,
+        write_rust: None,
+        write_lua: None,
+        leaves,
+    };
+    let leaf = |suffix: &str, value: String| (format!(".{suffix}"), value);
+    let item = |count: i32, damage: i32| {
+        format!(
+            "ItemStack {{ item: \"test:{field}\".into(), count: {count}, damage: {damage}, extra: None }}"
+        )
+    };
+    let item_lua = format!(
+        "{{ id = \"test:{field}\", count = {}, damage = {n} }}",
+        1 + n as i32
+    );
+    let text_lua =
+        |plain: &str| format!("{{ text = \"{plain}\", component = {{ text = \"{plain}\" }} }}",);
+    let s = match key {
+        "Duration" => fixed(
+            format!("Duration::from_secs_f64({})", 1.5 + n as f64),
+            format!("{}", 1.5 + n as f64),
+            vec![],
+        ),
+        "SocketAddr" => fixed(
+            format!("\"127.0.0.1:{}\".parse().unwrap()", 25565 + n),
+            format!("\"127.0.0.1:{}\"", 25565 + n),
+            vec![],
+        ),
+        "Direction" => {
+            let names = ["down", "up", "north", "south", "west", "east"];
+            let rusts = ["Down", "Up", "North", "South", "West", "East"];
+            let i = n % 6;
+            fixed(
+                format!("Direction::{}", rusts[i]),
+                format!("\"{}\"", names[i]),
+                vec![],
+            )
+        }
+        "Hand" => fixed(
+            if n.is_multiple_of(2) {
+                "Hand::Main".into()
+            } else {
+                "Hand::Off".into()
+            },
+            if n.is_multiple_of(2) {
+                "\"main\"".into()
+            } else {
+                "\"off\"".into()
+            },
+            vec![],
+        ),
+        "Corner" => {
+            let names = ["top_left", "top_right", "bottom_left", "bottom_right"];
+            let rusts = ["TopLeft", "TopRight", "BottomLeft", "BottomRight"];
+            let i = n % 4;
+            fixed(
+                format!("Corner::{}", rusts[i]),
+                format!("\"{}\"", names[i]),
+                vec![],
+            )
+        }
+        "NativeFluidAction" => {
+            if n.is_multiple_of(2) {
+                fixed(
+                    "NativeFluidAction::Simulate".into(),
+                    "\"simulate\"".into(),
+                    vec![],
+                )
+            } else {
+                fixed(
+                    "NativeFluidAction::Execute".into(),
+                    "\"execute\"".into(),
+                    vec![],
+                )
+            }
+        }
+        "NativeConfigKind" => {
+            let names = ["client", "common", "server"];
+            let rusts = ["Client", "Common", "Server"];
+            let i = n % 3;
+            fixed(
+                format!("NativeConfigKind::{}", rusts[i]),
+                format!("\"{}\"", names[i]),
+                vec![],
+            )
+        }
+        "UseAnimation" => mutable(
+            "UseAnimation::Block".into(),
+            "\"block\"".into(),
+            "UseAnimation::Drink".into(),
+            "\"drink\"".into(),
+        ),
+        "Text" => {
+            // The write-back parses the component table, so the Rust side
+            // is the spans form, not the seed's literal.
+            let mut s = mutable(
+                format!("Text::literal(\"test:line{n}\")"),
+                text_lua(&format!("test:line{n}")),
+                format!(
+                    "Text::empty().with_component(serde_json::json!({{ \"text\": \"test:line{n}\" }}))"
+                ),
+                text_lua(&format!("test:line{n}")),
+            );
+            s.leaves = vec![leaf("text", format!("\"test:line{n}\""))];
+            s
+        }
+        "Compound" => fixed(
+            format!(
+                "Compound::from([(\"testkey\".into(), Tag::Int({}))])",
+                7 + n as i32
+            ),
+            format!("{{ testkey = {} }}", 7 + n as i32),
+            vec![leaf("testkey", format!("{}", 7 + n as i32))],
+        ),
+        "Value" => mutable(
+            format!("serde_json::json!({{ \"testkey\": {} }})", 7 + n as i32),
+            format!("{{ testkey = {} }}", 7 + n as i32),
+            format!("serde_json::json!({{ \"testkey\": {} }})", 50 + n as i32),
+            format!("{{ testkey = {} }}", 50 + n as i32),
+        ),
+        "Map" => mutable(
+            format!(
+                "[(\"testkey\".to_owned(), serde_json::json!({}))].into_iter().collect()",
+                7 + n as i32
+            ),
+            format!("{{ testkey = {} }}", 7 + n as i32),
+            format!(
+                "[(\"testkey\".to_owned(), serde_json::json!({}))].into_iter().collect()",
+                50 + n as i32
+            ),
+            format!("{{ testkey = {} }}", 50 + n as i32),
+        ),
+        "ItemStack" => {
+            let mut s = mutable(
+                item(1 + n as i32, n as i32),
+                item_lua.clone(),
+                item(50 + n as i32, n as i32),
+                format!(
+                    "{{ id = \"test:{field}\", count = {}, damage = {n} }}",
+                    50 + n as i32
+                ),
+            );
+            s.leaves = vec![leaf("id", format!("\"test:{field}\""))];
+            s
+        }
+        "Option<ItemStack>" => mutable(
+            format!("Some({})", item(1, 0)),
+            format!("{{ id = \"test:{field}\", count = 1, damage = 0 }}"),
+            "None".into(),
+            "nil".into(),
+        ),
+        "[f64;3]" => {
+            let mut s = mutable(
+                format!("[{:?}, 2.0, 3.0]", 1.0 + n as f64),
+                format!("{{ x = {:?}, y = 2.0, z = 3.0 }}", 1.0 + n as f64),
+                format!("[{:?}, 12.0, 13.0]", 11.0 + n as f64),
+                format!("{{ x = {:?}, y = 12.0, z = 13.0 }}", 11.0 + n as f64),
+            );
+            s.leaves = vec![
+                leaf("x", format!("{:?}", 1.0 + n as f64)),
+                leaf("y", "2.0".into()),
+                leaf("z", "3.0".into()),
+            ];
+            s
+        }
+        "[f32;3]" => {
+            let mut s = mutable(
+                format!("[{:?}, 2.0, 3.0]", 1.0 + n as f32),
+                format!("{{ x = {:?}, y = 2.0, z = 3.0 }}", 1.0 + n as f32),
+                format!("[{:?}, 12.0, 13.0]", 11.0 + n as f32),
+                format!("{{ x = {:?}, y = 12.0, z = 13.0 }}", 11.0 + n as f32),
+            );
+            s.leaves = vec![
+                leaf("x", format!("{:?}", 1.0 + n as f32)),
+                leaf("y", "2.0".into()),
+                leaf("z", "3.0".into()),
+            ];
+            s
+        }
+        "[f32;2]" => {
+            let mut s = mutable(
+                format!("[{:?}, 2.0]", 1.0 + n as f32),
+                format!("{{ x = {:?}, y = 2.0 }}", 1.0 + n as f32),
+                format!("[{:?}, 12.0]", 11.0 + n as f32),
+                format!("{{ x = {:?}, y = 12.0 }}", 11.0 + n as f32),
+            );
+            s.leaves = vec![
+                leaf("x", format!("{:?}", 1.0 + n as f32)),
+                leaf("y", "2.0".into()),
+            ];
+            s
+        }
+        "Option<[f64;3]>" => mutable(
+            format!("Some([{:?}, 2.0, 3.0])", 1.0 + n as f64),
+            format!("{{ x = {:?}, y = 2.0, z = 3.0 }}", 1.0 + n as f64),
+            "None".into(),
+            "nil".into(),
+        ),
+        "[i32;2]" => fixed(
+            format!("[{}, {}]", 3 + n as i32, -5 - n as i32),
+            format!("{{ x = {}, z = {} }}", 3 + n as i32, -5 - n as i32),
+            vec![leaf("x", format!("{}", 3 + n as i32))],
+        ),
+        "[bool;3]" => fixed(
+            format!("[{}, {}, {}]", n.is_multiple_of(2), n % 2 == 1, false),
+            format!("{{ {}, {}, false }}", n.is_multiple_of(2), n % 2 == 1),
+            vec![],
+        ),
+        "[usize;2]" => fixed(
+            format!("[{}, {}]", 7 + n, 12 + n),
+            format!("{{ start = {}, [\"end\"] = {} }}", 7 + n, 12 + n),
+            vec![leaf("start", format!("{}", 7 + n))],
+        ),
+        "(usize,usize)" => fixed(
+            format!("({}, {})", 7 + n, 12 + n),
+            format!("{{ start = {}, [\"end\"] = {} }}", 7 + n, 12 + n),
+            vec![leaf("start", format!("{}", 7 + n))],
+        ),
+        "[[f32;4];8]" => mutable(
+            format!("[[{:?}, 2.5, 3.5, 4.5]; 8]", 1.5 + n as f32),
+            format!(
+                "{{ {}; {}; {}; {}; {}; {}; {}; {} }}",
+                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
+                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
+                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
+                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
+                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
+                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
+                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
+                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }"
+            )
+            .replace("1.5", &format!("{:?}", 1.5 + n as f32)),
+            format!("[[{:?}, 2.5, 3.5, 4.5]; 8]", 11.5 + n as f32),
+            format!(
+                "{{ {}; {}; {}; {}; {}; {}; {}; {} }}",
+                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }",
+                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }",
+                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }",
+                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }",
+                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }",
+                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }",
+                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }",
+                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }"
+            )
+            .replace("11.5", &format!("{:?}", 11.5 + n as f32)),
+        ),
+        "[i32;3]" => {
+            let mut s = mutable(
+                format!("[{}, {}, {}]", 1 + n as i32, 2 + n as i32, 3 + n as i32),
+                format!(
+                    "{{ x = {}, y = {}, z = {} }}",
+                    1 + n as i32,
+                    2 + n as i32,
+                    3 + n as i32
+                ),
+                format!("[{}, {}, {}]", 11 + n as i32, 12 + n as i32, 13 + n as i32),
+                format!(
+                    "{{ x = {}, y = {}, z = {} }}",
+                    11 + n as i32,
+                    12 + n as i32,
+                    13 + n as i32
+                ),
+            );
+            s.leaves = vec![
+                leaf("x", format!("{}", 1 + n as i32)),
+                leaf("y", format!("{}", 2 + n as i32)),
+                leaf("z", format!("{}", 3 + n as i32)),
+            ];
+            s
+        }
+        "BlockPos" => fixed(
+            format!(
+                "BlockPos::new({}, {}, {})",
+                1 + n as i32,
+                2 + n as i32,
+                3 + n as i32
+            ),
+            format!(
+                "{{ x = {}, y = {}, z = {} }}",
+                1 + n as i32,
+                2 + n as i32,
+                3 + n as i32
+            ),
+            vec![leaf("x", format!("{}", 1 + n as i32))],
+        ),
+        "&'static str" => fixed(
+            format!("\"test:seed{n}\""),
+            format!("\"test:seed{n}\""),
+            vec![],
+        ),
+        "(Text,u32)" => {
+            // The write-back parses the component table, so the Rust side
+            // is the spans form, not the seed's literal.
+            let spans = |n: usize| {
+                format!(
+                    "Text::empty().with_component(serde_json::json!({{ \"text\": \"test:line{n}\" }}))"
+                )
+            };
+            // (`struct_vec_sample` shifts `n` by 50 for the write, so the
+            // write pair below uses the same `n` as the seed pair.)
+            let mut s = mutable(
+                format!("(Text::literal(\"test:line{n}\"), {})", 2 + n as u32),
+                format!(
+                    "{{ text = \"test:line{n}\", component = {{ text = \"test:line{n}\" }}, count = {} }}",
+                    2 + n as u32
+                ),
+                format!("({}, {})", spans(n), 2 + n as u32),
+                format!(
+                    "{{ text = \"test:line{n}\", component = {{ text = \"test:line{n}\" }}, count = {} }}",
+                    2 + n as u32
+                ),
+            );
+            s.leaves = vec![
+                leaf("text", format!("\"test:line{n}\"")),
+                leaf("count", format!("{}", 2 + n as u32)),
+            ];
+            s
+        }
+        "(i32,u32)" => fixed(
+            format!("({}, 2)", 7 + n),
+            format!("{{ value = {}, max = 2 }}", 7 + n as i32),
+            vec![leaf("value", format!("{}", 7 + n as i32))],
+        ),
+        "(i32,i32)" => fixed(
+            format!("({}, {})", 1 + n, 2 + n),
+            format!("{{ min = {}, max = {} }}", 1 + n as i32, 2 + n as i32),
+            vec![leaf("min", format!("{}", 1 + n as i32))],
+        ),
+        "NativeDispensed" | "(Option<ItemStack>,i32)" => fixed(
+            format!("(Some({}), {})", item(1, 0), 2000 + n),
+            format!(
+                "{{ remainder = {{ id = \"test:{field}\", count = 1, damage = 0 }}, event = {} }}",
+                2000 + n
+            ),
+            vec![leaf("event", format!("{}", 2000 + n))],
+        ),
+        "(String,Value)" => fixed(
+            format!(
+                "(\"test:path{n}\".to_owned(), serde_json::json!({}))",
+                7 + n as i32
+            ),
+            format!("{{ path = \"test:path{n}\", data = {} }}", 7 + n as i32),
+            vec![leaf("path", format!("\"test:path{n}\""))],
+        ),
+        "(String,Compound)" => fixed(
+            format!(
+                "(\"test:entity{n}\".to_owned(), Compound::from([(\"testkey\".into(), Tag::Int({}))]))",
+                7 + n as i32
+            ),
+            format!(
+                "{{ name = \"test:entity{n}\", tag = {{ testkey = {} }} }}",
+                7 + n as i32
+            ),
+            vec![leaf("name", format!("\"test:entity{n}\""))],
+        ),
+        "(&'staticstr,&'staticstr)" | "EmissiveLayer" => fixed(
+            format!("(\"test:a{n}\", \"test:b{n}\")"),
+            format!("{{ a = \"test:a{n}\", b = \"test:b{n}\" }}"),
+            vec![leaf("a", format!("\"test:a{n}\""))],
+        ),
+        "NativeZoom" => fixed(
+            format!(
+                "NativeZoom {{ factor: {:?}, smooth: {}, turn: {:?} }}",
+                1.5 + n as f32,
+                n.is_multiple_of(2),
+                2.5
+            ),
+            format!(
+                "{{ factor = {:?}, smooth = {}, turn = 2.5 }}",
+                1.5 + n as f32,
+                n.is_multiple_of(2)
+            ),
+            vec![leaf("factor", format!("{:?}", 1.5 + n as f32))],
+        ),
+        "NativeMinimap" => fixed(
+            format!(
+                "NativeMinimap {{ corner: Corner::TopLeft, size: {:?}, blocks_per_pixel: {:?}, rotate: {}, round: {} }}",
+                64.0 + n as f32,
+                1.0,
+                n.is_multiple_of(2),
+                n % 2 == 1
+            ),
+            format!(
+                "{{ corner = \"top_left\", size = {:?}, blocks_per_pixel = 1.0, rotate = {}, round = {} }}",
+                64.0 + n as f32,
+                n.is_multiple_of(2),
+                n % 2 == 1
+            ),
+            vec![leaf("corner", "\"top_left\"".into())],
+        ),
+        "NativeMod" => fixed(
+            format!(
+                "NativeMod {{ id: \"test:mod{n}\".into(), title: \"test:title{n}\".into(), description: \"test:desc{n}\".into(), keys: vec![[\"test:key{n}\".into(), \"test:label{n}\".into(), \"test:default{n}\".into()]] }}"
+            ),
+            format!(
+                "{{ id = \"test:mod{n}\", title = \"test:title{n}\", description = \"test:desc{n}\", keys = {{ {{ key = \"test:key{n}\", label = \"test:label{n}\", default = \"test:default{n}\" }} }} }}"
+            ),
+            vec![leaf("id", format!("\"test:mod{n}\""))],
+        ),
+        "NativeScreen" => fixed(
+            format!(
+                "NativeScreen {{ width: {:?}, height: {:?}, slots: vec![Some([1.0, 2.0]), None], inventory_y: {:?}, inventory_x: {:?}, own_labels: {}, own_background: {} }}",
+                100.0 + n as f32,
+                50.0,
+                10.0,
+                20.0,
+                n.is_multiple_of(2),
+                n % 2 == 1
+            ),
+            format!(
+                "{{ width = {:?}, height = 50.0, slots = {{ {{ x = 1.0, y = 2.0 }}, false }}, inventory_y = 10.0, inventory_x = 20.0, own_labels = {}, own_background = {} }}",
+                100.0 + n as f32,
+                n.is_multiple_of(2),
+                n % 2 == 1
+            ),
+            vec![leaf("width", format!("{:?}", 100.0 + n as f32))],
+        ),
+        "ModContainer" => fixed(
+            format!(
+                "ModContainer {{ slots: {}, faces: [vec![0], vec![], vec![], vec![], vec![], vec![]], inputs: vec![0], outputs: vec![], menu: None }}",
+                9 + n
+            ),
+            format!(
+                "{{ slots = {}, faces = {{ {{ 0 }}, {{}}, {{}}, {{}}, {{}}, {{}} }}, inputs = {{ 0 }}, outputs = {{}}, menu = nil }}",
+                9 + n
+            ),
+            vec![leaf("slots", format!("{}", 9 + n))],
+        ),
+        "ModFluidTanks" => fixed(
+            format!(
+                "ModFluidTanks {{ tanks: vec![{}], faces: [vec![0], vec![], vec![], vec![], vec![], vec![]], inputs: vec![0], outputs: vec![] }}",
+                1000 + n as i32
+            ),
+            format!(
+                "{{ tanks = {{ {} }}, faces = {{ {{ 0 }}, {{}}, {{}}, {{}}, {{}}, {{}} }}, inputs = {{ 0 }}, outputs = {{}} }}",
+                1000 + n as i32
+            ),
+            vec![],
+        ),
+        "ModEnergyBuffer" => fixed(
+            format!(
+                "ModEnergyBuffer {{ capacity: {}, max_insert: {}, max_extract: {}, insert_faces: [true, false, false, false, false, false], extract_faces: [false; 6] }}",
+                1000 + n as i32,
+                100 + n as i32,
+                100 + n as i32
+            ),
+            format!(
+                "{{ capacity = {}, max_insert = {}, max_extract = {}, insert_faces = {{ true, false, false, false, false, false }}, extract_faces = {{ false, false, false, false, false, false }} }}",
+                1000 + n as i32,
+                100 + n as i32,
+                100 + n as i32
+            ),
+            vec![],
+        ),
+        "ItemEnergyBuffer" => fixed(
+            format!(
+                "ItemEnergyBuffer {{ capacity: {}, max_insert: {}, max_extract: {} }}",
+                1000 + n as i32,
+                100 + n as i32,
+                100 + n as i32
+            ),
+            format!(
+                "{{ capacity = {}, max_insert = {}, max_extract = {} }}",
+                1000 + n as i32,
+                100 + n as i32,
+                100 + n as i32
+            ),
+            vec![],
+        ),
+        "NativeMapInfo" => fixed(
+            format!(
+                "NativeMapInfo {{ id: {}, center: [{}, {}], scale: 0, dimension: \"minecraft:overworld\", locked: {}, in_frame: {} }}",
+                7 + n as i32,
+                3 + n as i32,
+                -5 - n as i32,
+                n.is_multiple_of(2),
+                n % 2 == 1
+            ),
+            format!(
+                "{{ id = {}, center = {{ x = {}, z = {} }}, scale = 0, dimension = \"minecraft:overworld\", locked = {}, in_frame = {} }}",
+                7 + n as i32,
+                3 + n as i32,
+                -5 - n as i32,
+                n.is_multiple_of(2),
+                n % 2 == 1
+            ),
+            vec![leaf("id", format!("{}", 7 + n as i32))],
+        ),
+        "NativeMapDecoration" => fixed(
+            format!(
+                "NativeMapDecoration {{ sprite: \"test:sprite{n}\".into(), x: {}, y: {}, rot: 0, shown_on_frame: {} }}",
+                1 + n as i8,
+                2,
+                n.is_multiple_of(2)
+            ),
+            format!(
+                "{{ sprite = \"test:sprite{n}\", x = {}, y = 2, rot = 0, shown_on_frame = {} }}",
+                1 + n as i8,
+                n.is_multiple_of(2)
+            ),
+            vec![leaf("sprite", format!("\"test:sprite{n}\""))],
+        ),
+        "NativeDataMapType" => fixed(
+            format!(
+                "NativeDataMapType {{ id: \"test:map{n}\".into(), registry: \"test:registry{n}\".into() }}"
+            ),
+            format!("{{ id = \"test:map{n}\", registry = \"test:registry{n}\" }}"),
+            vec![leaf("id", format!("\"test:map{n}\""))],
+        ),
+        "NativeConfig" => fixed(
+            format!(
+                "{{ let mut c = NativeConfig::new(\"test:mod{n}\", NativeConfigKind::Server, \"test:default{n}\"); c.file = \"test:file{n}\".into(); c }}"
+            ),
+            format!(
+                "{{ mod_id = \"test:mod{n}\", kind = \"server\", file = \"test:file{n}\", default = \"test:default{n}\" }}"
+            ),
+            vec![leaf("mod_id", format!("\"test:mod{n}\""))],
+        ),
+        "NativeConfigFile" => fixed(
+            format!(
+                "NativeConfigFile {{ mod_id: \"test:mod{n}\".into(), kind: NativeConfigKind::Server, file: \"test:file{n}\".into(), path: \"test:path{n}\".into(), text: \"test:text{n}\".into() }}"
+            ),
+            format!(
+                "{{ mod_id = \"test:mod{n}\", kind = \"server\", file = \"test:file{n}\", path = \"test:path{n}\", text = \"test:text{n}\" }}"
+            ),
+            vec![leaf("mod_id", format!("\"test:mod{n}\""))],
+        ),
+        "SpawnEntry" => fixed(
+            format!(
+                "SpawnEntry {{ entity: \"test:entity{n}\".into(), weight: {}, min: 1, max: 2, constant: {} }}",
+                7 + n as u32,
+                n.is_multiple_of(2)
+            ),
+            format!(
+                "{{ entity = \"test:entity{n}\", weight = {}, min = 1, max = 2, constant = {} }}",
+                7 + n as u32,
+                n.is_multiple_of(2)
+            ),
+            vec![leaf("entity", format!("\"test:entity{n}\""))],
+        ),
+        "RecipeBookCategory" => fixed(
+            format!(
+                "RecipeBookCategory {{ id: \"test:cat{n}\".into(), recipe_type: \"test:type{n}\".into(), icon: \"test:icon{n}\".into() }}"
+            ),
+            format!(
+                "{{ id = \"test:cat{n}\", recipe_type = \"test:type{n}\", icon = \"test:icon{n}\" }}"
+            ),
+            vec![leaf("id", format!("\"test:cat{n}\""))],
+        ),
+        "NativeReloadListener" => fixed(
+            format!("NativeReloadListener::json(\"test:id{n}\", \"test:folder{n}\")"),
+            format!("{{ id = \"test:id{n}\", folder = \"test:folder{n}\" }}"),
+            vec![leaf("id", format!("\"test:id{n}\""))],
+        ),
+        "Suggestion" => fixed(
+            format!(
+                "Suggestion {{ range: ({} + {n}, {} + {n}), text: \"test:suggestion{n}\".into(), tooltip: None, int_value: None }}",
+                7, 12
+            ),
+            format!(
+                "{{ range = {{ start = {}, [\"end\"] = {} }}, text = \"test:suggestion{n}\" }}",
+                7 + n,
+                12 + n
+            ),
+            vec![leaf("text", format!("\"test:suggestion{n}\""))],
+        ),
+        "MerchantOffer" => mutable(
+            format!(
+                "MerchantOffer {{ base_cost_a: ItemCost {{ stack: {} }}, cost_b: None, result: {}, uses: {}, max_uses: 1, reward_exp: true, special_price_diff: 0, demand: 0, price_multiplier: 1.0, xp: 1 }}",
+                item(1, 0),
+                item(1, 0),
+                n as i32
+            ),
+            format!(
+                "{{ base_cost_a = {{ stack = {{ id = \"test:{field}\", count = 1, damage = 0 }} }}, result = {{ id = \"test:{field}\", count = 1, damage = 0 }}, uses = {n}, max_uses = 1, reward_exp = true, special_price_diff = 0, demand = 0, price_multiplier = 1.0, xp = 1 }}"
+            ),
+            format!(
+                "MerchantOffer {{ base_cost_a: ItemCost {{ stack: {} }}, cost_b: None, result: {}, uses: {}, max_uses: 1, reward_exp: true, special_price_diff: 0, demand: 0, price_multiplier: 1.0, xp: 1 }}",
+                item(1, 0),
+                item(1, 0),
+                50 + n as i32
+            ),
+            format!(
+                "{{ base_cost_a = {{ stack = {{ id = \"test:{field}\", count = 1, damage = 0 }} }}, result = {{ id = \"test:{field}\", count = 1, damage = 0 }}, uses = {}, max_uses = 1, reward_exp = true, special_price_diff = 0, demand = 0, price_multiplier = 1.0, xp = 1 }}",
+                50 + n as i32
+            ),
+        ),
+        "AnvilCraft" => fixed(
+            format!(
+                "AnvilCraft {{ left: Some({}), right: None, output: {} }}",
+                item(1, 0),
+                item(2, 0)
+            ),
+            format!(
+                "{{ left = {{ id = \"test:{field}\", count = 1, damage = 0 }}, output = {{ id = \"test:{field}\", count = 2, damage = 0 }} }}"
+            ),
+            vec![],
+        ),
+        "NativeNoteBlockChange" => fixed(
+            format!(
+                "NativeNoteBlockChange {{ dimension: LevelDimension::Overworld, pos: BlockPos::new({}, {}, {}), instrument: \"test:instrument{n}\", old_note: {} }}",
+                1 + n as i32,
+                2 + n as i32,
+                3 + n as i32,
+                7 + n as i32
+            ),
+            format!(
+                "{{ dimension = \"minecraft:overworld\", pos = {{ x = {}, y = {}, z = {} }}, instrument = \"test:instrument{n}\", old_note = {} }}",
+                1 + n as i32,
+                2 + n as i32,
+                3 + n as i32,
+                7 + n as i32
+            ),
+            vec![leaf("old_note", format!("{}", 7 + n as i32))],
+        ),
+        "NativeFluidStack" => fixed(
+            format!(
+                "NativeFluidStack {{ fluid: \"test:fluid{n}\".into(), amount: {}, components: Compound::new() }}",
+                7 + n as i32
+            ),
+            format!(
+                "{{ fluid = \"test:fluid{n}\", amount = {}, components = {{}} }}",
+                7 + n as i32
+            ),
+            vec![leaf("fluid", format!("\"test:fluid{n}\""))],
+        ),
+        "Option<NativeFluidStack>" => mutable(
+            format!(
+                "Some(NativeFluidStack {{ fluid: \"test:fluid{n}\".into(), amount: {}, components: Compound::new() }})",
+                7 + n as i32
+            ),
+            format!(
+                "{{ fluid = \"test:fluid{n}\", amount = {}, components = {{}} }}",
+                7 + n as i32
+            ),
+            "None".into(),
+            "nil".into(),
+        ),
+        "NativeFluidDrain" => fixed(
+            format!("NativeFluidDrain::Any({})", 7 + n as i32),
+            format!("{{ kind = \"any\", amount = {} }}", 7 + n as i32),
+            vec![leaf("kind", "\"any\"".into())],
+        ),
+        "NativeFluidTankView" => fixed(
+            format!(
+                "NativeFluidTankView {{ tank: {n}, content: Some(NativeFluidStack {{ fluid: \"test:fluid{n}\".into(), amount: 7, components: Compound::new() }}), capacity: 1000, can_fill: true, can_drain: false }}"
+            ),
+            format!(
+                "{{ tank = {n}, content = {{ fluid = \"test:fluid{n}\", amount = 7, components = {{}} }}, capacity = 1000, can_fill = true, can_drain = false }}"
+            ),
+            vec![leaf("tank", format!("{n}"))],
+        ),
+        "Music" => mutable(
+            format!(
+                "Music {{ sound: \"test:sound{n}\".into(), min_delay: {}, max_delay: {}, replace_current_music: {} }}",
+                1 + n as i32,
+                2 + n as i32,
+                n.is_multiple_of(2)
+            ),
+            format!(
+                "{{ sound = \"test:sound{n}\", min_delay = {}, max_delay = {}, replace_current_music = {} }}",
+                1 + n as i32,
+                2 + n as i32,
+                n.is_multiple_of(2)
+            ),
+            "None".into(),
+            "nil".into(),
+        ),
+        "Option<Music>" => mutable(
+            format!(
+                "Some(Music {{ sound: \"test:sound{n}\".into(), min_delay: {}, max_delay: {}, replace_current_music: {} }})",
+                1 + n as i32,
+                2 + n as i32,
+                n.is_multiple_of(2)
+            ),
+            format!(
+                "{{ sound = \"test:sound{n}\", min_delay = {}, max_delay = {}, replace_current_music = {} }}",
+                1 + n as i32,
+                2 + n as i32,
+                n.is_multiple_of(2)
+            ),
+            "None".into(),
+            "nil".into(),
+        ),
+        "MusicLayer" => fixed(
+            format!(
+                "MusicLayer {{ sound: \"test:sound{n}\".into(), volume: {:?} }}",
+                0.5 + n as f32
+            ),
+            format!(
+                "{{ sound = \"test:sound{n}\", volume = {:?} }}",
+                0.5 + n as f32
+            ),
+            vec![leaf("sound", format!("\"test:sound{n}\""))],
+        ),
+        "SoundPlayback" => fixed(
+            format!(
+                "SoundPlayback {{ instance: {}, identifier: \"test:sound{n}\", source: 0, position: [{:?}, 2.0, 3.0], relative: {}, starting: {} }}",
+                7 + n as u64,
+                1.0 + n as f64,
+                n.is_multiple_of(2),
+                n % 2 == 1
+            ),
+            format!(
+                "{{ instance = {}, identifier = \"test:sound{n}\", source = 0, position = {{ x = {:?}, y = 2.0, z = 3.0 }}, relative = {}, starting = {} }}",
+                7 + n as u64,
+                1.0 + n as f64,
+                n.is_multiple_of(2),
+                n % 2 == 1
+            ),
+            vec![leaf("identifier", format!("\"test:sound{n}\""))],
+        ),
+        "TickSpan" => fixed(
+            format!(
+                "TickSpan {{ name: \"test:span{n}\", ms: {:?}, cpu_ms: 0.5, depth: 0 }}",
+                1.5 + n as f32
+            ),
+            format!(
+                "{{ name = \"test:span{n}\", ms = {:?}, cpu_ms = 0.5, depth = 0 }}",
+                1.5 + n as f32
+            ),
+            vec![leaf("name", format!("\"test:span{n}\""))],
+        ),
+        "BlockProperties" => fixed("BlockProperties::new()".into(), "{}".into(), vec![]),
+        "PlacementContext" => fixed(
+            format!(
+                "PlacementContext {{ pos: BlockPos::new({}, {}, {}), hit_pos: BlockPos::new({}, {}, {}), face: Direction::North, hit: Default::default(), inside: {}, yaw: {:?}, pitch: {:?}, sneaking: {}, item: \"test:item{n}\".into(), replace_clicked: {} }}",
+                1 + n as i32,
+                2 + n as i32,
+                3 + n as i32,
+                1 + n as i32,
+                2 + n as i32,
+                3 + n as i32,
+                n.is_multiple_of(2),
+                90.0 + n as f32,
+                0.0,
+                n % 2 == 1,
+                n.is_multiple_of(2)
+            ),
+            format!(
+                "{{ pos = {{ x = {}, y = {}, z = {} }}, hit_pos = {{ x = {}, y = {}, z = {} }}, face = \"north\", hit = {{ x = 0.0, y = 0.0, z = 0.0 }}, inside = {}, yaw = {:?}, pitch = 0.0, sneaking = {}, item = \"test:item{n}\", replace_clicked = {} }}",
+                1 + n as i32,
+                2 + n as i32,
+                3 + n as i32,
+                1 + n as i32,
+                2 + n as i32,
+                3 + n as i32,
+                n.is_multiple_of(2),
+                90.0 + n as f32,
+                n % 2 == 1,
+                n.is_multiple_of(2)
+            ),
+            vec![leaf("face", "\"north\"".into())],
+        ),
+        "FluidState" => fixed(
+            "FluidState::EMPTY".into(),
+            "{ kind = \"minecraft:empty\", amount = 8, falling = true }".into(),
+            vec![leaf("kind", "\"minecraft:empty\"".into())],
+        ),
+        _ => return None,
+    };
+    Some(s)
+}
+
+/// The `.d.lua` type of a `LuaStruct` key, with `Vec`, slice and `Option`
+/// wrappers applied.
+fn struct_ts_owned(key: &str) -> String {
+    if let Some(inner) = key.strip_prefix("Vec<").and_then(|s| s.strip_suffix('>')) {
+        return format!("{{ {} }}", struct_ts_owned(inner));
+    }
+    if let Some(inner) = key.strip_prefix("&[").and_then(|s| s.strip_suffix(']')) {
+        return format!("{{ {} }}", struct_ts_owned(inner));
+    }
+    if let Some(inner) = key
+        .strip_prefix("Option<")
+        .and_then(|s| s.strip_suffix('>'))
+    {
+        return format!("{}?", struct_ts_owned(inner));
+    }
+    struct_ts(key).to_owned()
+}
+
+/// A known tuple shape: its struct key and `.d.lua` type. Anything else
+/// keeps the tuple adapter.
+fn tuple_struct(ty: &syn::Type) -> Option<(String, String)> {
+    let syn::Type::Tuple(t) = ty else {
+        return None;
+    };
+    // Tuple elements name their short form: `serde_json::Value` renders
+    // qualified, but the samples spell `Value`.
+    let norm: Vec<String> = t
+        .elems
+        .iter()
+        .map(|e| ty_str(e).replace(' ', "").replace("serde_json::", ""))
+        .collect();
+    let key = format!("({})", norm.join(","));
+    let ts = match norm
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        ["Text", "u32"] => "{ text: string, component: Component?, count: number }",
+        ["i32", "u32"] => "{ value: number, max: number }",
+        ["i32", "i32"] => "{ min: number, max: number }",
+        ["Option<ItemStack>", "i32"] => "{ remainder: Item?, event: number }",
+        ["String", "Value"] => "{ path: string, data: Data }",
+        ["String", "Compound"] => "{ name: string, tag: Data }",
+        ["&'staticstr", "&'staticstr"] => "{ a: string, b: string }",
+        ["usize", "usize"] => "{ start: number, end: number }",
+        _ => return None,
+    };
+    Some((key, ts.to_owned()))
 }
 
 /// The cannot reason for a borrow that can never enter the Lua state, if
@@ -943,7 +2210,7 @@ fn cannot_id(id: &str) -> Option<String> {
 }
 
 fn opaque_of(
-    _hook: &str,
+    hook: &str,
     ty: &syn::Type,
     adapter: impl Fn(&str) -> FieldOutcome,
     cannot: impl Fn(&str) -> FieldOutcome,
@@ -957,6 +2224,10 @@ fn opaque_of(
     if let Some(elem) = listed {
         if let Some(why) = cannot_id(last_ident(elem).as_deref().unwrap_or_default()) {
             return cannot(&why);
+        }
+        if let Some(key) = struct_key_of(elem) {
+            let ts = struct_ts_owned(&format!("Vec<{key}>"));
+            return FieldOutcome::Conv(Conv::Struct, ts);
         }
         if is_plain_scalar(elem) {
             return adapter("a scalar list needs its table form");
@@ -974,12 +2245,24 @@ fn opaque_of(
             return adapter("needs owned strings");
         }
         let elem_id = last_ident(elem).as_deref().unwrap_or_default().to_owned();
-        return adapter(&format!("a {} list needs its table form", snake(&elem_id)));
+        let article = if "aeiouAEIOU".contains(elem_id.chars().next().unwrap_or('b')) {
+            "an"
+        } else {
+            "a"
+        };
+        return adapter(&format!(
+            "{article} {} list needs its table form",
+            snake(&elem_id)
+        ));
     }
     // An optional around one opaque thing: same, with optional wording.
     if let Some(inner) = single_generic_arg(ty, &["Option"]) {
         if let Some(why) = cannot_id(last_ident(inner).as_deref().unwrap_or_default()) {
             return cannot(&why);
+        }
+        if let Some(key) = struct_key_of(inner) {
+            let ts = struct_ts_owned(&format!("Option<{key}>"));
+            return FieldOutcome::Conv(Conv::Struct, ts);
         }
         if let Some(why) = wrapped_reason(inner) {
             return adapter(why);
@@ -997,27 +2280,37 @@ fn opaque_of(
     if let Some(why) = cannot_id(&id) {
         return cannot(&why);
     }
-    // Borrowed plain data a hand-written converter could copy into a table.
+    // Borrowed plain data the runtime copies into a table.
     if matches!(
         id.as_str(),
-        "SoundPlayback" | "NativeMapInfo" | "NativeNoteBlockChange" | "NativeLootDrops"
+        "SoundPlayback" | "NativeMapInfo" | "NativeNoteBlockChange"
     ) {
+        let ts = struct_ts_owned(&id);
+        return FieldOutcome::Conv(Conv::Struct, ts);
+    }
+    if id == "NativeLootDrops" {
         return adapter(&format!("{} needs its table form", snake(&id)));
     }
-    // A live mob a hand-written converter could snapshot as `{id, kind}`.
+    // A live mob only a design of its own can expose.
     if id == "Mob" {
-        return adapter("a live mob needs its table form");
+        return FieldOutcome::Adapter(format!("{hook}: handle: a Mob handle needs its own design"));
     }
     // Network packets: one decoded packet per hook, needing per-type
     // decoders no single converter covers.
     if id.contains("Packet") {
-        return adapter("a packet needs its table form");
+        return FieldOutcome::Adapter(format!(
+            "{hook}: protocol: raw packets need their own design"
+        ));
     }
-    // Opaque mod-data handles a hand-written table could name.
+    if id == "ModBlockEntity" {
+        return FieldOutcome::Adapter(format!(
+            "{hook}: handle: a ModBlockEntity handle needs its own design"
+        ));
+    }
+    // Opaque mod-data the runtime names as tables.
     if matches!(
         id.as_str(),
-        "ModBlockEntity"
-            | "ModContainer"
+        "ModContainer"
             | "ModFluidTanks"
             | "ModEnergyBuffer"
             | "ItemEnergyBuffer"
@@ -1030,9 +2323,10 @@ fn opaque_of(
             | "BlockProperties"
             | "PlacementContext"
     ) {
-        return adapter(&format!("a {} needs its table form", snake(&id)));
+        let ts = struct_ts_owned(&id);
+        return FieldOutcome::Conv(Conv::Struct, ts);
     }
-    // Plain data a hand-written converter could map.
+    // Plain data the runtime maps.
     if matches!(
         id.as_str(),
         "MerchantOffer"
@@ -1049,8 +2343,14 @@ fn opaque_of(
             | "NativeMapDecoration"
             | "NativeReloadListener"
             | "NativeConfigFile"
-            | "NativeLifecycleContext"
             | "RecipeBookCategory"
+    ) {
+        let ts = struct_ts_owned(&id);
+        return FieldOutcome::Conv(Conv::Struct, ts);
+    }
+    if matches!(
+        id.as_str(),
+        "NativeLifecycleContext"
             | "LayerDefinition"
             | "EntityDataValue"
             | "Property"
@@ -1302,6 +2602,27 @@ fn model_of(
             syn::Type::Path(_) if is_path(inner, "bool") => ReplaceRead::Bool,
             syn::Type::Array(_) => ReplaceRead::Pair,
             syn::Type::Path(_) if is_path(inner, "ItemStack") => ReplaceRead::Item,
+            // (`is_path` needs a bare ident, so it never matches a `Vec<T>`;
+            // the single-generic check below already names the segment.)
+            syn::Type::Path(_)
+                if single_generic_arg(inner, &["Vec"]).is_some_and(|e| is_path(e, "u8")) =>
+            {
+                ReplaceRead::Bytes
+            }
+            syn::Type::Path(_)
+                if single_generic_arg(inner, &["Vec"])
+                    .is_some_and(|e| struct_key_of(e).is_some()) =>
+            {
+                ReplaceRead::StructVec
+            }
+            // `Option<Option<BlockStateId>>`: `inner` already strips the
+            // outer `Option`, so one more strip reaches the state id.
+            syn::Type::Path(_)
+                if option_inner(inner).is_some_and(|o| is_path(o, "BlockStateId")) =>
+            {
+                ReplaceRead::AnswerState
+            }
+            _ if struct_key_of(inner).is_some() => ReplaceRead::Struct,
             _ => {
                 return Err(Class::Adapter(vec![format!(
                     "{name}: adapter: a replace out needs its table form"
@@ -1347,6 +2668,7 @@ fn model_of(
                     name: param.clone(),
                     conv,
                     ts: ts.into(),
+                    key: None,
                 });
             } else {
                 skipped.push(param.clone());
@@ -1361,10 +2683,16 @@ fn model_of(
             collect && Some(param) == out.as_ref(),
         ) {
             FieldOutcome::Conv(conv, ts) => {
+                let key = if matches!(conv, Conv::Struct) {
+                    struct_key_of(ty)
+                } else {
+                    None
+                };
                 fields.push(Field {
                     name: param.clone(),
                     conv,
                     ts,
+                    key,
                 });
                 struct_tys.push(struct_field_ty(ty));
             }
@@ -1374,6 +2702,22 @@ fn model_of(
     }
     if !cannots.is_empty() {
         return Err(Class::Cannot(cannots.join("; ")));
+    }
+    // Raw protocol packets are a design of their own, not field tables.
+    if matches!(name, "client_packet" | "server_packet" | "server_packets") {
+        return Err(Class::Protocol);
+    }
+    if let Some(marker) = adapters.iter().find(|a| a.contains("handle: ")) {
+        let ty = marker
+            .split("handle: a ")
+            .nth(1)
+            .and_then(|s| s.split(" handle").next())
+            .unwrap_or("?")
+            .to_owned();
+        return Err(Class::Handle(ty));
+    }
+    if adapters.iter().any(|a| a.contains("protocol: ")) {
+        return Err(Class::Protocol);
     }
     if !adapters.is_empty() {
         return Err(Class::Adapter(adapters));
@@ -1439,6 +2783,29 @@ fn model_of(
             conv: Conv::BlockFromState,
         });
     }
+    // Every state field seeds its `_props` table beside itself (the state
+    // seed arms set both); the extra only names it for the docs and tests.
+    for field in fields
+        .iter()
+        .filter(|f| matches!(f.conv, Conv::StateLevel | Conv::StateGame))
+        .map(|f| f.name.clone())
+        .collect::<Vec<_>>()
+    {
+        extras.push(Extra {
+            name: format!("{field}_props"),
+            conv: Conv::StateProps,
+        });
+    }
+    // Seeds the smoke test cannot construct: `#[non_exhaustive]` structs
+    // only the game builds. The runtime reads them, but the generated
+    // test has no value to dispatch.
+    if let Some(what) = fields.iter().find_map(|f| match f.key.as_deref() {
+        Some("NativeConfigFile") => Some("a config file only the game constructs"),
+        Some("SoundPlayback") => Some("a playback only the game constructs"),
+        _ => None,
+    }) {
+        return Err(Class::Adapter(vec![format!("{name}: adapter: {what}")]));
+    }
     Ok(Model {
         event: event_name(name),
         contract: contract.to_owned(),
@@ -1503,15 +2870,50 @@ pub fn lua_read(name: &str) -> String {
     }
 }
 
-pub fn assert_lines(conv: &Conv, field: &str, lua: &str, n: usize) -> Vec<String> {
+pub fn assert_lines(
+    conv: &Conv,
+    field: &str,
+    lua: &str,
+    key: Option<&str>,
+    n: usize,
+) -> Vec<String> {
     let a = |expr: &str| format!("    assert({expr}, \"{field}\")");
     let e = lua_read(field);
     match conv {
+        Conv::Struct => {
+            let key = key.unwrap_or("");
+            let s = struct_sample(key, field, n)
+                .unwrap_or_else(|| panic!("no struct asserts for {key}"));
+            s.leaves
+                .iter()
+                .map(|(suffix, value)| a(&format!("{e}{suffix} == {value}")))
+                .collect()
+        }
+        Conv::TextVal => vec![
+            a(&format!("{e} == {lua}")),
+            a(&format!("{e}_component.text == {lua}")),
+        ],
+        Conv::TextOpt => {
+            if lua == "nil" {
+                vec![
+                    a(&format!("{e} == nil")),
+                    a(&format!("{e}_component == nil")),
+                ]
+            } else {
+                vec![
+                    a(&format!("{e} == {lua}")),
+                    a(&format!("{e}_component.text == {lua}")),
+                ]
+            }
+        }
+        Conv::PreLogin => vec![a(&format!("{e}.count == 0"))],
+        Conv::StateProps => vec![a(&format!("next({e}) == nil"))],
+        Conv::Bytes | Conv::PathStr => vec![a(&format!("{e} == {lua}"))],
         Conv::Player | Conv::PlayerOpt => vec![
             a(&format!("{e}.uuid == {lua}")),
             a(&format!("{e}.name == \"test:name\"")),
         ],
-        Conv::Pos | Conv::PosStruct | Conv::OptPos | Conv::MutPos => {
+        Conv::Pos | Conv::PosStruct | Conv::MutPos => {
             let (x, y, z) = (1 + n as i32, 2 + n as i32, 3 + n as i32);
             vec![
                 a(&format!("{e}.x == {x}")),
@@ -1534,10 +2936,31 @@ pub fn assert_lines(conv: &Conv, field: &str, lua: &str, n: usize) -> Vec<String
         ],
         Conv::IntSeq => vec![a(&format!("{e}[1] == {} and {e}[2] == {}", 4 + n, 9 + n))],
         Conv::StrSeq | Conv::MutStrVec => {
-            vec![a(&format!("{e}[1] == \"test:seed\""))]
+            vec![
+                a(&format!("{e}[1] == \"test:seed\"")),
+                a(&format!("{e}[2] == \"test:seed2\"")),
+            ]
         }
-        Conv::Item | Conv::OptItem => {
+        Conv::Item => {
             vec![a(&format!("{e}.id == {lua}"))]
+        }
+        Conv::OptItem => {
+            if lua == "nil" {
+                vec![a(&format!("{e} == nil"))]
+            } else {
+                vec![a(&format!("{e}.id == {lua}"))]
+            }
+        }
+        Conv::OptPos => {
+            if lua == "nil" {
+                return vec![a(&format!("{e} == nil"))];
+            }
+            let (x, y, z) = (1 + n as i32, 2 + n as i32, 3 + n as i32);
+            vec![
+                a(&format!("{e}.x == {x}")),
+                a(&format!("{e}.y == {y}")),
+                a(&format!("{e}.z == {z}")),
+            ]
         }
         _ => vec![a(&format!("{e} == {lua}"))],
     }
@@ -1551,6 +2974,9 @@ pub fn mutate_line(conv: &Conv, field: &str, write_lua: &str) -> String {
     match conv {
         Conv::MutStrVec => {
             format!("    {e}[1] = \"test:edited\"; table.insert({e}, \"test:added\")")
+        }
+        Conv::TextVal | Conv::TextOpt => {
+            format!("    {e} = {write_lua}; {e}_component = nil")
         }
         _ => format!("    {e} = {write_lua}"),
     }
@@ -1587,6 +3013,15 @@ fn plain_write(ty: &str, seed_lua: &str, _field: &str, n: usize) -> (String, Str
     }
 }
 
+/// The `LuaStruct` key of a canonical parameter type string: parses it
+/// back and classifies it, so samples and the emitter share one mapping.
+/// Lifetimes render as `<?>` in canonical strings; they carry no shape.
+fn struct_key_of_ty_str(ty: &str) -> Option<String> {
+    syn::parse_str::<syn::Type>(&ty.replace("<?>", ""))
+        .ok()
+        .and_then(|t| struct_key_of(&t))
+}
+
 pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
     let plain = |rust: String, lua: String| Sample {
         rust,
@@ -1603,6 +3038,61 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
         mutable: true,
     };
     match conv {
+        Conv::Struct => {
+            let key =
+                struct_key_of_ty_str(ty).unwrap_or_else(|| panic!("no struct sample for {ty}"));
+            let s = struct_sample(&key, field, n)
+                .unwrap_or_else(|| panic!("no struct sample for {key}"));
+            let norm: String = ty.chars().filter(|c| !c.is_whitespace()).collect();
+            let is_mut = norm.starts_with("&mut");
+            if is_mut {
+                let (write_rust, write_lua) = s
+                    .clone_write()
+                    .unwrap_or_else(|| panic!("no struct write for {key}"));
+                return mut_sample(s.rust, s.lua, write_rust, write_lua);
+            }
+            if norm.starts_with('&') {
+                // Borrowed seeds (`&[..]`, `Some(&..)`) already borrow.
+                if s.rust.starts_with('&') {
+                    return plain(s.rust, s.lua);
+                }
+                return plain(format!("&{}", s.rust), s.lua);
+            }
+            plain(s.rust, s.lua)
+        }
+        Conv::Bytes => plain(
+            "&[116u8, 0u8, 159u8]".into(),
+            "\"t\" .. string.char(0, 159)".into(),
+        ),
+        Conv::PathStr => plain(
+            "std::path::Path::new(\"test:path\")".into(),
+            "\"test:path\"".into(),
+        ),
+        Conv::TextVal => mut_sample(
+            format!("Text::literal(\"test:{field}\")"),
+            format!("\"test:{field}\""),
+            format!("Text::literal(\"test:{field}:edited\")"),
+            format!("\"test:{field}:edited\""),
+        ),
+        Conv::TextOpt => {
+            if n.is_multiple_of(2) {
+                mut_sample(
+                    format!("Some(Text::literal(\"test:{field}\"))"),
+                    format!("\"test:{field}\""),
+                    "None".into(),
+                    "nil".into(),
+                )
+            } else {
+                plain("None".into(), "nil".into())
+            }
+        }
+        Conv::PreLogin => mut_sample(
+            "Vec::new()".into(),
+            "{ count = 0 }".into(),
+            "1".into(),
+            "{ refuse = \"test:refused\" }".into(),
+        ),
+        Conv::StateProps => panic!("no sample for a state _props note"),
         Conv::Plain => {
             let (rust, lua) = plain_seed(ty, field, n);
             plain(rust, lua)
@@ -1612,6 +3102,9 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
             format!("\"test:{field}\""),
         ),
         Conv::OptPlain => {
+            if n % 2 == 1 {
+                return plain("None".into(), "nil".into());
+            }
             let inner = ty.trim_start_matches("Option<").trim_end_matches('>');
             let (rust, lua) = plain_seed(inner, field, n);
             plain(format!("Some({rust})"), lua)
@@ -1620,10 +3113,15 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
             (7 + n).to_string(),
             format!("\"{}\"", uuid_sample((7 + n) as u128)),
         ),
-        Conv::OptUuid => plain(
-            format!("Some({})", 7 + n),
-            format!("\"{}\"", uuid_sample((7 + n) as u128)),
-        ),
+        Conv::OptUuid => {
+            if n % 2 == 1 {
+                return plain("None".into(), "nil".into());
+            }
+            plain(
+                format!("Some({})", 7 + n),
+                format!("\"{}\"", uuid_sample((7 + n) as u128)),
+            )
+        }
         Conv::Player => plain(
             (7 + n).to_string(),
             format!("\"{}\"", uuid_sample((7 + n) as u128)),
@@ -1651,6 +3149,9 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
             )
         }
         Conv::OptPos => {
+            if n % 2 == 1 {
+                return plain("None".into(), "nil".into());
+            }
             let (x, y, z) = (1 + n as i32, 2 + n as i32, 3 + n as i32);
             plain(
                 format!("Some([{x}, {y}, {z}])"),
@@ -1680,8 +3181,8 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
             )
         }
         Conv::StrSeq => plain(
-            "&[\"test:seed\".to_owned()]".into(),
-            "{ \"test:seed\" }".into(),
+            "&[\"test:seed\".to_owned(), \"test:seed2\".to_owned()]".into(),
+            "{ \"test:seed\", \"test:seed2\" }".into(),
         ),
         Conv::Item => plain(
             format!(
@@ -1691,12 +3192,17 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
             ),
             format!("\"test:{field}\""),
         ),
-        Conv::OptItem => plain(
-            format!(
-                "Some(&ItemStack {{ item: \"test:{field}\".into(), count: 1, damage: 0, extra: None }})"
-            ),
-            format!("\"test:{field}\""),
-        ),
+        Conv::OptItem => {
+            if n % 2 == 1 {
+                return plain("None".into(), "nil".into());
+            }
+            plain(
+                format!(
+                    "Some(&ItemStack {{ item: \"test:{field}\".into(), count: 1, damage: 0, extra: None }})"
+                ),
+                format!("\"test:{field}\""),
+            )
+        }
         Conv::StateLevel | Conv::StateGame => plain(
             // Id 7 is stone (the spike's sample, kept by the fakes); the
             // model samples start at 8 so every state names itself.
@@ -1766,27 +3272,64 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
                 format!("{{ x = {a}, y = {b} }}"),
             )
         }
-        Conv::MutStrVec => mut_sample(
-            "vec![\"test:seed\".to_owned()]".into(),
-            "{ \"test:seed\" }".into(),
-            "vec![\"test:edited\".to_owned(), \"test:added\".to_owned()]".into(),
-            "{ \"test:edited\", \"test:added\" }".into(),
-        ),
+        Conv::MutStrVec => {
+            // The handler edits element 1 and appends, so the middle seed
+            // survives the write.
+            if ty.contains("str") {
+                return mut_sample(
+                    "vec![\"test:seed\", \"test:seed2\"]".into(),
+                    "{ \"test:seed\", \"test:seed2\" }".into(),
+                    "vec![\"test:edited\", \"test:seed2\", \"test:added\"]".into(),
+                    "{ \"test:edited\", \"test:added\" }".into(),
+                );
+            }
+            mut_sample(
+                "vec![\"test:seed\".to_owned(), \"test:seed2\".to_owned()]".into(),
+                "{ \"test:seed\", \"test:seed2\" }".into(),
+                "vec![\"test:edited\".to_owned(), \"test:seed2\".to_owned(), \"test:added\".to_owned()]"
+                    .into(),
+                "{ \"test:edited\", \"test:added\" }".into(),
+            )
+        }
     }
 }
 
 /// The `.d.lua` type of a replace reader.
-pub fn replace_ts(read: ReplaceRead) -> &'static str {
+pub fn replace_ts(read: ReplaceRead, ret: &str) -> String {
     match read {
-        ReplaceRead::Int => "number",
-        ReplaceRead::Bool => "boolean",
-        ReplaceRead::Pair => "Vec2",
-        ReplaceRead::Item => "Item",
+        ReplaceRead::Int => "number".into(),
+        ReplaceRead::Bool => "boolean".into(),
+        ReplaceRead::Pair => "Vec2".into(),
+        ReplaceRead::Item => "Item".into(),
+        ReplaceRead::Struct => struct_ts_owned(
+            &struct_key_of_ty_str(ret).unwrap_or_else(|| panic!("no struct key for {ret}")),
+        ),
+        ReplaceRead::StructVec => {
+            let key =
+                struct_key_of_ty_str(ret).unwrap_or_else(|| panic!("no struct key for {ret}"));
+            let elem = key
+                .strip_prefix("Option<Vec<")
+                .and_then(|k| k.strip_suffix(">>"))
+                .unwrap_or_else(|| panic!("no vec elem for {key}"));
+            format!("{{ {} }}", struct_ts_owned(elem))
+        }
+        ReplaceRead::Bytes => "string".into(),
+        ReplaceRead::AnswerState => "string?".into(),
     }
 }
 
+/// Strip the outer `Option<..>` layer of a replace return type.
+fn replace_inner(ret: &str) -> String {
+    struct_key_of_ty_str(ret)
+        .unwrap_or_default()
+        .strip_prefix("Option<")
+        .and_then(|k| k.strip_suffix('>'))
+        .unwrap_or_default()
+        .to_owned()
+}
+
 /// The Rust literal a replace test writes.
-pub fn replace_sample(read: ReplaceRead, n: usize) -> (String, String) {
+pub fn replace_sample(read: ReplaceRead, ret: &str, n: usize) -> (String, String) {
     match read {
         ReplaceRead::Int => {
             let v = 81000 + n;
@@ -1798,6 +3341,28 @@ pub fn replace_sample(read: ReplaceRead, n: usize) -> (String, String) {
             "{ id = \"test:result\", count = 1 }".into(),
             "{ id = \"test:result\", count = 1 }".into(),
         ),
+        ReplaceRead::Struct => {
+            let inner = replace_inner(ret);
+            let s = struct_sample(&inner, "replace", n)
+                .unwrap_or_else(|| panic!("no struct sample for {inner} (ret {ret})"));
+            (s.rust, s.lua)
+        }
+        ReplaceRead::StructVec => {
+            let mut inner = replace_inner(ret);
+            if let Some(vec) = inner.strip_prefix("Vec<").and_then(|k| k.strip_suffix('>')) {
+                inner = vec.to_owned();
+            }
+            let s = struct_sample(&inner, "replace", n)
+                .unwrap_or_else(|| panic!("no struct sample for {inner}"));
+            (format!("vec![{}]", s.rust), format!("{{ {} }}", s.lua))
+        }
+        ReplaceRead::Bytes => (
+            "vec![116u8, 0u8, 159u8]".into(),
+            "\"t\" .. string.char(0, 159)".into(),
+        ),
+        // The answer copies the seeded state: the block must match the
+        // event's own state, and the properties stay empty.
+        ReplaceRead::AnswerState => (String::new(), "event.state".into()),
     }
 }
 

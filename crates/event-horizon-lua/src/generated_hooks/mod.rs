@@ -13,19 +13,13 @@
 /// dropped. Only the classification test below reads it at runtime.
 #[allow(dead_code)]
 pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
-    (
-        "frame",
-        "adapter: frame: adapter: a duration needs its ticks",
-    ),
+    ("frame", "generated"),
     ("tick", "generated"),
     (
         "visuals",
         "cannot: visuals: unsupported: NativeBlockRim borrows render state (render thread); visuals: unsupported: NativeColoredLight borrows render state (render thread)",
     ),
-    (
-        "emissive",
-        "adapter: emissive: adapter: a tuple needs its table form",
-    ),
+    ("emissive", "generated"),
     (
         "world_lifecycle",
         "cannot: world_lifecycle: unsupported: the hand-written hook keeps this name (removing it is #44)",
@@ -65,22 +59,10 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "command",
         "cannot: command: unsupported: the hand-written hook keeps this name (removing it is #44)",
     ),
-    (
-        "commands",
-        "adapter: commands: adapter: needs owned strings",
-    ),
-    (
-        "zoom",
-        "adapter: zoom: adapter: a replace out needs its table form",
-    ),
-    (
-        "minimap",
-        "adapter: minimap: adapter: a replace out needs its table form",
-    ),
-    (
-        "mods",
-        "adapter: mods: adapter: a native_mod list needs its table form",
-    ),
+    ("commands", "generated"),
+    ("zoom", "generated"),
+    ("minimap", "generated"),
+    ("mods", "generated"),
     ("settings", "generated"),
     ("settings_click", "generated"),
     (
@@ -101,16 +83,10 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ),
     (
         "block_entity_update_tag",
-        "adapter: block_entity_update_tag: adapter: a replace out needs its table form",
+        "handle: block_entity_update_tag: a ModBlockEntity handle needs its own design",
     ),
-    (
-        "block_entity_container",
-        "adapter: block_entity_container: adapter: a replace out needs its table form",
-    ),
-    (
-        "screen",
-        "adapter: screen: adapter: a replace out needs its table form",
-    ),
+    ("block_entity_container", "generated"),
+    ("screen", "generated"),
     (
         "screen_draw",
         "cannot: screen_draw: unsupported: HudBatch borrows render state (render thread)",
@@ -119,7 +95,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("screen_tooltip", "generated"),
     (
         "menu_button",
-        "adapter: menu_button: adapter: a mod_block_entity needs its table form",
+        "handle: menu_button: a ModBlockEntity handle needs its own design",
     ),
     (
         "register_commands",
@@ -131,10 +107,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ),
     ("menu_clicked", "generated"),
     ("menu_closed", "generated"),
-    (
-        "tooltip",
-        "adapter: tooltip: adapter: a tuple needs its table form",
-    ),
+    ("tooltip", "generated"),
     (
         "use_item_on",
         "cannot: use_item_on: unsupported: the hand-written hook keeps this name (removing it is #44)",
@@ -156,10 +129,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "cannot: right_click_block: unsupported: the hand-written hook keeps this name (removing it is #44)",
     ),
     ("block_spread", "generated"),
-    (
-        "piston_move",
-        "adapter: piston_move: adapter: a block list needs its table form; piston_move: adapter: a block list needs its table form",
-    ),
+    ("piston_move", "generated"),
     (
         "explosion_detonate",
         "cannot: explosion_detonate: unsupported: the hand-written hook keeps this name (removing it is #44)",
@@ -169,14 +139,8 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "attack_entity",
         "cannot: attack_entity: unsupported: the hand-written hook keeps this name (removing it is #44)",
     ),
-    (
-        "net_from_client",
-        "adapter: net_from_client: adapter: bytes need their table form",
-    ),
-    (
-        "net_from_server",
-        "adapter: net_from_server: adapter: bytes need their table form",
-    ),
+    ("net_from_client", "generated"),
+    ("net_from_server", "generated"),
     (
         "player_died",
         "cannot: player_died: unsupported: the hand-written hook keeps this name (removing it is #44)",
@@ -206,10 +170,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "cannot: inventory_tick: unsupported: the hand-written hook keeps this name (removing it is #44)",
     ),
     ("on_equip", "generated"),
-    (
-        "block_signal",
-        "adapter: block_signal: adapter: a direction needs its name",
-    ),
+    ("block_signal", "generated"),
     ("is_signal_source", "generated"),
     (
         "health_hud",
@@ -234,13 +195,10 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ),
     (
         "menu_button_v2",
-        "adapter: menu_button_v2: adapter: a mod_block_entity needs its table form; menu_button_v2: adapter: a mutable stack needs its table form",
+        "handle: menu_button_v2: a ModBlockEntity handle needs its own design",
     ),
     ("entity_leave_level", "generated"),
-    (
-        "block_entity_fluids",
-        "adapter: block_entity_fluids: adapter: a replace out needs its table form",
-    ),
+    ("block_entity_fluids", "generated"),
     ("should_apply_effect_tick_this_tick", "generated"),
     ("apply_effect_tick", "generated"),
     ("on_effect_added", "generated"),
@@ -263,20 +221,11 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "render_needs",
         "cannot: render_needs: unsupported: RenderNeeds borrows render state (render thread)",
     ),
-    (
-        "item_bar",
-        "adapter: item_bar: adapter: a tuple needs its table form",
-    ),
+    ("item_bar", "generated"),
     ("has_analog_output", "generated"),
-    (
-        "analog_output",
-        "adapter: analog_output: adapter: a direction needs its name",
-    ),
+    ("analog_output", "generated"),
     ("component_types", "generated"),
-    (
-        "dispense_item",
-        "adapter: dispense_item: adapter: a replace out needs its table form",
-    ),
+    ("dispense_item", "generated"),
     ("tooltip_component", "generated"),
     (
         "tooltip_component_draw",
@@ -290,7 +239,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ),
     (
         "block_entity_render_bounding_box",
-        "adapter: block_entity_render_bounding_box: adapter: a block state needs a host to name it; block_entity_render_bounding_box: adapter: a mod_block_entity needs its table form; block_entity_render_bounding_box: adapter: a mutable array needs its table form",
+        "handle: block_entity_render_bounding_box: a ModBlockEntity handle needs its own design",
     ),
     ("is_valid_bonemeal_target", "generated"),
     ("is_bonemeal_success", "generated"),
@@ -310,34 +259,19 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "block_fall_on",
         "adapter: block_fall_on: adapter: a block state needs a host to name it",
     ),
-    (
-        "consume_effect",
-        "adapter: consume_effect: adapter: a compound needs the nbt table",
-    ),
-    (
-        "loot_table_load",
-        "adapter: loot_table_load: adapter: a compound needs the nbt table",
-    ),
+    ("consume_effect", "generated"),
+    ("loot_table_load", "generated"),
     (
         "loot_drops",
         "cannot: loot_drops: unsupported: the hand-written hook keeps this name (removing it is #44)",
     ),
-    (
-        "state_for_placement",
-        "adapter: state_for_placement: adapter: a replace out needs its table form",
-    ),
-    (
-        "enchant_effect",
-        "adapter: enchant_effect: adapter: a compound needs the nbt table",
-    ),
+    ("state_for_placement", "generated"),
+    ("enchant_effect", "generated"),
     (
         "screen_render_post",
         "cannot: screen_render_post: unsupported: HudBatch borrows render state (render thread); screen_render_post: unsupported: NativeScreenView borrows render state (render thread)",
     ),
-    (
-        "modify_default_components",
-        "adapter: modify_default_components: adapter: a compound needs the nbt table",
-    ),
+    ("modify_default_components", "generated"),
     (
         "screen_mouse_button_pressed_pre",
         "cannot: screen_mouse_button_pressed_pre: unsupported: NativeScreenView borrows render state (render thread)",
@@ -350,28 +284,16 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "camera_shake",
         "cannot: camera_shake: unsupported: NativeShake borrows render state (render thread)",
     ),
-    (
-        "shader_params",
-        "adapter: shader_params: adapter: a mutable array needs its table form",
-    ),
-    (
-        "block_highlight",
-        "adapter: block_highlight: adapter: a block state needs a host to name it",
-    ),
-    (
-        "render_hand",
-        "adapter: render_hand: adapter: a hand needs its name",
-    ),
+    ("shader_params", "generated"),
+    ("block_highlight", "generated"),
+    ("render_hand", "generated"),
     ("client_resources_reloaded", "generated"),
     (
         "item_decorations",
         "cannot: item_decorations: unsupported: HudBatch borrows render state (render thread)",
     ),
     ("use_duration", "generated"),
-    (
-        "use_animation",
-        "adapter: use_animation: adapter: a use_animation needs its table form",
-    ),
+    ("use_animation", "generated"),
     ("can_eat", "generated"),
     (
         "living_entity_use_item_start",
@@ -434,24 +356,15 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "screen_key_released_pre",
         "cannot: screen_key_released_pre: unsupported: NativeScreenView borrows render state (render thread)",
     ),
-    (
-        "music",
-        "adapter: music: adapter: an optional music needs its table form",
-    ),
-    (
-        "music_layers",
-        "adapter: music_layers: adapter: a music_layer list needs its table form",
-    ),
+    ("music", "generated"),
+    ("music_layers", "generated"),
     ("datapack_sync", "generated"),
     ("recipes_received", "generated"),
     (
         "input_key",
         "cannot: input_key: unsupported: a borrowed client key event cannot enter the Lua state",
     ),
-    (
-        "mouse_scrolling",
-        "adapter: mouse_scrolling: adapter: a 2D int array needs its table form; mouse_scrolling: adapter: an array needs its table form",
-    ),
+    ("mouse_scrolling", "generated"),
     (
         "screen_mouse_dragged_pre",
         "cannot: screen_mouse_dragged_pre: unsupported: NativeScreenView borrows render state (render thread)",
@@ -464,15 +377,9 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("experience_orb_can_merge", "generated"),
     ("experience_orb_merge", "generated"),
     ("menu_slot_rules", "generated"),
-    (
-        "living_entity_use_item_tick",
-        "adapter: living_entity_use_item_tick: adapter: a hand needs its name",
-    ),
+    ("living_entity_use_item_tick", "generated"),
     ("on_use_tick", "generated"),
-    (
-        "living_entity_use_item_stop",
-        "adapter: living_entity_use_item_stop: adapter: a hand needs its name",
-    ),
+    ("living_entity_use_item_stop", "generated"),
     ("release_using", "generated"),
     (
         "loot_function",
@@ -495,10 +402,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "cannot: projectile_impact: unsupported: the hand-written hook keeps this name (removing it is #44)",
     ),
     ("entity_mount", "generated"),
-    (
-        "interaction_key",
-        "adapter: interaction_key: adapter: a hand needs its name",
-    ),
+    ("interaction_key", "generated"),
     (
         "gui_layer_pre",
         "cannot: gui_layer_pre: unsupported: HudBatch borrows render state (render thread)",
@@ -507,20 +411,11 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "gui_layer_post",
         "cannot: gui_layer_post: unsupported: the hand-written hook keeps this name (removing it is #44)",
     ),
-    (
-        "map_decorations",
-        "adapter: map_decorations: adapter: native_map_info needs its table form; map_decorations: adapter: a native_map_decoration list needs its table form",
-    ),
+    ("map_decorations", "generated"),
     ("player_start_tracking", "generated"),
     ("player_stop_tracking", "generated"),
-    (
-        "block_entity_energy",
-        "adapter: block_entity_energy: adapter: a replace out needs its table form",
-    ),
-    (
-        "data_map_types",
-        "adapter: data_map_types: adapter: a native_data_map_type list needs its table form",
-    ),
+    ("block_entity_energy", "generated"),
+    ("data_map_types", "generated"),
     ("living_breathe", "generated"),
     (
         "blocks",
@@ -528,7 +423,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ),
     (
         "items",
-        "adapter: items: adapter: a item list needs its table form",
+        "adapter: items: adapter: an item list needs its table form",
     ),
     ("entity_tick_pre", "generated"),
     (
@@ -585,10 +480,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("brewing_complete", "generated"),
     ("brewing_fuel", "generated"),
     ("brewing_start", "generated"),
-    (
-        "broadcast_message",
-        "adapter: broadcast_message: adapter: rich text needs its plain form",
-    ),
+    ("broadcast_message", "generated"),
     ("campfire_start", "generated"),
     ("cauldron_level_changed", "generated"),
     ("chorus_fruit_teleport", "generated"),
@@ -622,10 +514,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("experience_orb_pickup", "generated"),
     ("mending_repair", "generated"),
     ("explosion_prime", "generated"),
-    (
-        "fire_odds",
-        "adapter: fire_odds: adapter: a replace out needs its table form",
-    ),
+    ("fire_odds", "generated"),
     ("smoke_source", "generated"),
     ("firework_explode", "generated"),
     ("fluid_level_change", "generated"),
@@ -637,10 +526,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("game_event", "generated"),
     ("hopper_inventory_search", "generated"),
     ("hopper_pickup_item", "generated"),
-    (
-        "ingredient",
-        "adapter: ingredient: adapter: a compound needs the nbt table",
-    ),
+    ("ingredient", "generated"),
     ("inventory_block_start", "generated"),
     ("inventory_move_item", "generated"),
     (
@@ -648,27 +534,18 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "cannot: item_crafted: unsupported: the hand-written hook keeps this name (removing it is #44)",
     ),
     ("item_despawn", "generated"),
-    (
-        "item_energy_buffer",
-        "adapter: item_energy_buffer: adapter: a replace out needs its table form",
-    ),
+    ("item_energy_buffer", "generated"),
     ("item_expire", "generated"),
     ("item_spawn", "generated"),
     ("leaves_decay", "generated"),
     ("lightning_strike", "generated"),
     (
         "menu_quick_move",
-        "adapter: menu_quick_move: adapter: a mod_block_entity needs its table form; menu_quick_move: adapter: a mutable stack needs its table form",
+        "handle: menu_quick_move: a ModBlockEntity handle needs its own design",
     ),
     ("moisture_change", "generated"),
-    (
-        "anvil_craft_post",
-        "adapter: anvil_craft_post: adapter: a anvil_craft needs its table form",
-    ),
-    (
-        "anvil_craft_pre",
-        "adapter: anvil_craft_pre: adapter: a anvil_craft needs its table form",
-    ),
+    ("anvil_craft_post", "generated"),
+    ("anvil_craft_pre", "generated"),
     ("armor_stand_manipulate", "generated"),
     ("bucket_empty", "generated"),
     ("container_opened", "generated"),
@@ -691,18 +568,9 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("player_item_frame_change", "generated"),
     ("player_item_mend", "generated"),
     ("player_lectern_page_change", "generated"),
-    (
-        "player_load_from_file",
-        "adapter: player_load_from_file: adapter: a path needs its text form",
-    ),
-    (
-        "player_login",
-        "adapter: player_login: adapter: rich text needs its plain form",
-    ),
-    (
-        "player_save_to_file",
-        "adapter: player_save_to_file: adapter: a path needs its text form",
-    ),
+    ("player_load_from_file", "generated"),
+    ("player_login", "generated"),
+    ("player_save_to_file", "generated"),
     ("player_sprint", "generated"),
     ("player_swap_hands", "generated"),
     ("player_take_lectern_book", "generated"),
@@ -803,18 +671,12 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("sculk_bloom", "generated"),
     ("sleep_finished_time", "generated"),
     ("sponge_absorb", "generated"),
-    (
-        "tab_complete",
-        "adapter: tab_complete: adapter: an array needs its table form; tab_complete: adapter: a suggestion list needs its table form",
-    ),
+    ("tab_complete", "generated"),
     ("target_hit", "generated"),
     ("thunder_change", "generated"),
     ("time_skip", "generated"),
     ("trade_select", "generated"),
-    (
-        "trade_with_villager",
-        "adapter: trade_with_villager: adapter: a merchant_offer needs its table form",
-    ),
+    ("trade_with_villager", "generated"),
     ("vault_change_state", "generated"),
     ("vault_loot", "generated"),
     ("weather_change", "generated"),
@@ -831,28 +693,19 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "cannot: living_heal: unsupported: the hand-written hook keeps this name (removing it is #44)",
     ),
     ("living_jump", "generated"),
-    (
-        "arrow_nock",
-        "adapter: arrow_nock: adapter: a hand needs its name",
-    ),
+    ("arrow_nock", "generated"),
     ("baby_entity_spawn", "generated"),
     ("can_player_sleep", "generated"),
     (
         "compute_fov_modifier",
         "cannot: compute_fov_modifier: unsupported: FovPlayer borrows render state (render thread)",
     ),
-    (
-        "explosion_knockback",
-        "adapter: explosion_knockback: adapter: a slice needs its table form",
-    ),
+    ("explosion_knockback", "generated"),
     (
         "hand_drawn",
         "cannot: hand_drawn: unsupported: HandDrawn borrows render state (render thread)",
     ),
-    (
-        "ingredient_test",
-        "adapter: ingredient_test: adapter: a compound needs the nbt table",
-    ),
+    ("ingredient_test", "generated"),
     ("item_container", "generated"),
     (
         "item_model_property",
@@ -861,55 +714,34 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("living_conversion_post", "generated"),
     ("living_conversion_pre", "generated"),
     ("living_death", "generated"),
-    (
-        "living_get_projectile",
-        "adapter: living_get_projectile: adapter: a stack out needs its table form",
-    ),
-    (
-        "living_incoming_damage_v2",
-        "adapter: living_incoming_damage_v2: adapter: an optional array needs its table form",
-    ),
+    ("living_get_projectile", "generated"),
+    ("living_incoming_damage_v2", "generated"),
     ("living_knockback_v2", "generated"),
     ("mob_split", "generated"),
-    (
-        "register_configs",
-        "adapter: register_configs: adapter: a native_config list needs its table form",
-    ),
+    ("register_configs", "generated"),
     (
         "config_loading",
-        "adapter: config_loading: adapter: a native_config_file needs its table form",
+        "adapter: config_loading: adapter: a config file only the game constructs",
     ),
     (
         "config_reloading",
-        "adapter: config_reloading: adapter: a native_config_file needs its table form",
+        "adapter: config_reloading: adapter: a config file only the game constructs",
     ),
     (
         "config_unloading",
-        "adapter: config_unloading: adapter: a native_config_file needs its table form",
+        "adapter: config_unloading: adapter: a config file only the game constructs",
     ),
     ("movement_input", "generated"),
-    (
-        "note_block_change",
-        "adapter: note_block_change: adapter: native_note_block_change needs its table form",
-    ),
-    (
-        "potential_spawns",
-        "adapter: potential_spawns: adapter: a spawn_entry list needs its table form",
-    ),
+    ("note_block_change", "generated"),
+    ("potential_spawns", "generated"),
     ("village_siege", "generated"),
     (
         "player_chat",
         "cannot: player_chat: unsupported: the hand-written hook keeps this name (removing it is #44)",
     ),
     ("player_xp_change", "generated"),
-    (
-        "recipe_book_categories",
-        "adapter: recipe_book_categories: adapter: a recipe_book_category list needs its table form",
-    ),
-    (
-        "render_hand_pose",
-        "adapter: render_hand_pose: adapter: a hand needs its name",
-    ),
+    ("recipe_book_categories", "generated"),
+    ("render_hand_pose", "generated"),
     ("render_item_in_frame", "generated"),
     ("render_name_tag", "generated"),
     (
@@ -926,30 +758,15 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ),
     ("tooltip_color", "generated"),
     ("camera_pose", "generated"),
-    (
-        "client_chat_received",
-        "adapter: client_chat_received: adapter: rich text needs its plain form",
-    ),
+    ("client_chat_received", "generated"),
     (
         "client_packet",
-        "adapter: client_packet: adapter: a packet needs its table form",
+        "protocol: client_packet: raw packets need their own design",
     ),
-    (
-        "menu_extra_data",
-        "adapter: menu_extra_data: adapter: a replace out needs its table form",
-    ),
-    (
-        "merchant_offer_traded",
-        "adapter: merchant_offer_traded: adapter: a merchant_offer needs its table form",
-    ),
-    (
-        "add_server_reload_listeners",
-        "adapter: add_server_reload_listeners: adapter: a native_reload_listener list needs its table form",
-    ),
-    (
-        "server_reload_listener_apply",
-        "adapter: server_reload_listener_apply: adapter: a native_reload_listener needs its table form; server_reload_listener_apply: adapter: a slice needs its table form",
-    ),
+    ("menu_extra_data", "generated"),
+    ("merchant_offer_traded", "generated"),
+    ("add_server_reload_listeners", "generated"),
+    ("server_reload_listener_apply", "generated"),
     ("client_start", "generated"),
     ("client_disconnecting", "generated"),
     ("client_stopping", "generated"),
@@ -958,21 +775,12 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "gui_render_post",
         "cannot: gui_render_post: unsupported: HudBatch borrows render state (render thread)",
     ),
-    (
-        "anvil_update",
-        "adapter: anvil_update: adapter: a mutable stack needs its table form",
-    ),
-    (
-        "block_clone_item",
-        "adapter: block_clone_item: adapter: a block state needs a host to name it",
-    ),
+    ("anvil_update", "generated"),
+    ("block_clone_item", "generated"),
     ("block_entity_accepts_fluid", "generated"),
     ("block_place", "generated"),
     ("block_redstone", "generated"),
-    (
-        "break_speed",
-        "adapter: break_speed: adapter: a block state needs a host to name it",
-    ),
+    ("break_speed", "generated"),
     ("chat_suggestion_applied", "generated"),
     (
         "chunk_generate",
@@ -983,32 +791,17 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("client_player_network_logging_in", "generated"),
     ("client_tick_pre", "generated"),
     ("client_tick_post", "generated"),
-    (
-        "console_line",
-        "adapter: console_line: adapter: rich text needs its plain form",
-    ),
+    ("console_line", "generated"),
     (
         "container_accepts",
-        "adapter: container_accepts: adapter: a mod_block_entity needs its table form; container_accepts: adapter: an optional direction needs its name",
+        "handle: container_accepts: a ModBlockEntity handle needs its own design",
     ),
     ("creative_slot_v2", "generated"),
     ("custom_block_fluids", "generated"),
-    (
-        "custom_fluid_tanks",
-        "adapter: custom_fluid_tanks: adapter: a replace out needs its table form",
-    ),
-    (
-        "custom_fluid_fill",
-        "adapter: custom_fluid_fill: adapter: an optional direction needs its name; custom_fluid_fill: adapter: a native_fluid_stack needs its table form; custom_fluid_fill: adapter: a native_fluid_action needs its table form",
-    ),
-    (
-        "custom_fluid_drain",
-        "adapter: custom_fluid_drain: adapter: a replace out needs its table form",
-    ),
-    (
-        "custom_payload_from_client",
-        "adapter: custom_payload_from_client: adapter: bytes need their table form",
-    ),
+    ("custom_fluid_tanks", "generated"),
+    ("custom_fluid_fill", "generated"),
+    ("custom_fluid_drain", "generated"),
+    ("custom_payload_from_client", "generated"),
     ("entity_change_block_v2", "generated"),
     (
         "entity_data_to",
@@ -1017,20 +810,11 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("entity_interact_specific", "generated"),
     ("entity_outline", "generated"),
     ("fishing_hook_landed", "generated"),
-    (
-        "handshake",
-        "adapter: handshake: adapter: an address needs its text form; handshake: adapter: rich text needs its plain form",
-    ),
-    (
-        "interact_entity_v2",
-        "adapter: interact_entity_v2: adapter: a hand needs its name",
-    ),
+    ("handshake", "generated"),
+    ("interact_entity_v2", "generated"),
     ("inventory_click", "generated"),
     ("inventory_drag", "generated"),
-    (
-        "item_after_vertical_collision",
-        "adapter: item_after_vertical_collision: adapter: a mutable stack needs its table form",
-    ),
+    ("item_after_vertical_collision", "generated"),
     ("item_dropped_v2", "generated"),
     ("item_interact_mob", "generated"),
     ("item_picked_up_v2", "generated"),
@@ -1043,14 +827,8 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "cannot: lod_column: unsupported: NativeLodColumn borrows the generating chunk (worldgen)",
     ),
     ("log_line", "generated"),
-    (
-        "menu_input_closed",
-        "adapter: menu_input_closed: adapter: a stack out needs its table form",
-    ),
-    (
-        "menu_links",
-        "adapter: menu_links: adapter: a block list needs its table form",
-    ),
+    ("menu_input_closed", "generated"),
+    ("menu_links", "generated"),
     (
         "mob_ai_register",
         "cannot: mob_ai_register: unsupported: the hand-written hook keeps this name (removing it is #44)",
@@ -1067,18 +845,12 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("player_register_channels", "generated"),
     ("player_command_level", "generated"),
     ("player_commands_sent_v2", "generated"),
-    (
-        "player_fish_v2",
-        "adapter: player_fish_v2: adapter: a hand needs its name",
-    ),
+    ("player_fish_v2", "generated"),
     ("player_hurt_by_player", "generated"),
     ("player_launch_projectile_v2", "generated"),
     ("player_logging_out", "generated"),
     ("player_move", "generated"),
-    (
-        "player_pre_login",
-        "adapter: player_pre_login: adapter: an address needs its text form; player_pre_login: adapter: a tuple needs its table form",
-    ),
+    ("player_pre_login", "generated"),
     (
         "player_profile",
         "adapter: player_profile: adapter: a property list needs its table form",
@@ -1088,19 +860,13 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("player_teleport", "generated"),
     ("player_tick_pre", "generated"),
     ("projectile_world_border", "generated"),
-    (
-        "recipe_sources",
-        "adapter: recipe_sources: adapter: a block list needs its table form",
-    ),
+    ("recipe_sources", "generated"),
     (
         "register_goals",
-        "adapter: register_goals: adapter: a live mob needs its table form",
+        "handle: register_goals: a Mob handle needs its own design",
     ),
     ("resource_pack_status_v2", "generated"),
-    (
-        "right_click_block_v2",
-        "adapter: right_click_block_v2: adapter: a hand needs its name",
-    ),
+    ("right_click_block_v2", "generated"),
     ("screen_mouse_dragged_pre_v2", "generated"),
     ("screen_mouse_scrolled_pre_v2", "generated"),
     (
@@ -1113,29 +879,20 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ),
     (
         "server_packet",
-        "adapter: server_packet: adapter: a packet needs its table form",
+        "protocol: server_packet: raw packets need their own design",
     ),
     (
         "server_packets",
-        "adapter: server_packets: adapter: a slice needs its table form",
+        "protocol: server_packets: raw packets need their own design",
     ),
-    (
-        "server_tick_timed",
-        "adapter: server_tick_timed: adapter: a slice needs its table form",
-    ),
+    ("server_tick_timed", "generated"),
     (
         "sound_play",
-        "adapter: sound_play: adapter: sound_playback needs its table form",
+        "adapter: sound_play: adapter: a playback only the game constructs",
     ),
     ("stateful_block_entity", "generated"),
-    (
-        "block_entity_from_state",
-        "adapter: block_entity_from_state: adapter: a replace out needs its table form",
-    ),
-    (
-        "tab_complete_v2",
-        "adapter: tab_complete_v2: adapter: an array needs its table form; tab_complete_v2: adapter: a suggestion list needs its table form",
-    ),
+    ("block_entity_from_state", "generated"),
+    ("tab_complete_v2", "generated"),
     ("toast_add", "generated"),
     (
         "tooltip_render_pre",
@@ -1143,10 +900,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ),
     ("trample", "generated"),
     ("vehicle_moved_v2", "generated"),
-    (
-        "wind_burst",
-        "adapter: wind_burst: adapter: a block list needs its table form",
-    ),
+    ("wind_burst", "generated"),
     (
         "world_submit",
         "cannot: world_submit: unsupported: NativeWorldDraw borrows render state (render thread)",
@@ -1167,9 +921,14 @@ mod test_support;
 #[cfg(test)]
 mod spike_tests;
 
+#[cfg(test)]
+mod round3_tests;
+
 /// The generated hooks, for `horizon.on`'s name check.
 pub const GENERATED_HOOK_NAMES: &[&str] = &[
+    "frame",
     "tick",
+    "emissive",
     "server_about_to_start",
     "server_stopping",
     "level_tick_pre",
@@ -1177,54 +936,87 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "block_changed",
     "key",
     "wheel",
+    "commands",
+    "zoom",
+    "minimap",
+    "mods",
     "settings",
     "settings_click",
+    "block_entity_container",
+    "screen",
     "screen_click",
     "screen_tooltip",
     "menu_clicked",
     "menu_closed",
+    "tooltip",
     "block_spread",
+    "piston_move",
     "fill_bucket",
+    "net_from_client",
+    "net_from_server",
     "on_equip",
+    "block_signal",
     "is_signal_source",
     "left_click_block",
     "entity_leave_level",
+    "block_entity_fluids",
     "should_apply_effect_tick_this_tick",
     "apply_effect_tick",
     "on_effect_added",
     "mob_effect_added",
     "chunk_load",
     "chunk_unload",
+    "item_bar",
     "has_analog_output",
+    "analog_output",
     "component_types",
+    "dispense_item",
     "tooltip_component",
     "can_survive",
     "may_place_on",
     "is_valid_bonemeal_target",
     "is_bonemeal_success",
+    "consume_effect",
+    "loot_table_load",
+    "state_for_placement",
+    "enchant_effect",
+    "modify_default_components",
+    "shader_params",
+    "block_highlight",
+    "render_hand",
     "client_resources_reloaded",
     "use_duration",
+    "use_animation",
     "can_eat",
     "perform_console_command",
     "server_data_loaded",
     "compute_fov",
     "mouse_button_pre",
     "mouse_button_post",
+    "music",
+    "music_layers",
     "datapack_sync",
     "recipes_received",
+    "mouse_scrolling",
     "mod_container_viewers",
     "experience_orb_can_merge",
     "experience_orb_merge",
     "menu_slot_rules",
+    "living_entity_use_item_tick",
     "on_use_tick",
+    "living_entity_use_item_stop",
     "release_using",
     "level_load",
     "level_unload",
     "client_level_load",
     "client_level_unload",
     "entity_mount",
+    "interaction_key",
+    "map_decorations",
     "player_start_tracking",
     "player_stop_tracking",
+    "block_entity_energy",
+    "data_map_types",
     "living_breathe",
     "entity_tick_pre",
     "item_fluid_tank",
@@ -1253,6 +1045,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "brewing_complete",
     "brewing_fuel",
     "brewing_start",
+    "broadcast_message",
     "campfire_start",
     "cauldron_level_changed",
     "chorus_fruit_teleport",
@@ -1286,6 +1079,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "experience_orb_pickup",
     "mending_repair",
     "explosion_prime",
+    "fire_odds",
     "smoke_source",
     "firework_explode",
     "fluid_level_change",
@@ -1297,14 +1091,18 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "game_event",
     "hopper_inventory_search",
     "hopper_pickup_item",
+    "ingredient",
     "inventory_block_start",
     "inventory_move_item",
     "item_despawn",
+    "item_energy_buffer",
     "item_expire",
     "item_spawn",
     "leaves_decay",
     "lightning_strike",
     "moisture_change",
+    "anvil_craft_post",
+    "anvil_craft_pre",
     "armor_stand_manipulate",
     "bucket_empty",
     "container_opened",
@@ -1323,6 +1121,9 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "player_item_frame_change",
     "player_item_mend",
     "player_lectern_page_change",
+    "player_load_from_file",
+    "player_login",
+    "player_save_to_file",
     "player_sprint",
     "player_swap_hands",
     "player_take_lectern_book",
@@ -1399,10 +1200,12 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "sculk_bloom",
     "sleep_finished_time",
     "sponge_absorb",
+    "tab_complete",
     "target_hit",
     "thunder_change",
     "time_skip",
     "trade_select",
+    "trade_with_villager",
     "vault_change_state",
     "vault_loot",
     "weather_change",
@@ -1411,42 +1214,68 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "world_saved",
     "living_drown",
     "living_jump",
+    "arrow_nock",
     "baby_entity_spawn",
     "can_player_sleep",
+    "explosion_knockback",
+    "ingredient_test",
     "item_container",
     "living_conversion_post",
     "living_conversion_pre",
     "living_death",
+    "living_get_projectile",
+    "living_incoming_damage_v2",
     "living_knockback_v2",
     "mob_split",
+    "register_configs",
     "movement_input",
+    "note_block_change",
+    "potential_spawns",
     "village_siege",
     "player_xp_change",
+    "recipe_book_categories",
+    "render_hand_pose",
     "render_item_in_frame",
     "render_name_tag",
     "tooltip_color",
     "camera_pose",
+    "client_chat_received",
+    "menu_extra_data",
+    "merchant_offer_traded",
+    "add_server_reload_listeners",
+    "server_reload_listener_apply",
     "client_start",
     "client_disconnecting",
     "client_stopping",
     "menu_background",
+    "anvil_update",
+    "block_clone_item",
     "block_entity_accepts_fluid",
     "block_place",
     "block_redstone",
+    "break_speed",
     "chat_suggestion_applied",
     "client_attack",
     "client_hurt",
     "client_player_network_logging_in",
     "client_tick_pre",
     "client_tick_post",
+    "console_line",
     "creative_slot_v2",
     "custom_block_fluids",
+    "custom_fluid_tanks",
+    "custom_fluid_fill",
+    "custom_fluid_drain",
+    "custom_payload_from_client",
     "entity_change_block_v2",
     "entity_interact_specific",
     "entity_outline",
     "fishing_hook_landed",
+    "handshake",
+    "interact_entity_v2",
     "inventory_click",
     "inventory_drag",
+    "item_after_vertical_collision",
     "item_dropped_v2",
     "item_interact_mob",
     "item_picked_up_v2",
@@ -1455,26 +1284,36 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "living_damage_post",
     "living_incoming_damage_v3",
     "log_line",
+    "menu_input_closed",
+    "menu_links",
     "permission_check",
     "player_register_channels",
     "player_command_level",
     "player_commands_sent_v2",
+    "player_fish_v2",
     "player_hurt_by_player",
     "player_launch_projectile_v2",
     "player_logging_out",
     "player_move",
+    "player_pre_login",
     "player_respawn_position",
     "player_spawn_location",
     "player_teleport",
     "player_tick_pre",
     "projectile_world_border",
+    "recipe_sources",
     "resource_pack_status_v2",
+    "right_click_block_v2",
     "screen_mouse_dragged_pre_v2",
     "screen_mouse_scrolled_pre_v2",
+    "server_tick_timed",
     "stateful_block_entity",
+    "block_entity_from_state",
+    "tab_complete_v2",
     "toast_add",
     "trample",
     "vehicle_moved_v2",
+    "wind_burst",
 ];
 
 /// The generated hooks whose `kind` filter runs: `horizon.on` rejects a
@@ -1484,7 +1323,9 @@ pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
     "apply_effect_tick",
     "on_effect_added",
     "mob_effect_added",
+    "living_entity_use_item_tick",
     "on_use_tick",
+    "living_entity_use_item_stop",
     "release_using",
     "entity_mount",
     "player_start_tracking",
@@ -1526,20 +1367,27 @@ pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
     "player_toggle_entity_age_lock",
     "player_trade",
     "player_unleash_entity",
+    "trade_with_villager",
     "living_drown",
     "living_jump",
     "baby_entity_spawn",
+    "explosion_knockback",
     "living_conversion_post",
     "living_conversion_pre",
     "living_death",
+    "living_get_projectile",
+    "living_incoming_damage_v2",
     "living_knockback_v2",
     "mob_split",
     "render_item_in_frame",
     "render_name_tag",
+    "merchant_offer_traded",
     "client_attack",
     "entity_change_block_v2",
     "entity_interact_specific",
     "entity_outline",
+    "interact_entity_v2",
+    "item_after_vertical_collision",
     "item_interact_mob",
     "living_change_target",
     "living_damage_pre",
@@ -1553,69 +1401,104 @@ pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
 /// The `Hooks` methods: one macro invocation per hook (the table).
 macro_rules! impl_generated_hooks {
     () => {
+    gen_listen!(frame, game_mut, horizon_client::mod_api::FrameEvent, (none), [elapsed: s_val(std::time::Duration)]);
     gen_listen!(tick, game_mut, horizon_client::mod_api::TickEvent, (none), []);
+    gen_collect!(emissive, game_ref, horizon_client::mod_api::EmissiveEvent<'_>, (none), [layers: s_vec((&'static str, &'static str)) => w_vec((&'static str, &'static str))]);
     gen_listen!(server_about_to_start, game_mut, horizon_client::mod_api::ServerAboutToStartEvent, (none), [dedicated: copy]);
     gen_listen!(server_stopping, game_mut, horizon_client::mod_api::ServerStoppingEvent, (none), [dedicated: copy]);
     gen_listen!(level_tick_pre, game_mut, horizon_client::mod_api::LevelTickPreEvent<'_>, (none), [dimension: cloned]);
     gen_listen!(level_tick_post, game_mut, horizon_client::mod_api::LevelTickPostEvent<'_>, (none), [dimension: cloned]);
-    gen_listen!(block_changed, level, horizon_client::mod_api::BlockChangedEvent, (none), [dimension: dim, pos: pos_struct, old: state_level, new: state_level]);
+    gen_listen!(block_changed, level, horizon_client::mod_api::BlockChangedEvent, (none), [dimension: dim, pos: pos_struct, old: state_level, new: state_level, old_props: state_props_note, new_props: state_props_note]);
     gen_listen!(key, game_mut, horizon_client::mod_api::KeyEvent<'_>, (none), [key: cloned, pressed: copy]);
     gen_cancel!(wheel, game_mut, horizon_client::mod_api::WheelEvent, (none), [steps: copy]);
+    gen_collect!(commands, game_mut, horizon_client::mod_api::CommandsEvent<'_>, (none), [commands: str_seq => mut_strvec_static]);
+    gen_replace!(zoom, game_ref, horizon_client::mod_api::ZoomEvent, (none), [], zoom : struct_out(horizon_client::mod_api::NativeZoom), Option<horizon_client::mod_api::NativeZoom>);
+    gen_replace!(minimap, game_ref, horizon_client::mod_api::MinimapEvent, (none), [], minimap : struct_out(horizon_client::mod_api::NativeMinimap), Option<horizon_client::mod_api::NativeMinimap>);
+    gen_collect!(mods, game_mut, horizon_client::mod_api::ModsEvent<'_>, (none), [mods: s_vec(horizon_client::mod_api::NativeMod) => w_vec(horizon_client::mod_api::NativeMod)]);
     gen_collect!(settings, game_mut, horizon_client::mod_api::SettingsEvent<'_>, (none), [mod_id: cloned, buttons: str_seq => mut_strvec]);
     gen_listen!(settings_click, game_mut, horizon_client::mod_api::SettingsClickEvent<'_>, (none), [mod_id: cloned, button: copy]);
+    gen_replace!(block_entity_container, game_ref, horizon_client::mod_api::BlockEntityContainerEvent<'_>, (none), [block: cloned], container : struct_out(horizon_client::mod_api::ModContainer), Option<horizon_client::mod_api::ModContainer>);
+    gen_replace!(screen, game_ref, horizon_client::mod_api::ScreenEvent<'_>, (none), [block: cloned], screen : struct_out(horizon_client::mod_api::NativeScreen), Option<horizon_client::mod_api::NativeScreen>);
     gen_replace!(screen_click, game_ref, horizon_client::mod_api::ScreenClickEvent<'_>, (none), [block: cloned, data: int_seq, at: pair, right: copy], button : value, Option<i32>);
     gen_collect!(screen_tooltip, game_ref, horizon_client::mod_api::ScreenTooltipEvent<'_>, (none), [block: cloned, data: int_seq, at: pair, lines: str_seq => mut_strvec]);
     gen_listen!(menu_clicked, game_mut, horizon_client::mod_api::MenuClickedEvent, (none), [uuid: copy, window: copy, slot: copy, button: copy, mode: copy]);
     gen_listen!(menu_closed, game_mut, horizon_client::mod_api::MenuClosedEvent, (none), [uuid: copy, window: copy]);
+    gen_collect!(tooltip, game_ref, horizon_client::mod_api::TooltipEvent<'_>, (none), [stack: item, lines: s_vec((Text,u32)) => w_vec((Text,u32))]);
     gen_cancel!(block_spread, level, horizon_client::mod_api::BlockSpreadEvent<'_>, (none), [dimension: dim, kind: cloned, from: pos_struct, to: pos_struct]);
+    gen_cancel!(piston_move, level, horizon_client::mod_api::PistonMoveEvent<'_>, (none), [dimension: dim, piston: pos_struct, direction: pos, push: s_slice(horizon_client::mod_api::BlockPos), destroy: s_slice(horizon_client::mod_api::BlockPos)]);
     gen_cancel!(fill_bucket, game_mut, horizon_client::mod_api::FillBucketEvent<'_>, (none), [stack: item, pos: pos]);
+    gen_listen!(net_from_client, game_mut, horizon_client::mod_api::NetFromClientEvent<'_>, (none), [player: copy, channel: cloned, data: s_bytes]);
+    gen_listen!(net_from_server, game_mut, horizon_client::mod_api::NetFromServerEvent<'_>, (none), [channel: cloned, data: s_bytes]);
     gen_listen!(on_equip, game_mut, horizon_client::mod_api::OnEquipEvent<'_>, (none), [slot: cloned, new: opt_item]);
-    gen_listen!(is_signal_source, level, horizon_client::mod_api::IsSignalSourceEvent, (none), [state: state_level, source: copy => mut_scalar]);
-    gen_cancel!(left_click_block, game_mut, horizon_client::mod_api::LeftClickBlockEvent, (none), [pos: pos, face: pos, state: state_game]);
+    gen_listen!(block_signal, level, horizon_client::mod_api::BlockSignalEvent, (none), [dimension: dim, pos: pos_struct, state: state_level, face: s_val(horizon_client::mod_api::Direction), direct: copy, signal: copy => mut_scalar, state_props: state_props_note]);
+    gen_listen!(is_signal_source, level, horizon_client::mod_api::IsSignalSourceEvent, (none), [state: state_level, source: copy => mut_scalar, state_props: state_props_note]);
+    gen_cancel!(left_click_block, game_mut, horizon_client::mod_api::LeftClickBlockEvent, (none), [pos: pos, face: pos, state: state_game, state_props: state_props_note]);
     gen_listen!(entity_leave_level, game_mut, horizon_client::mod_api::EntityLeaveLevelEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned]);
+    gen_replace!(block_entity_fluids, game_ref, horizon_client::mod_api::BlockEntityFluidsEvent<'_>, (none), [block: cloned], fluids : struct_out(horizon_client::mod_api::ModFluidTanks), Option<horizon_client::mod_api::ModFluidTanks>);
     gen_listen!(should_apply_effect_tick_this_tick, game_ref, horizon_client::mod_api::ShouldApplyEffectTickThisTickEvent<'_>, (none), [effect: cloned, tick_count: copy, amplifier: copy, apply: copy => mut_scalar]);
     gen_listen!(apply_effect_tick, game_ref, horizon_client::mod_api::ApplyEffectTickEvent<'_>, (opt_entity entity), [effect: cloned, dimension: cloned, entity: copy, amplifier: copy, keep: copy => mut_scalar]);
     gen_listen!(on_effect_added, game_mut, horizon_client::mod_api::OnEffectAddedEvent<'_>, (opt_entity entity), [effect: cloned, entity: copy, amplifier: copy]);
     gen_listen!(mob_effect_added, game_mut, horizon_client::mod_api::MobEffectAddedEvent<'_>, (opt_entity entity), [effect: cloned, entity: copy, amplifier: copy]);
     gen_listen!(chunk_load, game_mut, horizon_client::mod_api::ChunkLoadEvent<'_>, (none), [dimension: cloned, chunk: chunk, new: copy]);
     gen_listen!(chunk_unload, game_mut, horizon_client::mod_api::ChunkUnloadEvent<'_>, (none), [dimension: cloned, chunk: chunk]);
-    gen_collect!(has_analog_output, level, horizon_client::mod_api::HasAnalogOutputEvent, (none), [state: state_level, output: copy => mut_scalar]);
+    gen_listen!(item_bar, game_ref, horizon_client::mod_api::ItemBarEvent<'_>, (none), [stack: item, bar: s_opt((i32,u32)) => w_optmut((i32,u32))]);
+    gen_collect!(has_analog_output, level, horizon_client::mod_api::HasAnalogOutputEvent, (none), [state: state_level, output: copy => mut_scalar, state_props: state_props_note]);
+    gen_collect!(analog_output, level, horizon_client::mod_api::AnalogOutputEvent, (none), [dimension: dim, pos: pos_struct, state: state_level, face: s_val(horizon_client::mod_api::Direction), output: copy => mut_scalar, state_props: state_props_note]);
     gen_collect!(component_types, none, horizon_client::mod_api::ComponentTypesEvent<'_>, (none), [types: str_seq => mut_strvec]);
+    gen_replace!(dispense_item, game_mut, horizon_client::mod_api::DispenseItemEvent<'_>, (none), [dimension: cloned, pos: pos, facing: s_val(horizon_client::mod_api::Direction), stack: item], answer : struct_out(horizon_client::mod_api::NativeDispensed), Option<horizon_client::mod_api::NativeDispensed>);
     gen_replace!(tooltip_component, game_ref, horizon_client::mod_api::TooltipComponentEvent<'_>, (none), [stack: item], size : pair, Option<[f32; 2]>);
-    gen_replace!(can_survive, level, horizon_client::mod_api::CanSurviveEvent, (none), [dimension: dim, pos: pos_struct, state: state_level], survives : value, Option<bool>);
-    gen_replace!(may_place_on, level, horizon_client::mod_api::MayPlaceOnEvent, (none), [dimension: dim, state: state_level, ground: state_level, ground_pos: pos_struct], may : value, Option<bool>);
-    gen_replace!(is_valid_bonemeal_target, level, horizon_client::mod_api::IsValidBonemealTargetEvent, (none), [dimension: dim, pos: pos_struct, state: state_level], valid : value, Option<bool>);
+    gen_replace!(can_survive, level, horizon_client::mod_api::CanSurviveEvent, (none), [dimension: dim, pos: pos_struct, state: state_level, state_props: state_props_note], survives : value, Option<bool>);
+    gen_replace!(may_place_on, level, horizon_client::mod_api::MayPlaceOnEvent, (none), [dimension: dim, state: state_level, ground: state_level, ground_pos: pos_struct, state_props: state_props_note, ground_props: state_props_note], may : value, Option<bool>);
+    gen_replace!(is_valid_bonemeal_target, level, horizon_client::mod_api::IsValidBonemealTargetEvent, (none), [dimension: dim, pos: pos_struct, state: state_level, state_props: state_props_note], valid : value, Option<bool>);
     gen_collect!(is_bonemeal_success, level_mut, horizon_client::mod_api::IsBonemealSuccessEvent, (none), [dimension: dim, pos: pos_struct, success: copy => mut_scalar, block: block_from_state]);
+    gen_listen!(consume_effect, game_mut, horizon_client::mod_api::ConsumeEffectEvent<'_>, (none), [kind: cloned, data: s_ref(serde_json::Value)]);
+    gen_collect!(loot_table_load, none, horizon_client::mod_api::LootTableLoadEvent<'_>, (none), [id: cloned, table: s_mut(serde_json::Value) => w_mut(serde_json::Value)]);
+    gen_replace!(state_for_placement, level, horizon_client::mod_api::StateForPlacementEvent<'_>, (none), [dimension: dim, state: state_level, context: s_ref(horizon_client::mod_api::PlacementContext), fluid: s_val(horizon_client::mod_api::FluidState), state_props: state_props_note], answer : answer_state, Option<Option<BlockStateId>>);
+    gen_listen!(enchant_effect, game_mut, horizon_client::mod_api::EnchantEffectEvent<'_>, (none), [enchantment: cloned, kind: cloned, data: s_ref(serde_json::Value), level: copy, victim: copy]);
+    gen_collect!(modify_default_components, none, horizon_client::mod_api::ModifyDefaultComponentsEvent<'_>, (none), [item: cloned, components: s_mut(serde_json::Map<String, serde_json::Value>) => w_mut(serde_json::Map<String, serde_json::Value>)]);
+    gen_listen!(shader_params, game_ref, horizon_client::mod_api::ShaderParamsEvent<'_>, (none), [partial: copy, params: s_mut([[f32;4];8]) => w_mut([[f32;4];8])]);
+    gen_cancel!(block_highlight, game_ref, horizon_client::mod_api::BlockHighlightEvent, (none), [pos: pos, state: state_game, partial: copy, state_props: state_props_note]);
+    gen_cancel!(render_hand, game_ref, horizon_client::mod_api::RenderHandEvent<'_>, (none), [hand: s_val(horizon_client::mod_api::Hand), stack: opt_item, partial: copy, swing: copy, equip: copy]);
     gen_listen!(client_resources_reloaded, game_mut, horizon_client::mod_api::ClientResourcesReloadedEvent, (none), []);
     gen_listen!(use_duration, game_ref, horizon_client::mod_api::UseDurationEvent<'_>, (none), [stack: item, duration: copy => mut_scalar]);
+    gen_listen!(use_animation, game_ref, horizon_client::mod_api::UseAnimationEvent<'_>, (none), [stack: item, animation: s_mut(horizon_world::consumable::UseAnimation) => w_mut(horizon_world::consumable::UseAnimation)]);
     gen_listen!(can_eat, game_ref, horizon_client::mod_api::CanEatEvent<'_>, (none), [stack: item, can_eat: copy => mut_scalar]);
     gen_cancel!(perform_console_command, game_mut, horizon_client::mod_api::PerformConsoleCommandEvent<'_>, (none), [command: cloned]);
     gen_listen!(server_data_loaded, game_mut, horizon_client::mod_api::ServerDataLoadedEvent, (none), [reload: copy]);
     gen_listen!(compute_fov, game_ref, horizon_client::mod_api::ComputeFovEvent, (none), [partial: copy, camera: vec3, degrees: copy => mut_scalar]);
     gen_cancel!(mouse_button_pre, game_mut, horizon_client::mod_api::MouseButtonPreEvent, (none), [button: copy, pressed: copy, modifiers: copy]);
     gen_listen!(mouse_button_post, game_mut, horizon_client::mod_api::MouseButtonPostEvent, (none), [button: copy, pressed: copy, modifiers: copy]);
+    gen_listen!(music, game_ref, horizon_client::mod_api::MusicEvent<'_>, (none), [music: s_opt(horizon_client::mod_api::Music) => w_optmut(horizon_client::mod_api::Music), volume: copy => mut_scalar]);
+    gen_collect!(music_layers, game_ref, horizon_client::mod_api::MusicLayersEvent<'_>, (none), [layers: s_vec(horizon_client::mod_api::MusicLayer) => w_vec(horizon_client::mod_api::MusicLayer)]);
     gen_collect!(datapack_sync, game_mut, horizon_client::mod_api::DatapackSyncEvent<'_>, (none), [recipe_types: str_seq => mut_strvec]);
     gen_listen!(recipes_received, game_mut, horizon_client::mod_api::RecipesReceivedEvent<'_>, (none), [recipe_types: str_seq]);
+    gen_cancel!(mouse_scrolling, game_mut, horizon_client::mod_api::MouseScrollingEvent, (none), [scroll: pair64, accumulated: s_val([i32;2]), buttons: s_val([bool;3]), cursor: pair, modifiers: copy]);
     gen_listen!(mod_container_viewers, game_mut, horizon_client::mod_api::ModContainerViewersEvent<'_>, (none), [dimension: cloned, pos: pos, viewers: copy, previous: copy]);
     gen_listen!(experience_orb_can_merge, game_mut, horizon_client::mod_api::ExperienceOrbCanMergeEvent<'_>, (none), [dimension: cloned, into: copy, from: copy, into_value: copy, from_value: copy, can_merge: copy => mut_scalar]);
     gen_cancel!(experience_orb_merge, game_mut, horizon_client::mod_api::ExperienceOrbMergeEvent<'_>, (none), [dimension: cloned, into: copy, from: copy, from_value: copy]);
     gen_listen!(menu_slot_rules, none, horizon_client::mod_api::MenuSlotRulesEvent<'_>, (none), [menu: cloned, slot: copy, stack: item, may_place: copy => mut_scalar, max_stack: copy => mut_scalar]);
+    gen_cancel!(living_entity_use_item_tick, game_mut, horizon_client::mod_api::LivingEntityUseItemTickEvent<'_>, (opt_entity entity), [stack: item, entity: copy, hand: s_val(horizon_client::mod_api::Hand), duration: copy => mut_scalar]);
     gen_listen!(on_use_tick, game_mut, horizon_client::mod_api::OnUseTickEvent<'_>, (opt_entity entity), [stack: item, entity: copy, remaining: copy]);
+    gen_cancel!(living_entity_use_item_stop, game_mut, horizon_client::mod_api::LivingEntityUseItemStopEvent<'_>, (opt_entity entity), [stack: item, entity: copy, hand: s_val(horizon_client::mod_api::Hand), duration: copy]);
     gen_listen!(release_using, game_mut, horizon_client::mod_api::ReleaseUsingEvent<'_>, (opt_entity entity), [stack: item, entity: copy, time_left: copy, used: copy => mut_scalar]);
     gen_listen!(level_load, game_mut, horizon_client::mod_api::LevelLoadEvent<'_>, (none), [dimension: cloned]);
     gen_listen!(level_unload, game_mut, horizon_client::mod_api::LevelUnloadEvent<'_>, (none), [dimension: cloned]);
     gen_listen!(client_level_load, game_mut, horizon_client::mod_api::ClientLevelLoadEvent<'_>, (none), [dimension: cloned]);
     gen_listen!(client_level_unload, game_mut, horizon_client::mod_api::ClientLevelUnloadEvent<'_>, (none), [dimension: cloned]);
     gen_cancel!(entity_mount, game_mut, horizon_client::mod_api::EntityMountEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, vehicle: copy, vehicle_kind: cloned, mounting: copy]);
+    gen_cancel!(interaction_key, game_mut, horizon_client::mod_api::InteractionKeyEvent<'_>, (none), [button: copy, key_mapping: cloned, hand: s_val(horizon_client::mod_api::Hand), swing_hand: copy => mut_scalar]);
+    gen_collect!(map_decorations, game_ref, horizon_client::mod_api::MapDecorationsEvent<'_>, (none), [map: s_mapinfo, decorations: s_vec(horizon_client::mod_api::NativeMapDecoration) => w_vec(horizon_client::mod_api::NativeMapDecoration)]);
     gen_listen!(player_start_tracking, game_mut, horizon_client::mod_api::PlayerStartTrackingEvent<'_>, (field kind), [player: player, entity: copy, uuid: copy, kind: cloned]);
     gen_listen!(player_stop_tracking, game_mut, horizon_client::mod_api::PlayerStopTrackingEvent<'_>, (field kind), [player: player, entity: copy, uuid: copy, kind: cloned]);
+    gen_replace!(block_entity_energy, game_ref, horizon_client::mod_api::BlockEntityEnergyEvent<'_>, (none), [block: cloned], energy : struct_out(horizon_client::mod_api::ModEnergyBuffer), Option<horizon_client::mod_api::ModEnergyBuffer>);
+    gen_collect!(data_map_types, game_ref, horizon_client::mod_api::DataMapTypesEvent<'_>, (none), [types: s_vec(horizon_client::mod_api::NativeDataMapType) => w_vec(horizon_client::mod_api::NativeDataMapType)]);
     gen_listen!(living_breathe, none, horizon_client::mod_api::LivingBreatheEvent<'_>, (field kind), [entity: copy, kind: cloned, can_breathe: copy => mut_scalar, consume: copy => mut_scalar, refill: copy => mut_scalar]);
     gen_cancel!(entity_tick_pre, game_mut, horizon_client::mod_api::EntityTickPreEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned]);
     gen_replace!(item_fluid_tank, game_ref, horizon_client::mod_api::ItemFluidTankEvent<'_>, (none), [item: cloned], capacity : value, Option<i32>);
     gen_collect!(player_render_listened, game_ref, horizon_client::mod_api::PlayerRenderListenedEvent, (none), [listened: copy => mut_scalar]);
     gen_cancel!(sign_changed, game_mut, horizon_client::mod_api::SignChangedEvent<'_>, (none), [player: player, dimension: cloned, pos: pos, front: copy, lines: str_seq => mut_strvec]);
     gen_collect!(standalone_models, none, horizon_client::mod_api::StandaloneModelsEvent<'_>, (none), [models: str_seq => mut_strvec]);
-    gen_listen!(player_container_close, game_mut, horizon_client::mod_api::PlayerContainerCloseEvent<'_>, (none), [player: player, dimension: cloned, menu: cloned, pos: opt_pos]);
+    gen_listen!(player_container_close, game_mut, horizon_client::mod_api::PlayerContainerCloseEvent<'_>, (none), [player: player, dimension: cloned, menu: cloned, pos: s_opt([i32;3])]);
     gen_cancel!(player_toggle_flight, game_mut, horizon_client::mod_api::PlayerToggleFlightEvent<'_>, (none), [player: player, flying: copy]);
     gen_listen!(anvil_damaged, game_mut, horizon_client::mod_api::AnvilDamagedEvent<'_>, (none), [dimension: cloned, pos: pos, from: cloned, to: cloned]);
     gen_cancel!(arrow_loose, game_mut, horizon_client::mod_api::ArrowLooseEvent<'_>, (none), [stack: item, has_ammo: copy, charge: copy => mut_scalar]);
@@ -1627,9 +1510,9 @@ macro_rules! impl_generated_hooks {
     gen_listen!(block_damage_abort, game_mut, horizon_client::mod_api::BlockDamageAbortEvent<'_>, (none), [player: player, pos: pos]);
     gen_listen!(block_dispense_armor, game_mut, horizon_client::mod_api::BlockDispenseArmorEvent<'_>, (none), [dimension: cloned, pos: pos, item: cloned, target: cloned]);
     gen_listen!(block_exp, level, horizon_client::mod_api::BlockExpEvent<'_>, (none), [dimension: dim, pos: pos_struct, block: cloned, experience: copy => mut_scalar]);
-    gen_cancel!(block_fade, level, horizon_client::mod_api::BlockFadeEvent, (none), [dimension: dim, pos: pos_struct, from: state_level, to: state_level]);
+    gen_cancel!(block_fade, level, horizon_client::mod_api::BlockFadeEvent, (none), [dimension: dim, pos: pos_struct, from: state_level, to: state_level, from_props: state_props_note, to_props: state_props_note]);
     gen_listen!(block_failed_dispense, game_mut, horizon_client::mod_api::BlockFailedDispenseEvent<'_>, (none), [dimension: cloned, pos: pos, item: cloned]);
-    gen_cancel!(block_form, level, horizon_client::mod_api::BlockFormEvent, (none), [dimension: dim, pos: pos_struct, from: state_level, to: state_level]);
+    gen_cancel!(block_form, level, horizon_client::mod_api::BlockFormEvent, (none), [dimension: dim, pos: pos_struct, from: state_level, to: state_level, from_props: state_props_note, to_props: state_props_note]);
     gen_cancel!(block_ignite, level, horizon_client::mod_api::BlockIgniteEvent<'_>, (none), [dimension: dim, player: opt_uuid, pos: pos_struct, cause: cloned]);
     gen_cancel!(block_lock_check, game_mut, horizon_client::mod_api::BlockLockCheckEvent<'_>, (none), [player: player, pos: pos]);
     gen_cancel!(block_receive_game, game_mut, horizon_client::mod_api::BlockReceiveGameEvent<'_>, (none), [dimension: cloned, pos: pos, block: cloned, event: cloned]);
@@ -1637,9 +1520,10 @@ macro_rules! impl_generated_hooks {
     gen_listen!(brewing_complete, game_ref, horizon_client::mod_api::BrewingCompleteEvent, (none), [pos: pos]);
     gen_listen!(brewing_fuel, game_ref, horizon_client::mod_api::BrewingFuelEvent<'_>, (none), [pos: pos, fuel: cloned]);
     gen_listen!(brewing_start, game_ref, horizon_client::mod_api::BrewingStartEvent<'_>, (none), [pos: pos, ingredient: cloned]);
+    gen_cancel!(broadcast_message, game_ref, horizon_client::mod_api::BroadcastMessageEvent<'_>, (none), [line: s_text => w_text]);
     gen_listen!(campfire_start, game_ref, horizon_client::mod_api::CampfireStartEvent<'_>, (none), [pos: pos, item: cloned]);
     gen_cancel!(cauldron_level_changed, level, horizon_client::mod_api::CauldronLevelChangedEvent<'_>, (none), [dimension: dim, player: opt_uuid, pos: pos_struct, from_level: copy, to_level: copy, reason: cloned]);
-    gen_cancel!(chorus_fruit_teleport, game_mut, horizon_client::mod_api::ChorusFruitTeleportEvent<'_>, (none), [player: player, from: vec3, target: mut_vec3 => mut_vec3]);
+    gen_cancel!(chorus_fruit_teleport, game_mut, horizon_client::mod_api::ChorusFruitTeleportEvent<'_>, (none), [player: player, from: vec3, target: s_mut([f64;3]) => w_mut([f64;3])]);
     gen_listen!(compost_item, game_ref, horizon_client::mod_api::CompostItemEvent<'_>, (none), [pos: pos, item: cloned]);
     gen_listen!(crafter_craft, game_ref, horizon_client::mod_api::CrafterCraftEvent<'_>, (none), [pos: pos, recipe: cloned]);
     gen_listen!(creeper_ignite, game_mut, horizon_client::mod_api::CreeperIgniteEvent<'_>, (entity entity), [entity: copy, player: copy, item: cloned]);
@@ -1648,7 +1532,7 @@ macro_rules! impl_generated_hooks {
     gen_listen!(difficulty_changed, game_mut, horizon_client::mod_api::DifficultyChangedEvent<'_>, (none), [from: cloned, to: cloned]);
     gen_cancel!(dragon_egg_form, level, horizon_client::mod_api::DragonEggFormEvent, (none), [dimension: dim, pos: pos_struct]);
     gen_listen!(enchant_item, game_mut, horizon_client::mod_api::EnchantItemEvent<'_>, (none), [player: player, pos: pos, item: item, levels: copy]);
-    gen_cancel!(ender_pearl_teleport, game_mut, horizon_client::mod_api::EnderPearlTeleportEvent<'_>, (none), [player: player, pearl: copy, from: vec3, target: mut_vec3 => mut_vec3, damage: copy => mut_scalar]);
+    gen_cancel!(ender_pearl_teleport, game_mut, horizon_client::mod_api::EnderPearlTeleportEvent<'_>, (none), [player: player, pearl: copy, from: vec3, target: s_mut([f64;3]) => w_mut([f64;3]), damage: copy => mut_scalar]);
     gen_listen!(entities_load, game_mut, horizon_client::mod_api::EntitiesLoadEvent<'_>, (none), [dimension: cloned, chunk: chunk, count: copy]);
     gen_listen!(entities_unload, game_mut, horizon_client::mod_api::EntitiesUnloadEvent<'_>, (none), [dimension: cloned, chunk: chunk, count: copy]);
     gen_listen!(entity_break_door, game_mut, horizon_client::mod_api::EntityBreakDoorEvent<'_>, (field kind), [entity: copy, kind: cloned, pos: pos]);
@@ -1670,7 +1554,8 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(experience_orb_pickup, game_mut, horizon_client::mod_api::ExperienceOrbPickupEvent<'_>, (none), [player: copy, dimension: cloned, orb: copy, value: copy => mut_scalar, count: copy => mut_scalar]);
     gen_listen!(mending_repair, game_mut, horizon_client::mod_api::MendingRepairEvent<'_>, (none), [player: copy, stack: item, experience: copy, repair: copy => mut_scalar]);
     gen_listen!(explosion_prime, game_mut, horizon_client::mod_api::ExplosionPrimeEvent, (none), [center: vec3, radius: copy]);
-    gen_replace!(smoke_source, level, horizon_client::mod_api::SmokeSourceEvent, (none), [dimension: dim, state: state_level], smoke : value, Option<bool>);
+    gen_replace!(fire_odds, level, horizon_client::mod_api::FireOddsEvent, (none), [dimension: dim, state: state_level, state_props: state_props_note], odds : struct_out((i32,i32)), Option<(i32,i32)>);
+    gen_replace!(smoke_source, level, horizon_client::mod_api::SmokeSourceEvent, (none), [dimension: dim, state: state_level, state_props: state_props_note], smoke : value, Option<bool>);
     gen_listen!(firework_explode, game_mut, horizon_client::mod_api::FireworkExplodeEvent, (entity entity), [entity: copy, pos: vec3, bursts: copy]);
     gen_cancel!(fluid_level_change, level, horizon_client::mod_api::FluidLevelChangeEvent<'_>, (none), [dimension: dim, pos: pos_struct, fluid: cloned, from: copy, to: copy]);
     gen_listen!(framerate_limit, game_ref, horizon_client::mod_api::FramerateLimitEvent, (none), [focused: copy, minimized: copy, in_world: copy, limit: copy => mut_scalar]);
@@ -1679,19 +1564,23 @@ macro_rules! impl_generated_hooks {
     gen_listen!(furnace_smelt, game_ref, horizon_client::mod_api::FurnaceSmeltEvent<'_>, (none), [pos: pos, item: cloned, result: cloned]);
     gen_listen!(furnace_start_smelt, game_ref, horizon_client::mod_api::FurnaceStartSmeltEvent<'_>, (none), [pos: pos, item: cloned]);
     gen_listen!(game_event, game_mut, horizon_client::mod_api::GameEventEvent<'_>, (none), [event: cloned, pos: vec3]);
-    gen_listen!(hopper_inventory_search, game_ref, horizon_client::mod_api::HopperInventorySearchEvent, (opt_entity entity), [hopper: pos, container: opt_pos, entity: copy]);
+    gen_listen!(hopper_inventory_search, game_ref, horizon_client::mod_api::HopperInventorySearchEvent, (opt_entity entity), [hopper: pos, container: s_opt([i32;3]), entity: copy]);
     gen_cancel!(hopper_pickup_item, level, horizon_client::mod_api::HopperPickupItemEvent<'_>, (none), [dimension: dim, pos: pos_struct, item: cloned, count: copy]);
+    gen_collect!(ingredient, none, horizon_client::mod_api::IngredientEvent<'_>, (none), [kind: cloned, data: s_ref(serde_json::Map<String, serde_json::Value>), items: str_seq => mut_strvec]);
     gen_cancel!(inventory_block_start, game_mut, horizon_client::mod_api::InventoryBlockStartEvent<'_>, (none), [player: player, pos: pos]);
     gen_cancel!(inventory_move_item, game_ref, horizon_client::mod_api::InventoryMoveItemEvent<'_>, (none), [source: pos, destination: pos, item: cloned]);
     gen_listen!(item_despawn, game_mut, horizon_client::mod_api::ItemDespawnEvent<'_>, (entity entity), [entity: copy, item: cloned, count: copy, pos: vec3]);
+    gen_replace!(item_energy_buffer, game_ref, horizon_client::mod_api::ItemEnergyBufferEvent<'_>, (none), [item: cloned], buffer : struct_out(horizon_client::mod_api::ItemEnergyBuffer), Option<horizon_client::mod_api::ItemEnergyBuffer>);
     gen_listen!(item_expire, game_mut, horizon_client::mod_api::ItemExpireEvent<'_>, (entity entity), [entity: copy, stack: item, extra_life: copy => mut_scalar]);
     gen_listen!(item_spawn, game_mut, horizon_client::mod_api::ItemSpawnEvent<'_>, (entity entity), [entity: copy, item: cloned, count: copy, pos: vec3]);
     gen_cancel!(leaves_decay, level, horizon_client::mod_api::LeavesDecayEvent, (none), [dimension: dim, pos: pos_struct]);
     gen_cancel!(lightning_strike, game_mut, horizon_client::mod_api::LightningStrikeEvent<'_>, (none), [player: opt_uuid, pos: pos, cause: cloned]);
     gen_cancel!(moisture_change, level, horizon_client::mod_api::MoistureChangeEvent, (none), [dimension: dim, pos: pos_struct, from: copy, to: copy]);
+    gen_listen!(anvil_craft_post, game_mut, horizon_client::mod_api::AnvilCraftPostEvent<'_>, (none), [player: player, pos: pos, craft: s_ref(horizon_client::menu::AnvilCraft)]);
+    gen_cancel!(anvil_craft_pre, game_mut, horizon_client::mod_api::AnvilCraftPreEvent<'_>, (none), [player: player, pos: pos, craft: s_ref(horizon_client::menu::AnvilCraft)]);
     gen_cancel!(armor_stand_manipulate, game_mut, horizon_client::mod_api::ArmorStandManipulateEvent<'_>, (none), [player: player, stand_id: copy, slot: cloned]);
     gen_cancel!(bucket_empty, game_mut, horizon_client::mod_api::BucketEmptyEvent<'_>, (none), [player: player, pos: pos, fluid: cloned]);
-    gen_cancel!(container_opened, game_mut, horizon_client::mod_api::ContainerOpenedEvent<'_>, (none), [player: player, kind: cloned, pos: opt_pos]);
+    gen_cancel!(container_opened, game_mut, horizon_client::mod_api::ContainerOpenedEvent<'_>, (none), [player: player, kind: cloned, pos: s_opt([i32;3])]);
     gen_cancel!(creative_slot, game_mut, horizon_client::mod_api::CreativeSlotEvent<'_>, (none), [player: player, slot: copy, item: cloned, count: copy]);
     gen_cancel!(food_level_changed, game_mut, horizon_client::mod_api::FoodLevelChangedEvent<'_>, (none), [player: player, from: copy, to: copy => mut_scalar]);
     gen_cancel!(hanging_break, game_mut, horizon_client::mod_api::HangingBreakEvent<'_>, (field kind), [player: opt_uuid, kind: cloned, pos: pos]);
@@ -1707,6 +1596,9 @@ macro_rules! impl_generated_hooks {
     gen_listen!(player_item_frame_change, game_mut, horizon_client::mod_api::PlayerItemFrameChangeEvent<'_>, (entity entity_id), [player: player, entity_id: copy, action: cloned, item: cloned, rotation: copy]);
     gen_listen!(player_item_mend, game_mut, horizon_client::mod_api::PlayerItemMendEvent<'_>, (none), [player: player, item: cloned, repair: copy, experience: copy]);
     gen_listen!(player_lectern_page_change, game_mut, horizon_client::mod_api::PlayerLecternPageChangeEvent<'_>, (none), [player: player, pos: pos, page: copy]);
+    gen_listen!(player_load_from_file, game_mut, horizon_client::mod_api::PlayerLoadFromFileEvent<'_>, (none), [player: player, directory: s_path]);
+    gen_cancel!(player_login, game_mut, horizon_client::mod_api::PlayerLoginEvent<'_>, (none), [player: player, reason: s_opt_text => w_opt_text]);
+    gen_listen!(player_save_to_file, game_mut, horizon_client::mod_api::PlayerSaveToFileEvent<'_>, (none), [player: player, directory: s_path]);
     gen_listen!(player_sprint, game_mut, horizon_client::mod_api::PlayerSprintEvent<'_>, (none), [player: player, sprinting: copy]);
     gen_cancel!(player_swap_hands, game_mut, horizon_client::mod_api::PlayerSwapHandsEvent<'_>, (none), [player: player]);
     gen_listen!(player_take_lectern_book, game_mut, horizon_client::mod_api::PlayerTakeLecternBookEvent<'_>, (none), [player: player, pos: pos, book: cloned]);
@@ -1775,18 +1667,20 @@ macro_rules! impl_generated_hooks {
     gen_replace!(prepare_anvil, game_mut, horizon_client::mod_api::PrepareAnvilEvent<'_>, (none), [player: player, pos: pos, cost: copy => mut_scalar], result : item, Option<ItemStack>);
     gen_replace!(prepare_grindstone, game_mut, horizon_client::mod_api::PrepareGrindstoneEvent<'_>, (none), [player: player, pos: pos], result : item, Option<ItemStack>);
     gen_listen!(prepare_hopper_transfer, game_ref, horizon_client::mod_api::PrepareHopperTransferEvent, (none), [pos: pos]);
-    gen_replace!(prepare_item_craft, game_mut, horizon_client::mod_api::PrepareItemCraftEvent<'_>, (none), [player: player, pos: opt_pos], result : item, Option<ItemStack>);
-    gen_listen!(prepare_item_enchant, game_mut, horizon_client::mod_api::PrepareItemEnchantEvent<'_>, (none), [player: player, pos: pos, costs: mut_pos => mut_pos]);
+    gen_replace!(prepare_item_craft, game_mut, horizon_client::mod_api::PrepareItemCraftEvent<'_>, (none), [player: player, pos: s_opt([i32;3])], result : item, Option<ItemStack>);
+    gen_listen!(prepare_item_enchant, game_mut, horizon_client::mod_api::PrepareItemEnchantEvent<'_>, (none), [player: player, pos: pos, costs: s_mut([i32;3]) => w_mut([i32;3])]);
     gen_replace!(prepare_smithing, game_mut, horizon_client::mod_api::PrepareSmithingEvent<'_>, (none), [player: player, pos: pos], result : item, Option<ItemStack>);
     gen_listen!(raid_spawn_wave, game_mut, horizon_client::mod_api::RaidSpawnWaveEvent, (none), [raid: copy, pos: pos, wave: copy, raiders: copy]);
     gen_listen!(raid_state_change, game_mut, horizon_client::mod_api::RaidStateChangeEvent<'_>, (none), [raid: copy, pos: pos, state: cloned]);
     gen_listen!(sculk_bloom, game_mut, horizon_client::mod_api::SculkBloomEvent<'_>, (none), [dimension: cloned, pos: pos]);
     gen_listen!(sleep_finished_time, game_mut, horizon_client::mod_api::SleepFinishedTimeEvent<'_>, (none), [dimension: cloned, current: copy, new_time: copy => mut_scalar]);
     gen_listen!(sponge_absorb, level, horizon_client::mod_api::SpongeAbsorbEvent, (none), [dimension: dim, pos: pos_struct]);
+    gen_collect!(tab_complete, game_mut, horizon_client::mod_api::TabCompleteEvent<'_>, (none), [player: player, command: cloned, range: s_val([usize;2]), suggestions: s_vec(horizon_client::mod_api::Suggestion) => w_vec(horizon_client::mod_api::Suggestion)]);
     gen_listen!(target_hit, game_mut, horizon_client::mod_api::TargetHitEvent<'_>, (none), [dimension: cloned, pos: pos, strength: copy]);
     gen_cancel!(thunder_change, game_mut, horizon_client::mod_api::ThunderChangeEvent<'_>, (none), [dimension: cloned, thundering: copy]);
     gen_cancel!(time_skip, game_mut, horizon_client::mod_api::TimeSkipEvent<'_>, (none), [dimension: cloned, from: copy, to: copy, cause: cloned]);
     gen_listen!(trade_select, game_mut, horizon_client::mod_api::TradeSelectEvent<'_>, (none), [player: player, villager: copy, index: copy]);
+    gen_listen!(trade_with_villager, game_mut, horizon_client::mod_api::TradeWithVillagerEvent<'_>, (field kind), [merchant: copy, kind: cloned, offer: s_ref(horizon_client::mod_api::MerchantOffer)]);
     gen_listen!(vault_change_state, game_mut, horizon_client::mod_api::VaultChangeStateEvent<'_>, (none), [dimension: cloned, pos: pos, state: cloned]);
     gen_listen!(vault_loot, game_ref, horizon_client::mod_api::VaultLootEvent<'_>, (none), [pos: pos, item: cloned]);
     gen_cancel!(weather_change, game_mut, horizon_client::mod_api::WeatherChangeEvent<'_>, (none), [dimension: cloned, raining: copy, thundering: copy]);
@@ -1795,42 +1689,68 @@ macro_rules! impl_generated_hooks {
     gen_listen!(world_saved, game_mut, horizon_client::mod_api::WorldSavedEvent, (none), [wait: copy]);
     gen_cancel!(living_drown, none, horizon_client::mod_api::LivingDrownEvent<'_>, (field kind), [entity: copy, kind: cloned, is_drowning: copy => mut_scalar, damage_amount: copy => mut_scalar, bubble_count: copy]);
     gen_listen!(living_jump, none, horizon_client::mod_api::LivingJumpEvent<'_>, (field kind), [entity: copy, kind: cloned]);
+    gen_cancel!(arrow_nock, game_mut, horizon_client::mod_api::ArrowNockEvent<'_>, (none), [player: player, bow: item, hand: s_val(horizon_client::mod_api::Hand), has_ammo: copy]);
     gen_cancel!(baby_entity_spawn, game_mut, horizon_client::mod_api::BabyEntitySpawnEvent<'_>, (field kind), [parent: copy, partner: copy, player: copy, kind: cloned]);
     gen_listen!(can_player_sleep, game_mut, horizon_client::mod_api::CanPlayerSleepEvent<'_>, (none), [player: player, pos: pos, problem: mut_opt_string => mut_opt_string]);
+    gen_collect!(explosion_knockback, game_mut, horizon_client::mod_api::ExplosionKnockbackEvent<'_>, (opt_entity entity), [dimension: cloned, center: vec3, blocks: s_slice([i32;3]), entity: copy, knockback_velocity: s_mut([f64;3]) => w_mut([f64;3])]);
+    gen_listen!(ingredient_test, none, horizon_client::mod_api::IngredientTestEvent<'_>, (none), [kind: cloned, data: s_ref(serde_json::Map<String, serde_json::Value>), stack: item, accept: copy => mut_scalar]);
     gen_replace!(item_container, game_ref, horizon_client::mod_api::ItemContainerEvent<'_>, (none), [item: cloned], slots : value, Option<u32>);
     gen_listen!(living_conversion_post, game_mut, horizon_client::mod_api::LivingConversionPostEvent<'_>, (field kind), [entity: copy, kind: cloned, converted: copy, converted_kind: cloned]);
     gen_cancel!(living_conversion_pre, game_mut, horizon_client::mod_api::LivingConversionPreEvent<'_>, (field kind), [entity: copy, kind: cloned, outcome: cloned]);
     gen_cancel!(living_death, game_mut, horizon_client::mod_api::LivingDeathEvent<'_>, (field kind), [entity: copy, kind: cloned, damage_type: cloned, attacker: copy]);
+    gen_collect!(living_get_projectile, game_mut, horizon_client::mod_api::LivingGetProjectileEvent<'_>, (field kind), [player: player_opt, entity: copy, kind: cloned, weapon: item, projectile: s_opt(horizon_client::mod_api::ItemStack) => w_optmut(horizon_client::mod_api::ItemStack)]);
+    gen_cancel!(living_incoming_damage_v2, game_mut, horizon_client::mod_api::LivingIncomingDamageV2Event<'_>, (field kind), [entity: copy, kind: cloned, damage_type: cloned, causing: copy, source_position: s_opt([f64;3]), victim_position: vec3, victim_view: vec3, weapon: opt_item, amount: copy => mut_scalar]);
     gen_cancel!(living_knockback_v2, none, horizon_client::mod_api::LivingKnockbackV2Event<'_>, (field kind), [entity: copy, kind: cloned, attacker: copy, attacker_main: opt_item, attacker_off: opt_item, strength: copy => mut_scalar, x: copy => mut_scalar, z: copy => mut_scalar]);
     gen_cancel!(mob_split, game_mut, horizon_client::mod_api::MobSplitEvent<'_>, (field kind), [parent: copy, kind: cloned, size: copy, child_size: copy, count: copy => mut_scalar]);
+    gen_collect!(register_configs, game_mut, horizon_client::mod_api::RegisterConfigsEvent<'_>, (none), [configs: s_vec(horizon_client::mod_api::NativeConfig) => w_vec(horizon_client::mod_api::NativeConfig)]);
     gen_listen!(movement_input, game_ref, horizon_client::mod_api::MovementInputEvent, (none), [forward: copy => mut_scalar, strafe: copy => mut_scalar, jump: copy => mut_scalar, sneak: copy => mut_scalar]);
+    gen_cancel!(note_block_change, level, horizon_client::mod_api::NoteBlockChangeEvent<'_>, (none), [context: s_notechange, new_note: copy => mut_scalar]);
+    gen_cancel!(potential_spawns, game_ref, horizon_client::mod_api::PotentialSpawnsEvent<'_>, (none), [dimension: cloned, category: cloned, pos: pos, entries: s_vec(horizon_client::mod_api::SpawnEntry) => w_vec(horizon_client::mod_api::SpawnEntry)]);
     gen_cancel!(village_siege, game_mut, horizon_client::mod_api::VillageSiegeEvent<'_>, (none), [dimension: cloned, player: copy, attempted_pos: vec3]);
     gen_cancel!(player_xp_change, game_mut, horizon_client::mod_api::PlayerXpChangeEvent<'_>, (none), [player: player, amount: copy => mut_scalar]);
+    gen_listen!(recipe_book_categories, game_ref, horizon_client::mod_api::RecipeBookCategoriesEvent<'_>, (none), [categories: s_vec(horizon_client::mod_api::RecipeBookCategory) => w_vec(horizon_client::mod_api::RecipeBookCategory)]);
+    gen_listen!(render_hand_pose, game_ref, horizon_client::mod_api::RenderHandPoseEvent<'_>, (none), [hand: s_val(horizon_client::mod_api::Hand), stack: opt_item, partial: copy, swing: copy, equip: copy, x: copy => mut_scalar, y: copy => mut_scalar, z: copy => mut_scalar, pitch: copy => mut_scalar, yaw: copy => mut_scalar, roll: copy => mut_scalar, scale: copy => mut_scalar]);
     gen_cancel!(render_item_in_frame, game_ref, horizon_client::mod_api::RenderItemInFrameEvent<'_>, (entity entity_id), [entity_id: copy, pos: pos, stack: item]);
     gen_listen!(render_name_tag, game_ref, horizon_client::mod_api::RenderNameTagEvent<'_>, (field kind), [entity_id: copy, kind: cloned, vanilla_visible: copy, visible: copy => mut_scalar, text: mut_opt_string => mut_opt_string]);
     gen_listen!(tooltip_color, game_ref, horizon_client::mod_api::TooltipColorEvent<'_>, (none), [stack: opt_item, background: copy => mut_scalar, border_top: copy => mut_scalar, border_bottom: copy => mut_scalar]);
-    gen_listen!(camera_pose, game_ref, horizon_client::mod_api::CameraPoseEvent<'_>, (none), [partial: copy, position: mut_vec3 => mut_vec3, yaw: copy => mut_scalar, pitch: copy => mut_scalar]);
+    gen_listen!(camera_pose, game_ref, horizon_client::mod_api::CameraPoseEvent<'_>, (none), [partial: copy, position: s_mut([f64;3]) => w_mut([f64;3]), yaw: copy => mut_scalar, pitch: copy => mut_scalar]);
+    gen_cancel!(client_chat_received, game_mut, horizon_client::mod_api::ClientChatReceivedEvent<'_>, (none), [system: copy, overlay: copy, sender: copy, chat_type: copy, message: s_text => w_text]);
+    gen_replace!(menu_extra_data, game_mut, horizon_client::mod_api::MenuExtraDataEvent<'_>, (none), [player: copy, menu: cloned, block: cloned, pos: pos], data : bytes_out, Option<Vec<u8>>);
+    gen_collect!(merchant_offer_traded, game_mut, horizon_client::mod_api::MerchantOfferTradedEvent<'_>, (field kind), [merchant: copy, kind: cloned, offer: s_mut(horizon_client::mod_api::MerchantOffer) => w_mut(horizon_client::mod_api::MerchantOffer)]);
+    gen_collect!(add_server_reload_listeners, game_mut, horizon_client::mod_api::AddServerReloadListenersEvent<'_>, (none), [listeners: s_vec(horizon_client::mod_api::NativeReloadListener) => w_vec(horizon_client::mod_api::NativeReloadListener)]);
+    gen_listen!(server_reload_listener_apply, game_mut, horizon_client::mod_api::ServerReloadListenerApplyEvent<'_>, (none), [listener: s_ref(horizon_client::mod_api::NativeReloadListener), files: s_slice((String,Value))]);
     gen_listen!(client_start, game_mut, horizon_client::mod_api::ClientStartEvent, (none), []);
     gen_listen!(client_disconnecting, game_ref, horizon_client::mod_api::ClientDisconnectingEvent, (none), []);
     gen_listen!(client_stopping, game_ref, horizon_client::mod_api::ClientStoppingEvent, (none), []);
     gen_listen!(menu_background, game_ref, horizon_client::mod_api::MenuBackgroundEvent<'_>, (none), [radius: copy_ref => mut_scalar_ref]);
+    gen_cancel!(anvil_update, game_mut, horizon_client::mod_api::AnvilUpdateEvent<'_>, (none), [player: player, left: item, right: opt_item, item_name: copy, vanilla_output: opt_item, vanilla_xp_cost: copy, vanilla_material_cost: copy, output: s_opt(horizon_client::mod_api::ItemStack) => w_optmut(horizon_client::mod_api::ItemStack), xp_cost: copy => mut_scalar, material_cost: copy => mut_scalar]);
+    gen_replace!(block_clone_item, game_ref, horizon_client::mod_api::BlockCloneItemEvent<'_>, (none), [block: cloned, pos: pos, state: state_game, state_props: state_props_note], stack : item, Option<ItemStack>);
     gen_cancel!(block_entity_accepts_fluid, game_ref, horizon_client::mod_api::BlockEntityAcceptsFluidEvent<'_>, (none), [block: cloned, tank: copy, fluid: cloned]);
-    gen_cancel!(block_place, game_mut, horizon_client::mod_api::BlockPlaceEvent<'_>, (none), [player: player, stack: item, pos: pos, state: state_game]);
+    gen_cancel!(block_place, game_mut, horizon_client::mod_api::BlockPlaceEvent<'_>, (none), [player: player, stack: item, pos: pos, state: state_game, state_props: state_props_note]);
     gen_listen!(block_redstone, level, horizon_client::mod_api::BlockRedstoneEvent, (none), [dimension: dim, pos: pos_struct, old: copy, new: copy => mut_scalar]);
+    gen_listen!(break_speed, game_ref, horizon_client::mod_api::BreakSpeedEvent, (none), [pos: pos, state: state_game, original: copy, speed: copy => mut_scalar, state_props: state_props_note]);
     gen_listen!(chat_suggestion_applied, game_ref, horizon_client::mod_api::ChatSuggestionAppliedEvent<'_>, (none), [original: cloned, start: copy, end: copy, suggestion: cloned, input: cloned]);
     gen_listen!(client_attack, game_mut, horizon_client::mod_api::ClientAttackEvent, (entity target), [target: copy, player: copy]);
     gen_listen!(client_hurt, game_mut, horizon_client::mod_api::ClientHurtEvent, (none), [attacker: copy, player: copy]);
     gen_listen!(client_player_network_logging_in, game_mut, horizon_client::mod_api::ClientPlayerNetworkLoggingInEvent, (none), []);
     gen_listen!(client_tick_pre, game_mut, horizon_client::mod_api::ClientTickPreEvent, (none), []);
     gen_listen!(client_tick_post, game_mut, horizon_client::mod_api::ClientTickPostEvent, (none), []);
+    gen_cancel!(console_line, game_mut, horizon_client::mod_api::ConsoleLineEvent<'_>, (none), [source: cloned, line: cloned, replies: s_vec(horizon_client::mod_api::Text) => w_vec(horizon_client::mod_api::Text)]);
     gen_cancel!(creative_slot_v2, game_mut, horizon_client::mod_api::CreativeSlotV2Event<'_>, (none), [player: player, slot: copy, stack: opt_item]);
     gen_listen!(custom_block_fluids, game_ref, horizon_client::mod_api::CustomBlockFluidsEvent<'_>, (none), [block: cloned, custom: copy => mut_scalar]);
+    gen_replace!(custom_fluid_tanks, game_ref, horizon_client::mod_api::CustomFluidTanksEvent, (none), [pos: pos, side: s_opt(horizon_client::mod_api::Direction)], out : struct_vec_out(horizon_client::mod_api::NativeFluidTankView), Option<Vec<horizon_client::mod_api::NativeFluidTankView>>);
+    gen_replace!(custom_fluid_fill, game_mut, horizon_client::mod_api::CustomFluidFillEvent<'_>, (none), [pos: pos, side: s_opt(horizon_client::mod_api::Direction), resource: s_ref(horizon_client::mod_api::NativeFluidStack), action: s_val(horizon_client::mod_api::NativeFluidAction)], out : value, Option<i32>);
+    gen_replace!(custom_fluid_drain, game_mut, horizon_client::mod_api::CustomFluidDrainEvent<'_>, (none), [pos: pos, side: s_opt(horizon_client::mod_api::Direction), request: s_ref(horizon_client::mod_api::NativeFluidDrain), action: s_val(horizon_client::mod_api::NativeFluidAction)], out : struct_out(horizon_client::mod_api::NativeFluidStack), Option<horizon_client::mod_api::NativeFluidStack>);
+    gen_listen!(custom_payload_from_client, game_mut, horizon_client::mod_api::CustomPayloadFromClientEvent<'_>, (none), [player: copy, channel: cloned, data: s_bytes]);
     gen_cancel!(entity_change_block_v2, game_mut, horizon_client::mod_api::EntityChangeBlockV2Event<'_>, (field kind), [player: opt_uuid, entity: copy, kind: cloned, pos: pos, from: cloned, to: cloned]);
     gen_cancel!(entity_interact_specific, game_mut, horizon_client::mod_api::EntityInteractSpecificEvent<'_>, (field kind), [entity: copy, kind: cloned, stack: opt_item, location: vec3]);
     gen_listen!(entity_outline, game_ref, horizon_client::mod_api::EntityOutlineEvent<'_>, (field kind), [entity_id: copy, kind: cloned, outline: copy_ref => mut_scalar_ref]);
     gen_listen!(fishing_hook_landed, game_mut, horizon_client::mod_api::FishingHookLandedEvent<'_>, (none), [player: copy, hook: copy, dimension: cloned, block: pos, face: pos]);
+    gen_cancel!(handshake, none, horizon_client::mod_api::HandshakeEvent<'_>, (none), [address: s_val(std::net::SocketAddr), host: mut_string => mut_string, intent: copy, reason: s_opt_text => w_opt_text]);
+    gen_cancel!(interact_entity_v2, game_mut, horizon_client::mod_api::InteractEntityV2Event<'_>, (field kind), [entity: copy, kind: cloned, hand: s_val(horizon_client::mod_api::Hand), stack: opt_item]);
     gen_cancel!(inventory_click, game_mut, horizon_client::mod_api::InventoryClickEvent<'_>, (none), [player: player, window: copy, slot: copy, button: copy, mode: copy]);
     gen_cancel!(inventory_drag, game_mut, horizon_client::mod_api::InventoryDragEvent<'_>, (none), [player: player, window: copy, kind: copy, slots: int_seq]);
+    gen_cancel!(item_after_vertical_collision, game_mut, horizon_client::mod_api::ItemAfterVerticalCollisionEvent<'_>, (entity entity), [dimension: cloned, client: copy, entity: copy, state: state_game, block_pos: pos, item_pos: vec3, stack: s_mut(horizon_client::mod_api::ItemStack) => w_mut(horizon_client::mod_api::ItemStack), state_props: state_props_note]);
     gen_cancel!(item_dropped_v2, game_mut, horizon_client::mod_api::ItemDroppedV2Event<'_>, (none), [player: copy, stack: item]);
     gen_replace!(item_interact_mob, game_mut, horizon_client::mod_api::ItemInteractMobEvent<'_>, (field kind), [entity: copy, kind: cloned, stack: opt_item], swing : value, Option<bool>);
     gen_cancel!(item_picked_up_v2, game_mut, horizon_client::mod_api::ItemPickedUpV2Event<'_>, (none), [player: copy, stack: item, thrower: opt_uuid, position: vec3]);
@@ -1839,26 +1759,36 @@ macro_rules! impl_generated_hooks {
     gen_listen!(living_damage_post, none, horizon_client::mod_api::LivingDamagePostEvent<'_>, (field kind), [entity: copy, kind: cloned, damage_type: cloned, causing: copy, direct: copy, amount: copy]);
     gen_cancel!(living_incoming_damage_v3, none, horizon_client::mod_api::LivingIncomingDamageV3Event<'_>, (field kind), [victim: copy, victim_uuid: opt_uuid, kind: cloned, attacker: copy, attacker_uuid: opt_uuid, direct: copy, damage_type: cloned, amount: copy => mut_scalar]);
     gen_listen!(log_line, none, horizon_client::mod_api::LogLineEvent<'_>, (none), [level: cloned, thread: cloned, message: cloned, line: cloned]);
+    gen_collect!(menu_input_closed, game_mut, horizon_client::mod_api::MenuInputClosedEvent<'_>, (none), [uuid: copy, window: copy, slots: s_vec(horizon_client::mod_api::Option<ItemStack>) => w_vec(horizon_client::mod_api::Option<ItemStack>)]);
+    gen_collect!(menu_links, game_mut, horizon_client::mod_api::MenuLinksEvent<'_>, (none), [player: copy, menu: cloned, pos: pos, links: s_vec([i32;3]) => w_vec([i32;3])]);
     gen_replace!(permission_check, game_ref, horizon_client::mod_api::PermissionCheckEvent<'_>, (none), [player: copy, node: cloned, default_level: copy], result : value, Option<bool>);
     gen_listen!(player_register_channels, game_mut, horizon_client::mod_api::PlayerRegisterChannelsEvent<'_>, (none), [player: player, channels: str_seq, register: copy]);
     gen_listen!(player_command_level, game_mut, horizon_client::mod_api::PlayerCommandLevelEvent<'_>, (none), [player: player, command: cloned, level: copy => mut_scalar]);
     gen_collect!(player_commands_sent_v2, game_mut, horizon_client::mod_api::PlayerCommandsSentV2Event<'_>, (none), [player: player, names: str_seq => mut_strvec, names_hidden: str_seq => mut_strvec]);
+    gen_cancel!(player_fish_v2, game_mut, horizon_client::mod_api::PlayerFishV2Event<'_>, (none), [player: player, state: copy, hand: s_val(horizon_client::mod_api::Hand)]);
     gen_cancel!(player_hurt_by_player, none, horizon_client::mod_api::PlayerHurtByPlayerEvent<'_>, (none), [attacker: copy, attacker_entity: copy, victim: copy, victim_entity: copy, source: cloned, damage_type: cloned, amount: copy => mut_scalar]);
     gen_cancel!(player_launch_projectile_v2, game_mut, horizon_client::mod_api::PlayerLaunchProjectileV2Event<'_>, (none), [player: player, stack: item]);
     gen_listen!(player_logging_out, game_mut, horizon_client::mod_api::PlayerLoggingOutEvent<'_>, (none), [player: player]);
-    gen_cancel!(player_move, none, horizon_client::mod_api::PlayerMoveEvent<'_>, (none), [player: copy, name: cloned, from: vec3, to: mut_vec3 => mut_vec3, yaw: copy, pitch: copy, on_ground: copy]);
-    gen_listen!(player_respawn_position, game_mut, horizon_client::mod_api::PlayerRespawnPositionEvent<'_>, (none), [player: player, dimension: mut_string => mut_string, pos: mut_vec3 => mut_vec3, yaw: copy => mut_scalar, pitch: copy => mut_scalar]);
-    gen_listen!(player_spawn_location, game_mut, horizon_client::mod_api::PlayerSpawnLocationEvent<'_>, (none), [player: player, dimension: mut_string => mut_string, position: mut_vec3 => mut_vec3, rotation: mut_pair => mut_pair]);
-    gen_cancel!(player_teleport, none, horizon_client::mod_api::PlayerTeleportEvent<'_>, (none), [player: copy, name: cloned, cause: cloned, from_dimension: cloned, from: vec3, to_dimension: cloned, to: mut_vec3 => mut_vec3, relative: copy => mut_scalar]);
+    gen_cancel!(player_move, none, horizon_client::mod_api::PlayerMoveEvent<'_>, (none), [player: copy, name: cloned, from: vec3, to: s_mut([f64;3]) => w_mut([f64;3]), yaw: copy, pitch: copy, on_ground: copy]);
+    gen_collect!(player_pre_login, none, horizon_client::mod_api::PlayerPreLoginEvent<'_>, (none), [player: copy, name: cloned, address: s_val(std::net::SocketAddr), defer: s_defer => w_defer]);
+    gen_listen!(player_respawn_position, game_mut, horizon_client::mod_api::PlayerRespawnPositionEvent<'_>, (none), [player: player, dimension: mut_string => mut_string, pos: s_mut([f64;3]) => w_mut([f64;3]), yaw: copy => mut_scalar, pitch: copy => mut_scalar]);
+    gen_listen!(player_spawn_location, game_mut, horizon_client::mod_api::PlayerSpawnLocationEvent<'_>, (none), [player: player, dimension: mut_string => mut_string, position: s_mut([f64;3]) => w_mut([f64;3]), rotation: s_mut([f32;2]) => w_mut([f32;2])]);
+    gen_cancel!(player_teleport, none, horizon_client::mod_api::PlayerTeleportEvent<'_>, (none), [player: copy, name: cloned, cause: cloned, from_dimension: cloned, from: vec3, to_dimension: cloned, to: s_mut([f64;3]) => w_mut([f64;3]), relative: copy => mut_scalar]);
     gen_listen!(player_tick_pre, game_mut, horizon_client::mod_api::PlayerTickPreEvent, (none), []);
-    gen_listen!(projectile_world_border, none, horizon_client::mod_api::ProjectileWorldBorderEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, pos: mut_vec3 => mut_vec3, velocity: mut_vec3 => mut_vec3, collide: copy => mut_scalar]);
+    gen_listen!(projectile_world_border, none, horizon_client::mod_api::ProjectileWorldBorderEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, pos: s_mut([f64;3]) => w_mut([f64;3]), velocity: s_mut([f64;3]) => w_mut([f64;3]), collide: copy => mut_scalar]);
+    gen_collect!(recipe_sources, game_mut, horizon_client::mod_api::RecipeSourcesEvent<'_>, (none), [player: copy, menu: cloned, pos: pos, sources: s_vec([i32;3]) => w_vec([i32;3])]);
     gen_listen!(resource_pack_status_v2, game_mut, horizon_client::mod_api::ResourcePackStatusV2Event<'_>, (none), [player: player, pack: copy, status: copy]);
+    gen_cancel!(right_click_block_v2, game_mut, horizon_client::mod_api::RightClickBlockV2Event, (none), [pos: pos, face: pos, hand: s_val(horizon_client::mod_api::Hand)]);
     gen_cancel!(screen_mouse_dragged_pre_v2, game_mut, horizon_client::mod_api::ScreenMouseDraggedPreV2Event<'_>, (none), [screen: cloned, mouse: pair, button: copy, delta: pair, modifiers: copy]);
     gen_cancel!(screen_mouse_scrolled_pre_v2, game_mut, horizon_client::mod_api::ScreenMouseScrolledPreV2Event<'_>, (none), [screen: cloned, mouse: pair, scroll: pair64, modifiers: copy]);
+    gen_listen!(server_tick_timed, game_mut, horizon_client::mod_api::ServerTickTimedEvent<'_>, (none), [wall_ms: copy, cpu_ms: copy, spans: s_slice(horizon_client::mod_api::TickSpan)]);
     gen_listen!(stateful_block_entity, game_ref, horizon_client::mod_api::StatefulBlockEntityEvent<'_>, (none), [block: cloned, stateful: copy => mut_scalar]);
+    gen_replace!(block_entity_from_state, none, horizon_client::mod_api::BlockEntityFromStateEvent<'_>, (none), [block: cloned, properties: s_ref(horizon_client::mod_api::BlockProperties)], entity : struct_out(crate::generated_runtime::NamedTag), Option<crate::generated_runtime::NamedTag>);
+    gen_collect!(tab_complete_v2, game_mut, horizon_client::mod_api::TabCompleteV2Event<'_>, (none), [player: player, label: cloned, arguments: str_seq, range: s_val([usize;2]), suggestions: s_vec(horizon_client::mod_api::Suggestion) => w_vec(horizon_client::mod_api::Suggestion)]);
     gen_cancel!(toast_add, game_mut, horizon_client::mod_api::ToastAddEvent<'_>, (none), [kind: cloned, id: cloned]);
     gen_cancel!(trample, none, horizon_client::mod_api::TrampleEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, pos: pos, fall_distance: copy]);
-    gen_cancel!(vehicle_moved_v2, game_mut, horizon_client::mod_api::VehicleMovedV2Event<'_>, (field kind), [player: opt_uuid, dimension: cloned, vehicle: copy, kind: cloned, from: vec3, to: mut_vec3 => mut_vec3]);
+    gen_cancel!(vehicle_moved_v2, game_mut, horizon_client::mod_api::VehicleMovedV2Event<'_>, (field kind), [player: opt_uuid, dimension: cloned, vehicle: copy, kind: cloned, from: vec3, to: s_mut([f64;3]) => w_mut([f64;3])]);
+    gen_collect!(wind_burst, game_mut, horizon_client::mod_api::WindBurstEvent<'_>, (none), [dimension: cloned, center: vec3, blocks: s_vec([i32;3]) => w_vec([i32;3])]);
     };
 }
 
@@ -1866,7 +1796,11 @@ macro_rules! impl_generated_hooks {
 mod generated_tests {
     use super::test_support::*;
     use super::{GENERATED_HOOK_NAMES, GENERATED_KIND_HOOK_NAMES, HOOK_CLASSIFICATION};
+    use horizon_client::menu::AnvilCraft;
+    use horizon_client::merchant::ItemCost;
     use horizon_client::mod_api::*;
+    use horizon_world::consumable::UseAnimation;
+    use std::time::Duration;
 
     #[test]
     fn generated_classification_names_every_hook_once() {
@@ -1886,10 +1820,44 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_frame() {
+        let (m, id, _dir) = loaded(
+            "gen_frame",
+            "horizon.on(\"frame\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_frame(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            Duration::from_secs_f64(1.5),
+        );
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_tick() {
-        let (m, id, _dir) = loaded("gen_tick", "horizon.on(\"tick\", function(event)\n\nend)");
-        let mods = boxed(m);
-        dispatch_tick(&mut FakeHost::empty(), &mods);
+        let (m, id, _dir) = loaded(
+            "gen_tick",
+            "horizon.on(\"tick\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_tick(&mut FakeHost::empty(), &firing_mods);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_emissive() {
+        let (m, id, _dir) = loaded(
+            "gen_emissive",
+            "horizon.on(\"emissive\", function(event)\n    assert(event.layers[1].a == \"test:a0\", \"layers\")\n    assert(event.layers[2].a == \"test:a1\", \"layers\")\n    event.layers = { { a = \"test:a50\", b = \"test:b50\" } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut layers = vec![("test:a0", "test:b0"), ("test:a1", "test:b1")];
+        dispatch_emissive(&FakeHost::empty(), &firing_mods, &mut layers);
+        assert_eq!(
+            format!("{:?}", layers),
+            format!("{:?}", vec![("test:a50", "test:b50")])
+        );
         no_error(&id);
     }
 
@@ -1899,8 +1867,8 @@ mod generated_tests {
             "gen_server_about_to_start",
             "horizon.on(\"server_about_to_start\", function(event)\n    assert(event.dedicated == true, \"dedicated\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_server_about_to_start(&mut FakeHost::empty(), &mods, true);
+        let firing_mods = boxed(m);
+        dispatch_server_about_to_start(&mut FakeHost::empty(), &firing_mods, true);
         no_error(&id);
     }
 
@@ -1910,8 +1878,8 @@ mod generated_tests {
             "gen_server_stopping",
             "horizon.on(\"server_stopping\", function(event)\n    assert(event.dedicated == true, \"dedicated\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_server_stopping(&mut FakeHost::empty(), &mods, true);
+        let firing_mods = boxed(m);
+        dispatch_server_stopping(&mut FakeHost::empty(), &firing_mods, true);
         no_error(&id);
     }
 
@@ -1921,8 +1889,8 @@ mod generated_tests {
             "gen_level_tick_post",
             "horizon.on(\"level_tick_post\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_level_tick_post(&mut FakeHost::empty(), &mods, "test:dimension");
+        let firing_mods = boxed(m);
+        dispatch_level_tick_post(&mut FakeHost::empty(), &firing_mods, "test:dimension");
         no_error(&id);
     }
 
@@ -1930,12 +1898,12 @@ mod generated_tests {
     fn generated_block_changed() {
         let (m, id, _dir) = loaded(
             "gen_block_changed",
-            "horizon.on(\"block_changed\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.old == \"test:state10\", \"old\")\n    assert(event.new == \"test:state11\", \"new\")\nend)",
+            "horizon.on(\"block_changed\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.old == \"test:state10\", \"old\")\n    assert(event.new == \"test:state11\", \"new\")\n    assert(next(event.old_props) == nil, \"old_props\")\n    assert(next(event.new_props) == nil, \"new_props\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_block_changed(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             BlockPos::new(2, 3, 4),
             BlockStateId(10),
@@ -1950,8 +1918,8 @@ mod generated_tests {
             "gen_key",
             "horizon.on(\"key\", function(event)\n    assert(event.key == \"test:key\", \"key\")\n    assert(event.pressed == false, \"pressed\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_key(&mut FakeHost::empty(), &mods, "test:key", false);
+        let firing_mods = boxed(m);
+        dispatch_key(&mut FakeHost::empty(), &firing_mods, "test:key", false);
         no_error(&id);
     }
 
@@ -1961,10 +1929,121 @@ mod generated_tests {
             "gen_wheel",
             "horizon.on(\"wheel\", function(event)\n    assert(event.steps == 1.5, \"steps\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut claimed = false;
-        dispatch_wheel(&mut FakeHost::empty(), &mods, 1.5, &mut claimed);
+        dispatch_wheel(&mut FakeHost::empty(), &firing_mods, 1.5, &mut claimed);
         assert!(claimed, "claimed not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_commands() {
+        let (m, id, _dir) = loaded(
+            "gen_commands",
+            "horizon.on(\"commands\", function(event)\n    assert(event.commands[1] == \"test:seed\", \"commands\")\n    assert(event.commands[2] == \"test:seed2\", \"commands\")\n    event.commands[1] = \"test:edited\"; table.insert(event.commands, \"test:added\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut commands = vec!["test:seed", "test:seed2"];
+        dispatch_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
+        assert_eq!(
+            commands,
+            vec![
+                "test:edited".to_owned(),
+                "test:seed2".to_owned(),
+                "test:added".to_owned()
+            ]
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_zoom() {
+        let (m, id, _dir) = loaded(
+            "gen_zoom",
+            "horizon.on(\"zoom\", function(event)\n    assert(event ~= nil, \"event\")\n    assert(event.zoom == nil, \"replace seed\")\n    event.zoom = { factor = 1.5, smooth = true, turn = 2.5 }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut zoom: Option<NativeZoom> = None;
+        dispatch_zoom(&FakeHost::empty(), &firing_mods, &mut zoom);
+        assert_eq!(
+            zoom,
+            Some(NativeZoom {
+                factor: 1.5,
+                smooth: true,
+                turn: 2.5
+            })
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_minimap() {
+        let (m, id, _dir) = loaded(
+            "gen_minimap",
+            "horizon.on(\"minimap\", function(event)\n    assert(event ~= nil, \"event\")\n    assert(event.minimap == nil, \"replace seed\")\n    event.minimap = { corner = \"top_left\", size = 64.0, blocks_per_pixel = 1.0, rotate = true, round = false }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut minimap: Option<NativeMinimap> = None;
+        dispatch_minimap(&FakeHost::empty(), &firing_mods, &mut minimap);
+        assert_eq!(
+            minimap,
+            Some(NativeMinimap {
+                corner: Corner::TopLeft,
+                size: 64.0,
+                blocks_per_pixel: 1.0,
+                rotate: true,
+                round: false
+            })
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_mods() {
+        let (m, id, _dir) = loaded(
+            "gen_mods",
+            "horizon.on(\"mods\", function(event)\n    assert(event.mods[1].id == \"test:mod0\", \"mods\")\n    assert(event.mods[2].id == \"test:mod1\", \"mods\")\n    event.mods = { { id = \"test:mod50\", title = \"test:title50\", description = \"test:desc50\", keys = { { key = \"test:key50\", label = \"test:label50\", default = \"test:default50\" } } } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut mods = vec![
+            NativeMod {
+                id: "test:mod0".into(),
+                title: "test:title0".into(),
+                description: "test:desc0".into(),
+                keys: vec![[
+                    "test:key0".into(),
+                    "test:label0".into(),
+                    "test:default0".into(),
+                ]],
+            },
+            NativeMod {
+                id: "test:mod1".into(),
+                title: "test:title1".into(),
+                description: "test:desc1".into(),
+                keys: vec![[
+                    "test:key1".into(),
+                    "test:label1".into(),
+                    "test:default1".into(),
+                ]],
+            },
+        ];
+        dispatch_mods(&mut FakeHost::empty(), &firing_mods, &mut mods);
+        assert_eq!(
+            format!("{:?}", mods),
+            format!(
+                "{:?}",
+                vec![NativeMod {
+                    id: "test:mod50".into(),
+                    title: "test:title50".into(),
+                    description: "test:desc50".into(),
+                    keys: vec![[
+                        "test:key50".into(),
+                        "test:label50".into(),
+                        "test:default50".into()
+                    ]]
+                }]
+            )
+        );
         no_error(&id);
     }
 
@@ -1972,14 +2051,23 @@ mod generated_tests {
     fn generated_settings() {
         let (m, id, _dir) = loaded(
             "gen_settings",
-            "horizon.on(\"settings\", function(event)\n    assert(event.mod_id == \"test:mod_id\", \"mod_id\")\n    assert(event.buttons[1] == \"test:seed\", \"buttons\")\n    event.buttons[1] = \"test:edited\"; table.insert(event.buttons, \"test:added\")\nend)",
+            "horizon.on(\"settings\", function(event)\n    assert(event.mod_id == \"test:mod_id\", \"mod_id\")\n    assert(event.buttons[1] == \"test:seed\", \"buttons\")\n    assert(event.buttons[2] == \"test:seed2\", \"buttons\")\n    event.buttons[1] = \"test:edited\"; table.insert(event.buttons, \"test:added\")\nend)",
         );
-        let mods = boxed(m);
-        let mut buttons = vec!["test:seed".to_owned()];
-        dispatch_settings(&mut FakeHost::empty(), &mods, "test:mod_id", &mut buttons);
+        let firing_mods = boxed(m);
+        let mut buttons = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+        dispatch_settings(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:mod_id",
+            &mut buttons,
+        );
         assert_eq!(
             buttons,
-            vec!["test:edited".to_owned(), "test:added".to_owned()]
+            vec![
+                "test:edited".to_owned(),
+                "test:seed2".to_owned(),
+                "test:added".to_owned()
+            ]
         );
         no_error(&id);
     }
@@ -1990,8 +2078,59 @@ mod generated_tests {
             "gen_settings_click",
             "horizon.on(\"settings_click\", function(event)\n    assert(event.mod_id == \"test:mod_id\", \"mod_id\")\n    assert(event.button == 8, \"button\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_settings_click(&mut FakeHost::empty(), &mods, "test:mod_id", 8);
+        let firing_mods = boxed(m);
+        dispatch_settings_click(&mut FakeHost::empty(), &firing_mods, "test:mod_id", 8);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_container() {
+        let (m, id, _dir) = loaded(
+            "gen_block_entity_container",
+            "horizon.on(\"block_entity_container\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.container == nil, \"replace seed\")\n    event.container = { slots = 9, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {}, menu = nil }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut container: Option<ModContainer> = None;
+        dispatch_block_entity_container(
+            &FakeHost::empty(),
+            &firing_mods,
+            "test:block",
+            &mut container,
+        );
+        assert_eq!(
+            container,
+            Some(ModContainer {
+                slots: 9,
+                faces: [vec![0], vec![], vec![], vec![], vec![], vec![]],
+                inputs: vec![0],
+                outputs: vec![],
+                menu: None
+            })
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen() {
+        let (m, id, _dir) = loaded(
+            "gen_screen",
+            "horizon.on(\"screen\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.screen == nil, \"replace seed\")\n    event.screen = { width = 100.0, height = 50.0, slots = { { x = 1.0, y = 2.0 }, false }, inventory_y = 10.0, inventory_x = 20.0, own_labels = true, own_background = false }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut screen: Option<NativeScreen> = None;
+        dispatch_screen(&FakeHost::empty(), &firing_mods, "test:block", &mut screen);
+        assert_eq!(
+            screen,
+            Some(NativeScreen {
+                width: 100.0,
+                height: 50.0,
+                slots: vec![Some([1.0, 2.0]), None],
+                inventory_y: 10.0,
+                inventory_x: 20.0,
+                own_labels: true,
+                own_background: false
+            })
+        );
         no_error(&id);
     }
 
@@ -2001,8 +2140,8 @@ mod generated_tests {
             "gen_menu_clicked",
             "horizon.on(\"menu_clicked\", function(event)\n    assert(event.uuid == 7, \"uuid\")\n    assert(event.window == 8, \"window\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.button == 10, \"button\")\n    assert(event.mode == 11, \"mode\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_menu_clicked(&mut FakeHost::empty(), &mods, 7, 8, 9, 10, 11);
+        let firing_mods = boxed(m);
+        dispatch_menu_clicked(&mut FakeHost::empty(), &firing_mods, 7, 8, 9, 10, 11);
         no_error(&id);
     }
 
@@ -2012,8 +2151,43 @@ mod generated_tests {
             "gen_menu_closed",
             "horizon.on(\"menu_closed\", function(event)\n    assert(event.uuid == 7, \"uuid\")\n    assert(event.window == 8, \"window\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_menu_closed(&mut FakeHost::empty(), &mods, 7, 8);
+        let firing_mods = boxed(m);
+        dispatch_menu_closed(&mut FakeHost::empty(), &firing_mods, 7, 8);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_tooltip() {
+        let (m, id, _dir) = loaded(
+            "gen_tooltip",
+            "horizon.on(\"tooltip\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.lines[1].text == \"test:line1\", \"lines\")\n    assert(event.lines[1].count == 3, \"lines\")\n    assert(event.lines[2].text == \"test:line2\", \"lines\")\n    assert(event.lines[2].count == 4, \"lines\")\n    event.lines = { { text = \"test:line51\", component = { text = \"test:line51\" }, count = 53 } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut lines = vec![
+            (Text::literal("test:line1"), 3),
+            (Text::literal("test:line2"), 4),
+        ];
+        dispatch_tooltip(
+            &FakeHost::empty(),
+            &firing_mods,
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 1,
+                damage: 0,
+                extra: None,
+            },
+            &mut lines,
+        );
+        assert_eq!(
+            format!("{:?}", lines),
+            format!(
+                "{:?}",
+                vec![(
+                    Text::empty().with_component(serde_json::json!({ "text": "test:line51" })),
+                    53
+                )]
+            )
+        );
         no_error(&id);
     }
 
@@ -2023,15 +2197,37 @@ mod generated_tests {
             "gen_block_spread",
             "horizon.on(\"block_spread\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 4, \"from\")\n    assert(event.from.z == 5, \"from\")\n    assert(event.to.x == 4, \"to\")\n    assert(event.to.y == 5, \"to\")\n    assert(event.to.z == 6, \"to\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut canceled = false;
         dispatch_block_spread(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             "test:kind",
             BlockPos::new(3, 4, 5),
             BlockPos::new(4, 5, 6),
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_piston_move() {
+        let (m, id, _dir) = loaded(
+            "gen_piston_move",
+            "horizon.on(\"piston_move\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.piston.x == 2, \"piston\")\n    assert(event.piston.y == 3, \"piston\")\n    assert(event.piston.z == 4, \"piston\")\n    assert(event.direction.x == 3, \"direction\")\n    assert(event.direction.y == 4, \"direction\")\n    assert(event.direction.z == 5, \"direction\")\n    assert(event.push[1].x == 4, \"push\")\n    assert(event.push[2].x == 5, \"push\")\n    assert(event.destroy[1].x == 5, \"destroy\")\n    assert(event.destroy[2].x == 6, \"destroy\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_piston_move(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            [3, 4, 5],
+            &[BlockPos::new(4, 5, 6), BlockPos::new(5, 6, 7)],
+            &[BlockPos::new(5, 6, 7), BlockPos::new(6, 7, 8)],
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
@@ -2044,11 +2240,11 @@ mod generated_tests {
             "gen_fill_bucket",
             "horizon.on(\"fill_bucket\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut canceled = false;
         dispatch_fill_bucket(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             &ItemStack {
                 item: "test:stack".into(),
                 count: 1,
@@ -2063,23 +2259,68 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_net_from_client() {
+        let (m, id, _dir) = loaded(
+            "gen_net_from_client",
+            "horizon.on(\"net_from_client\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.channel == \"test:channel\", \"channel\")\n    assert(event.data == \"t\" .. string.char(0, 159), \"data\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_net_from_client(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:channel",
+            &[116u8, 0u8, 159u8],
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_net_from_server() {
+        let (m, id, _dir) = loaded(
+            "gen_net_from_server",
+            "horizon.on(\"net_from_server\", function(event)\n    assert(event.channel == \"test:channel\", \"channel\")\n    assert(event.data == \"t\" .. string.char(0, 159), \"data\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_net_from_server(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:channel",
+            &[116u8, 0u8, 159u8],
+        );
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_on_equip() {
         let (m, id, _dir) = loaded(
             "gen_on_equip",
-            "horizon.on(\"on_equip\", function(event)\n    assert(event.slot == \"test:slot\", \"slot\")\n    assert(event.new.id == \"test:new\", \"new\")\nend)",
+            "horizon.on(\"on_equip\", function(event)\n    assert(event.slot == \"test:slot\", \"slot\")\n    assert(event.new == nil, \"new\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_on_equip(
-            &mut FakeHost::empty(),
-            &mods,
-            "test:slot",
-            Some(&ItemStack {
-                item: "test:new".into(),
-                count: 1,
-                damage: 0,
-                extra: None,
-            }),
+        let firing_mods = boxed(m);
+        dispatch_on_equip(&mut FakeHost::empty(), &firing_mods, "test:slot", None);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_signal() {
+        let (m, id, _dir) = loaded(
+            "gen_block_signal",
+            "horizon.on(\"block_signal\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.direct == true, \"direct\")\n    assert(event.signal == 12, \"signal\")\n    event.signal = 55\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
+        let firing_mods = boxed(m);
+        let mut signal = 12;
+        dispatch_block_signal(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            BlockStateId(10),
+            Direction::South,
+            true,
+            &mut signal,
+        );
+        assert_eq!(signal, 55);
         no_error(&id);
     }
 
@@ -2087,11 +2328,11 @@ mod generated_tests {
     fn generated_is_signal_source() {
         let (m, id, _dir) = loaded(
             "gen_is_signal_source",
-            "horizon.on(\"is_signal_source\", function(event)\n    assert(event.state == \"test:state8\", \"state\")\n    assert(event.source == false, \"source\")\n    event.source = true\nend)",
+            "horizon.on(\"is_signal_source\", function(event)\n    assert(event.state == \"test:state8\", \"state\")\n    assert(event.source == false, \"source\")\n    event.source = true\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut source = false;
-        dispatch_is_signal_source(&FakeLevel, &mods, BlockStateId(8), &mut source);
+        dispatch_is_signal_source(&FakeLevel, &firing_mods, BlockStateId(8), &mut source);
         assert!(source);
         no_error(&id);
     }
@@ -2100,13 +2341,13 @@ mod generated_tests {
     fn generated_left_click_block() {
         let (m, id, _dir) = loaded(
             "gen_left_click_block",
-            "horizon.on(\"left_click_block\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.face.x == 2, \"face\")\n    assert(event.face.y == 3, \"face\")\n    assert(event.face.z == 4, \"face\")\n    assert(event.state == \"test:state10\", \"state\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"left_click_block\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.face.x == 2, \"face\")\n    assert(event.face.y == 3, \"face\")\n    assert(event.face.z == 4, \"face\")\n    assert(event.state == \"test:state10\", \"state\")\n    horizon.cancel()\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut canceled = false;
         dispatch_left_click_block(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             [1, 2, 3],
             [2, 3, 4],
             BlockStateId(10),
@@ -2122,12 +2363,12 @@ mod generated_tests {
             "gen_entity_leave_level",
             "horizon.on(\"entity_leave_level\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_entity_leave_level(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 "minecraft:skeleton",
@@ -2136,10 +2377,31 @@ mod generated_tests {
         no_error(&id);
         dispatch_entity_leave_level(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             8,
             "minecraft:zombie",
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_fluids() {
+        let (m, id, _dir) = loaded(
+            "gen_block_entity_fluids",
+            "horizon.on(\"block_entity_fluids\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.fluids == nil, \"replace seed\")\n    event.fluids = { tanks = { 1000 }, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {} }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut fluids: Option<ModFluidTanks> = None;
+        dispatch_block_entity_fluids(&FakeHost::empty(), &firing_mods, "test:block", &mut fluids);
+        assert_eq!(
+            fluids,
+            Some(ModFluidTanks {
+                tanks: vec![1000],
+                faces: [vec![0], vec![], vec![], vec![], vec![], vec![]],
+                inputs: vec![0],
+                outputs: vec![]
+            })
         );
         no_error(&id);
     }
@@ -2150,11 +2412,11 @@ mod generated_tests {
             "gen_should_apply_effect_tick_this_tick",
             "horizon.on(\"should_apply_effect_tick_this_tick\", function(event)\n    assert(event.effect == \"test:effect\", \"effect\")\n    assert(event.tick_count == 8, \"tick_count\")\n    assert(event.amplifier == 9, \"amplifier\")\n    assert(event.apply == false, \"apply\")\n    event.apply = true\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut apply = false;
         dispatch_should_apply_effect_tick_this_tick(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:effect",
             8,
             9,
@@ -2170,13 +2432,13 @@ mod generated_tests {
             "gen_apply_effect_tick",
             "horizon.on(\"apply_effect_tick\", function(event)\n    assert(event.effect == \"test:effect\", \"effect\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.amplifier == 10, \"amplifier\")\n    assert(event.keep == true, \"keep\")\n    event.keep = false\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut keep = true;
             dispatch_apply_effect_tick(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:effect",
                 "test:dimension",
                 Some(13),
@@ -2190,7 +2452,7 @@ mod generated_tests {
             let mut keep = true;
             dispatch_apply_effect_tick(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:effect",
                 "test:dimension",
                 None,
@@ -2202,7 +2464,7 @@ mod generated_tests {
         let mut keep = true;
         dispatch_apply_effect_tick(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:effect",
             "test:dimension",
             Some(11),
@@ -2219,18 +2481,30 @@ mod generated_tests {
             "gen_on_effect_added",
             "horizon.on(\"on_effect_added\", function(event)\n    assert(event.effect == \"test:effect\", \"effect\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.amplifier == 9, \"amplifier\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            dispatch_on_effect_added(&mut FakeHost::empty(), &mods, "test:effect", Some(13), 9);
+            dispatch_on_effect_added(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:effect",
+                Some(13),
+                9,
+            );
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
-            dispatch_on_effect_added(&mut FakeHost::empty(), &mods, "test:effect", None, 9);
+            dispatch_on_effect_added(&mut FakeHost::empty(), &firing_mods, "test:effect", None, 9);
         }
         no_error(&id);
-        dispatch_on_effect_added(&mut FakeHost::empty(), &mods, "test:effect", Some(11), 9);
+        dispatch_on_effect_added(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:effect",
+            Some(11),
+            9,
+        );
         no_error(&id);
     }
 
@@ -2240,18 +2514,30 @@ mod generated_tests {
             "gen_mob_effect_added",
             "horizon.on(\"mob_effect_added\", function(event)\n    assert(event.effect == \"test:effect\", \"effect\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.amplifier == 9, \"amplifier\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            dispatch_mob_effect_added(&mut FakeHost::empty(), &mods, "test:effect", Some(13), 9);
+            dispatch_mob_effect_added(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:effect",
+                Some(13),
+                9,
+            );
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
-            dispatch_mob_effect_added(&mut FakeHost::empty(), &mods, "test:effect", None, 9);
+            dispatch_mob_effect_added(&mut FakeHost::empty(), &firing_mods, "test:effect", None, 9);
         }
         no_error(&id);
-        dispatch_mob_effect_added(&mut FakeHost::empty(), &mods, "test:effect", Some(11), 9);
+        dispatch_mob_effect_added(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:effect",
+            Some(11),
+            9,
+        );
         no_error(&id);
     }
 
@@ -2261,8 +2547,36 @@ mod generated_tests {
             "gen_chunk_unload",
             "horizon.on(\"chunk_unload\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.chunk.x == 4, \"chunk\")\n    assert(event.chunk.z == -6, \"chunk\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_chunk_unload(&mut FakeHost::empty(), &mods, "test:dimension", [4, -6]);
+        let firing_mods = boxed(m);
+        dispatch_chunk_unload(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            [4, -6],
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_item_bar() {
+        let (m, id, _dir) = loaded(
+            "gen_item_bar",
+            "horizon.on(\"item_bar\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.bar.value == 8, \"bar\")\n    event.bar = nil\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut bar = Some((8, 2));
+        dispatch_item_bar(
+            &FakeHost::empty(),
+            &firing_mods,
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 1,
+                damage: 0,
+                extra: None,
+            },
+            &mut bar,
+        );
+        assert_eq!(bar, None);
         no_error(&id);
     }
 
@@ -2270,12 +2584,70 @@ mod generated_tests {
     fn generated_has_analog_output() {
         let (m, id, _dir) = loaded(
             "gen_has_analog_output",
-            "horizon.on(\"has_analog_output\", function(event)\n    assert(event.state == \"test:state8\", \"state\")\n    assert(event.output == false, \"output\")\n    event.output = true\nend)",
+            "horizon.on(\"has_analog_output\", function(event)\n    assert(event.state == \"test:state8\", \"state\")\n    assert(event.output == false, \"output\")\n    event.output = true\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut output = false;
-        dispatch_has_analog_output(&FakeLevel, &mods, BlockStateId(8), &mut output);
+        dispatch_has_analog_output(&FakeLevel, &firing_mods, BlockStateId(8), &mut output);
         assert!(output);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_analog_output() {
+        let (m, id, _dir) = loaded(
+            "gen_analog_output",
+            "horizon.on(\"analog_output\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.output == 11, \"output\")\n    event.output = 54\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut output = 11;
+        dispatch_analog_output(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            BlockStateId(10),
+            Direction::South,
+            &mut output,
+        );
+        assert_eq!(output, 54);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_dispense_item() {
+        let (m, id, _dir) = loaded(
+            "gen_dispense_item",
+            "horizon.on(\"dispense_item\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.answer == nil, \"replace seed\")\n    event.answer = { remainder = { id = \"test:replace\", count = 1, damage = 0 }, event = 2000 }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut answer: Option<NativeDispensed> = None;
+        dispatch_dispense_item(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            [2, 3, 4],
+            Direction::North,
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 4,
+                damage: 3,
+                extra: None,
+            },
+            &mut answer,
+        );
+        assert_eq!(
+            answer,
+            Some((
+                Some(ItemStack {
+                    item: "test:replace".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None
+                }),
+                2000
+            ))
+        );
         no_error(&id);
     }
 
@@ -2283,13 +2655,13 @@ mod generated_tests {
     fn generated_can_survive() {
         let (m, id, _dir) = loaded(
             "gen_can_survive",
-            "horizon.on(\"can_survive\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.survives == nil, \"replace seed\")\n    event.survives = true\nend)",
+            "horizon.on(\"can_survive\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.survives == nil, \"replace seed\")\n    event.survives = true\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut survives: Option<bool> = None;
         dispatch_can_survive(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             BlockPos::new(2, 3, 4),
             BlockStateId(10),
@@ -2303,13 +2675,13 @@ mod generated_tests {
     fn generated_may_place_on() {
         let (m, id, _dir) = loaded(
             "gen_may_place_on",
-            "horizon.on(\"may_place_on\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.ground == \"test:state10\", \"ground\")\n    assert(event.ground_pos.x == 4, \"ground_pos\")\n    assert(event.ground_pos.y == 5, \"ground_pos\")\n    assert(event.ground_pos.z == 6, \"ground_pos\")\n    assert(event.may == nil, \"replace seed\")\n    event.may = true\nend)",
+            "horizon.on(\"may_place_on\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.ground == \"test:state10\", \"ground\")\n    assert(event.ground_pos.x == 4, \"ground_pos\")\n    assert(event.ground_pos.y == 5, \"ground_pos\")\n    assert(event.ground_pos.z == 6, \"ground_pos\")\n    assert(event.may == nil, \"replace seed\")\n    event.may = true\n    assert(next(event.state_props) == nil, \"state_props\")\n    assert(next(event.ground_props) == nil, \"ground_props\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut may: Option<bool> = None;
         dispatch_may_place_on(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             BlockStateId(9),
             BlockStateId(10),
@@ -2324,13 +2696,13 @@ mod generated_tests {
     fn generated_is_valid_bonemeal_target() {
         let (m, id, _dir) = loaded(
             "gen_is_valid_bonemeal_target",
-            "horizon.on(\"is_valid_bonemeal_target\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.valid == nil, \"replace seed\")\n    event.valid = true\nend)",
+            "horizon.on(\"is_valid_bonemeal_target\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.valid == nil, \"replace seed\")\n    event.valid = true\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut valid: Option<bool> = None;
         dispatch_is_valid_bonemeal_target(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             BlockPos::new(2, 3, 4),
             BlockStateId(10),
@@ -2341,13 +2713,168 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_consume_effect() {
+        let (m, id, _dir) = loaded(
+            "gen_consume_effect",
+            "horizon.on(\"consume_effect\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_consume_effect(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:kind",
+            &serde_json::json!({ "testkey": 8 }),
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_loot_table_load() {
+        let (m, id, _dir) = loaded(
+            "gen_loot_table_load",
+            "horizon.on(\"loot_table_load\", function(event)\n    assert(event.id == \"test:id\", \"id\")\n    event.table = { testkey = 51 }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut table = serde_json::json!({ "testkey": 8 });
+        dispatch_loot_table_load(&firing_mods, "test:id", &mut table);
+        assert_eq!(table, serde_json::json!({ "testkey": 51 }));
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_state_for_placement() {
+        let (m, id, _dir) = loaded(
+            "gen_state_for_placement",
+            "horizon.on(\"state_for_placement\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.context.face == \"north\", \"context\")\n    assert(event.fluid.kind == \"minecraft:empty\", \"fluid\")\n    assert(event.answer == nil, \"replace seed\")\n    event.answer = event.state\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut answer: Option<Option<BlockStateId>> = None;
+        dispatch_state_for_placement(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockStateId(9),
+            &PlacementContext {
+                pos: BlockPos::new(3, 4, 5),
+                hit_pos: BlockPos::new(3, 4, 5),
+                face: Direction::North,
+                hit: Default::default(),
+                inside: true,
+                yaw: 92.0,
+                pitch: 0.0,
+                sneaking: false,
+                item: "test:item2".into(),
+                replace_clicked: true,
+            },
+            FluidState::EMPTY,
+            &mut answer,
+        );
+        assert_eq!(answer, Some(Some(BlockStateId(9))));
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_enchant_effect() {
+        let (m, id, _dir) = loaded(
+            "gen_enchant_effect",
+            "horizon.on(\"enchant_effect\", function(event)\n    assert(event.enchantment == \"test:enchantment\", \"enchantment\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.level == 10, \"level\")\n    assert(event.victim == 11, \"victim\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_enchant_effect(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:enchantment",
+            "test:kind",
+            &serde_json::json!({ "testkey": 9 }),
+            10,
+            11,
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_modify_default_components() {
+        let (m, id, _dir) = loaded(
+            "gen_modify_default_components",
+            "horizon.on(\"modify_default_components\", function(event)\n    assert(event.item == \"test:item\", \"item\")\n    event.components = { testkey = 51 }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut components = [("testkey".to_owned(), serde_json::json!(8))]
+            .into_iter()
+            .collect();
+        dispatch_modify_default_components(&firing_mods, "test:item", &mut components);
+        assert_eq!(
+            components,
+            [("testkey".to_owned(), serde_json::json!(51))]
+                .into_iter()
+                .collect()
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_shader_params() {
+        let (m, id, _dir) = loaded(
+            "gen_shader_params",
+            "horizon.on(\"shader_params\", function(event)\n    assert(event.partial == 1.5, \"partial\")\n    event.params = { { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 12.5, y = 2.5, z = 3.5, w = 4.5 } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut params = [[2.5, 2.5, 3.5, 4.5]; 8];
+        dispatch_shader_params(&FakeHost::empty(), &firing_mods, 1.5, &mut params);
+        assert_eq!(params, [[12.5, 2.5, 3.5, 4.5]; 8]);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_highlight() {
+        let (m, id, _dir) = loaded(
+            "gen_block_highlight",
+            "horizon.on(\"block_highlight\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.partial == 3.5, \"partial\")\n    horizon.cancel()\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_block_highlight(
+            &FakeHost::empty(),
+            &firing_mods,
+            [1, 2, 3],
+            BlockStateId(9),
+            3.5,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_render_hand() {
+        let (m, id, _dir) = loaded(
+            "gen_render_hand",
+            "horizon.on(\"render_hand\", function(event)\n    assert(event.stack == nil, \"stack\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(event.swing == 4.5, \"swing\")\n    assert(event.equip == 5.5, \"equip\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_render_hand(
+            &FakeHost::empty(),
+            &firing_mods,
+            Hand::Main,
+            None,
+            3.5,
+            4.5,
+            5.5,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_client_resources_reloaded() {
         let (m, id, _dir) = loaded(
             "gen_client_resources_reloaded",
-            "horizon.on(\"client_resources_reloaded\", function(event)\n\nend)",
+            "horizon.on(\"client_resources_reloaded\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_client_resources_reloaded(&mut FakeHost::empty(), &mods);
+        let firing_mods = boxed(m);
+        dispatch_client_resources_reloaded(&mut FakeHost::empty(), &firing_mods);
         no_error(&id);
     }
 
@@ -2357,11 +2884,11 @@ mod generated_tests {
             "gen_use_duration",
             "horizon.on(\"use_duration\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.duration == 8, \"duration\")\n    event.duration = 51\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut duration = 8;
         dispatch_use_duration(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             &ItemStack {
                 item: "test:stack".into(),
                 count: 1,
@@ -2375,16 +2902,39 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_use_animation() {
+        let (m, id, _dir) = loaded(
+            "gen_use_animation",
+            "horizon.on(\"use_animation\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    event.animation = \"drink\"\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut animation = UseAnimation::Block;
+        dispatch_use_animation(
+            &FakeHost::empty(),
+            &firing_mods,
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 1,
+                damage: 0,
+                extra: None,
+            },
+            &mut animation,
+        );
+        assert_eq!(animation, UseAnimation::Drink);
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_can_eat() {
         let (m, id, _dir) = loaded(
             "gen_can_eat",
             "horizon.on(\"can_eat\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.can_eat == false, \"can_eat\")\n    event.can_eat = true\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut can_eat = false;
         dispatch_can_eat(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             &ItemStack {
                 item: "test:stack".into(),
                 count: 1,
@@ -2403,9 +2953,14 @@ mod generated_tests {
             "gen_perform_console_command",
             "horizon.on(\"perform_console_command\", function(event)\n    assert(event.command == \"test:command\", \"command\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut ran = false;
-        dispatch_perform_console_command(&mut FakeHost::empty(), &mods, "test:command", &mut ran);
+        dispatch_perform_console_command(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:command",
+            &mut ran,
+        );
         assert!(ran, "ran not cancelled");
         no_error(&id);
     }
@@ -2416,8 +2971,8 @@ mod generated_tests {
             "gen_server_data_loaded",
             "horizon.on(\"server_data_loaded\", function(event)\n    assert(event.reload == true, \"reload\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_server_data_loaded(&mut FakeHost::empty(), &mods, true);
+        let firing_mods = boxed(m);
+        dispatch_server_data_loaded(&mut FakeHost::empty(), &firing_mods, true);
         no_error(&id);
     }
 
@@ -2427,11 +2982,11 @@ mod generated_tests {
             "gen_compute_fov",
             "horizon.on(\"compute_fov\", function(event)\n    assert(event.partial == 1.5, \"partial\")\n    assert(event.camera.x == 2, \"camera\")\n    assert(event.camera.y == 2.0, \"camera\")\n    assert(event.camera.z == 3.0, \"camera\")\n    assert(event.degrees == 3.5, \"degrees\")\n    event.degrees = 17.5\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut degrees = 3.5;
         dispatch_compute_fov(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             1.5,
             [2.0, 2.0, 3.0],
             &mut degrees,
@@ -2446,9 +3001,16 @@ mod generated_tests {
             "gen_mouse_button_pre",
             "horizon.on(\"mouse_button_pre\", function(event)\n    assert(event.button == 7, \"button\")\n    assert(event.pressed == false, \"pressed\")\n    assert(event.modifiers == 9, \"modifiers\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut canceled = false;
-        dispatch_mouse_button_pre(&mut FakeHost::empty(), &mods, 7, false, 9, &mut canceled);
+        dispatch_mouse_button_pre(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            false,
+            9,
+            &mut canceled,
+        );
         assert!(canceled, "canceled not cancelled");
         no_error(&id);
     }
@@ -2459,8 +3021,59 @@ mod generated_tests {
             "gen_mouse_button_post",
             "horizon.on(\"mouse_button_post\", function(event)\n    assert(event.button == 7, \"button\")\n    assert(event.pressed == false, \"pressed\")\n    assert(event.modifiers == 9, \"modifiers\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_mouse_button_post(&mut FakeHost::empty(), &mods, 7, false, 9);
+        let firing_mods = boxed(m);
+        dispatch_mouse_button_post(&mut FakeHost::empty(), &firing_mods, 7, false, 9);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_music() {
+        let (m, id, _dir) = loaded(
+            "gen_music",
+            "horizon.on(\"music\", function(event)\n    event.music = nil\n    assert(event.volume == 2.5, \"volume\")\n    event.volume = 16.5\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut music = Some(Music {
+            sound: "test:sound0".into(),
+            min_delay: 1,
+            max_delay: 2,
+            replace_current_music: true,
+        });
+        let mut volume = 2.5;
+        dispatch_music(&FakeHost::empty(), &firing_mods, &mut music, &mut volume);
+        assert_eq!(music, None);
+        assert_eq!(volume, 16.5);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_music_layers() {
+        let (m, id, _dir) = loaded(
+            "gen_music_layers",
+            "horizon.on(\"music_layers\", function(event)\n    assert(event.layers[1].sound == \"test:sound0\", \"layers\")\n    assert(event.layers[2].sound == \"test:sound1\", \"layers\")\n    event.layers = { { sound = \"test:sound50\", volume = 50.5 } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut layers = vec![
+            MusicLayer {
+                sound: "test:sound0".into(),
+                volume: 0.5,
+            },
+            MusicLayer {
+                sound: "test:sound1".into(),
+                volume: 1.5,
+            },
+        ];
+        dispatch_music_layers(&FakeHost::empty(), &firing_mods, &mut layers);
+        assert_eq!(
+            format!("{:?}", layers),
+            format!(
+                "{:?}",
+                vec![MusicLayer {
+                    sound: "test:sound50".into(),
+                    volume: 50.5
+                }]
+            )
+        );
         no_error(&id);
     }
 
@@ -2468,10 +3081,36 @@ mod generated_tests {
     fn generated_recipes_received() {
         let (m, id, _dir) = loaded(
             "gen_recipes_received",
-            "horizon.on(\"recipes_received\", function(event)\n    assert(event.recipe_types[1] == \"test:seed\", \"recipe_types\")\nend)",
+            "horizon.on(\"recipes_received\", function(event)\n    assert(event.recipe_types[1] == \"test:seed\", \"recipe_types\")\n    assert(event.recipe_types[2] == \"test:seed2\", \"recipe_types\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_recipes_received(&mut FakeHost::empty(), &mods, &["test:seed".to_owned()]);
+        let firing_mods = boxed(m);
+        dispatch_recipes_received(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            &["test:seed".to_owned(), "test:seed2".to_owned()],
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_mouse_scrolling() {
+        let (m, id, _dir) = loaded(
+            "gen_mouse_scrolling",
+            "horizon.on(\"mouse_scrolling\", function(event)\n    assert(event.scroll.x == 1.5, \"scroll\")\n    assert(event.scroll.y == 2.5, \"scroll\")\n    assert(event.accumulated.x == 4, \"accumulated\")\n    assert(event.cursor.x == 4.5, \"cursor\")\n    assert(event.cursor.y == 5.5, \"cursor\")\n    assert(event.modifiers == 11, \"modifiers\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_mouse_scrolling(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            [1.5, 2.5],
+            [4, -6],
+            [true, false, false],
+            [4.5, 5.5],
+            11,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
         no_error(&id);
     }
 
@@ -2481,10 +3120,10 @@ mod generated_tests {
             "gen_mod_container_viewers",
             "horizon.on(\"mod_container_viewers\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.viewers == 9, \"viewers\")\n    assert(event.previous == 10, \"previous\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_mod_container_viewers(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             [2, 3, 4],
             9,
@@ -2499,11 +3138,11 @@ mod generated_tests {
             "gen_experience_orb_can_merge",
             "horizon.on(\"experience_orb_can_merge\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.into == 8, \"into\")\n    assert(event.from == 9, \"from\")\n    assert(event.into_value == 10, \"into_value\")\n    assert(event.from_value == 11, \"from_value\")\n    assert(event.can_merge == false, \"can_merge\")\n    event.can_merge = true\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut can_merge = false;
         dispatch_experience_orb_can_merge(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             8,
             9,
@@ -2521,11 +3160,11 @@ mod generated_tests {
             "gen_experience_orb_merge",
             "horizon.on(\"experience_orb_merge\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.into == 8, \"into\")\n    assert(event.from == 9, \"from\")\n    assert(event.from_value == 10, \"from_value\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut canceled = false;
         dispatch_experience_orb_merge(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             8,
             9,
@@ -2542,11 +3181,11 @@ mod generated_tests {
             "gen_menu_slot_rules",
             "horizon.on(\"menu_slot_rules\", function(event)\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.slot == 8, \"slot\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.may_place == false, \"may_place\")\n    event.may_place = true\n    assert(event.max_stack == 11, \"max_stack\")\n    event.max_stack = 54\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut may_place = false;
         let mut max_stack = 11;
         dispatch_menu_slot_rules(
-            &mods,
+            &firing_mods,
             "test:menu",
             8,
             &ItemStack {
@@ -2564,17 +3203,85 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_entity_use_item_tick() {
+        let (m, id, _dir) = loaded(
+            "gen_living_entity_use_item_tick",
+            "horizon.on(\"living_entity_use_item_tick\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.duration == 10, \"duration\")\n    event.duration = 53\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut duration = 10;
+            let mut canceled = false;
+            dispatch_living_entity_use_item_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                Some(13),
+                Hand::Main,
+                &mut duration,
+                &mut canceled,
+            );
+        }
+        no_error(&id);
+        // gone event: the handler stays quiet.
+        {
+            let mut duration = 10;
+            let mut canceled = false;
+            dispatch_living_entity_use_item_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                None,
+                Hand::Main,
+                &mut duration,
+                &mut canceled,
+            );
+        }
+        no_error(&id);
+        let mut duration = 10;
+        let mut canceled = false;
+        dispatch_living_entity_use_item_tick(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 1,
+                damage: 0,
+                extra: None,
+            },
+            Some(11),
+            Hand::Main,
+            &mut duration,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(duration, 53);
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_on_use_tick() {
         let (m, id, _dir) = loaded(
             "gen_on_use_tick",
             "horizon.on(\"on_use_tick\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.remaining == 9, \"remaining\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_on_use_tick(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 &ItemStack {
                     item: "test:stack".into(),
                     count: 1,
@@ -2590,7 +3297,7 @@ mod generated_tests {
         {
             dispatch_on_use_tick(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 &ItemStack {
                     item: "test:stack".into(),
                     count: 1,
@@ -2604,7 +3311,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_on_use_tick(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             &ItemStack {
                 item: "test:stack".into(),
                 count: 1,
@@ -2618,18 +3325,82 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_entity_use_item_stop() {
+        let (m, id, _dir) = loaded(
+            "gen_living_entity_use_item_stop",
+            "horizon.on(\"living_entity_use_item_stop\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.duration == 10, \"duration\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut canceled = false;
+            dispatch_living_entity_use_item_stop(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                Some(13),
+                Hand::Main,
+                10,
+                &mut canceled,
+            );
+        }
+        no_error(&id);
+        // gone event: the handler stays quiet.
+        {
+            let mut canceled = false;
+            dispatch_living_entity_use_item_stop(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                None,
+                Hand::Main,
+                10,
+                &mut canceled,
+            );
+        }
+        no_error(&id);
+        let mut canceled = false;
+        dispatch_living_entity_use_item_stop(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 1,
+                damage: 0,
+                extra: None,
+            },
+            Some(11),
+            Hand::Main,
+            10,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_release_using() {
         let (m, id, _dir) = loaded(
             "gen_release_using",
             "horizon.on(\"release_using\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.time_left == 9, \"time_left\")\n    assert(event.used == false, \"used\")\n    event.used = true\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut used = false;
             dispatch_release_using(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 &ItemStack {
                     item: "test:stack".into(),
                     count: 1,
@@ -2647,7 +3418,7 @@ mod generated_tests {
             let mut used = false;
             dispatch_release_using(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 &ItemStack {
                     item: "test:stack".into(),
                     count: 1,
@@ -2663,7 +3434,7 @@ mod generated_tests {
         let mut used = false;
         dispatch_release_using(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             &ItemStack {
                 item: "test:stack".into(),
                 count: 1,
@@ -2684,8 +3455,8 @@ mod generated_tests {
             "gen_level_load",
             "horizon.on(\"level_load\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_level_load(&mut FakeHost::empty(), &mods, "test:dimension");
+        let firing_mods = boxed(m);
+        dispatch_level_load(&mut FakeHost::empty(), &firing_mods, "test:dimension");
         no_error(&id);
     }
 
@@ -2695,8 +3466,8 @@ mod generated_tests {
             "gen_level_unload",
             "horizon.on(\"level_unload\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_level_unload(&mut FakeHost::empty(), &mods, "test:dimension");
+        let firing_mods = boxed(m);
+        dispatch_level_unload(&mut FakeHost::empty(), &firing_mods, "test:dimension");
         no_error(&id);
     }
 
@@ -2706,8 +3477,8 @@ mod generated_tests {
             "gen_client_level_load",
             "horizon.on(\"client_level_load\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_client_level_load(&mut FakeHost::empty(), &mods, "test:dimension");
+        let firing_mods = boxed(m);
+        dispatch_client_level_load(&mut FakeHost::empty(), &firing_mods, "test:dimension");
         no_error(&id);
     }
 
@@ -2717,8 +3488,8 @@ mod generated_tests {
             "gen_client_level_unload",
             "horizon.on(\"client_level_unload\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_client_level_unload(&mut FakeHost::empty(), &mods, "test:dimension");
+        let firing_mods = boxed(m);
+        dispatch_client_level_unload(&mut FakeHost::empty(), &firing_mods, "test:dimension");
         no_error(&id);
     }
 
@@ -2728,13 +3499,13 @@ mod generated_tests {
             "gen_entity_mount",
             "horizon.on(\"entity_mount\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.vehicle == 10, \"vehicle\")\n    assert(event.vehicle_kind == \"test:vehicle_kind\", \"vehicle_kind\")\n    assert(event.mounting == false, \"mounting\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut canceled = false;
             dispatch_entity_mount(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 "minecraft:skeleton",
@@ -2748,7 +3519,7 @@ mod generated_tests {
         let mut canceled = false;
         dispatch_entity_mount(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             8,
             "minecraft:zombie",
@@ -2762,17 +3533,92 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_interaction_key() {
+        let (m, id, _dir) = loaded(
+            "gen_interaction_key",
+            "horizon.on(\"interaction_key\", function(event)\n    assert(event.button == 7, \"button\")\n    assert(event.key_mapping == \"test:key_mapping\", \"key_mapping\")\n    assert(event.swing_hand == false, \"swing_hand\")\n    event.swing_hand = true\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut swing_hand = false;
+        let mut canceled = false;
+        dispatch_interaction_key(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:key_mapping",
+            Hand::Main,
+            &mut swing_hand,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert!(swing_hand);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_map_decorations() {
+        let (m, id, _dir) = loaded(
+            "gen_map_decorations",
+            "horizon.on(\"map_decorations\", function(event)\n    assert(event.map.id == 7, \"map\")\n    assert(event.decorations[1].sprite == \"test:sprite1\", \"decorations\")\n    assert(event.decorations[2].sprite == \"test:sprite2\", \"decorations\")\n    event.decorations = { { sprite = \"test:sprite51\", x = 52, y = 2, rot = 0, shown_on_frame = false } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut decorations = vec![
+            NativeMapDecoration {
+                sprite: "test:sprite1".into(),
+                x: 2,
+                y: 2,
+                rot: 0,
+                shown_on_frame: false,
+            },
+            NativeMapDecoration {
+                sprite: "test:sprite2".into(),
+                x: 3,
+                y: 2,
+                rot: 0,
+                shown_on_frame: true,
+            },
+        ];
+        dispatch_map_decorations(
+            &FakeHost::empty(),
+            &firing_mods,
+            &NativeMapInfo {
+                id: 7,
+                center: [3, -5],
+                scale: 0,
+                dimension: "minecraft:overworld",
+                locked: true,
+                in_frame: false,
+            },
+            &mut decorations,
+        );
+        assert_eq!(
+            format!("{:?}", decorations),
+            format!(
+                "{:?}",
+                vec![NativeMapDecoration {
+                    sprite: "test:sprite51".into(),
+                    x: 52,
+                    y: 2,
+                    rot: 0,
+                    shown_on_frame: false
+                }]
+            )
+        );
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_player_start_tracking() {
         let (m, id, _dir) = loaded(
             "gen_player_start_tracking",
             "horizon.on(\"player_start_tracking\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.uuid == 10, \"uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_player_start_tracking(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -2783,7 +3629,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_player_start_tracking(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             9,
@@ -2799,12 +3645,12 @@ mod generated_tests {
             "gen_player_stop_tracking",
             "horizon.on(\"player_stop_tracking\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.uuid == 10, \"uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_player_stop_tracking(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -2815,7 +3661,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_player_stop_tracking(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             9,
@@ -2826,19 +3672,72 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_entity_energy() {
+        let (m, id, _dir) = loaded(
+            "gen_block_entity_energy",
+            "horizon.on(\"block_entity_energy\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.energy == nil, \"replace seed\")\n    event.energy = { capacity = 1000, max_insert = 100, max_extract = 100, insert_faces = { true, false, false, false, false, false }, extract_faces = { false, false, false, false, false, false } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut energy: Option<ModEnergyBuffer> = None;
+        dispatch_block_entity_energy(&FakeHost::empty(), &firing_mods, "test:block", &mut energy);
+        assert_eq!(
+            energy,
+            Some(ModEnergyBuffer {
+                capacity: 1000,
+                max_insert: 100,
+                max_extract: 100,
+                insert_faces: [true, false, false, false, false, false],
+                extract_faces: [false; 6]
+            })
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_data_map_types() {
+        let (m, id, _dir) = loaded(
+            "gen_data_map_types",
+            "horizon.on(\"data_map_types\", function(event)\n    assert(event.types[1].id == \"test:map0\", \"types\")\n    assert(event.types[2].id == \"test:map1\", \"types\")\n    event.types = { { id = \"test:map50\", registry = \"test:registry50\" } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut types = vec![
+            NativeDataMapType {
+                id: "test:map0".into(),
+                registry: "test:registry0".into(),
+            },
+            NativeDataMapType {
+                id: "test:map1".into(),
+                registry: "test:registry1".into(),
+            },
+        ];
+        dispatch_data_map_types(&FakeHost::empty(), &firing_mods, &mut types);
+        assert_eq!(
+            format!("{:?}", types),
+            format!(
+                "{:?}",
+                vec![NativeDataMapType {
+                    id: "test:map50".into(),
+                    registry: "test:registry50".into()
+                }]
+            )
+        );
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_living_breathe() {
         let (m, id, _dir) = loaded(
             "gen_living_breathe",
             "horizon.on(\"living_breathe\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.can_breathe == true, \"can_breathe\")\n    event.can_breathe = false\n    assert(event.consume == 10, \"consume\")\n    event.consume = 53\n    assert(event.refill == 11, \"refill\")\n    event.refill = 54\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut can_breathe = true;
             let mut consume = 10;
             let mut refill = 11;
             dispatch_living_breathe(
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 &mut can_breathe,
@@ -2851,7 +3750,7 @@ mod generated_tests {
         let mut consume = 10;
         let mut refill = 11;
         dispatch_living_breathe(
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             &mut can_breathe,
@@ -2870,13 +3769,13 @@ mod generated_tests {
             "gen_entity_tick_pre",
             "horizon.on(\"entity_tick_pre\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut canceled = false;
             dispatch_entity_tick_pre(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 "minecraft:skeleton",
@@ -2887,7 +3786,7 @@ mod generated_tests {
         let mut canceled = false;
         dispatch_entity_tick_pre(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             8,
             "minecraft:zombie",
@@ -2903,9 +3802,9 @@ mod generated_tests {
             "gen_player_render_listened",
             "horizon.on(\"player_render_listened\", function(event)\n    assert(event.listened == true, \"listened\")\n    event.listened = false\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut listened = true;
-        dispatch_player_render_listened(&FakeHost::empty(), &mods, &mut listened);
+        dispatch_player_render_listened(&FakeHost::empty(), &firing_mods, &mut listened);
         assert!(!listened);
         no_error(&id);
     }
@@ -2914,14 +3813,14 @@ mod generated_tests {
     fn generated_sign_changed() {
         let (m, id, _dir) = loaded(
             "gen_sign_changed",
-            "horizon.on(\"sign_changed\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.front == true, \"front\")\n    assert(event.lines[1] == \"test:seed\", \"lines\")\n    event.lines[1] = \"test:edited\"; table.insert(event.lines, \"test:added\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"sign_changed\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.front == true, \"front\")\n    assert(event.lines[1] == \"test:seed\", \"lines\")\n    assert(event.lines[2] == \"test:seed2\", \"lines\")\n    event.lines[1] = \"test:edited\"; table.insert(event.lines, \"test:added\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
-        let mut lines = vec!["test:seed".to_owned()];
+        let firing_mods = boxed(m);
+        let mut lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
         let mut cancel = false;
         dispatch_sign_changed(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:dimension",
@@ -2933,7 +3832,11 @@ mod generated_tests {
         assert!(cancel, "cancel not cancelled");
         assert_eq!(
             lines,
-            vec!["test:edited".to_owned(), "test:added".to_owned()]
+            vec![
+                "test:edited".to_owned(),
+                "test:seed2".to_owned(),
+                "test:added".to_owned()
+            ]
         );
         no_error(&id);
     }
@@ -2942,14 +3845,18 @@ mod generated_tests {
     fn generated_standalone_models() {
         let (m, id, _dir) = loaded(
             "gen_standalone_models",
-            "horizon.on(\"standalone_models\", function(event)\n    assert(event.models[1] == \"test:seed\", \"models\")\n    event.models[1] = \"test:edited\"; table.insert(event.models, \"test:added\")\nend)",
+            "horizon.on(\"standalone_models\", function(event)\n    assert(event.models[1] == \"test:seed\", \"models\")\n    assert(event.models[2] == \"test:seed2\", \"models\")\n    event.models[1] = \"test:edited\"; table.insert(event.models, \"test:added\")\nend)",
         );
-        let mods = boxed(m);
-        let mut models = vec!["test:seed".to_owned()];
-        dispatch_standalone_models(&mods, &mut models);
+        let firing_mods = boxed(m);
+        let mut models = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+        dispatch_standalone_models(&firing_mods, &mut models);
         assert_eq!(
             models,
-            vec!["test:edited".to_owned(), "test:added".to_owned()]
+            vec![
+                "test:edited".to_owned(),
+                "test:seed2".to_owned(),
+                "test:added".to_owned()
+            ]
         );
         no_error(&id);
     }
@@ -2960,11 +3867,11 @@ mod generated_tests {
             "gen_player_toggle_flight",
             "horizon.on(\"player_toggle_flight\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.flying == true, \"flying\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_player_toggle_flight(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             true,
@@ -2980,10 +3887,10 @@ mod generated_tests {
             "gen_beacon_state_change",
             "horizon.on(\"beacon_state_change\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.active == true, \"active\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_beacon_state_change(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             [2, 3, 4],
             true,
@@ -2997,10 +3904,10 @@ mod generated_tests {
             "gen_block_break_progress_update",
             "horizon.on(\"block_break_progress_update\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.progress == 10, \"progress\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_block_break_progress_update(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
@@ -3015,8 +3922,14 @@ mod generated_tests {
             "gen_block_damage_abort",
             "horizon.on(\"block_damage_abort\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_block_damage_abort(&mut FakeHost::empty(), &mods, 7, "test:name", [3, 4, 5]);
+        let firing_mods = boxed(m);
+        dispatch_block_damage_abort(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            [3, 4, 5],
+        );
         no_error(&id);
     }
 
@@ -3026,10 +3939,10 @@ mod generated_tests {
             "gen_block_dispense_armor",
             "horizon.on(\"block_dispense_armor\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.target == \"test:target\", \"target\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_block_dispense_armor(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             [2, 3, 4],
             "test:item",
@@ -3044,11 +3957,11 @@ mod generated_tests {
             "gen_block_exp",
             "horizon.on(\"block_exp\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.experience == 10, \"experience\")\n    event.experience = 53\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut experience = 10;
         dispatch_block_exp(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             BlockPos::new(2, 3, 4),
             "test:block",
@@ -3062,13 +3975,13 @@ mod generated_tests {
     fn generated_block_fade() {
         let (m, id, _dir) = loaded(
             "gen_block_fade",
-            "horizon.on(\"block_fade\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:state10\", \"from\")\n    assert(event.to == \"test:state11\", \"to\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"block_fade\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:state10\", \"from\")\n    assert(event.to == \"test:state11\", \"to\")\n    horizon.cancel()\n    assert(next(event.from_props) == nil, \"from_props\")\n    assert(next(event.to_props) == nil, \"to_props\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_block_fade(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             BlockPos::new(2, 3, 4),
             BlockStateId(10),
@@ -3085,10 +3998,10 @@ mod generated_tests {
             "gen_block_failed_dispense",
             "horizon.on(\"block_failed_dispense\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_block_failed_dispense(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             [2, 3, 4],
             "test:item",
@@ -3100,13 +4013,13 @@ mod generated_tests {
     fn generated_block_form() {
         let (m, id, _dir) = loaded(
             "gen_block_form",
-            "horizon.on(\"block_form\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:state10\", \"from\")\n    assert(event.to == \"test:state11\", \"to\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"block_form\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:state10\", \"from\")\n    assert(event.to == \"test:state11\", \"to\")\n    horizon.cancel()\n    assert(next(event.from_props) == nil, \"from_props\")\n    assert(next(event.to_props) == nil, \"to_props\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_block_form(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             BlockPos::new(2, 3, 4),
             BlockStateId(10),
@@ -3121,15 +4034,15 @@ mod generated_tests {
     fn generated_block_ignite() {
         let (m, id, _dir) = loaded(
             "gen_block_ignite",
-            "horizon.on(\"block_ignite\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == \"00000000-0000-0000-0000-000000000008\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"block_ignite\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_block_ignite(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
-            Some(8),
+            None,
             BlockPos::new(3, 4, 5),
             "test:cause",
             &mut cancel,
@@ -3144,11 +4057,11 @@ mod generated_tests {
             "gen_block_receive_game",
             "horizon.on(\"block_receive_game\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.event == \"test:event\", \"event\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_block_receive_game(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             [2, 3, 4],
             "test:block",
@@ -3165,12 +4078,12 @@ mod generated_tests {
             "gen_block_shear_entity",
             "horizon.on(\"block_shear_entity\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_block_shear_entity(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 [2, 3, 4],
                 9,
@@ -3180,7 +4093,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_block_shear_entity(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             [2, 3, 4],
             9,
@@ -3195,8 +4108,8 @@ mod generated_tests {
             "gen_brewing_complete",
             "horizon.on(\"brewing_complete\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_brewing_complete(&FakeHost::empty(), &mods, [1, 2, 3]);
+        let firing_mods = boxed(m);
+        dispatch_brewing_complete(&FakeHost::empty(), &firing_mods, [1, 2, 3]);
         no_error(&id);
     }
 
@@ -3206,8 +4119,8 @@ mod generated_tests {
             "gen_brewing_fuel",
             "horizon.on(\"brewing_fuel\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.fuel == \"test:fuel\", \"fuel\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_brewing_fuel(&FakeHost::empty(), &mods, [1, 2, 3], "test:fuel");
+        let firing_mods = boxed(m);
+        dispatch_brewing_fuel(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
         no_error(&id);
     }
 
@@ -3217,8 +4130,28 @@ mod generated_tests {
             "gen_brewing_start",
             "horizon.on(\"brewing_start\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.ingredient == \"test:ingredient\", \"ingredient\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_brewing_start(&FakeHost::empty(), &mods, [1, 2, 3], "test:ingredient");
+        let firing_mods = boxed(m);
+        dispatch_brewing_start(
+            &FakeHost::empty(),
+            &firing_mods,
+            [1, 2, 3],
+            "test:ingredient",
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_broadcast_message() {
+        let (m, id, _dir) = loaded(
+            "gen_broadcast_message",
+            "horizon.on(\"broadcast_message\", function(event)\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.line_component.text == \"test:line\", \"line\")\n    event.line = \"test:line:edited\"; event.line_component = nil\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut line = Text::literal("test:line");
+        let mut cancel = false;
+        dispatch_broadcast_message(&FakeHost::empty(), &firing_mods, &mut line, &mut cancel);
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(line, Text::literal("test:line:edited"));
         no_error(&id);
     }
 
@@ -3228,8 +4161,8 @@ mod generated_tests {
             "gen_campfire_start",
             "horizon.on(\"campfire_start\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_campfire_start(&FakeHost::empty(), &mods, [1, 2, 3], "test:item");
+        let firing_mods = boxed(m);
+        dispatch_campfire_start(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
         no_error(&id);
     }
 
@@ -3237,15 +4170,15 @@ mod generated_tests {
     fn generated_cauldron_level_changed() {
         let (m, id, _dir) = loaded(
             "gen_cauldron_level_changed",
-            "horizon.on(\"cauldron_level_changed\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == \"00000000-0000-0000-0000-000000000008\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.from_level == 10, \"from_level\")\n    assert(event.to_level == 11, \"to_level\")\n    assert(event.reason == \"test:reason\", \"reason\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"cauldron_level_changed\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.from_level == 10, \"from_level\")\n    assert(event.to_level == 11, \"to_level\")\n    assert(event.reason == \"test:reason\", \"reason\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_cauldron_level_changed(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
-            Some(8),
+            None,
             BlockPos::new(3, 4, 5),
             10,
             11,
@@ -3260,14 +4193,14 @@ mod generated_tests {
     fn generated_chorus_fruit_teleport() {
         let (m, id, _dir) = loaded(
             "gen_chorus_fruit_teleport",
-            "horizon.on(\"chorus_fruit_teleport\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.target.x == 4, \"target\")\n    assert(event.target.y == 2.0, \"target\")\n    assert(event.target.z == 3.0, \"target\")\n    event.target = { x = 14.0, y = 2.0, z = 3.0 }\n    horizon.cancel()\nend)",
+            "horizon.on(\"chorus_fruit_teleport\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.target.x == 4.0, \"target\")\n    assert(event.target.y == 2.0, \"target\")\n    assert(event.target.z == 3.0, \"target\")\n    event.target = { x = 14.0, y = 12.0, z = 13.0 }\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut target = [4.0, 2.0, 3.0];
         let mut cancel = false;
         dispatch_chorus_fruit_teleport(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3.0, 2.0, 3.0],
@@ -3275,7 +4208,7 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
-        assert_eq!(target, [14.0, 2.0, 3.0]);
+        assert_eq!(target, [14.0, 12.0, 13.0]);
         no_error(&id);
     }
 
@@ -3285,8 +4218,8 @@ mod generated_tests {
             "gen_compost_item",
             "horizon.on(\"compost_item\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_compost_item(&FakeHost::empty(), &mods, [1, 2, 3], "test:item");
+        let firing_mods = boxed(m);
+        dispatch_compost_item(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
         no_error(&id);
     }
 
@@ -3296,8 +4229,8 @@ mod generated_tests {
             "gen_crafter_craft",
             "horizon.on(\"crafter_craft\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.recipe == \"test:recipe\", \"recipe\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_crafter_craft(&FakeHost::empty(), &mods, [1, 2, 3], "test:recipe");
+        let firing_mods = boxed(m);
+        dispatch_crafter_craft(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:recipe");
         no_error(&id);
     }
 
@@ -3307,18 +4240,18 @@ mod generated_tests {
             "gen_creeper_ignite",
             "horizon.on(\"creeper_ignite\", function(event)\n    assert(event.entity == 11, \"kind\")\n    assert(event.player == 8, \"player\")\n    assert(event.item == \"test:item\", \"item\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            dispatch_creeper_ignite(&mut FakeHost::empty(), &mods, 13, 8, "test:item");
+            dispatch_creeper_ignite(&mut FakeHost::empty(), &firing_mods, 13, 8, "test:item");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
-            dispatch_creeper_ignite(&mut FakeHost::empty(), &mods, 99, 8, "test:item");
+            dispatch_creeper_ignite(&mut FakeHost::empty(), &firing_mods, 99, 8, "test:item");
         }
         no_error(&id);
-        dispatch_creeper_ignite(&mut FakeHost::empty(), &mods, 11, 8, "test:item");
+        dispatch_creeper_ignite(&mut FakeHost::empty(), &firing_mods, 11, 8, "test:item");
         no_error(&id);
     }
 
@@ -3328,18 +4261,18 @@ mod generated_tests {
             "gen_creeper_power",
             "horizon.on(\"creeper_power\", function(event)\n    assert(event.entity == 11, \"kind\")\n    assert(event.lightning.x == 2, \"lightning\")\n    assert(event.lightning.y == 2.0, \"lightning\")\n    assert(event.lightning.z == 3.0, \"lightning\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            dispatch_creeper_power(&mut FakeHost::empty(), &mods, 13, [2.0, 2.0, 3.0]);
+            dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 13, [2.0, 2.0, 3.0]);
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
-            dispatch_creeper_power(&mut FakeHost::empty(), &mods, 99, [2.0, 2.0, 3.0]);
+            dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 99, [2.0, 2.0, 3.0]);
         }
         no_error(&id);
-        dispatch_creeper_power(&mut FakeHost::empty(), &mods, 11, [2.0, 2.0, 3.0]);
+        dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 2.0, 3.0]);
         no_error(&id);
     }
 
@@ -3349,12 +4282,12 @@ mod generated_tests {
             "gen_critical_hit",
             "horizon.on(\"critical_hit\", function(event)\n    assert(event.target_kind == \"test:target_kind\", \"target_kind\")\n    assert(event.vanilla_critical == false, \"vanilla_critical\")\n    assert(event.critical == true, \"critical\")\n    event.critical = false\n    assert(event.damage_multiplier == 4.5, \"damage_multiplier\")\n    event.damage_multiplier = 18.5\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut critical = true;
         let mut damage_multiplier = 4.5;
         dispatch_critical_hit(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:target_kind",
             false,
             &mut critical,
@@ -3371,8 +4304,8 @@ mod generated_tests {
             "gen_difficulty_changed",
             "horizon.on(\"difficulty_changed\", function(event)\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_difficulty_changed(&mut FakeHost::empty(), &mods, "test:from", "test:to");
+        let firing_mods = boxed(m);
+        dispatch_difficulty_changed(&mut FakeHost::empty(), &firing_mods, "test:from", "test:to");
         no_error(&id);
     }
 
@@ -3382,11 +4315,11 @@ mod generated_tests {
             "gen_dragon_egg_form",
             "horizon.on(\"dragon_egg_form\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_dragon_egg_form(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             BlockPos::new(2, 3, 4),
             &mut cancel,
@@ -3401,10 +4334,10 @@ mod generated_tests {
             "gen_enchant_item",
             "horizon.on(\"enchant_item\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.item.id == \"test:item\", \"item\")\n    assert(event.levels == 11, \"levels\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_enchant_item(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
@@ -3423,15 +4356,15 @@ mod generated_tests {
     fn generated_ender_pearl_teleport() {
         let (m, id, _dir) = loaded(
             "gen_ender_pearl_teleport",
-            "horizon.on(\"ender_pearl_teleport\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pearl == 9, \"pearl\")\n    assert(event.from.x == 4, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.target.x == 5, \"target\")\n    assert(event.target.y == 2.0, \"target\")\n    assert(event.target.z == 3.0, \"target\")\n    event.target = { x = 15.0, y = 2.0, z = 3.0 }\n    assert(event.damage == 6.5, \"damage\")\n    event.damage = 20.5\n    horizon.cancel()\nend)",
+            "horizon.on(\"ender_pearl_teleport\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pearl == 9, \"pearl\")\n    assert(event.from.x == 4, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.target.x == 5.0, \"target\")\n    assert(event.target.y == 2.0, \"target\")\n    assert(event.target.z == 3.0, \"target\")\n    event.target = { x = 15.0, y = 12.0, z = 13.0 }\n    assert(event.damage == 6.5, \"damage\")\n    event.damage = 20.5\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut target = [5.0, 2.0, 3.0];
         let mut damage = 6.5;
         let mut cancel = false;
         dispatch_ender_pearl_teleport(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             9,
@@ -3441,7 +4374,7 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
-        assert_eq!(target, [15.0, 2.0, 3.0]);
+        assert_eq!(target, [15.0, 12.0, 13.0]);
         assert_eq!(damage, 20.5);
         no_error(&id);
     }
@@ -3452,8 +4385,14 @@ mod generated_tests {
             "gen_entities_load",
             "horizon.on(\"entities_load\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.chunk.x == 4, \"chunk\")\n    assert(event.chunk.z == -6, \"chunk\")\n    assert(event.count == 9, \"count\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_entities_load(&mut FakeHost::empty(), &mods, "test:dimension", [4, -6], 9);
+        let firing_mods = boxed(m);
+        dispatch_entities_load(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            [4, -6],
+            9,
+        );
         no_error(&id);
     }
 
@@ -3463,8 +4402,14 @@ mod generated_tests {
             "gen_entities_unload",
             "horizon.on(\"entities_unload\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.chunk.x == 4, \"chunk\")\n    assert(event.chunk.z == -6, \"chunk\")\n    assert(event.count == 9, \"count\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_entities_unload(&mut FakeHost::empty(), &mods, "test:dimension", [4, -6], 9);
+        let firing_mods = boxed(m);
+        dispatch_entities_unload(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            [4, -6],
+            9,
+        );
         no_error(&id);
     }
 
@@ -3474,12 +4419,12 @@ mod generated_tests {
             "gen_entity_break_door",
             "horizon.on(\"entity_break_door\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_entity_break_door(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 [3, 4, 5],
@@ -3488,7 +4433,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_entity_break_door(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             [3, 4, 5],
@@ -3502,8 +4447,8 @@ mod generated_tests {
             "gen_entity_breed",
             "horizon.on(\"entity_breed\", function(event)\n    assert(event.parent == 7, \"parent\")\n    assert(event.partner == 8, \"partner\")\n    assert(event.child == 9, \"child\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_entity_breed(&mut FakeHost::empty(), &mods, 7, 8, Some(9));
+        let firing_mods = boxed(m);
+        dispatch_entity_breed(&mut FakeHost::empty(), &firing_mods, 7, 8, Some(9));
         no_error(&id);
     }
 
@@ -3513,12 +4458,12 @@ mod generated_tests {
             "gen_entity_change_block",
             "horizon.on(\"entity_change_block\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_entity_change_block(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 [3, 4, 5],
@@ -3529,7 +4474,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_entity_change_block(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             [3, 4, 5],
@@ -3545,12 +4490,12 @@ mod generated_tests {
             "gen_entity_drop_item",
             "horizon.on(\"entity_drop_item\", function(event)\n    assert(event.entity == 11, \"kind\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 9, \"count\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_entity_drop_item(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 13,
                 "test:item",
                 9,
@@ -3562,7 +4507,7 @@ mod generated_tests {
         {
             dispatch_entity_drop_item(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 99,
                 "test:item",
                 9,
@@ -3572,7 +4517,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_entity_drop_item(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             11,
             "test:item",
             9,
@@ -3587,12 +4532,12 @@ mod generated_tests {
             "gen_entity_enter_block",
             "horizon.on(\"entity_enter_block\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_entity_enter_block(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 [3, 4, 5],
@@ -3602,7 +4547,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_entity_enter_block(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             [3, 4, 5],
@@ -3617,12 +4562,12 @@ mod generated_tests {
             "gen_entity_enter_love_mode",
             "horizon.on(\"entity_enter_love_mode\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.player == \"00000000-0000-0000-0000-000000000009\", \"player\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_entity_enter_love_mode(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 Some(9),
@@ -3631,7 +4576,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_entity_enter_love_mode(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             Some(9),
@@ -3645,12 +4590,12 @@ mod generated_tests {
             "gen_entity_portal",
             "horizon.on(\"entity_portal\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_entity_portal(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 13,
                 [3, 4, 5],
@@ -3661,7 +4606,7 @@ mod generated_tests {
         {
             dispatch_entity_portal(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 99,
                 [3, 4, 5],
@@ -3670,7 +4615,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_entity_portal(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             11,
             [3, 4, 5],
@@ -3684,10 +4629,10 @@ mod generated_tests {
             "gen_entity_pose_change",
             "horizon.on(\"entity_pose_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_entity_pose_change(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:from",
@@ -3702,18 +4647,39 @@ mod generated_tests {
             "gen_entity_shoot_bow",
             "horizon.on(\"entity_shoot_bow\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.projectile == 11, \"kind\")\n    assert(event.force == 4.5, \"force\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            dispatch_entity_shoot_bow(&mut FakeHost::empty(), &mods, 7, "test:name", 13, 4.5);
+            dispatch_entity_shoot_bow(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                13,
+                4.5,
+            );
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
-            dispatch_entity_shoot_bow(&mut FakeHost::empty(), &mods, 7, "test:name", 99, 4.5);
+            dispatch_entity_shoot_bow(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                99,
+                4.5,
+            );
         }
         no_error(&id);
-        dispatch_entity_shoot_bow(&mut FakeHost::empty(), &mods, 7, "test:name", 11, 4.5);
+        dispatch_entity_shoot_bow(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            11,
+            4.5,
+        );
         no_error(&id);
     }
 
@@ -3723,12 +4689,12 @@ mod generated_tests {
             "gen_entity_tame",
             "horizon.on(\"entity_tame\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.owner == \"00000000-0000-0000-0000-000000000009\", \"owner\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_entity_tame(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 Some(9),
@@ -3737,7 +4703,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_entity_tame(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             Some(9),
@@ -3751,12 +4717,12 @@ mod generated_tests {
             "gen_entity_teleport",
             "horizon.on(\"entity_teleport\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 4, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_entity_teleport(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 13,
                 [3.0, 2.0, 3.0],
@@ -3768,7 +4734,7 @@ mod generated_tests {
         {
             dispatch_entity_teleport(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 99,
                 [3.0, 2.0, 3.0],
@@ -3778,7 +4744,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_entity_teleport(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             11,
             [3.0, 2.0, 3.0],
@@ -3793,8 +4759,8 @@ mod generated_tests {
             "gen_entity_toggle_glide",
             "horizon.on(\"entity_toggle_glide\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.gliding == true, \"gliding\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_entity_toggle_glide(&mut FakeHost::empty(), &mods, 7, "test:name", true);
+        let firing_mods = boxed(m);
+        dispatch_entity_toggle_glide(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
         no_error(&id);
     }
 
@@ -3804,12 +4770,12 @@ mod generated_tests {
             "gen_entity_transform",
             "horizon.on(\"entity_transform\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.transformed == 9, \"transformed\")\n    assert(event.transformed_kind == \"test:transformed_kind\", \"transformed_kind\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_entity_transform(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 9,
@@ -3819,7 +4785,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_entity_transform(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             9,
@@ -3834,13 +4800,18 @@ mod generated_tests {
             "gen_entity_unleash",
             "horizon.on(\"entity_unleash\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            dispatch_entity_unleash(&mut FakeHost::empty(), &mods, 7, "minecraft:skeleton");
+            dispatch_entity_unleash(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+            );
         }
         no_error(&id);
-        dispatch_entity_unleash(&mut FakeHost::empty(), &mods, 7, "minecraft:zombie");
+        dispatch_entity_unleash(&mut FakeHost::empty(), &firing_mods, 7, "minecraft:zombie");
         no_error(&id);
     }
 
@@ -3850,8 +4821,8 @@ mod generated_tests {
             "gen_exp_bottle",
             "horizon.on(\"exp_bottle\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\n    assert(event.experience == 8, \"experience\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_exp_bottle(&mut FakeHost::empty(), &mods, [1.0, 2.0, 3.0], 8);
+        let firing_mods = boxed(m);
+        dispatch_exp_bottle(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 8);
         no_error(&id);
     }
 
@@ -3861,9 +4832,9 @@ mod generated_tests {
             "gen_experience_orb_pickup_listened",
             "horizon.on(\"experience_orb_pickup_listened\", function(event)\n    assert(event.listened == true, \"listened\")\n    event.listened = false\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut listened = true;
-        dispatch_experience_orb_pickup_listened(&FakeHost::empty(), &mods, &mut listened);
+        dispatch_experience_orb_pickup_listened(&FakeHost::empty(), &firing_mods, &mut listened);
         assert!(!listened);
         no_error(&id);
     }
@@ -3874,13 +4845,13 @@ mod generated_tests {
             "gen_experience_orb_pickup",
             "horizon.on(\"experience_orb_pickup\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.orb == 9, \"orb\")\n    assert(event.value == 10, \"value\")\n    event.value = 53\n    assert(event.count == 11, \"count\")\n    event.count = 54\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut value = 10;
         let mut count = 11;
         let mut canceled = false;
         dispatch_experience_orb_pickup(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:dimension",
             9,
@@ -3900,11 +4871,11 @@ mod generated_tests {
             "gen_mending_repair",
             "horizon.on(\"mending_repair\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.experience == 9, \"experience\")\n    assert(event.repair == 10, \"repair\")\n    event.repair = 53\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut repair = 10;
         dispatch_mending_repair(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             &ItemStack {
                 item: "test:stack".into(),
@@ -3925,8 +4896,27 @@ mod generated_tests {
             "gen_explosion_prime",
             "horizon.on(\"explosion_prime\", function(event)\n    assert(event.center.x == 1, \"center\")\n    assert(event.center.y == 2.0, \"center\")\n    assert(event.center.z == 3.0, \"center\")\n    assert(event.radius == 2.5, \"radius\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_explosion_prime(&mut FakeHost::empty(), &mods, [1.0, 2.0, 3.0], 2.5);
+        let firing_mods = boxed(m);
+        dispatch_explosion_prime(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 2.5);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_fire_odds() {
+        let (m, id, _dir) = loaded(
+            "gen_fire_odds",
+            "horizon.on(\"fire_odds\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.odds == nil, \"replace seed\")\n    event.odds = { min = 1, max = 2 }\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut odds: Option<(i32, i32)> = None;
+        dispatch_fire_odds(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockStateId(9),
+            &mut odds,
+        );
+        assert_eq!(odds, Some((1, 2)));
         no_error(&id);
     }
 
@@ -3934,13 +4924,13 @@ mod generated_tests {
     fn generated_smoke_source() {
         let (m, id, _dir) = loaded(
             "gen_smoke_source",
-            "horizon.on(\"smoke_source\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.smoke == nil, \"replace seed\")\n    event.smoke = true\nend)",
+            "horizon.on(\"smoke_source\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.smoke == nil, \"replace seed\")\n    event.smoke = true\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut smoke: Option<bool> = None;
         dispatch_smoke_source(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             BlockStateId(9),
             &mut smoke,
@@ -3955,18 +4945,18 @@ mod generated_tests {
             "gen_firework_explode",
             "horizon.on(\"firework_explode\", function(event)\n    assert(event.entity == 11, \"kind\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\n    assert(event.bursts == 9, \"bursts\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            dispatch_firework_explode(&mut FakeHost::empty(), &mods, 13, [2.0, 2.0, 3.0], 9);
+            dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 13, [2.0, 2.0, 3.0], 9);
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
-            dispatch_firework_explode(&mut FakeHost::empty(), &mods, 99, [2.0, 2.0, 3.0], 9);
+            dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 99, [2.0, 2.0, 3.0], 9);
         }
         no_error(&id);
-        dispatch_firework_explode(&mut FakeHost::empty(), &mods, 11, [2.0, 2.0, 3.0], 9);
+        dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 2.0, 3.0], 9);
         no_error(&id);
     }
 
@@ -3976,11 +4966,11 @@ mod generated_tests {
             "gen_fluid_level_change",
             "horizon.on(\"fluid_level_change\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\n    assert(event.from == 10, \"from\")\n    assert(event.to == 11, \"to\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_fluid_level_change(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             BlockPos::new(2, 3, 4),
             "test:fluid",
@@ -3998,9 +4988,16 @@ mod generated_tests {
             "gen_framerate_limit",
             "horizon.on(\"framerate_limit\", function(event)\n    assert(event.focused == true, \"focused\")\n    assert(event.minimized == false, \"minimized\")\n    assert(event.in_world == true, \"in_world\")\n    assert(event.limit == 10, \"limit\")\n    event.limit = 53\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut limit = 10;
-        dispatch_framerate_limit(&FakeHost::empty(), &mods, true, false, true, &mut limit);
+        dispatch_framerate_limit(
+            &FakeHost::empty(),
+            &firing_mods,
+            true,
+            false,
+            true,
+            &mut limit,
+        );
         assert_eq!(limit, 53);
         no_error(&id);
     }
@@ -4011,8 +5008,8 @@ mod generated_tests {
             "gen_furnace_burn",
             "horizon.on(\"furnace_burn\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.fuel == \"test:fuel\", \"fuel\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_furnace_burn(&FakeHost::empty(), &mods, [1, 2, 3], "test:fuel");
+        let firing_mods = boxed(m);
+        dispatch_furnace_burn(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
         no_error(&id);
     }
 
@@ -4022,10 +5019,10 @@ mod generated_tests {
             "gen_furnace_extract",
             "horizon.on(\"furnace_extract\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 11, \"count\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_furnace_extract(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
@@ -4041,10 +5038,10 @@ mod generated_tests {
             "gen_furnace_smelt",
             "horizon.on(\"furnace_smelt\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.result == \"test:result\", \"result\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_furnace_smelt(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             [1, 2, 3],
             "test:item",
             "test:result",
@@ -4058,8 +5055,8 @@ mod generated_tests {
             "gen_furnace_start_smelt",
             "horizon.on(\"furnace_start_smelt\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_furnace_start_smelt(&FakeHost::empty(), &mods, [1, 2, 3], "test:item");
+        let firing_mods = boxed(m);
+        dispatch_furnace_start_smelt(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
         no_error(&id);
     }
 
@@ -4069,8 +5066,13 @@ mod generated_tests {
             "gen_game_event",
             "horizon.on(\"game_event\", function(event)\n    assert(event.event == \"test:event\", \"event\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_game_event(&mut FakeHost::empty(), &mods, "test:event", [2.0, 2.0, 3.0]);
+        let firing_mods = boxed(m);
+        dispatch_game_event(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:event",
+            [2.0, 2.0, 3.0],
+        );
         no_error(&id);
     }
 
@@ -4080,12 +5082,12 @@ mod generated_tests {
             "gen_hopper_inventory_search",
             "horizon.on(\"hopper_inventory_search\", function(event)\n    assert(event.hopper.x == 1, \"hopper\")\n    assert(event.hopper.y == 2, \"hopper\")\n    assert(event.hopper.z == 3, \"hopper\")\n    assert(event.container.x == 2, \"container\")\n    assert(event.container.y == 3, \"container\")\n    assert(event.container.z == 4, \"container\")\n    assert(event.entity == 11, \"kind\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_hopper_inventory_search(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 [1, 2, 3],
                 Some([2, 3, 4]),
                 Some(13),
@@ -4096,7 +5098,7 @@ mod generated_tests {
         {
             dispatch_hopper_inventory_search(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 [1, 2, 3],
                 Some([2, 3, 4]),
                 None,
@@ -4105,7 +5107,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_hopper_inventory_search(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             [1, 2, 3],
             Some([2, 3, 4]),
             Some(11),
@@ -4119,11 +5121,11 @@ mod generated_tests {
             "gen_hopper_pickup_item",
             "horizon.on(\"hopper_pickup_item\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 10, \"count\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_hopper_pickup_item(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             BlockPos::new(2, 3, 4),
             "test:item",
@@ -4135,16 +5137,43 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_ingredient() {
+        let (m, id, _dir) = loaded(
+            "gen_ingredient",
+            "horizon.on(\"ingredient\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.items[1] == \"test:seed\", \"items\")\n    assert(event.items[2] == \"test:seed2\", \"items\")\n    event.items[1] = \"test:edited\"; table.insert(event.items, \"test:added\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut items = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+        dispatch_ingredient(
+            &firing_mods,
+            "test:kind",
+            &[("testkey".to_owned(), serde_json::json!(8))]
+                .into_iter()
+                .collect(),
+            &mut items,
+        );
+        assert_eq!(
+            items,
+            vec![
+                "test:edited".to_owned(),
+                "test:seed2".to_owned(),
+                "test:added".to_owned()
+            ]
+        );
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_inventory_block_start() {
         let (m, id, _dir) = loaded(
             "gen_inventory_block_start",
             "horizon.on(\"inventory_block_start\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_inventory_block_start(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
@@ -4160,11 +5189,11 @@ mod generated_tests {
             "gen_inventory_move_item",
             "horizon.on(\"inventory_move_item\", function(event)\n    assert(event.source.x == 1, \"source\")\n    assert(event.source.y == 2, \"source\")\n    assert(event.source.z == 3, \"source\")\n    assert(event.destination.x == 2, \"destination\")\n    assert(event.destination.y == 3, \"destination\")\n    assert(event.destination.z == 4, \"destination\")\n    assert(event.item == \"test:item\", \"item\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_inventory_move_item(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             [1, 2, 3],
             [2, 3, 4],
             "test:item",
@@ -4180,12 +5209,12 @@ mod generated_tests {
             "gen_item_despawn",
             "horizon.on(\"item_despawn\", function(event)\n    assert(event.entity == 11, \"kind\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 9, \"count\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_item_despawn(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 13,
                 "test:item",
                 9,
@@ -4197,7 +5226,7 @@ mod generated_tests {
         {
             dispatch_item_despawn(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 99,
                 "test:item",
                 9,
@@ -4207,11 +5236,31 @@ mod generated_tests {
         no_error(&id);
         dispatch_item_despawn(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             11,
             "test:item",
             9,
             [4.0, 2.0, 3.0],
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_item_energy_buffer() {
+        let (m, id, _dir) = loaded(
+            "gen_item_energy_buffer",
+            "horizon.on(\"item_energy_buffer\", function(event)\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.buffer == nil, \"replace seed\")\n    event.buffer = { capacity = 1000, max_insert = 100, max_extract = 100 }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut buffer: Option<ItemEnergyBuffer> = None;
+        dispatch_item_energy_buffer(&FakeHost::empty(), &firing_mods, "test:item", &mut buffer);
+        assert_eq!(
+            buffer,
+            Some(ItemEnergyBuffer {
+                capacity: 1000,
+                max_insert: 100,
+                max_extract: 100
+            })
         );
         no_error(&id);
     }
@@ -4222,13 +5271,13 @@ mod generated_tests {
             "gen_item_expire",
             "horizon.on(\"item_expire\", function(event)\n    assert(event.entity == 11, \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.extra_life == 9, \"extra_life\")\n    event.extra_life = 52\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut extra_life = 9;
             dispatch_item_expire(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 13,
                 &ItemStack {
                     item: "test:stack".into(),
@@ -4245,7 +5294,7 @@ mod generated_tests {
             let mut extra_life = 9;
             dispatch_item_expire(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 99,
                 &ItemStack {
                     item: "test:stack".into(),
@@ -4260,7 +5309,7 @@ mod generated_tests {
         let mut extra_life = 9;
         dispatch_item_expire(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             11,
             &ItemStack {
                 item: "test:stack".into(),
@@ -4280,12 +5329,12 @@ mod generated_tests {
             "gen_item_spawn",
             "horizon.on(\"item_spawn\", function(event)\n    assert(event.entity == 11, \"kind\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 9, \"count\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_item_spawn(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 13,
                 "test:item",
                 9,
@@ -4297,7 +5346,7 @@ mod generated_tests {
         {
             dispatch_item_spawn(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 99,
                 "test:item",
                 9,
@@ -4307,7 +5356,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_item_spawn(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             11,
             "test:item",
             9,
@@ -4322,11 +5371,11 @@ mod generated_tests {
             "gen_leaves_decay",
             "horizon.on(\"leaves_decay\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_leaves_decay(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             BlockPos::new(2, 3, 4),
             &mut cancel,
@@ -4341,11 +5390,11 @@ mod generated_tests {
             "gen_lightning_strike",
             "horizon.on(\"lightning_strike\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_lightning_strike(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             Some(7),
             [2, 3, 4],
             "test:cause",
@@ -4361,15 +5410,82 @@ mod generated_tests {
             "gen_moisture_change",
             "horizon.on(\"moisture_change\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_moisture_change(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             BlockPos::new(2, 3, 4),
             9,
             10,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_anvil_craft_post() {
+        let (m, id, _dir) = loaded(
+            "gen_anvil_craft_post",
+            "horizon.on(\"anvil_craft_post\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_anvil_craft_post(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            [3, 4, 5],
+            &AnvilCraft {
+                left: Some(ItemStack {
+                    item: "test:craft".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                }),
+                right: None,
+                output: ItemStack {
+                    item: "test:craft".into(),
+                    count: 2,
+                    damage: 0,
+                    extra: None,
+                },
+            },
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_anvil_craft_pre() {
+        let (m, id, _dir) = loaded(
+            "gen_anvil_craft_pre",
+            "horizon.on(\"anvil_craft_pre\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_anvil_craft_pre(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            [3, 4, 5],
+            &AnvilCraft {
+                left: Some(ItemStack {
+                    item: "test:craft".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                }),
+                right: None,
+                output: ItemStack {
+                    item: "test:craft".into(),
+                    count: 2,
+                    damage: 0,
+                    extra: None,
+                },
+            },
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
@@ -4382,11 +5498,11 @@ mod generated_tests {
             "gen_armor_stand_manipulate",
             "horizon.on(\"armor_stand_manipulate\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stand_id == 9, \"stand_id\")\n    assert(event.slot == \"test:slot\", \"slot\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_armor_stand_manipulate(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             9,
@@ -4403,11 +5519,11 @@ mod generated_tests {
             "gen_bucket_empty",
             "horizon.on(\"bucket_empty\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_bucket_empty(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
@@ -4424,11 +5540,11 @@ mod generated_tests {
             "gen_container_opened",
             "horizon.on(\"container_opened\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_container_opened(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:kind",
@@ -4445,11 +5561,11 @@ mod generated_tests {
             "gen_creative_slot",
             "horizon.on(\"creative_slot\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 11, \"count\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_creative_slot(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             9,
@@ -4467,12 +5583,12 @@ mod generated_tests {
             "gen_food_level_changed",
             "horizon.on(\"food_level_changed\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\n    event.to = 53\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut to = 10;
         let mut cancel = false;
         dispatch_food_level_changed(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             9,
@@ -4490,13 +5606,13 @@ mod generated_tests {
             "gen_hanging_break",
             "horizon.on(\"hanging_break\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut cancel = false;
             dispatch_hanging_break(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 Some(7),
                 "minecraft:skeleton",
                 [3, 4, 5],
@@ -4507,7 +5623,7 @@ mod generated_tests {
         let mut cancel = false;
         dispatch_hanging_break(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             Some(7),
             "minecraft:zombie",
             [3, 4, 5],
@@ -4523,13 +5639,13 @@ mod generated_tests {
             "gen_hanging_place",
             "horizon.on(\"hanging_place\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut cancel = false;
             dispatch_hanging_place(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "minecraft:skeleton",
@@ -4541,7 +5657,7 @@ mod generated_tests {
         let mut cancel = false;
         dispatch_hanging_place(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "minecraft:zombie",
@@ -4558,12 +5674,12 @@ mod generated_tests {
             "gen_item_damaged",
             "horizon.on(\"item_damaged\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.amount == 10, \"amount\")\n    event.amount = 53\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut amount = 10;
         let mut cancel = false;
         dispatch_item_damaged(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:item",
@@ -4581,8 +5697,8 @@ mod generated_tests {
             "gen_player_clone",
             "horizon.on(\"player_clone\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.was_death == true, \"was_death\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_clone(&mut FakeHost::empty(), &mods, 7, "test:name", true);
+        let firing_mods = boxed(m);
+        dispatch_player_clone(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
         no_error(&id);
     }
 
@@ -4590,14 +5706,24 @@ mod generated_tests {
     fn generated_player_commands_sent() {
         let (m, id, _dir) = loaded(
             "gen_player_commands_sent",
-            "horizon.on(\"player_commands_sent\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.names[1] == \"test:seed\", \"names\")\n    event.names[1] = \"test:edited\"; table.insert(event.names, \"test:added\")\nend)",
+            "horizon.on(\"player_commands_sent\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.names[1] == \"test:seed\", \"names\")\n    assert(event.names[2] == \"test:seed2\", \"names\")\n    event.names[1] = \"test:edited\"; table.insert(event.names, \"test:added\")\nend)",
         );
-        let mods = boxed(m);
-        let mut names = vec!["test:seed".to_owned()];
-        dispatch_player_commands_sent(&mut FakeHost::empty(), &mods, 7, "test:name", &mut names);
+        let firing_mods = boxed(m);
+        let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+        dispatch_player_commands_sent(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &mut names,
+        );
         assert_eq!(
             names,
-            vec!["test:edited".to_owned(), "test:added".to_owned()]
+            vec![
+                "test:edited".to_owned(),
+                "test:seed2".to_owned(),
+                "test:added".to_owned()
+            ]
         );
         no_error(&id);
     }
@@ -4608,10 +5734,10 @@ mod generated_tests {
             "gen_player_destroy_item",
             "horizon.on(\"player_destroy_item\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.slot == \"test:slot\", \"slot\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_destroy_item(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:item",
@@ -4626,11 +5752,11 @@ mod generated_tests {
             "gen_player_fish",
             "horizon.on(\"player_fish\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.state == 9, \"state\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_player_fish(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             9,
@@ -4646,10 +5772,10 @@ mod generated_tests {
             "gen_player_flower_pot_manipulate",
             "horizon.on(\"player_flower_pot_manipulate\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.plant == \"test:plant\", \"plant\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_flower_pot_manipulate(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
@@ -4664,11 +5790,11 @@ mod generated_tests {
             "gen_player_game_mode_changed",
             "horizon.on(\"player_game_mode_changed\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_player_game_mode_changed(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             9,
@@ -4685,10 +5811,10 @@ mod generated_tests {
             "gen_player_insert_lectern_book",
             "horizon.on(\"player_insert_lectern_book\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.book == \"test:book\", \"book\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_insert_lectern_book(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
@@ -4703,12 +5829,12 @@ mod generated_tests {
             "gen_player_item_frame_change",
             "horizon.on(\"player_item_frame_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.action == \"test:action\", \"action\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.rotation == 12, \"rotation\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_player_item_frame_change(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 13,
@@ -4722,7 +5848,7 @@ mod generated_tests {
         {
             dispatch_player_item_frame_change(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 99,
@@ -4734,7 +5860,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_player_item_frame_change(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             11,
@@ -4751,10 +5877,10 @@ mod generated_tests {
             "gen_player_item_mend",
             "horizon.on(\"player_item_mend\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.repair == 10, \"repair\")\n    assert(event.experience == 11, \"experience\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_item_mend(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:item",
@@ -4770,14 +5896,70 @@ mod generated_tests {
             "gen_player_lectern_page_change",
             "horizon.on(\"player_lectern_page_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.page == 10, \"page\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_lectern_page_change(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
             10,
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_load_from_file() {
+        let (m, id, _dir) = loaded(
+            "gen_player_load_from_file",
+            "horizon.on(\"player_load_from_file\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.directory == \"test:path\", \"directory\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_player_load_from_file(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            std::path::Path::new("test:path"),
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_login() {
+        let (m, id, _dir) = loaded(
+            "gen_player_login",
+            "horizon.on(\"player_login\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.reason == \"test:reason\", \"reason\")\n    assert(event.reason_component.text == \"test:reason\", \"reason\")\n    event.reason = nil; event.reason_component = nil\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut reason = Some(Text::literal("test:reason"));
+        let mut cancel = false;
+        dispatch_player_login(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &mut reason,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(reason, None);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_save_to_file() {
+        let (m, id, _dir) = loaded(
+            "gen_player_save_to_file",
+            "horizon.on(\"player_save_to_file\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.directory == \"test:path\", \"directory\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_player_save_to_file(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            std::path::Path::new("test:path"),
         );
         no_error(&id);
     }
@@ -4788,8 +5970,8 @@ mod generated_tests {
             "gen_player_sprint",
             "horizon.on(\"player_sprint\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.sprinting == true, \"sprinting\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_sprint(&mut FakeHost::empty(), &mods, 7, "test:name", true);
+        let firing_mods = boxed(m);
+        dispatch_player_sprint(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
         no_error(&id);
     }
 
@@ -4799,9 +5981,15 @@ mod generated_tests {
             "gen_player_swap_hands",
             "horizon.on(\"player_swap_hands\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
-        dispatch_player_swap_hands(&mut FakeHost::empty(), &mods, 7, "test:name", &mut cancel);
+        dispatch_player_swap_hands(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &mut cancel,
+        );
         assert!(cancel, "cancel not cancelled");
         no_error(&id);
     }
@@ -4812,10 +6000,10 @@ mod generated_tests {
             "gen_player_take_lectern_book",
             "horizon.on(\"player_take_lectern_book\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.book == \"test:book\", \"book\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_take_lectern_book(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
@@ -4830,10 +6018,10 @@ mod generated_tests {
             "gen_player_teleported",
             "horizon.on(\"player_teleported\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 4, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_teleported(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3.0, 2.0, 3.0],
@@ -4849,8 +6037,8 @@ mod generated_tests {
             "gen_player_totem",
             "horizon.on(\"player_totem\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_totem(&mut FakeHost::empty(), &mods, 7, "test:name");
+        let firing_mods = boxed(m);
+        dispatch_player_totem(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         no_error(&id);
     }
 
@@ -4860,8 +6048,8 @@ mod generated_tests {
             "gen_resource_pack_status",
             "horizon.on(\"resource_pack_status\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.status == 9, \"status\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_resource_pack_status(&mut FakeHost::empty(), &mods, 7, "test:name", 9);
+        let firing_mods = boxed(m);
+        dispatch_resource_pack_status(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
         no_error(&id);
     }
 
@@ -4871,8 +6059,8 @@ mod generated_tests {
             "gen_spawn_change",
             "horizon.on(\"spawn_change\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.angle.x == 2.5, \"angle\")\n    assert(event.angle.y == 3.5, \"angle\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_spawn_change(&mut FakeHost::empty(), &mods, [1, 2, 3], [2.5, 3.5]);
+        let firing_mods = boxed(m);
+        dispatch_spawn_change(&mut FakeHost::empty(), &firing_mods, [1, 2, 3], [2.5, 3.5]);
         no_error(&id);
     }
 
@@ -4882,11 +6070,11 @@ mod generated_tests {
             "gen_tnt_primed",
             "horizon.on(\"tnt_primed\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_tnt_primed(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             Some(7),
             [2, 3, 4],
             &mut cancel,
@@ -4901,12 +6089,12 @@ mod generated_tests {
             "gen_vehicle_create",
             "horizon.on(\"vehicle_create\", function(event)\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_vehicle_create(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "minecraft:skeleton",
                 [2.0, 2.0, 3.0],
             );
@@ -4914,7 +6102,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_vehicle_create(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "minecraft:zombie",
             [2.0, 2.0, 3.0],
         );
@@ -4927,14 +6115,14 @@ mod generated_tests {
             "gen_vehicle_damage",
             "horizon.on(\"vehicle_damage\", function(event)\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage == 2.5, \"damage\")\n    event.damage = 16.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut damage = 2.5;
             let mut cancel = false;
             dispatch_vehicle_damage(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "minecraft:skeleton",
                 &mut damage,
                 &mut cancel,
@@ -4945,7 +6133,7 @@ mod generated_tests {
         let mut cancel = false;
         dispatch_vehicle_damage(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "minecraft:zombie",
             &mut damage,
             &mut cancel,
@@ -4961,12 +6149,12 @@ mod generated_tests {
             "gen_vehicle_destroy",
             "horizon.on(\"vehicle_destroy\", function(event)\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_vehicle_destroy(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "minecraft:skeleton",
                 [2.0, 2.0, 3.0],
             );
@@ -4974,7 +6162,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_vehicle_destroy(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "minecraft:zombie",
             [2.0, 2.0, 3.0],
         );
@@ -4987,12 +6175,12 @@ mod generated_tests {
             "gen_vehicle_moved",
             "horizon.on(\"vehicle_moved\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 4, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_vehicle_moved(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 Some(7),
                 "minecraft:skeleton",
                 [3.0, 2.0, 3.0],
@@ -5002,7 +6190,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_vehicle_moved(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             Some(7),
             "minecraft:zombie",
             [3.0, 2.0, 3.0],
@@ -5015,10 +6203,10 @@ mod generated_tests {
     fn generated_world_border_bounds_changed() {
         let (m, id, _dir) = loaded(
             "gen_world_border_bounds_changed",
-            "horizon.on(\"world_border_bounds_changed\", function(event)\n\nend)",
+            "horizon.on(\"world_border_bounds_changed\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_world_border_bounds_changed(&mut FakeHost::empty(), &mods);
+        let firing_mods = boxed(m);
+        dispatch_world_border_bounds_changed(&mut FakeHost::empty(), &firing_mods);
         no_error(&id);
     }
 
@@ -5026,10 +6214,10 @@ mod generated_tests {
     fn generated_world_border_center_changed() {
         let (m, id, _dir) = loaded(
             "gen_world_border_center_changed",
-            "horizon.on(\"world_border_center_changed\", function(event)\n\nend)",
+            "horizon.on(\"world_border_center_changed\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_world_border_center_changed(&mut FakeHost::empty(), &mods);
+        let firing_mods = boxed(m);
+        dispatch_world_border_center_changed(&mut FakeHost::empty(), &firing_mods);
         no_error(&id);
     }
 
@@ -5039,10 +6227,10 @@ mod generated_tests {
             "gen_world_game_rule_change",
             "horizon.on(\"world_game_rule_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.rule == \"test:rule\", \"rule\")\n    assert(event.value == \"test:value\", \"value\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_world_game_rule_change(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:rule",
@@ -5055,15 +6243,15 @@ mod generated_tests {
     fn generated_note_play() {
         let (m, id, _dir) = loaded(
             "gen_note_play",
-            "horizon.on(\"note_play\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == \"00000000-0000-0000-0000-000000000008\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.instrument == \"test:instrument\", \"instrument\")\n    assert(event.note == 11, \"note\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"note_play\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.instrument == \"test:instrument\", \"instrument\")\n    assert(event.note == 11, \"note\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_note_play(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
-            Some(8),
+            None,
             BlockPos::new(3, 4, 5),
             "test:instrument",
             11,
@@ -5079,10 +6267,10 @@ mod generated_tests {
             "gen_player_advancement_criterion_grant",
             "horizon.on(\"player_advancement_criterion_grant\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.advancement == \"test:advancement\", \"advancement\")\n    assert(event.criterion == \"test:criterion\", \"criterion\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_advancement_criterion_grant(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:advancement",
@@ -5097,10 +6285,10 @@ mod generated_tests {
             "gen_player_advancement_done",
             "horizon.on(\"player_advancement_done\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.advancement == \"test:advancement\", \"advancement\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_advancement_done(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:advancement",
@@ -5114,10 +6302,10 @@ mod generated_tests {
             "gen_player_advancement_progress",
             "horizon.on(\"player_advancement_progress\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.advancement == \"test:advancement\", \"advancement\")\n    assert(event.criterion == \"test:criterion\", \"criterion\")\n    assert(event.granted == true, \"granted\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_advancement_progress(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:advancement",
@@ -5133,8 +6321,14 @@ mod generated_tests {
             "gen_player_arm_swing",
             "horizon.on(\"player_arm_swing\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.hand == \"test:hand\", \"hand\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_arm_swing(&mut FakeHost::empty(), &mods, 7, "test:name", "test:hand");
+        let firing_mods = boxed(m);
+        dispatch_player_arm_swing(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:hand",
+        );
         no_error(&id);
     }
 
@@ -5144,8 +6338,8 @@ mod generated_tests {
             "gen_player_attack_cooldown_reset",
             "horizon.on(\"player_attack_cooldown_reset\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_attack_cooldown_reset(&mut FakeHost::empty(), &mods, 7, "test:name");
+        let firing_mods = boxed(m);
+        dispatch_player_attack_cooldown_reset(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         no_error(&id);
     }
 
@@ -5155,8 +6349,14 @@ mod generated_tests {
             "gen_player_bed_leave",
             "horizon.on(\"player_bed_leave\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_bed_leave(&mut FakeHost::empty(), &mods, 7, "test:name", [3, 4, 5]);
+        let firing_mods = boxed(m);
+        dispatch_player_bed_leave(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            [3, 4, 5],
+        );
         no_error(&id);
     }
 
@@ -5166,12 +6366,12 @@ mod generated_tests {
             "gen_player_bucket_entity",
             "horizon.on(\"player_bucket_entity\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.entity == \"test:entity\", \"entity\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_player_bucket_entity(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 13,
@@ -5183,7 +6383,7 @@ mod generated_tests {
         {
             dispatch_player_bucket_entity(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 99,
@@ -5193,7 +6393,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_player_bucket_entity(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             11,
@@ -5208,8 +6408,15 @@ mod generated_tests {
             "gen_player_bundle_item_select",
             "horizon.on(\"player_bundle_item_select\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.index == 10, \"index\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_bundle_item_select(&mut FakeHost::empty(), &mods, 7, "test:name", 9, 10);
+        let firing_mods = boxed(m);
+        dispatch_player_bundle_item_select(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            10,
+        );
         no_error(&id);
     }
 
@@ -5219,10 +6426,10 @@ mod generated_tests {
             "gen_player_change_beacon_effect",
             "horizon.on(\"player_change_beacon_effect\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.primary == \"test:primary\", \"primary\")\n    assert(event.secondary == \"test:secondary\", \"secondary\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_change_beacon_effect(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
@@ -5238,8 +6445,14 @@ mod generated_tests {
             "gen_player_change_main_hand",
             "horizon.on(\"player_change_main_hand\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.left == true, \"left\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_change_main_hand(&mut FakeHost::empty(), &mods, 7, "test:name", true);
+        let firing_mods = boxed(m);
+        dispatch_player_change_main_hand(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            true,
+        );
         no_error(&id);
     }
 
@@ -5249,8 +6462,8 @@ mod generated_tests {
             "gen_player_client_loaded_world",
             "horizon.on(\"player_client_loaded_world\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_client_loaded_world(&mut FakeHost::empty(), &mods, 7, "test:name");
+        let firing_mods = boxed(m);
+        dispatch_player_client_loaded_world(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         no_error(&id);
     }
 
@@ -5260,8 +6473,8 @@ mod generated_tests {
             "gen_player_deep_sleep",
             "horizon.on(\"player_deep_sleep\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_deep_sleep(&mut FakeHost::empty(), &mods, 7, "test:name");
+        let firing_mods = boxed(m);
+        dispatch_player_deep_sleep(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         no_error(&id);
     }
 
@@ -5271,11 +6484,11 @@ mod generated_tests {
             "gen_player_edit_book",
             "horizon.on(\"player_edit_book\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pages == 9, \"pages\")\n    assert(event.signing == false, \"signing\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_player_edit_book(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             9,
@@ -5292,8 +6505,8 @@ mod generated_tests {
             "gen_player_egg_throw",
             "horizon.on(\"player_egg_throw\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_egg_throw(&mut FakeHost::empty(), &mods, 7, "test:name");
+        let firing_mods = boxed(m);
+        dispatch_player_egg_throw(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         no_error(&id);
     }
 
@@ -5303,8 +6516,8 @@ mod generated_tests {
             "gen_player_elytra_boost",
             "horizon.on(\"player_elytra_boost\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_elytra_boost(&mut FakeHost::empty(), &mods, 7, "test:name");
+        let firing_mods = boxed(m);
+        dispatch_player_elytra_boost(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         no_error(&id);
     }
 
@@ -5314,8 +6527,8 @@ mod generated_tests {
             "gen_player_input",
             "horizon.on(\"player_input\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.flags == 9, \"flags\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_input(&mut FakeHost::empty(), &mods, 7, "test:name", 9);
+        let firing_mods = boxed(m);
+        dispatch_player_input(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
         no_error(&id);
     }
 
@@ -5325,11 +6538,11 @@ mod generated_tests {
             "gen_player_item_held",
             "horizon.on(\"player_item_held\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_slot == 9, \"from_slot\")\n    assert(event.to_slot == 10, \"to_slot\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_player_item_held(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             9,
@@ -5346,8 +6559,8 @@ mod generated_tests {
             "gen_player_jump",
             "horizon.on(\"player_jump\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_jump(&mut FakeHost::empty(), &mods, 7, "test:name");
+        let firing_mods = boxed(m);
+        dispatch_player_jump(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         no_error(&id);
     }
 
@@ -5357,8 +6570,14 @@ mod generated_tests {
             "gen_player_kicked",
             "horizon.on(\"player_kicked\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.reason == \"test:reason\", \"reason\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_kicked(&mut FakeHost::empty(), &mods, 7, "test:name", "test:reason");
+        let firing_mods = boxed(m);
+        dispatch_player_kicked(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:reason",
+        );
         no_error(&id);
     }
 
@@ -5368,10 +6587,10 @@ mod generated_tests {
             "gen_player_launch_projectile",
             "horizon.on(\"player_launch_projectile\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_launch_projectile(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:item",
@@ -5385,8 +6604,8 @@ mod generated_tests {
             "gen_player_level_change",
             "horizon.on(\"player_level_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_level_change(&mut FakeHost::empty(), &mods, 7, "test:name", 9, 10);
+        let firing_mods = boxed(m);
+        dispatch_player_level_change(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9, 10);
         no_error(&id);
     }
 
@@ -5396,8 +6615,14 @@ mod generated_tests {
             "gen_player_locale_change",
             "horizon.on(\"player_locale_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.locale == \"test:locale\", \"locale\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_locale_change(&mut FakeHost::empty(), &mods, 7, "test:name", "test:locale");
+        let firing_mods = boxed(m);
+        dispatch_player_locale_change(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:locale",
+        );
         no_error(&id);
     }
 
@@ -5407,8 +6632,14 @@ mod generated_tests {
             "gen_player_loom_pattern_select",
             "horizon.on(\"player_loom_pattern_select\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pattern == 9, \"pattern\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_loom_pattern_select(&mut FakeHost::empty(), &mods, 7, "test:name", 9);
+        let firing_mods = boxed(m);
+        dispatch_player_loom_pattern_select(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+        );
         no_error(&id);
     }
 
@@ -5418,8 +6649,8 @@ mod generated_tests {
             "gen_player_map_filled",
             "horizon.on(\"player_map_filled\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.map_id == 9, \"map_id\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_map_filled(&mut FakeHost::empty(), &mods, 7, "test:name", 9);
+        let firing_mods = boxed(m);
+        dispatch_player_map_filled(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
         no_error(&id);
     }
 
@@ -5429,12 +6660,12 @@ mod generated_tests {
             "gen_player_name_entity",
             "horizon.on(\"player_name_entity\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.entity_name == \"test:entity_name\", \"entity_name\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_player_name_entity(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 13,
@@ -5446,7 +6677,7 @@ mod generated_tests {
         {
             dispatch_player_name_entity(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 99,
@@ -5456,7 +6687,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_player_name_entity(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             11,
@@ -5471,10 +6702,10 @@ mod generated_tests {
             "gen_player_open_sign",
             "horizon.on(\"player_open_sign\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.front == false, \"front\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_open_sign(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
@@ -5489,13 +6720,13 @@ mod generated_tests {
             "gen_player_pick_item",
             "horizon.on(\"player_pick_item\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_entity == true, \"from_entity\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.entity_id == 11, \"kind\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut cancel = false;
             dispatch_player_pick_item(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 true,
@@ -5510,7 +6741,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_player_pick_item(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 true,
@@ -5523,7 +6754,7 @@ mod generated_tests {
         let mut cancel = false;
         dispatch_player_pick_item(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             true,
@@ -5541,12 +6772,12 @@ mod generated_tests {
             "gen_player_pickup_arrow",
             "horizon.on(\"player_pickup_arrow\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.item == \"test:item\", \"item\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_player_pickup_arrow(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 13,
@@ -5558,7 +6789,7 @@ mod generated_tests {
         {
             dispatch_player_pickup_arrow(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 99,
@@ -5568,7 +6799,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_player_pickup_arrow(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             11,
@@ -5583,11 +6814,11 @@ mod generated_tests {
             "gen_player_portal",
             "horizon.on(\"player_portal\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_player_portal(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:from_dimension",
@@ -5605,8 +6836,14 @@ mod generated_tests {
             "gen_player_ready_arrow",
             "horizon.on(\"player_ready_arrow\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.arrow == \"test:arrow\", \"arrow\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_ready_arrow(&mut FakeHost::empty(), &mods, 7, "test:name", "test:arrow");
+        let firing_mods = boxed(m);
+        dispatch_player_ready_arrow(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:arrow",
+        );
         no_error(&id);
     }
 
@@ -5616,10 +6853,10 @@ mod generated_tests {
             "gen_player_recipe_book_click",
             "horizon.on(\"player_recipe_book_click\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.recipe == \"test:recipe\", \"recipe\")\n    assert(event.all == false, \"all\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_recipe_book_click(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:recipe",
@@ -5634,10 +6871,10 @@ mod generated_tests {
             "gen_player_recipe_book_settings_change",
             "horizon.on(\"player_recipe_book_settings_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.book == 9, \"book\")\n    assert(event.open == false, \"open\")\n    assert(event.filtering == true, \"filtering\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_recipe_book_settings_change(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             9,
@@ -5653,11 +6890,11 @@ mod generated_tests {
             "gen_player_recipe_discovered",
             "horizon.on(\"player_recipe_discovered\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.recipe == \"test:recipe\", \"recipe\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_player_recipe_discovered(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:recipe",
@@ -5673,8 +6910,8 @@ mod generated_tests {
             "gen_player_riptide",
             "horizon.on(\"player_riptide\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_riptide(&mut FakeHost::empty(), &mods, 7, "test:name");
+        let firing_mods = boxed(m);
+        dispatch_player_riptide(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         no_error(&id);
     }
 
@@ -5684,13 +6921,13 @@ mod generated_tests {
             "gen_player_shear_entity",
             "horizon.on(\"player_shear_entity\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.off_hand == false, \"off_hand\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut cancel = false;
             dispatch_player_shear_entity(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 13,
@@ -5704,7 +6941,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_player_shear_entity(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 99,
@@ -5716,7 +6953,7 @@ mod generated_tests {
         let mut cancel = false;
         dispatch_player_shear_entity(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             11,
@@ -5733,11 +6970,11 @@ mod generated_tests {
             "gen_player_spawn_point_set",
             "horizon.on(\"player_spawn_point_set\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_player_spawn_point_set(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:dimension",
@@ -5755,11 +6992,11 @@ mod generated_tests {
             "gen_player_stat_award",
             "horizon.on(\"player_stat_award\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stat_type == \"test:stat_type\", \"stat_type\")\n    assert(event.stat == \"test:stat\", \"stat\")\n    assert(event.value == 11, \"value\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_player_stat_award(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:stat_type",
@@ -5777,8 +7014,14 @@ mod generated_tests {
             "gen_player_stonecutter_recipe_select",
             "horizon.on(\"player_stonecutter_recipe_select\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.recipe == 9, \"recipe\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_stonecutter_recipe_select(&mut FakeHost::empty(), &mods, 7, "test:name", 9);
+        let firing_mods = boxed(m);
+        dispatch_player_stonecutter_recipe_select(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+        );
         no_error(&id);
     }
 
@@ -5788,12 +7031,12 @@ mod generated_tests {
             "gen_player_stop_spectating_entity",
             "horizon.on(\"player_stop_spectating_entity\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_player_stop_spectating_entity(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 13,
@@ -5804,14 +7047,20 @@ mod generated_tests {
         {
             dispatch_player_stop_spectating_entity(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 99,
             );
         }
         no_error(&id);
-        dispatch_player_stop_spectating_entity(&mut FakeHost::empty(), &mods, 7, "test:name", 11);
+        dispatch_player_stop_spectating_entity(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            11,
+        );
         no_error(&id);
     }
 
@@ -5821,8 +7070,8 @@ mod generated_tests {
             "gen_player_stop_using_item",
             "horizon.on(\"player_stop_using_item\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_stop_using_item(&mut FakeHost::empty(), &mods, 7, "test:name");
+        let firing_mods = boxed(m);
+        dispatch_player_stop_using_item(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         no_error(&id);
     }
 
@@ -5832,10 +7081,10 @@ mod generated_tests {
             "gen_player_swap_with_equipment_slot",
             "horizon.on(\"player_swap_with_equipment_slot\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == \"test:slot\", \"slot\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_swap_with_equipment_slot(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:slot",
@@ -5849,11 +7098,11 @@ mod generated_tests {
             "gen_player_teleport_end_gateway",
             "horizon.on(\"player_teleport_end_gateway\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.gateway.x == 3, \"gateway\")\n    assert(event.gateway.y == 4, \"gateway\")\n    assert(event.gateway.z == 5, \"gateway\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_player_teleport_end_gateway(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
@@ -5869,12 +7118,12 @@ mod generated_tests {
             "gen_player_toggle_entity_age_lock",
             "horizon.on(\"player_toggle_entity_age_lock\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.locked == false, \"locked\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_player_toggle_entity_age_lock(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 13,
@@ -5886,7 +7135,7 @@ mod generated_tests {
         {
             dispatch_player_toggle_entity_age_lock(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 99,
@@ -5896,7 +7145,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_player_toggle_entity_age_lock(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             11,
@@ -5911,8 +7160,8 @@ mod generated_tests {
             "gen_player_toggle_sneak",
             "horizon.on(\"player_toggle_sneak\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.sneaking == true, \"sneaking\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_toggle_sneak(&mut FakeHost::empty(), &mods, 7, "test:name", true);
+        let firing_mods = boxed(m);
+        dispatch_player_toggle_sneak(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
         no_error(&id);
     }
 
@@ -5922,18 +7171,18 @@ mod generated_tests {
             "gen_player_trade",
             "horizon.on(\"player_trade\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            dispatch_player_trade(&mut FakeHost::empty(), &mods, 7, "test:name", 13);
+            dispatch_player_trade(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 13);
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
-            dispatch_player_trade(&mut FakeHost::empty(), &mods, 7, "test:name", 99);
+            dispatch_player_trade(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 99);
         }
         no_error(&id);
-        dispatch_player_trade(&mut FakeHost::empty(), &mods, 7, "test:name", 11);
+        dispatch_player_trade(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 11);
         no_error(&id);
     }
 
@@ -5943,18 +7192,30 @@ mod generated_tests {
             "gen_player_unleash_entity",
             "horizon.on(\"player_unleash_entity\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            dispatch_player_unleash_entity(&mut FakeHost::empty(), &mods, 7, "test:name", 13);
+            dispatch_player_unleash_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                13,
+            );
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
-            dispatch_player_unleash_entity(&mut FakeHost::empty(), &mods, 7, "test:name", 99);
+            dispatch_player_unleash_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                99,
+            );
         }
         no_error(&id);
-        dispatch_player_unleash_entity(&mut FakeHost::empty(), &mods, 7, "test:name", 11);
+        dispatch_player_unleash_entity(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 11);
         no_error(&id);
     }
 
@@ -5964,10 +7225,10 @@ mod generated_tests {
             "gen_player_velocity",
             "horizon.on(\"player_velocity\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.velocity.x == 3, \"velocity\")\n    assert(event.velocity.y == 2.0, \"velocity\")\n    assert(event.velocity.z == 3.0, \"velocity\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_velocity(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3.0, 2.0, 3.0],
@@ -5981,8 +7242,13 @@ mod generated_tests {
             "gen_portal_create",
             "horizon.on(\"portal_create\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_portal_create(&mut FakeHost::empty(), &mods, "test:dimension", [2, 3, 4]);
+        let firing_mods = boxed(m);
+        dispatch_portal_create(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            [2, 3, 4],
+        );
         no_error(&id);
     }
 
@@ -5992,8 +7258,13 @@ mod generated_tests {
             "gen_potion_splash",
             "horizon.on(\"potion_splash\", function(event)\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_potion_splash(&mut FakeHost::empty(), &mods, "test:item", [2.0, 2.0, 3.0]);
+        let firing_mods = boxed(m);
+        dispatch_potion_splash(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:item",
+            [2.0, 2.0, 3.0],
+        );
         no_error(&id);
     }
 
@@ -6003,11 +7274,11 @@ mod generated_tests {
             "gen_prepare_grindstone",
             "horizon.on(\"prepare_grindstone\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.result == nil, \"replace seed\")\n    event.result = { id = \"test:result\", count = 1 }\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut result: Option<ItemStack> = None;
         dispatch_prepare_grindstone(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
@@ -6025,8 +7296,8 @@ mod generated_tests {
             "gen_prepare_hopper_transfer",
             "horizon.on(\"prepare_hopper_transfer\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_prepare_hopper_transfer(&FakeHost::empty(), &mods, [1, 2, 3]);
+        let firing_mods = boxed(m);
+        dispatch_prepare_hopper_transfer(&FakeHost::empty(), &firing_mods, [1, 2, 3]);
         no_error(&id);
     }
 
@@ -6036,11 +7307,11 @@ mod generated_tests {
             "gen_prepare_item_craft",
             "horizon.on(\"prepare_item_craft\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.result == nil, \"replace seed\")\n    event.result = { id = \"test:result\", count = 1 }\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut result: Option<ItemStack> = None;
         dispatch_prepare_item_craft(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             Some([3, 4, 5]),
@@ -6058,11 +7329,11 @@ mod generated_tests {
             "gen_prepare_item_enchant",
             "horizon.on(\"prepare_item_enchant\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.costs.x == 4, \"costs\")\n    assert(event.costs.y == 5, \"costs\")\n    assert(event.costs.z == 6, \"costs\")\n    event.costs = { x = 14, y = 15, z = 16 }\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut costs = [4, 5, 6];
         dispatch_prepare_item_enchant(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
@@ -6078,11 +7349,11 @@ mod generated_tests {
             "gen_prepare_smithing",
             "horizon.on(\"prepare_smithing\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.result == nil, \"replace seed\")\n    event.result = { id = \"test:result\", count = 1 }\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut result: Option<ItemStack> = None;
         dispatch_prepare_smithing(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
@@ -6100,8 +7371,8 @@ mod generated_tests {
             "gen_raid_spawn_wave",
             "horizon.on(\"raid_spawn_wave\", function(event)\n    assert(event.raid == 7, \"raid\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.wave == 9, \"wave\")\n    assert(event.raiders == 10, \"raiders\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_raid_spawn_wave(&mut FakeHost::empty(), &mods, 7, [2, 3, 4], 9, 10);
+        let firing_mods = boxed(m);
+        dispatch_raid_spawn_wave(&mut FakeHost::empty(), &firing_mods, 7, [2, 3, 4], 9, 10);
         no_error(&id);
     }
 
@@ -6111,8 +7382,14 @@ mod generated_tests {
             "gen_raid_state_change",
             "horizon.on(\"raid_state_change\", function(event)\n    assert(event.raid == 7, \"raid\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state\", \"state\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_raid_state_change(&mut FakeHost::empty(), &mods, 7, [2, 3, 4], "test:state");
+        let firing_mods = boxed(m);
+        dispatch_raid_state_change(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            [2, 3, 4],
+            "test:state",
+        );
         no_error(&id);
     }
 
@@ -6122,8 +7399,13 @@ mod generated_tests {
             "gen_sculk_bloom",
             "horizon.on(\"sculk_bloom\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_sculk_bloom(&mut FakeHost::empty(), &mods, "test:dimension", [2, 3, 4]);
+        let firing_mods = boxed(m);
+        dispatch_sculk_bloom(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            [2, 3, 4],
+        );
         no_error(&id);
     }
 
@@ -6133,11 +7415,11 @@ mod generated_tests {
             "gen_sleep_finished_time",
             "horizon.on(\"sleep_finished_time\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.current == 8, \"current\")\n    assert(event.new_time == 9, \"new_time\")\n    event.new_time = 52\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut new_time = 9;
         dispatch_sleep_finished_time(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             8,
             &mut new_time,
@@ -6152,12 +7434,57 @@ mod generated_tests {
             "gen_sponge_absorb",
             "horizon.on(\"sponge_absorb\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_sponge_absorb(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             BlockPos::new(2, 3, 4),
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_tab_complete() {
+        let (m, id, _dir) = loaded(
+            "gen_tab_complete",
+            "horizon.on(\"tab_complete\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.command == \"test:command\", \"command\")\n    assert(event.range.start == 10, \"range\")\n    assert(event.suggestions[1].text == \"test:suggestion4\", \"suggestions\")\n    assert(event.suggestions[2].text == \"test:suggestion5\", \"suggestions\")\n    event.suggestions = { { range = { start = 61, [\"end\"] = 66 }, text = \"test:suggestion54\" } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut suggestions = vec![
+            Suggestion {
+                range: (7 + 4, 12 + 4),
+                text: "test:suggestion4".into(),
+                tooltip: None,
+                int_value: None,
+            },
+            Suggestion {
+                range: (7 + 5, 12 + 5),
+                text: "test:suggestion5".into(),
+                tooltip: None,
+                int_value: None,
+            },
+        ];
+        dispatch_tab_complete(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:command",
+            [10, 15],
+            &mut suggestions,
+        );
+        assert_eq!(
+            format!("{:?}", suggestions),
+            format!(
+                "{:?}",
+                vec![Suggestion {
+                    range: (7 + 54, 12 + 54),
+                    text: "test:suggestion54".into(),
+                    tooltip: None,
+                    int_value: None
+                }]
+            )
         );
         no_error(&id);
     }
@@ -6168,10 +7495,10 @@ mod generated_tests {
             "gen_target_hit",
             "horizon.on(\"target_hit\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.strength == 9, \"strength\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_target_hit(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             [2, 3, 4],
             9,
@@ -6185,11 +7512,11 @@ mod generated_tests {
             "gen_thunder_change",
             "horizon.on(\"thunder_change\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.thundering == false, \"thundering\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_thunder_change(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             false,
             &mut cancel,
@@ -6204,11 +7531,11 @@ mod generated_tests {
             "gen_time_skip",
             "horizon.on(\"time_skip\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.from == 8, \"from\")\n    assert(event.to == 9, \"to\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_time_skip(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             8,
             9,
@@ -6225,8 +7552,89 @@ mod generated_tests {
             "gen_trade_select",
             "horizon.on(\"trade_select\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.villager == 9, \"villager\")\n    assert(event.index == 10, \"index\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_trade_select(&mut FakeHost::empty(), &mods, 7, "test:name", Some(9), 10);
+        let firing_mods = boxed(m);
+        dispatch_trade_select(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            Some(9),
+            10,
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_trade_with_villager() {
+        let (m, id, _dir) = loaded(
+            "gen_trade_with_villager",
+            "horizon.on(\"trade_with_villager\", function(event)\n    assert(event.merchant == 7, \"merchant\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            dispatch_trade_with_villager(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                &MerchantOffer {
+                    base_cost_a: ItemCost {
+                        stack: ItemStack {
+                            item: "test:offer".into(),
+                            count: 1,
+                            damage: 0,
+                            extra: None,
+                        },
+                    },
+                    cost_b: None,
+                    result: ItemStack {
+                        item: "test:offer".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    },
+                    uses: 2,
+                    max_uses: 1,
+                    reward_exp: true,
+                    special_price_diff: 0,
+                    demand: 0,
+                    price_multiplier: 1.0,
+                    xp: 1,
+                },
+            );
+        }
+        no_error(&id);
+        dispatch_trade_with_villager(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            &MerchantOffer {
+                base_cost_a: ItemCost {
+                    stack: ItemStack {
+                        item: "test:offer".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    },
+                },
+                cost_b: None,
+                result: ItemStack {
+                    item: "test:offer".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                uses: 2,
+                max_uses: 1,
+                reward_exp: true,
+                special_price_diff: 0,
+                demand: 0,
+                price_multiplier: 1.0,
+                xp: 1,
+            },
+        );
         no_error(&id);
     }
 
@@ -6236,10 +7644,10 @@ mod generated_tests {
             "gen_vault_change_state",
             "horizon.on(\"vault_change_state\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state\", \"state\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_vault_change_state(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             [2, 3, 4],
             "test:state",
@@ -6253,8 +7661,8 @@ mod generated_tests {
             "gen_vault_loot",
             "horizon.on(\"vault_loot\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_vault_loot(&FakeHost::empty(), &mods, [1, 2, 3], "test:item");
+        let firing_mods = boxed(m);
+        dispatch_vault_loot(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
         no_error(&id);
     }
 
@@ -6264,11 +7672,11 @@ mod generated_tests {
             "gen_weather_change",
             "horizon.on(\"weather_change\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.raining == false, \"raining\")\n    assert(event.thundering == true, \"thundering\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_weather_change(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             false,
             true,
@@ -6284,8 +7692,8 @@ mod generated_tests {
             "gen_whitelist_state_update",
             "horizon.on(\"whitelist_state_update\", function(event)\n    assert(event.enabled == true, \"enabled\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_whitelist_state_update(&mut FakeHost::empty(), &mods, true);
+        let firing_mods = boxed(m);
+        dispatch_whitelist_state_update(&mut FakeHost::empty(), &firing_mods, true);
         no_error(&id);
     }
 
@@ -6293,10 +7701,10 @@ mod generated_tests {
     fn generated_world_border_bounds_change_finish() {
         let (m, id, _dir) = loaded(
             "gen_world_border_bounds_change_finish",
-            "horizon.on(\"world_border_bounds_change_finish\", function(event)\n\nend)",
+            "horizon.on(\"world_border_bounds_change_finish\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_world_border_bounds_change_finish(&mut FakeHost::empty(), &mods);
+        let firing_mods = boxed(m);
+        dispatch_world_border_bounds_change_finish(&mut FakeHost::empty(), &firing_mods);
         no_error(&id);
     }
 
@@ -6306,8 +7714,8 @@ mod generated_tests {
             "gen_world_saved",
             "horizon.on(\"world_saved\", function(event)\n    assert(event.wait == true, \"wait\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_world_saved(&mut FakeHost::empty(), &mods, true);
+        let firing_mods = boxed(m);
+        dispatch_world_saved(&mut FakeHost::empty(), &firing_mods, true);
         no_error(&id);
     }
 
@@ -6317,14 +7725,14 @@ mod generated_tests {
             "gen_living_drown",
             "horizon.on(\"living_drown\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.is_drowning == true, \"is_drowning\")\n    event.is_drowning = false\n    assert(event.damage_amount == 4.5, \"damage_amount\")\n    event.damage_amount = 18.5\n    assert(event.bubble_count == 11, \"bubble_count\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut is_drowning = true;
             let mut damage_amount = 4.5;
             let mut cancel = false;
             dispatch_living_drown(
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 &mut is_drowning,
@@ -6338,7 +7746,7 @@ mod generated_tests {
         let mut damage_amount = 4.5;
         let mut cancel = false;
         dispatch_living_drown(
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             &mut is_drowning,
@@ -6358,13 +7766,40 @@ mod generated_tests {
             "gen_living_jump",
             "horizon.on(\"living_jump\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            dispatch_living_jump(&mods, 7, "minecraft:skeleton");
+            dispatch_living_jump(&firing_mods, 7, "minecraft:skeleton");
         }
         no_error(&id);
-        dispatch_living_jump(&mods, 7, "minecraft:zombie");
+        dispatch_living_jump(&firing_mods, 7, "minecraft:zombie");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_arrow_nock() {
+        let (m, id, _dir) = loaded(
+            "gen_arrow_nock",
+            "horizon.on(\"arrow_nock\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.bow.id == \"test:bow\", \"bow\")\n    assert(event.has_ammo == true, \"has_ammo\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_arrow_nock(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &ItemStack {
+                item: "test:bow".into(),
+                count: 3,
+                damage: 2,
+                extra: None,
+            },
+            Hand::Off,
+            true,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
         no_error(&id);
     }
 
@@ -6374,13 +7809,13 @@ mod generated_tests {
             "gen_baby_entity_spawn",
             "horizon.on(\"baby_entity_spawn\", function(event)\n    assert(event.parent == 7, \"parent\")\n    assert(event.partner == 8, \"partner\")\n    assert(event.player == 9, \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut cancel = false;
             dispatch_baby_entity_spawn(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 8,
                 9,
@@ -6392,7 +7827,7 @@ mod generated_tests {
         let mut cancel = false;
         dispatch_baby_entity_spawn(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             8,
             9,
@@ -6409,11 +7844,11 @@ mod generated_tests {
             "gen_can_player_sleep",
             "horizon.on(\"can_player_sleep\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.problem == \"test:problem\", \"problem\")\n    event.problem = \"test:problem:edited\"\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut problem = Some("test:problem".to_owned());
         dispatch_can_player_sleep(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3, 4, 5],
@@ -6424,14 +7859,89 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_explosion_knockback() {
+        let (m, id, _dir) = loaded(
+            "gen_explosion_knockback",
+            "horizon.on(\"explosion_knockback\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.center.x == 2, \"center\")\n    assert(event.center.y == 2.0, \"center\")\n    assert(event.center.z == 3.0, \"center\")\n    assert(event.blocks[1].x == 3, \"blocks\")\n    assert(event.blocks[1].y == 4, \"blocks\")\n    assert(event.blocks[1].z == 5, \"blocks\")\n    assert(event.blocks[2].x == 4, \"blocks\")\n    assert(event.blocks[2].y == 5, \"blocks\")\n    assert(event.blocks[2].z == 6, \"blocks\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.knockback_velocity.x == 5.0, \"knockback_velocity\")\n    assert(event.knockback_velocity.y == 2.0, \"knockback_velocity\")\n    assert(event.knockback_velocity.z == 3.0, \"knockback_velocity\")\n    event.knockback_velocity = { x = 15.0, y = 12.0, z = 13.0 }\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut knockback_velocity = [5.0, 2.0, 3.0];
+            dispatch_explosion_knockback(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 2.0, 3.0],
+                &[[3, 4, 5], [4, 5, 6]],
+                Some(13),
+                &mut knockback_velocity,
+            );
+        }
+        no_error(&id);
+        // gone event: the handler stays quiet.
+        {
+            let mut knockback_velocity = [5.0, 2.0, 3.0];
+            dispatch_explosion_knockback(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 2.0, 3.0],
+                &[[3, 4, 5], [4, 5, 6]],
+                None,
+                &mut knockback_velocity,
+            );
+        }
+        no_error(&id);
+        let mut knockback_velocity = [5.0, 2.0, 3.0];
+        dispatch_explosion_knockback(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            [2.0, 2.0, 3.0],
+            &[[3, 4, 5], [4, 5, 6]],
+            Some(11),
+            &mut knockback_velocity,
+        );
+        assert_eq!(knockback_velocity, [15.0, 12.0, 13.0]);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_ingredient_test() {
+        let (m, id, _dir) = loaded(
+            "gen_ingredient_test",
+            "horizon.on(\"ingredient_test\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.accept == false, \"accept\")\n    event.accept = true\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut accept = false;
+        dispatch_ingredient_test(
+            &firing_mods,
+            "test:kind",
+            &[("testkey".to_owned(), serde_json::json!(8))]
+                .into_iter()
+                .collect(),
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 3,
+                damage: 2,
+                extra: None,
+            },
+            &mut accept,
+        );
+        assert!(accept);
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_item_container() {
         let (m, id, _dir) = loaded(
             "gen_item_container",
             "horizon.on(\"item_container\", function(event)\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.slots == nil, \"replace seed\")\n    event.slots = 81000\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut slots: Option<u32> = None;
-        dispatch_item_container(&FakeHost::empty(), &mods, "test:item", &mut slots);
+        dispatch_item_container(&FakeHost::empty(), &firing_mods, "test:item", &mut slots);
         assert_eq!(slots, Some(81000));
         no_error(&id);
     }
@@ -6442,12 +7952,12 @@ mod generated_tests {
             "gen_living_conversion_post",
             "horizon.on(\"living_conversion_post\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.converted == 9, \"converted\")\n    assert(event.converted_kind == \"test:converted_kind\", \"converted_kind\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_living_conversion_post(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 9,
@@ -6457,7 +7967,7 @@ mod generated_tests {
         no_error(&id);
         dispatch_living_conversion_post(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             9,
@@ -6472,13 +7982,13 @@ mod generated_tests {
             "gen_living_conversion_pre",
             "horizon.on(\"living_conversion_pre\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.outcome == \"test:outcome\", \"outcome\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut cancel = false;
             dispatch_living_conversion_pre(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 "test:outcome",
@@ -6489,7 +7999,7 @@ mod generated_tests {
         let mut cancel = false;
         dispatch_living_conversion_pre(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             "test:outcome",
@@ -6505,13 +8015,13 @@ mod generated_tests {
             "gen_living_death",
             "horizon.on(\"living_death\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.attacker == 10, \"attacker\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut cancel = false;
             dispatch_living_death(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 "test:damage_type",
@@ -6523,7 +8033,7 @@ mod generated_tests {
         let mut cancel = false;
         dispatch_living_death(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             "test:damage_type",
@@ -6535,12 +8045,117 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_get_projectile() {
+        let (m, id, _dir) = loaded(
+            "gen_living_get_projectile",
+            "horizon.on(\"living_get_projectile\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.weapon.id == \"test:weapon\", \"weapon\")\n    assert(event.projectile.id == \"test:projectile\", \"projectile\")\n    event.projectile = nil\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut projectile = Some(ItemStack {
+                item: "test:projectile".into(),
+                count: 6,
+                damage: 5,
+                extra: None,
+            });
+            dispatch_living_get_projectile(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:name",
+                Some(9),
+                "minecraft:skeleton",
+                &ItemStack {
+                    item: "test:weapon".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                },
+                &mut projectile,
+            );
+        }
+        no_error(&id);
+        let mut projectile = Some(ItemStack {
+            item: "test:projectile".into(),
+            count: 6,
+            damage: 5,
+            extra: None,
+        });
+        dispatch_living_get_projectile(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            Some(7),
+            "test:name",
+            Some(9),
+            "minecraft:zombie",
+            &ItemStack {
+                item: "test:weapon".into(),
+                count: 5,
+                damage: 4,
+                extra: None,
+            },
+            &mut projectile,
+        );
+        assert_eq!(projectile, None);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_incoming_damage_v2() {
+        let (m, id, _dir) = loaded(
+            "gen_living_incoming_damage_v2",
+            "horizon.on(\"living_incoming_damage_v2\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.source_position.x == 5.0, \"source_position\")\n    assert(event.source_position.y == 2.0, \"source_position\")\n    assert(event.source_position.z == 3.0, \"source_position\")\n    assert(event.victim_position.x == 6, \"victim_position\")\n    assert(event.victim_position.y == 2.0, \"victim_position\")\n    assert(event.victim_position.z == 3.0, \"victim_position\")\n    assert(event.victim_view.x == 7, \"victim_view\")\n    assert(event.victim_view.y == 2.0, \"victim_view\")\n    assert(event.victim_view.z == 3.0, \"victim_view\")\n    assert(event.weapon == nil, \"weapon\")\n    assert(event.amount == 9.5, \"amount\")\n    event.amount = 23.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut amount = 9.5;
+            let mut canceled = false;
+            dispatch_living_incoming_damage_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                "test:damage_type",
+                10,
+                Some([5.0, 2.0, 3.0]),
+                [6.0, 2.0, 3.0],
+                [7.0, 2.0, 3.0],
+                None,
+                &mut amount,
+                &mut canceled,
+            );
+        }
+        no_error(&id);
+        let mut amount = 9.5;
+        let mut canceled = false;
+        dispatch_living_incoming_damage_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            "test:damage_type",
+            10,
+            Some([5.0, 2.0, 3.0]),
+            [6.0, 2.0, 3.0],
+            [7.0, 2.0, 3.0],
+            None,
+            &mut amount,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(amount, 23.5);
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_living_knockback_v2() {
         let (m, id, _dir) = loaded(
             "gen_living_knockback_v2",
-            "horizon.on(\"living_knockback_v2\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.attacker == 9, \"attacker\")\n    assert(event.attacker_main.id == \"test:attacker_main\", \"attacker_main\")\n    assert(event.attacker_off.id == \"test:attacker_off\", \"attacker_off\")\n    assert(event.strength == 6.5, \"strength\")\n    event.strength = 20.5\n    assert(event.x == 7.5, \"x\")\n    event.x = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_knockback_v2\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.attacker == 9, \"attacker\")\n    assert(event.attacker_main == nil, \"attacker_main\")\n    assert(event.attacker_off.id == \"test:attacker_off\", \"attacker_off\")\n    assert(event.strength == 6.5, \"strength\")\n    event.strength = 20.5\n    assert(event.x == 7.5, \"x\")\n    event.x = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut strength = 6.5;
@@ -6548,16 +8163,11 @@ mod generated_tests {
             let mut z = 8.5;
             let mut canceled = false;
             dispatch_living_knockback_v2(
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 9,
-                Some(&ItemStack {
-                    item: "test:attacker_main".into(),
-                    count: 1,
-                    damage: 0,
-                    extra: None,
-                }),
+                None,
                 Some(&ItemStack {
                     item: "test:attacker_off".into(),
                     count: 1,
@@ -6576,16 +8186,11 @@ mod generated_tests {
         let mut z = 8.5;
         let mut canceled = false;
         dispatch_living_knockback_v2(
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             9,
-            Some(&ItemStack {
-                item: "test:attacker_main".into(),
-                count: 1,
-                damage: 0,
-                extra: None,
-            }),
+            None,
             Some(&ItemStack {
                 item: "test:attacker_off".into(),
                 count: 1,
@@ -6610,14 +8215,14 @@ mod generated_tests {
             "gen_mob_split",
             "horizon.on(\"mob_split\", function(event)\n    assert(event.parent == 7, \"parent\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.size == 9, \"size\")\n    assert(event.child_size == 10, \"child_size\")\n    assert(event.count == 11, \"count\")\n    event.count = 54\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut count = 11;
             let mut cancel = false;
             dispatch_mob_split(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 9,
@@ -6631,7 +8236,7 @@ mod generated_tests {
         let mut cancel = false;
         dispatch_mob_split(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             9,
@@ -6645,19 +8250,56 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_register_configs() {
+        let (m, id, _dir) = loaded(
+            "gen_register_configs",
+            "horizon.on(\"register_configs\", function(event)\n    assert(event.configs[1].mod_id == \"test:mod0\", \"configs\")\n    assert(event.configs[2].mod_id == \"test:mod1\", \"configs\")\n    event.configs = { { mod_id = \"test:mod50\", kind = \"server\", file = \"test:file50\", default = \"test:default50\" } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut configs = vec![
+            {
+                let mut c =
+                    NativeConfig::new("test:mod0", NativeConfigKind::Server, "test:default0");
+                c.file = "test:file0".into();
+                c
+            },
+            {
+                let mut c =
+                    NativeConfig::new("test:mod1", NativeConfigKind::Server, "test:default1");
+                c.file = "test:file1".into();
+                c
+            },
+        ];
+        dispatch_register_configs(&mut FakeHost::empty(), &firing_mods, &mut configs);
+        assert_eq!(
+            format!("{:?}", configs),
+            format!(
+                "{:?}",
+                vec![{
+                    let mut c =
+                        NativeConfig::new("test:mod50", NativeConfigKind::Server, "test:default50");
+                    c.file = "test:file50".into();
+                    c
+                }]
+            )
+        );
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_movement_input() {
         let (m, id, _dir) = loaded(
             "gen_movement_input",
             "horizon.on(\"movement_input\", function(event)\n    assert(event.forward == 1.5, \"forward\")\n    event.forward = 15.5\n    assert(event.strafe == 2.5, \"strafe\")\n    event.strafe = 16.5\n    assert(event.jump == true, \"jump\")\n    event.jump = false\n    assert(event.sneak == false, \"sneak\")\n    event.sneak = true\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut forward = 1.5;
         let mut strafe = 2.5;
         let mut jump = true;
         let mut sneak = false;
         dispatch_movement_input(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             &mut forward,
             &mut strafe,
             &mut jump,
@@ -6671,16 +8313,92 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_note_block_change() {
+        let (m, id, _dir) = loaded(
+            "gen_note_block_change",
+            "horizon.on(\"note_block_change\", function(event)\n    assert(event.context.old_note == 7, \"context\")\n    assert(event.new_note == 8, \"new_note\")\n    event.new_note = 51\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut new_note = 8;
+        let mut cancel = false;
+        dispatch_note_block_change(
+            &FakeLevel,
+            &firing_mods,
+            &NativeNoteBlockChange {
+                dimension: LevelDimension::Overworld,
+                pos: BlockPos::new(1, 2, 3),
+                instrument: "test:instrument0",
+                old_note: 7,
+            },
+            &mut new_note,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(new_note, 51);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_potential_spawns() {
+        let (m, id, _dir) = loaded(
+            "gen_potential_spawns",
+            "horizon.on(\"potential_spawns\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.category == \"test:category\", \"category\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.entries[1].entity == \"test:entity3\", \"entries\")\n    assert(event.entries[2].entity == \"test:entity4\", \"entries\")\n    event.entries = { { entity = \"test:entity53\", weight = 60, min = 1, max = 2, constant = false } }\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut entries = vec![
+            SpawnEntry {
+                entity: "test:entity3".into(),
+                weight: 10,
+                min: 1,
+                max: 2,
+                constant: false,
+            },
+            SpawnEntry {
+                entity: "test:entity4".into(),
+                weight: 11,
+                min: 1,
+                max: 2,
+                constant: true,
+            },
+        ];
+        let mut canceled = false;
+        dispatch_potential_spawns(
+            &FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            "test:category",
+            [3, 4, 5],
+            &mut entries,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(
+            format!("{:?}", entries),
+            format!(
+                "{:?}",
+                vec![SpawnEntry {
+                    entity: "test:entity53".into(),
+                    weight: 60,
+                    min: 1,
+                    max: 2,
+                    constant: false
+                }]
+            )
+        );
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_village_siege() {
         let (m, id, _dir) = loaded(
             "gen_village_siege",
             "horizon.on(\"village_siege\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.player == 8, \"player\")\n    assert(event.attempted_pos.x == 3, \"attempted_pos\")\n    assert(event.attempted_pos.y == 2.0, \"attempted_pos\")\n    assert(event.attempted_pos.z == 3.0, \"attempted_pos\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut canceled = false;
         dispatch_village_siege(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:dimension",
             8,
             [3.0, 2.0, 3.0],
@@ -6696,12 +8414,12 @@ mod generated_tests {
             "gen_player_xp_change",
             "horizon.on(\"player_xp_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.amount == 9, \"amount\")\n    event.amount = 52\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut amount = 9;
         let mut cancel = false;
         dispatch_player_xp_change(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             &mut amount,
@@ -6713,18 +8431,92 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_recipe_book_categories() {
+        let (m, id, _dir) = loaded(
+            "gen_recipe_book_categories",
+            "horizon.on(\"recipe_book_categories\", function(event)\n    assert(event.categories[1].id == \"test:cat0\", \"categories\")\n    assert(event.categories[2].id == \"test:cat1\", \"categories\")\n    event.categories = { { id = \"test:cat50\", recipe_type = \"test:type50\", icon = \"test:icon50\" } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut categories = vec![
+            RecipeBookCategory {
+                id: "test:cat0".into(),
+                recipe_type: "test:type0".into(),
+                icon: "test:icon0".into(),
+            },
+            RecipeBookCategory {
+                id: "test:cat1".into(),
+                recipe_type: "test:type1".into(),
+                icon: "test:icon1".into(),
+            },
+        ];
+        dispatch_recipe_book_categories(&FakeHost::empty(), &firing_mods, &mut categories);
+        assert_eq!(
+            format!("{:?}", categories),
+            format!(
+                "{:?}",
+                vec![RecipeBookCategory {
+                    id: "test:cat50".into(),
+                    recipe_type: "test:type50".into(),
+                    icon: "test:icon50".into()
+                }]
+            )
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_render_hand_pose() {
+        let (m, id, _dir) = loaded(
+            "gen_render_hand_pose",
+            "horizon.on(\"render_hand_pose\", function(event)\n    assert(event.stack == nil, \"stack\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(event.swing == 4.5, \"swing\")\n    assert(event.equip == 5.5, \"equip\")\n    assert(event.x == 6.5, \"x\")\n    event.x = 20.5\n    assert(event.y == 7.5, \"y\")\n    event.y = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\n    assert(event.pitch == 9.5, \"pitch\")\n    event.pitch = 23.5\n    assert(event.yaw == 10.5, \"yaw\")\n    event.yaw = 24.5\n    assert(event.roll == 11.5, \"roll\")\n    event.roll = 25.5\n    assert(event.scale == 12.5, \"scale\")\n    event.scale = 26.5\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut x = 6.5;
+        let mut y = 7.5;
+        let mut z = 8.5;
+        let mut pitch = 9.5;
+        let mut yaw = 10.5;
+        let mut roll = 11.5;
+        let mut scale = 12.5;
+        dispatch_render_hand_pose(
+            &FakeHost::empty(),
+            &firing_mods,
+            Hand::Main,
+            None,
+            3.5,
+            4.5,
+            5.5,
+            &mut x,
+            &mut y,
+            &mut z,
+            &mut pitch,
+            &mut yaw,
+            &mut roll,
+            &mut scale,
+        );
+        assert_eq!(x, 20.5);
+        assert_eq!(y, 21.5);
+        assert_eq!(z, 22.5);
+        assert_eq!(pitch, 23.5);
+        assert_eq!(yaw, 24.5);
+        assert_eq!(roll, 25.5);
+        assert_eq!(scale, 26.5);
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_render_item_in_frame() {
         let (m, id, _dir) = loaded(
             "gen_render_item_in_frame",
             "horizon.on(\"render_item_in_frame\", function(event)\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut canceled = false;
             dispatch_render_item_in_frame(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 13,
                 [2, 3, 4],
                 &ItemStack {
@@ -6742,7 +8534,7 @@ mod generated_tests {
             let mut canceled = false;
             dispatch_render_item_in_frame(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 99,
                 [2, 3, 4],
                 &ItemStack {
@@ -6758,7 +8550,7 @@ mod generated_tests {
         let mut canceled = false;
         dispatch_render_item_in_frame(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             11,
             [2, 3, 4],
             &ItemStack {
@@ -6779,14 +8571,14 @@ mod generated_tests {
             "gen_render_name_tag",
             "horizon.on(\"render_name_tag\", function(event)\n    assert(event.entity_id == 7, \"entity_id\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.vanilla_visible == true, \"vanilla_visible\")\n    assert(event.visible == false, \"visible\")\n    event.visible = true\n    assert(event.text == \"test:text\", \"text\")\n    event.text = \"test:text:edited\"\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut visible = false;
             let mut text = Some("test:text".to_owned());
             dispatch_render_name_tag(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 true,
@@ -6799,7 +8591,7 @@ mod generated_tests {
         let mut text = Some("test:text".to_owned());
         dispatch_render_name_tag(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             true,
@@ -6817,13 +8609,13 @@ mod generated_tests {
             "gen_tooltip_color",
             "horizon.on(\"tooltip_color\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.background == 8, \"background\")\n    event.background = 51\n    assert(event.border_top == 9, \"border_top\")\n    event.border_top = 52\n    assert(event.border_bottom == 10, \"border_bottom\")\n    event.border_bottom = 53\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut background = 8;
         let mut border_top = 9;
         let mut border_bottom = 10;
         dispatch_tooltip_color(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             Some(&ItemStack {
                 item: "test:stack".into(),
                 count: 1,
@@ -6844,23 +8636,212 @@ mod generated_tests {
     fn generated_camera_pose() {
         let (m, id, _dir) = loaded(
             "gen_camera_pose",
-            "horizon.on(\"camera_pose\", function(event)\n    assert(event.partial == 1.5, \"partial\")\n    assert(event.position.x == 2, \"position\")\n    assert(event.position.y == 2.0, \"position\")\n    assert(event.position.z == 3.0, \"position\")\n    event.position = { x = 12.0, y = 2.0, z = 3.0 }\n    assert(event.yaw == 3.5, \"yaw\")\n    event.yaw = 17.5\n    assert(event.pitch == 4.5, \"pitch\")\n    event.pitch = 18.5\nend)",
+            "horizon.on(\"camera_pose\", function(event)\n    assert(event.partial == 1.5, \"partial\")\n    assert(event.position.x == 2.0, \"position\")\n    assert(event.position.y == 2.0, \"position\")\n    assert(event.position.z == 3.0, \"position\")\n    event.position = { x = 12.0, y = 12.0, z = 13.0 }\n    assert(event.yaw == 3.5, \"yaw\")\n    event.yaw = 17.5\n    assert(event.pitch == 4.5, \"pitch\")\n    event.pitch = 18.5\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut position = [2.0, 2.0, 3.0];
         let mut yaw = 3.5;
         let mut pitch = 4.5;
         dispatch_camera_pose(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             1.5,
             &mut position,
             &mut yaw,
             &mut pitch,
         );
-        assert_eq!(position, [12.0, 2.0, 3.0]);
+        assert_eq!(position, [12.0, 12.0, 13.0]);
         assert_eq!(yaw, 17.5);
         assert_eq!(pitch, 18.5);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_client_chat_received() {
+        let (m, id, _dir) = loaded(
+            "gen_client_chat_received",
+            "horizon.on(\"client_chat_received\", function(event)\n    assert(event.system == true, \"system\")\n    assert(event.overlay == false, \"overlay\")\n    assert(event.sender == 9, \"sender\")\n    assert(event.chat_type == nil, \"chat_type\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.message_component.text == \"test:message\", \"message\")\n    event.message = \"test:message:edited\"; event.message_component = nil\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut message = Text::literal("test:message");
+        let mut cancel = false;
+        dispatch_client_chat_received(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            true,
+            false,
+            9,
+            None,
+            &mut message,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(message, Text::literal("test:message:edited"));
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_menu_extra_data() {
+        let (m, id, _dir) = loaded(
+            "gen_menu_extra_data",
+            "horizon.on(\"menu_extra_data\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.data == nil, \"replace seed\")\n    event.data = \"t\" .. string.char(0, 159)\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut data: Option<Vec<u8>> = None;
+        dispatch_menu_extra_data(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:menu",
+            "test:block",
+            [4, 5, 6],
+            &mut data,
+        );
+        assert_eq!(data, Some(vec![116u8, 0u8, 159u8]));
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_merchant_offer_traded() {
+        let (m, id, _dir) = loaded(
+            "gen_merchant_offer_traded",
+            "horizon.on(\"merchant_offer_traded\", function(event)\n    assert(event.merchant == 7, \"merchant\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    event.offer = { base_cost_a = { stack = { id = \"test:offer\", count = 1, damage = 0 } }, result = { id = \"test:offer\", count = 1, damage = 0 }, uses = 52, max_uses = 1, reward_exp = true, special_price_diff = 0, demand = 0, price_multiplier = 1.0, xp = 1 }\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut offer = MerchantOffer {
+                base_cost_a: ItemCost {
+                    stack: ItemStack {
+                        item: "test:offer".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    },
+                },
+                cost_b: None,
+                result: ItemStack {
+                    item: "test:offer".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                uses: 2,
+                max_uses: 1,
+                reward_exp: true,
+                special_price_diff: 0,
+                demand: 0,
+                price_multiplier: 1.0,
+                xp: 1,
+            };
+            dispatch_merchant_offer_traded(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                &mut offer,
+            );
+        }
+        no_error(&id);
+        let mut offer = MerchantOffer {
+            base_cost_a: ItemCost {
+                stack: ItemStack {
+                    item: "test:offer".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+            },
+            cost_b: None,
+            result: ItemStack {
+                item: "test:offer".into(),
+                count: 1,
+                damage: 0,
+                extra: None,
+            },
+            uses: 2,
+            max_uses: 1,
+            reward_exp: true,
+            special_price_diff: 0,
+            demand: 0,
+            price_multiplier: 1.0,
+            xp: 1,
+        };
+        dispatch_merchant_offer_traded(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            &mut offer,
+        );
+        assert_eq!(
+            offer,
+            MerchantOffer {
+                base_cost_a: ItemCost {
+                    stack: ItemStack {
+                        item: "test:offer".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None
+                    }
+                },
+                cost_b: None,
+                result: ItemStack {
+                    item: "test:offer".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None
+                },
+                uses: 52,
+                max_uses: 1,
+                reward_exp: true,
+                special_price_diff: 0,
+                demand: 0,
+                price_multiplier: 1.0,
+                xp: 1
+            }
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_add_server_reload_listeners() {
+        let (m, id, _dir) = loaded(
+            "gen_add_server_reload_listeners",
+            "horizon.on(\"add_server_reload_listeners\", function(event)\n    assert(event.listeners[1].id == \"test:id0\", \"listeners\")\n    assert(event.listeners[2].id == \"test:id1\", \"listeners\")\n    event.listeners = { { id = \"test:id50\", folder = \"test:folder50\" } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut listeners = vec![
+            NativeReloadListener::json("test:id0", "test:folder0"),
+            NativeReloadListener::json("test:id1", "test:folder1"),
+        ];
+        dispatch_add_server_reload_listeners(&mut FakeHost::empty(), &firing_mods, &mut listeners);
+        assert_eq!(
+            format!("{:?}", listeners),
+            format!(
+                "{:?}",
+                vec![NativeReloadListener::json("test:id50", "test:folder50")]
+            )
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_server_reload_listener_apply() {
+        let (m, id, _dir) = loaded(
+            "gen_server_reload_listener_apply",
+            "horizon.on(\"server_reload_listener_apply\", function(event)\n    assert(event.listener.id == \"test:id0\", \"listener\")\n    assert(event.files[1].path == \"test:path1\", \"files\")\n    assert(event.files[2].path == \"test:path2\", \"files\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_server_reload_listener_apply(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            &NativeReloadListener::json("test:id0", "test:folder0"),
+            &[
+                ("test:path1".to_owned(), serde_json::json!(8)),
+                ("test:path2".to_owned(), serde_json::json!(9)),
+            ],
+        );
         no_error(&id);
     }
 
@@ -6868,10 +8849,10 @@ mod generated_tests {
     fn generated_client_start() {
         let (m, id, _dir) = loaded(
             "gen_client_start",
-            "horizon.on(\"client_start\", function(event)\n\nend)",
+            "horizon.on(\"client_start\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_client_start(&mut FakeHost::empty(), &mods);
+        let firing_mods = boxed(m);
+        dispatch_client_start(&mut FakeHost::empty(), &firing_mods);
         no_error(&id);
     }
 
@@ -6879,10 +8860,10 @@ mod generated_tests {
     fn generated_client_disconnecting() {
         let (m, id, _dir) = loaded(
             "gen_client_disconnecting",
-            "horizon.on(\"client_disconnecting\", function(event)\n\nend)",
+            "horizon.on(\"client_disconnecting\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_client_disconnecting(&FakeHost::empty(), &mods);
+        let firing_mods = boxed(m);
+        dispatch_client_disconnecting(&FakeHost::empty(), &firing_mods);
         no_error(&id);
     }
 
@@ -6890,10 +8871,10 @@ mod generated_tests {
     fn generated_client_stopping() {
         let (m, id, _dir) = loaded(
             "gen_client_stopping",
-            "horizon.on(\"client_stopping\", function(event)\n\nend)",
+            "horizon.on(\"client_stopping\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_client_stopping(&FakeHost::empty(), &mods);
+        let firing_mods = boxed(m);
+        dispatch_client_stopping(&FakeHost::empty(), &firing_mods);
         no_error(&id);
     }
 
@@ -6903,10 +8884,76 @@ mod generated_tests {
             "gen_menu_background",
             "horizon.on(\"menu_background\", function(event)\n    assert(event.radius == 1.5, \"radius\")\n    event.radius = 15.5\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut radius = Some(1.5);
-        dispatch_menu_background(&FakeHost::empty(), &mods, &mut radius);
+        dispatch_menu_background(&FakeHost::empty(), &firing_mods, &mut radius);
         assert_eq!(radius, Some(15.5));
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_anvil_update() {
+        let (m, id, _dir) = loaded(
+            "gen_anvil_update",
+            "horizon.on(\"anvil_update\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.left.id == \"test:left\", \"left\")\n    assert(event.right == nil, \"right\")\n    assert(event.item_name == \"test:item_name\", \"item_name\")\n    assert(event.vanilla_output == nil, \"vanilla_output\")\n    assert(event.vanilla_xp_cost == 13, \"vanilla_xp_cost\")\n    assert(event.vanilla_material_cost == 14, \"vanilla_material_cost\")\n    assert(event.output.id == \"test:output\", \"output\")\n    event.output = nil\n    assert(event.xp_cost == 16, \"xp_cost\")\n    event.xp_cost = 59\n    assert(event.material_cost == 17, \"material_cost\")\n    event.material_cost = 60\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut output = Some(ItemStack {
+            item: "test:output".into(),
+            count: 9,
+            damage: 8,
+            extra: None,
+        });
+        let mut xp_cost = 16;
+        let mut material_cost = 17;
+        let mut canceled = false;
+        dispatch_anvil_update(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &ItemStack {
+                item: "test:left".into(),
+                count: 3,
+                damage: 2,
+                extra: None,
+            },
+            None,
+            Some("test:item_name"),
+            None,
+            13,
+            14,
+            &mut output,
+            &mut xp_cost,
+            &mut material_cost,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(output, None);
+        assert_eq!(xp_cost, 59);
+        assert_eq!(material_cost, 60);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_clone_item() {
+        let (m, id, _dir) = loaded(
+            "gen_block_clone_item",
+            "horizon.on(\"block_clone_item\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.stack == nil, \"replace seed\")\n    event.stack = { id = \"test:result\", count = 1 }\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut stack: Option<ItemStack> = None;
+        dispatch_block_clone_item(
+            &FakeHost::empty(),
+            &firing_mods,
+            "test:block",
+            [2, 3, 4],
+            BlockStateId(10),
+            &mut stack,
+        );
+        let replaced = stack.expect("a replaced value");
+        assert_eq!(&*replaced.item, "test:result");
+        assert_eq!(replaced.count, 1);
         no_error(&id);
     }
 
@@ -6916,11 +8963,11 @@ mod generated_tests {
             "gen_block_entity_accepts_fluid",
             "horizon.on(\"block_entity_accepts_fluid\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.tank == 8, \"tank\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_block_entity_accepts_fluid(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:block",
             8,
             "test:fluid",
@@ -6934,13 +8981,13 @@ mod generated_tests {
     fn generated_block_place() {
         let (m, id, _dir) = loaded(
             "gen_block_place",
-            "horizon.on(\"block_place\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.state == \"test:state12\", \"state\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"block_place\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.state == \"test:state12\", \"state\")\n    horizon.cancel()\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_block_place(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             &ItemStack {
@@ -6963,11 +9010,11 @@ mod generated_tests {
             "gen_block_redstone",
             "horizon.on(\"block_redstone\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.old == 9, \"old\")\n    assert(event.new == 10, \"new\")\n    event.new = 53\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut new = 10;
         dispatch_block_redstone(
             &FakeLevel,
-            &mods,
+            &firing_mods,
             LevelDimension::Overworld,
             BlockPos::new(2, 3, 4),
             9,
@@ -6978,15 +9025,35 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_break_speed() {
+        let (m, id, _dir) = loaded(
+            "gen_break_speed",
+            "horizon.on(\"break_speed\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.original == 3.5, \"original\")\n    assert(event.speed == 4.5, \"speed\")\n    event.speed = 18.5\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut speed = 4.5;
+        dispatch_break_speed(
+            &FakeHost::empty(),
+            &firing_mods,
+            [1, 2, 3],
+            BlockStateId(9),
+            3.5,
+            &mut speed,
+        );
+        assert_eq!(speed, 18.5);
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_chat_suggestion_applied() {
         let (m, id, _dir) = loaded(
             "gen_chat_suggestion_applied",
             "horizon.on(\"chat_suggestion_applied\", function(event)\n    assert(event.original == \"test:original\", \"original\")\n    assert(event.start == 8, \"start\")\n    assert(event[\"end\"] == 9, \"end\")\n    assert(event.suggestion == \"test:suggestion\", \"suggestion\")\n    assert(event.input == \"test:input\", \"input\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_chat_suggestion_applied(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:original",
             8,
             9,
@@ -7002,18 +9069,18 @@ mod generated_tests {
             "gen_client_attack",
             "horizon.on(\"client_attack\", function(event)\n    assert(event.target == 11, \"kind\")\n    assert(event.player == false, \"player\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            dispatch_client_attack(&mut FakeHost::empty(), &mods, 13, false);
+            dispatch_client_attack(&mut FakeHost::empty(), &firing_mods, 13, false);
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
-            dispatch_client_attack(&mut FakeHost::empty(), &mods, 99, false);
+            dispatch_client_attack(&mut FakeHost::empty(), &firing_mods, 99, false);
         }
         no_error(&id);
-        dispatch_client_attack(&mut FakeHost::empty(), &mods, 11, false);
+        dispatch_client_attack(&mut FakeHost::empty(), &firing_mods, 11, false);
         no_error(&id);
     }
 
@@ -7023,8 +9090,8 @@ mod generated_tests {
             "gen_client_hurt",
             "horizon.on(\"client_hurt\", function(event)\n    assert(event.attacker == 7, \"attacker\")\n    assert(event.player == false, \"player\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_client_hurt(&mut FakeHost::empty(), &mods, Some(7), false);
+        let firing_mods = boxed(m);
+        dispatch_client_hurt(&mut FakeHost::empty(), &firing_mods, Some(7), false);
         no_error(&id);
     }
 
@@ -7032,10 +9099,10 @@ mod generated_tests {
     fn generated_client_player_network_logging_in() {
         let (m, id, _dir) = loaded(
             "gen_client_player_network_logging_in",
-            "horizon.on(\"client_player_network_logging_in\", function(event)\n\nend)",
+            "horizon.on(\"client_player_network_logging_in\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_client_player_network_logging_in(&mut FakeHost::empty(), &mods);
+        let firing_mods = boxed(m);
+        dispatch_client_player_network_logging_in(&mut FakeHost::empty(), &firing_mods);
         no_error(&id);
     }
 
@@ -7043,10 +9110,10 @@ mod generated_tests {
     fn generated_client_tick_pre() {
         let (m, id, _dir) = loaded(
             "gen_client_tick_pre",
-            "horizon.on(\"client_tick_pre\", function(event)\n\nend)",
+            "horizon.on(\"client_tick_pre\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_client_tick_pre(&mut FakeHost::empty(), &mods);
+        let firing_mods = boxed(m);
+        dispatch_client_tick_pre(&mut FakeHost::empty(), &firing_mods);
         no_error(&id);
     }
 
@@ -7054,10 +9121,38 @@ mod generated_tests {
     fn generated_client_tick_post() {
         let (m, id, _dir) = loaded(
             "gen_client_tick_post",
-            "horizon.on(\"client_tick_post\", function(event)\n\nend)",
+            "horizon.on(\"client_tick_post\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_client_tick_post(&mut FakeHost::empty(), &mods);
+        let firing_mods = boxed(m);
+        dispatch_client_tick_post(&mut FakeHost::empty(), &firing_mods);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_console_line() {
+        let (m, id, _dir) = loaded(
+            "gen_console_line",
+            "horizon.on(\"console_line\", function(event)\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.replies[1].text == \"test:line2\", \"replies\")\n    assert(event.replies[2].text == \"test:line3\", \"replies\")\n    event.replies = { { text = \"test:line52\", component = { text = \"test:line52\" } } }\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut replies = vec![Text::literal("test:line2"), Text::literal("test:line3")];
+        let mut cancel = false;
+        dispatch_console_line(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:source",
+            "test:line",
+            &mut replies,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(
+            format!("{:?}", replies),
+            format!(
+                "{:?}",
+                vec![Text::empty().with_component(serde_json::json!({ "text": "test:line52" }))]
+            )
+        );
         no_error(&id);
     }
 
@@ -7065,22 +9160,17 @@ mod generated_tests {
     fn generated_creative_slot_v2() {
         let (m, id, _dir) = loaded(
             "gen_creative_slot_v2",
-            "horizon.on(\"creative_slot_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"creative_slot_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.stack == nil, \"stack\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_creative_slot_v2(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             9,
-            Some(&ItemStack {
-                item: "test:stack".into(),
-                count: 1,
-                damage: 0,
-                extra: None,
-            }),
+            None,
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
@@ -7093,10 +9183,112 @@ mod generated_tests {
             "gen_custom_block_fluids",
             "horizon.on(\"custom_block_fluids\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.custom == false, \"custom\")\n    event.custom = true\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut custom = false;
-        dispatch_custom_block_fluids(&FakeHost::empty(), &mods, "test:block", &mut custom);
+        dispatch_custom_block_fluids(&FakeHost::empty(), &firing_mods, "test:block", &mut custom);
         assert!(custom);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_custom_fluid_tanks() {
+        let (m, id, _dir) = loaded(
+            "gen_custom_fluid_tanks",
+            "horizon.on(\"custom_fluid_tanks\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.out == nil, \"replace seed\")\n    event.out = { { tank = 0, content = { fluid = \"test:fluid0\", amount = 7, components = {} }, capacity = 1000, can_fill = true, can_drain = false } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut out: Option<Vec<NativeFluidTankView>> = None;
+        dispatch_custom_fluid_tanks(
+            &FakeHost::empty(),
+            &firing_mods,
+            [1, 2, 3],
+            Some(Direction::Up),
+            &mut out,
+        );
+        assert_eq!(
+            out,
+            Some(vec![NativeFluidTankView {
+                tank: 0,
+                content: Some(NativeFluidStack {
+                    fluid: "test:fluid0".into(),
+                    amount: 7,
+                    components: Compound::new()
+                }),
+                capacity: 1000,
+                can_fill: true,
+                can_drain: false
+            }])
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_custom_fluid_fill() {
+        let (m, id, _dir) = loaded(
+            "gen_custom_fluid_fill",
+            "horizon.on(\"custom_fluid_fill\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.resource.fluid == \"test:fluid2\", \"resource\")\n    assert(event.out == nil, \"replace seed\")\n    event.out = 81000\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut out: Option<i32> = None;
+        dispatch_custom_fluid_fill(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            [1, 2, 3],
+            Some(Direction::Up),
+            &NativeFluidStack {
+                fluid: "test:fluid2".into(),
+                amount: 9,
+                components: Compound::new(),
+            },
+            NativeFluidAction::Execute,
+            &mut out,
+        );
+        assert_eq!(out, Some(81000));
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_custom_fluid_drain() {
+        let (m, id, _dir) = loaded(
+            "gen_custom_fluid_drain",
+            "horizon.on(\"custom_fluid_drain\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.request.kind == \"any\", \"request\")\n    assert(event.out == nil, \"replace seed\")\n    event.out = { fluid = \"test:fluid0\", amount = 7, components = {} }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut out: Option<NativeFluidStack> = None;
+        dispatch_custom_fluid_drain(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            [1, 2, 3],
+            Some(Direction::Up),
+            &NativeFluidDrain::Any(9),
+            NativeFluidAction::Execute,
+            &mut out,
+        );
+        assert_eq!(
+            out,
+            Some(NativeFluidStack {
+                fluid: "test:fluid0".into(),
+                amount: 7,
+                components: Compound::new()
+            })
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_custom_payload_from_client() {
+        let (m, id, _dir) = loaded(
+            "gen_custom_payload_from_client",
+            "horizon.on(\"custom_payload_from_client\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.channel == \"test:channel\", \"channel\")\n    assert(event.data == \"t\" .. string.char(0, 159), \"data\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_custom_payload_from_client(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:channel",
+            &[116u8, 0u8, 159u8],
+        );
         no_error(&id);
     }
 
@@ -7104,17 +9296,17 @@ mod generated_tests {
     fn generated_entity_change_block_v2() {
         let (m, id, _dir) = loaded(
             "gen_entity_change_block_v2",
-            "horizon.on(\"entity_change_block_v2\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_change_block_v2\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.entity == nil, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut cancel = false;
             dispatch_entity_change_block_v2(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 Some(7),
-                Some(8),
+                None,
                 "minecraft:skeleton",
                 [4, 5, 6],
                 "test:from",
@@ -7126,9 +9318,9 @@ mod generated_tests {
         let mut cancel = false;
         dispatch_entity_change_block_v2(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             Some(7),
-            Some(8),
+            None,
             "minecraft:zombie",
             [4, 5, 6],
             "test:from",
@@ -7145,13 +9337,13 @@ mod generated_tests {
             "gen_entity_interact_specific",
             "horizon.on(\"entity_interact_specific\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.location.x == 4, \"location\")\n    assert(event.location.y == 2.0, \"location\")\n    assert(event.location.z == 3.0, \"location\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut claimed = false;
             dispatch_entity_interact_specific(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 Some(&ItemStack {
@@ -7168,7 +9360,7 @@ mod generated_tests {
         let mut claimed = false;
         dispatch_entity_interact_specific(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             Some(&ItemStack {
@@ -7190,13 +9382,13 @@ mod generated_tests {
             "gen_entity_outline",
             "horizon.on(\"entity_outline\", function(event)\n    assert(event.entity_id == 7, \"entity_id\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.outline == 9, \"outline\")\n    event.outline = 52\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut outline = Some(9);
             dispatch_entity_outline(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 &mut outline,
@@ -7206,7 +9398,7 @@ mod generated_tests {
         let mut outline = Some(9);
         dispatch_entity_outline(
             &FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             &mut outline,
@@ -7221,10 +9413,10 @@ mod generated_tests {
             "gen_fishing_hook_landed",
             "horizon.on(\"fishing_hook_landed\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.hook == 8, \"hook\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.block.x == 4, \"block\")\n    assert(event.block.y == 5, \"block\")\n    assert(event.block.z == 6, \"block\")\n    assert(event.face.x == 5, \"face\")\n    assert(event.face.y == 6, \"face\")\n    assert(event.face.z == 7, \"face\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_fishing_hook_landed(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             8,
             "test:dimension",
@@ -7235,16 +9427,74 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_handshake() {
+        let (m, id, _dir) = loaded(
+            "gen_handshake",
+            "horizon.on(\"handshake\", function(event)\n    assert(event.host == \"test:host\", \"host\")\n    event.host = \"test:host:edited\"\n    assert(event.intent == 9, \"intent\")\n    assert(event.reason == nil, \"reason\")\n    assert(event.reason_component == nil, \"reason\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut host = "test:host".to_owned();
+        let mut reason = None;
+        let mut cancel = false;
+        dispatch_handshake(
+            &firing_mods,
+            "127.0.0.1:25565".parse().unwrap(),
+            &mut host,
+            9,
+            &mut reason,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(host, "test:host:edited".to_owned());
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_interact_entity_v2() {
+        let (m, id, _dir) = loaded(
+            "gen_interact_entity_v2",
+            "horizon.on(\"interact_entity_v2\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack == nil, \"stack\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut cancel = false;
+            dispatch_interact_entity_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                Hand::Main,
+                None,
+                &mut cancel,
+            );
+        }
+        no_error(&id);
+        let mut cancel = false;
+        dispatch_interact_entity_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            Hand::Main,
+            None,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_inventory_click() {
         let (m, id, _dir) = loaded(
             "gen_inventory_click",
             "horizon.on(\"inventory_click\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.window == 9, \"window\")\n    assert(event.slot == 10, \"slot\")\n    assert(event.button == 11, \"button\")\n    assert(event.mode == 12, \"mode\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_inventory_click(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             9,
@@ -7263,11 +9513,11 @@ mod generated_tests {
             "gen_inventory_drag",
             "horizon.on(\"inventory_drag\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.window == 9, \"window\")\n    assert(event.kind == 10, \"kind\")\n    assert(event.slots[1] == 8 and event.slots[2] == 13, \"slots\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_inventory_drag(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             9,
@@ -7280,16 +9530,101 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_item_after_vertical_collision() {
+        let (m, id, _dir) = loaded(
+            "gen_item_after_vertical_collision",
+            "horizon.on(\"item_after_vertical_collision\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.client == false, \"client\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.state == \"test:state11\", \"state\")\n    assert(event.block_pos.x == 5, \"block_pos\")\n    assert(event.block_pos.y == 6, \"block_pos\")\n    assert(event.block_pos.z == 7, \"block_pos\")\n    assert(event.item_pos.x == 6, \"item_pos\")\n    assert(event.item_pos.y == 2.0, \"item_pos\")\n    assert(event.item_pos.z == 3.0, \"item_pos\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    event.stack = { id = \"test:stack\", count = 56, damage = 6 }\n    horizon.cancel()\n    assert(next(event.state_props) == nil, \"state_props\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut stack = ItemStack {
+                item: "test:stack".into(),
+                count: 7,
+                damage: 6,
+                extra: None,
+            };
+            let mut discard = false;
+            dispatch_item_after_vertical_collision(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                false,
+                13,
+                BlockStateId(11),
+                [5, 6, 7],
+                [6.0, 2.0, 3.0],
+                &mut stack,
+                &mut discard,
+            );
+        }
+        no_error(&id);
+        // gone event: the handler stays quiet.
+        {
+            let mut stack = ItemStack {
+                item: "test:stack".into(),
+                count: 7,
+                damage: 6,
+                extra: None,
+            };
+            let mut discard = false;
+            dispatch_item_after_vertical_collision(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                false,
+                99,
+                BlockStateId(11),
+                [5, 6, 7],
+                [6.0, 2.0, 3.0],
+                &mut stack,
+                &mut discard,
+            );
+        }
+        no_error(&id);
+        let mut stack = ItemStack {
+            item: "test:stack".into(),
+            count: 7,
+            damage: 6,
+            extra: None,
+        };
+        let mut discard = false;
+        dispatch_item_after_vertical_collision(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            false,
+            11,
+            BlockStateId(11),
+            [5, 6, 7],
+            [6.0, 2.0, 3.0],
+            &mut stack,
+            &mut discard,
+        );
+        assert!(discard, "discard not cancelled");
+        assert_eq!(
+            stack,
+            ItemStack {
+                item: "test:stack".into(),
+                count: 56,
+                damage: 6,
+                extra: None
+            }
+        );
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_item_dropped_v2() {
         let (m, id, _dir) = loaded(
             "gen_item_dropped_v2",
             "horizon.on(\"item_dropped_v2\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_item_dropped_v2(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             &ItemStack {
                 item: "test:stack".into(),
@@ -7309,13 +9644,13 @@ mod generated_tests {
             "gen_item_interact_mob",
             "horizon.on(\"item_interact_mob\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.swing == nil, \"replace seed\")\n    event.swing = true\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut swing: Option<bool> = None;
             dispatch_item_interact_mob(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 Some(&ItemStack {
@@ -7331,7 +9666,7 @@ mod generated_tests {
         let mut swing: Option<bool> = None;
         dispatch_item_interact_mob(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             Some(&ItemStack {
@@ -7352,11 +9687,11 @@ mod generated_tests {
             "gen_item_picked_up_v2",
             "horizon.on(\"item_picked_up_v2\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.thrower == \"00000000-0000-0000-0000-000000000009\", \"thrower\")\n    assert(event.position.x == 4, \"position\")\n    assert(event.position.y == 2.0, \"position\")\n    assert(event.position.z == 3.0, \"position\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut canceled = false;
         dispatch_item_picked_up_v2(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             &ItemStack {
                 item: "test:stack".into(),
@@ -7376,18 +9711,18 @@ mod generated_tests {
     fn generated_living_change_target() {
         let (m, id, _dir) = loaded(
             "gen_living_change_target",
-            "horizon.on(\"living_change_target\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.target == \"00000000-0000-0000-0000-00000000000a\", \"target\")\n    assert(event.target_mob == 11, \"target_mob\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_change_target\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.target == nil, \"target\")\n    assert(event.target_mob == 11, \"target_mob\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut cancel = false;
             dispatch_living_change_target(
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 "minecraft:skeleton",
-                Some(10),
+                None,
                 Some(11),
                 &mut cancel,
             );
@@ -7395,11 +9730,11 @@ mod generated_tests {
         no_error(&id);
         let mut cancel = false;
         dispatch_living_change_target(
-            &mods,
+            &firing_mods,
             "test:dimension",
             8,
             "minecraft:zombie",
-            Some(10),
+            None,
             Some(11),
             &mut cancel,
         );
@@ -7413,12 +9748,12 @@ mod generated_tests {
             "gen_living_damage_pre",
             "horizon.on(\"living_damage_pre\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.direct == 11, \"direct\")\n    assert(event.amount == 6.5, \"amount\")\n    event.amount = 20.5\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut amount = 6.5;
             dispatch_living_damage_pre(
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 "test:damage_type",
@@ -7430,7 +9765,7 @@ mod generated_tests {
         no_error(&id);
         let mut amount = 6.5;
         dispatch_living_damage_pre(
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             "test:damage_type",
@@ -7448,11 +9783,11 @@ mod generated_tests {
             "gen_living_damage_post",
             "horizon.on(\"living_damage_post\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.direct == 11, \"direct\")\n    assert(event.amount == 6.5, \"amount\")\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_living_damage_post(
-                &mods,
+                &firing_mods,
                 7,
                 "minecraft:skeleton",
                 "test:damage_type",
@@ -7463,7 +9798,7 @@ mod generated_tests {
         }
         no_error(&id);
         dispatch_living_damage_post(
-            &mods,
+            &firing_mods,
             7,
             "minecraft:zombie",
             "test:damage_type",
@@ -7478,21 +9813,21 @@ mod generated_tests {
     fn generated_living_incoming_damage_v3() {
         let (m, id, _dir) = loaded(
             "gen_living_incoming_damage_v3",
-            "horizon.on(\"living_incoming_damage_v3\", function(event)\n    assert(event.victim == 7, \"victim\")\n    assert(event.victim_uuid == \"00000000-0000-0000-0000-000000000008\", \"victim_uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.attacker == 10, \"attacker\")\n    assert(event.attacker_uuid == \"00000000-0000-0000-0000-00000000000b\", \"attacker_uuid\")\n    assert(event.direct == 12, \"direct\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 8.5, \"amount\")\n    event.amount = 22.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_incoming_damage_v3\", function(event)\n    assert(event.victim == 7, \"victim\")\n    assert(event.victim_uuid == nil, \"victim_uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.attacker == nil, \"attacker\")\n    assert(event.attacker_uuid == \"00000000-0000-0000-0000-00000000000b\", \"attacker_uuid\")\n    assert(event.direct == nil, \"direct\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 8.5, \"amount\")\n    event.amount = 22.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut amount = 8.5;
             let mut cancel = false;
             dispatch_living_incoming_damage_v3(
-                &mods,
+                &firing_mods,
                 7,
-                Some(8),
+                None,
                 "minecraft:skeleton",
-                Some(10),
+                None,
                 Some(11),
-                Some(12),
+                None,
                 "test:damage_type",
                 &mut amount,
                 &mut cancel,
@@ -7502,13 +9837,13 @@ mod generated_tests {
         let mut amount = 8.5;
         let mut cancel = false;
         dispatch_living_incoming_damage_v3(
-            &mods,
+            &firing_mods,
             7,
-            Some(8),
+            None,
             "minecraft:zombie",
-            Some(10),
+            None,
             Some(11),
-            Some(12),
+            None,
             "test:damage_type",
             &mut amount,
             &mut cancel,
@@ -7524,9 +9859,9 @@ mod generated_tests {
             "gen_log_line",
             "horizon.on(\"log_line\", function(event)\n    assert(event.level == \"test:level\", \"level\")\n    assert(event.thread == \"test:thread\", \"thread\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.line == \"test:line\", \"line\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_log_line(
-            &mods,
+            &firing_mods,
             "test:level",
             "test:thread",
             "test:message",
@@ -7536,14 +9871,78 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_menu_input_closed() {
+        let (m, id, _dir) = loaded(
+            "gen_menu_input_closed",
+            "horizon.on(\"menu_input_closed\", function(event)\n    assert(event.uuid == 7, \"uuid\")\n    assert(event.window == 8, \"window\")\n    assert(event.slots[1].id == \"test:slots\", \"slots\")\n    assert(event.slots[2].id == \"test:slots\", \"slots\")\n    event.slots = { { id = \"test:slots\", count = 53, damage = 52 } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut slots = vec![
+            Some(ItemStack {
+                item: "test:slots".into(),
+                count: 3,
+                damage: 2,
+                extra: None,
+            }),
+            Some(ItemStack {
+                item: "test:slots".into(),
+                count: 4,
+                damage: 3,
+                extra: None,
+            }),
+        ];
+        dispatch_menu_input_closed(&mut FakeHost::empty(), &firing_mods, 7, 8, &mut slots);
+        assert_eq!(
+            format!("{:?}", slots),
+            format!(
+                "{:?}",
+                vec![Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 53,
+                    damage: 52,
+                    extra: None
+                })]
+            )
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_menu_links() {
+        let (m, id, _dir) = loaded(
+            "gen_menu_links",
+            "horizon.on(\"menu_links\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.links[1].x == 4, \"links\")\n    assert(event.links[1].y == 5, \"links\")\n    assert(event.links[1].z == 6, \"links\")\n    assert(event.links[2].x == 5, \"links\")\n    assert(event.links[2].y == 6, \"links\")\n    assert(event.links[2].z == 7, \"links\")\n    event.links = { { x = 64, y = 65, z = 66 } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut links = vec![[4, 5, 6], [5, 6, 7]];
+        dispatch_menu_links(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:menu",
+            [3, 4, 5],
+            &mut links,
+        );
+        assert_eq!(format!("{:?}", links), format!("{:?}", vec![[64, 65, 66]]));
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_permission_check() {
         let (m, id, _dir) = loaded(
             "gen_permission_check",
             "horizon.on(\"permission_check\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.node == \"test:node\", \"node\")\n    assert(event.default_level == 9, \"default_level\")\n    assert(event.result == nil, \"replace seed\")\n    event.result = true\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut result: Option<bool> = None;
-        dispatch_permission_check(&FakeHost::empty(), &mods, 7, "test:node", 9, &mut result);
+        dispatch_permission_check(
+            &FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:node",
+            9,
+            &mut result,
+        );
         assert_eq!(result, Some(true));
         no_error(&id);
     }
@@ -7552,15 +9951,15 @@ mod generated_tests {
     fn generated_player_register_channels() {
         let (m, id, _dir) = loaded(
             "gen_player_register_channels",
-            "horizon.on(\"player_register_channels\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.channels[1] == \"test:seed\", \"channels\")\n    assert(event.register == false, \"register\")\nend)",
+            "horizon.on(\"player_register_channels\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.channels[1] == \"test:seed\", \"channels\")\n    assert(event.channels[2] == \"test:seed2\", \"channels\")\n    assert(event.register == false, \"register\")\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         dispatch_player_register_channels(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
-            &["test:seed".to_owned()],
+            &["test:seed".to_owned(), "test:seed2".to_owned()],
             false,
         );
         no_error(&id);
@@ -7572,11 +9971,11 @@ mod generated_tests {
             "gen_player_command_level",
             "horizon.on(\"player_command_level\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.command == \"test:command\", \"command\")\n    assert(event.level == 10, \"level\")\n    event.level = 53\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut level = 10;
         dispatch_player_command_level(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:command",
@@ -7590,14 +9989,14 @@ mod generated_tests {
     fn generated_player_commands_sent_v2() {
         let (m, id, _dir) = loaded(
             "gen_player_commands_sent_v2",
-            "horizon.on(\"player_commands_sent_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.names[1] == \"test:seed\", \"names\")\n    event.names[1] = \"test:edited\"; table.insert(event.names, \"test:added\")\n    assert(event.names_hidden[1] == \"test:seed\", \"names_hidden\")\n    event.names_hidden[1] = \"test:edited\"; table.insert(event.names_hidden, \"test:added\")\nend)",
+            "horizon.on(\"player_commands_sent_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.names[1] == \"test:seed\", \"names\")\n    assert(event.names[2] == \"test:seed2\", \"names\")\n    event.names[1] = \"test:edited\"; table.insert(event.names, \"test:added\")\n    assert(event.names_hidden[1] == \"test:seed\", \"names_hidden\")\n    assert(event.names_hidden[2] == \"test:seed2\", \"names_hidden\")\n    event.names_hidden[1] = \"test:edited\"; table.insert(event.names_hidden, \"test:added\")\nend)",
         );
-        let mods = boxed(m);
-        let mut names = vec!["test:seed".to_owned()];
-        let mut names_hidden = vec!["test:seed".to_owned()];
+        let firing_mods = boxed(m);
+        let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+        let mut names_hidden = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
         dispatch_player_commands_sent_v2(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             &mut names,
@@ -7605,12 +10004,41 @@ mod generated_tests {
         );
         assert_eq!(
             names,
-            vec!["test:edited".to_owned(), "test:added".to_owned()]
+            vec![
+                "test:edited".to_owned(),
+                "test:seed2".to_owned(),
+                "test:added".to_owned()
+            ]
         );
         assert_eq!(
             names_hidden,
-            vec!["test:edited".to_owned(), "test:added".to_owned()]
+            vec![
+                "test:edited".to_owned(),
+                "test:seed2".to_owned(),
+                "test:added".to_owned()
+            ]
         );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_fish_v2() {
+        let (m, id, _dir) = loaded(
+            "gen_player_fish_v2",
+            "horizon.on(\"player_fish_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.state == 9, \"state\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_fish_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            Hand::Off,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
         no_error(&id);
     }
 
@@ -7620,11 +10048,11 @@ mod generated_tests {
             "gen_player_hurt_by_player",
             "horizon.on(\"player_hurt_by_player\", function(event)\n    assert(event.attacker == 7, \"attacker\")\n    assert(event.attacker_entity == 8, \"attacker_entity\")\n    assert(event.victim == 9, \"victim\")\n    assert(event.victim_entity == 10, \"victim_entity\")\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 7.5, \"amount\")\n    event.amount = 21.5\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut amount = 7.5;
         let mut canceled = false;
         dispatch_player_hurt_by_player(
-            &mods,
+            &firing_mods,
             7,
             8,
             9,
@@ -7645,11 +10073,11 @@ mod generated_tests {
             "gen_player_launch_projectile_v2",
             "horizon.on(\"player_launch_projectile_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_player_launch_projectile_v2(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             &ItemStack {
@@ -7670,8 +10098,8 @@ mod generated_tests {
             "gen_player_logging_out",
             "horizon.on(\"player_logging_out\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_logging_out(&mut FakeHost::empty(), &mods, 7, "test:name");
+        let firing_mods = boxed(m);
+        dispatch_player_logging_out(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         no_error(&id);
     }
 
@@ -7679,13 +10107,13 @@ mod generated_tests {
     fn generated_player_move() {
         let (m, id, _dir) = loaded(
             "gen_player_move",
-            "horizon.on(\"player_move\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 4, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    event.to = { x = 14.0, y = 2.0, z = 3.0 }\n    assert(event.yaw == 5.5, \"yaw\")\n    assert(event.pitch == 6.5, \"pitch\")\n    assert(event.on_ground == true, \"on_ground\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_move\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 4.0, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    event.to = { x = 14.0, y = 12.0, z = 13.0 }\n    assert(event.yaw == 5.5, \"yaw\")\n    assert(event.pitch == 6.5, \"pitch\")\n    assert(event.on_ground == true, \"on_ground\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut to = [4.0, 2.0, 3.0];
         let mut cancel = false;
         dispatch_player_move(
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             [3.0, 2.0, 3.0],
@@ -7696,7 +10124,26 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
-        assert_eq!(to, [14.0, 2.0, 3.0]);
+        assert_eq!(to, [14.0, 12.0, 13.0]);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_pre_login() {
+        let (m, id, _dir) = loaded(
+            "gen_player_pre_login",
+            "horizon.on(\"player_pre_login\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.defer.count == 0, \"defer\")\n    event.defer = { refuse = \"test:refused\" }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut defer = Vec::new();
+        dispatch_player_pre_login(
+            &firing_mods,
+            7,
+            "test:name",
+            "127.0.0.1:25567".parse().unwrap(),
+            &mut defer,
+        );
+        assert_eq!(defer.len(), 1);
         no_error(&id);
     }
 
@@ -7704,16 +10151,16 @@ mod generated_tests {
     fn generated_player_respawn_position() {
         let (m, id, _dir) = loaded(
             "gen_player_respawn_position",
-            "horizon.on(\"player_respawn_position\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    event.dimension = \"test:dimension:edited\"\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\n    event.pos = { x = 14.0, y = 2.0, z = 3.0 }\n    assert(event.yaw == 5.5, \"yaw\")\n    event.yaw = 19.5\n    assert(event.pitch == 6.5, \"pitch\")\n    event.pitch = 20.5\nend)",
+            "horizon.on(\"player_respawn_position\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    event.dimension = \"test:dimension:edited\"\n    assert(event.pos.x == 4.0, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\n    event.pos = { x = 14.0, y = 12.0, z = 13.0 }\n    assert(event.yaw == 5.5, \"yaw\")\n    event.yaw = 19.5\n    assert(event.pitch == 6.5, \"pitch\")\n    event.pitch = 20.5\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut dimension = "test:dimension".to_owned();
         let mut pos = [4.0, 2.0, 3.0];
         let mut yaw = 5.5;
         let mut pitch = 6.5;
         dispatch_player_respawn_position(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             &mut dimension,
@@ -7722,7 +10169,7 @@ mod generated_tests {
             &mut pitch,
         );
         assert_eq!(dimension, "test:dimension:edited".to_owned());
-        assert_eq!(pos, [14.0, 2.0, 3.0]);
+        assert_eq!(pos, [14.0, 12.0, 13.0]);
         assert_eq!(yaw, 19.5);
         assert_eq!(pitch, 20.5);
         no_error(&id);
@@ -7732,15 +10179,15 @@ mod generated_tests {
     fn generated_player_spawn_location() {
         let (m, id, _dir) = loaded(
             "gen_player_spawn_location",
-            "horizon.on(\"player_spawn_location\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    event.dimension = \"test:dimension:edited\"\n    assert(event.position.x == 4, \"position\")\n    assert(event.position.y == 2.0, \"position\")\n    assert(event.position.z == 3.0, \"position\")\n    event.position = { x = 14.0, y = 2.0, z = 3.0 }\n    assert(event.rotation.x == 5.5, \"rotation\")\n    assert(event.rotation.y == 6.5, \"rotation\")\n    event.rotation = { x = 15.5, y = 16.5 }\nend)",
+            "horizon.on(\"player_spawn_location\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    event.dimension = \"test:dimension:edited\"\n    assert(event.position.x == 4.0, \"position\")\n    assert(event.position.y == 2.0, \"position\")\n    assert(event.position.z == 3.0, \"position\")\n    event.position = { x = 14.0, y = 12.0, z = 13.0 }\n    assert(event.rotation.x == 5.0, \"rotation\")\n    assert(event.rotation.y == 2.0, \"rotation\")\n    event.rotation = { x = 15.0, y = 12.0 }\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut dimension = "test:dimension".to_owned();
         let mut position = [4.0, 2.0, 3.0];
-        let mut rotation = [5.5, 6.5];
+        let mut rotation = [5.0, 2.0];
         dispatch_player_spawn_location(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             &mut dimension,
@@ -7748,8 +10195,8 @@ mod generated_tests {
             &mut rotation,
         );
         assert_eq!(dimension, "test:dimension:edited".to_owned());
-        assert_eq!(position, [14.0, 2.0, 3.0]);
-        assert_eq!(rotation, [15.5, 16.5]);
+        assert_eq!(position, [14.0, 12.0, 13.0]);
+        assert_eq!(rotation, [15.0, 12.0]);
         no_error(&id);
     }
 
@@ -7757,14 +10204,14 @@ mod generated_tests {
     fn generated_player_teleport() {
         let (m, id, _dir) = loaded(
             "gen_player_teleport",
-            "horizon.on(\"player_teleport\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.from.x == 5, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.to.x == 7, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    event.to = { x = 17.0, y = 2.0, z = 3.0 }\n    assert(event.relative == 14, \"relative\")\n    event.relative = 57\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_teleport\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.from.x == 5, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.to.x == 7.0, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    event.to = { x = 17.0, y = 12.0, z = 13.0 }\n    assert(event.relative == 14, \"relative\")\n    event.relative = 57\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut to = [7.0, 2.0, 3.0];
         let mut relative = 14;
         let mut cancel = false;
         dispatch_player_teleport(
-            &mods,
+            &firing_mods,
             7,
             "test:name",
             "test:cause",
@@ -7776,7 +10223,7 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
-        assert_eq!(to, [17.0, 2.0, 3.0]);
+        assert_eq!(to, [17.0, 12.0, 13.0]);
         assert_eq!(relative, 57);
         no_error(&id);
     }
@@ -7785,10 +10232,10 @@ mod generated_tests {
     fn generated_player_tick_pre() {
         let (m, id, _dir) = loaded(
             "gen_player_tick_pre",
-            "horizon.on(\"player_tick_pre\", function(event)\n\nend)",
+            "horizon.on(\"player_tick_pre\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_player_tick_pre(&mut FakeHost::empty(), &mods);
+        let firing_mods = boxed(m);
+        dispatch_player_tick_pre(&mut FakeHost::empty(), &firing_mods);
         no_error(&id);
     }
 
@@ -7796,16 +10243,16 @@ mod generated_tests {
     fn generated_projectile_world_border() {
         let (m, id, _dir) = loaded(
             "gen_projectile_world_border",
-            "horizon.on(\"projectile_world_border\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\n    event.pos = { x = 14.0, y = 2.0, z = 3.0 }\n    assert(event.velocity.x == 5, \"velocity\")\n    assert(event.velocity.y == 2.0, \"velocity\")\n    assert(event.velocity.z == 3.0, \"velocity\")\n    event.velocity = { x = 15.0, y = 2.0, z = 3.0 }\n    assert(event.collide == false, \"collide\")\n    event.collide = true\nend, \"minecraft:zombie\")",
+            "horizon.on(\"projectile_world_border\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4.0, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\n    event.pos = { x = 14.0, y = 12.0, z = 13.0 }\n    assert(event.velocity.x == 5.0, \"velocity\")\n    assert(event.velocity.y == 2.0, \"velocity\")\n    assert(event.velocity.z == 3.0, \"velocity\")\n    event.velocity = { x = 15.0, y = 12.0, z = 13.0 }\n    assert(event.collide == false, \"collide\")\n    event.collide = true\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut pos = [4.0, 2.0, 3.0];
             let mut velocity = [5.0, 2.0, 3.0];
             let mut collide = false;
             dispatch_projectile_world_border(
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 "minecraft:skeleton",
@@ -7819,7 +10266,7 @@ mod generated_tests {
         let mut velocity = [5.0, 2.0, 3.0];
         let mut collide = false;
         dispatch_projectile_world_border(
-            &mods,
+            &firing_mods,
             "test:dimension",
             8,
             "minecraft:zombie",
@@ -7827,9 +10274,32 @@ mod generated_tests {
             &mut velocity,
             &mut collide,
         );
-        assert_eq!(pos, [14.0, 2.0, 3.0]);
-        assert_eq!(velocity, [15.0, 2.0, 3.0]);
+        assert_eq!(pos, [14.0, 12.0, 13.0]);
+        assert_eq!(velocity, [15.0, 12.0, 13.0]);
         assert!(collide);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_recipe_sources() {
+        let (m, id, _dir) = loaded(
+            "gen_recipe_sources",
+            "horizon.on(\"recipe_sources\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.sources[1].x == 4, \"sources\")\n    assert(event.sources[1].y == 5, \"sources\")\n    assert(event.sources[1].z == 6, \"sources\")\n    assert(event.sources[2].x == 5, \"sources\")\n    assert(event.sources[2].y == 6, \"sources\")\n    assert(event.sources[2].z == 7, \"sources\")\n    event.sources = { { x = 64, y = 65, z = 66 } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut sources = vec![[4, 5, 6], [5, 6, 7]];
+        dispatch_recipe_sources(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:menu",
+            [3, 4, 5],
+            &mut sources,
+        );
+        assert_eq!(
+            format!("{:?}", sources),
+            format!("{:?}", vec![[64, 65, 66]])
+        );
         no_error(&id);
     }
 
@@ -7839,8 +10309,35 @@ mod generated_tests {
             "gen_resource_pack_status_v2",
             "horizon.on(\"resource_pack_status_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pack == 9, \"pack\")\n    assert(event.status == 10, \"status\")\nend)",
         );
-        let mods = boxed(m);
-        dispatch_resource_pack_status_v2(&mut FakeHost::empty(), &mods, 7, "test:name", 9, 10);
+        let firing_mods = boxed(m);
+        dispatch_resource_pack_status_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            10,
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_right_click_block_v2() {
+        let (m, id, _dir) = loaded(
+            "gen_right_click_block_v2",
+            "horizon.on(\"right_click_block_v2\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.face.x == 2, \"face\")\n    assert(event.face.y == 3, \"face\")\n    assert(event.face.z == 4, \"face\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_right_click_block_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            [1, 2, 3],
+            [2, 3, 4],
+            Hand::Main,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
         no_error(&id);
     }
 
@@ -7850,11 +10347,11 @@ mod generated_tests {
             "gen_screen_mouse_dragged_pre_v2",
             "horizon.on(\"screen_mouse_dragged_pre_v2\", function(event)\n    assert(event.screen == \"test:screen\", \"screen\")\n    assert(event.mouse.x == 2.5, \"mouse\")\n    assert(event.mouse.y == 3.5, \"mouse\")\n    assert(event.button == 9, \"button\")\n    assert(event.delta.x == 4.5, \"delta\")\n    assert(event.delta.y == 5.5, \"delta\")\n    assert(event.modifiers == 11, \"modifiers\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut canceled = false;
         dispatch_screen_mouse_dragged_pre_v2(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:screen",
             [2.5, 3.5],
             9,
@@ -7872,11 +10369,11 @@ mod generated_tests {
             "gen_screen_mouse_scrolled_pre_v2",
             "horizon.on(\"screen_mouse_scrolled_pre_v2\", function(event)\n    assert(event.screen == \"test:screen\", \"screen\")\n    assert(event.mouse.x == 2.5, \"mouse\")\n    assert(event.mouse.y == 3.5, \"mouse\")\n    assert(event.scroll.x == 3.5, \"scroll\")\n    assert(event.scroll.y == 4.5, \"scroll\")\n    assert(event.modifiers == 10, \"modifiers\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut canceled = false;
         dispatch_screen_mouse_scrolled_pre_v2(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:screen",
             [2.5, 3.5],
             [3.5, 4.5],
@@ -7888,15 +10385,120 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_server_tick_timed() {
+        let (m, id, _dir) = loaded(
+            "gen_server_tick_timed",
+            "horizon.on(\"server_tick_timed\", function(event)\n    assert(event.wall_ms == 1.5, \"wall_ms\")\n    assert(event.cpu_ms == nil, \"cpu_ms\")\n    assert(event.spans[1].name == \"test:span2\", \"spans\")\n    assert(event.spans[2].name == \"test:span3\", \"spans\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_server_tick_timed(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            1.5,
+            None,
+            &[
+                TickSpan {
+                    name: "test:span2",
+                    ms: 3.5,
+                    cpu_ms: 0.5,
+                    depth: 0,
+                },
+                TickSpan {
+                    name: "test:span3",
+                    ms: 4.5,
+                    cpu_ms: 0.5,
+                    depth: 0,
+                },
+            ],
+        );
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_stateful_block_entity() {
         let (m, id, _dir) = loaded(
             "gen_stateful_block_entity",
             "horizon.on(\"stateful_block_entity\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.stateful == false, \"stateful\")\n    event.stateful = true\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut stateful = false;
-        dispatch_stateful_block_entity(&FakeHost::empty(), &mods, "test:block", &mut stateful);
+        dispatch_stateful_block_entity(
+            &FakeHost::empty(),
+            &firing_mods,
+            "test:block",
+            &mut stateful,
+        );
         assert!(stateful);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_from_state() {
+        let (m, id, _dir) = loaded(
+            "gen_block_entity_from_state",
+            "horizon.on(\"block_entity_from_state\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.entity == nil, \"replace seed\")\n    event.entity = { name = \"test:entity0\", tag = { testkey = 7 } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut entity: Option<(String, Compound)> = None;
+        dispatch_block_entity_from_state(
+            &firing_mods,
+            "test:block",
+            &BlockProperties::new(),
+            &mut entity,
+        );
+        assert_eq!(
+            entity,
+            Some((
+                "test:entity0".to_owned(),
+                Compound::from([("testkey".into(), Tag::Int(7))])
+            ))
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_tab_complete_v2() {
+        let (m, id, _dir) = loaded(
+            "gen_tab_complete_v2",
+            "horizon.on(\"tab_complete_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.label == \"test:label\", \"label\")\n    assert(event.arguments[1] == \"test:seed\", \"arguments\")\n    assert(event.arguments[2] == \"test:seed2\", \"arguments\")\n    assert(event.range.start == 11, \"range\")\n    assert(event.suggestions[1].text == \"test:suggestion5\", \"suggestions\")\n    assert(event.suggestions[2].text == \"test:suggestion6\", \"suggestions\")\n    event.suggestions = { { range = { start = 62, [\"end\"] = 67 }, text = \"test:suggestion55\" } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut suggestions = vec![
+            Suggestion {
+                range: (7 + 5, 12 + 5),
+                text: "test:suggestion5".into(),
+                tooltip: None,
+                int_value: None,
+            },
+            Suggestion {
+                range: (7 + 6, 12 + 6),
+                text: "test:suggestion6".into(),
+                tooltip: None,
+                int_value: None,
+            },
+        ];
+        dispatch_tab_complete_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:label",
+            &["test:seed".to_owned(), "test:seed2".to_owned()],
+            [11, 16],
+            &mut suggestions,
+        );
+        assert_eq!(
+            format!("{:?}", suggestions),
+            format!(
+                "{:?}",
+                vec![Suggestion {
+                    range: (7 + 55, 12 + 55),
+                    text: "test:suggestion55".into(),
+                    tooltip: None,
+                    int_value: None
+                }]
+            )
+        );
         no_error(&id);
     }
 
@@ -7906,11 +10508,11 @@ mod generated_tests {
             "gen_toast_add",
             "horizon.on(\"toast_add\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.id == \"test:id\", \"id\")\n    horizon.cancel()\nend)",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         let mut cancel = false;
         dispatch_toast_add(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             "test:kind",
             "test:id",
             &mut cancel,
@@ -7925,12 +10527,12 @@ mod generated_tests {
             "gen_trample",
             "horizon.on(\"trample\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.fall_distance == 5.5, \"fall_distance\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut cancel = false;
             dispatch_trample(
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 "minecraft:skeleton",
@@ -7942,7 +10544,7 @@ mod generated_tests {
         no_error(&id);
         let mut cancel = false;
         dispatch_trample(
-            &mods,
+            &firing_mods,
             "test:dimension",
             8,
             "minecraft:zombie",
@@ -7958,16 +10560,16 @@ mod generated_tests {
     fn generated_vehicle_moved_v2() {
         let (m, id, _dir) = loaded(
             "gen_vehicle_moved_v2",
-            "horizon.on(\"vehicle_moved_v2\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.vehicle == 9, \"vehicle\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.from.x == 5, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 6, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    event.to = { x = 16.0, y = 2.0, z = 3.0 }\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"vehicle_moved_v2\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.vehicle == 9, \"vehicle\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.from.x == 5, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 6.0, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    event.to = { x = 16.0, y = 12.0, z = 13.0 }\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             let mut to = [6.0, 2.0, 3.0];
             let mut cancel = false;
             dispatch_vehicle_moved_v2(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 Some(7),
                 "test:dimension",
                 9,
@@ -7982,7 +10584,7 @@ mod generated_tests {
         let mut cancel = false;
         dispatch_vehicle_moved_v2(
             &mut FakeHost::empty(),
-            &mods,
+            &firing_mods,
             Some(7),
             "test:dimension",
             9,
@@ -7992,7 +10594,26 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
-        assert_eq!(to, [16.0, 2.0, 3.0]);
+        assert_eq!(to, [16.0, 12.0, 13.0]);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_wind_burst() {
+        let (m, id, _dir) = loaded(
+            "gen_wind_burst",
+            "horizon.on(\"wind_burst\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.center.x == 2, \"center\")\n    assert(event.center.y == 2.0, \"center\")\n    assert(event.center.z == 3.0, \"center\")\n    assert(event.blocks[1].x == 3, \"blocks\")\n    assert(event.blocks[1].y == 4, \"blocks\")\n    assert(event.blocks[1].z == 5, \"blocks\")\n    assert(event.blocks[2].x == 4, \"blocks\")\n    assert(event.blocks[2].y == 5, \"blocks\")\n    assert(event.blocks[2].z == 6, \"blocks\")\n    event.blocks = { { x = 63, y = 64, z = 65 } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut blocks = vec![[3, 4, 5], [4, 5, 6]];
+        dispatch_wind_burst(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            [2.0, 2.0, 3.0],
+            &mut blocks,
+        );
+        assert_eq!(format!("{:?}", blocks), format!("{:?}", vec![[63, 64, 65]]));
         no_error(&id);
     }
 
@@ -8000,32 +10621,45 @@ mod generated_tests {
     fn generated_no_handler_does_no_lua_work() {
         const LUA: &str = "-- nothing registered";
         let (m, id, dir) = loaded("gen_no_handler", LUA);
-        let mods = boxed(m);
+        let firing_mods = boxed(m);
+        // frame: unregistered, nothing runs.
+        {
+            dispatch_frame(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Duration::from_secs_f64(1.5),
+            );
+        }
         // tick: unregistered, nothing runs.
         {
-            dispatch_tick(&mut FakeHost::empty(), &mods);
+            dispatch_tick(&mut FakeHost::empty(), &firing_mods);
+        }
+        // emissive: unregistered, nothing runs.
+        {
+            let mut layers = vec![("test:a0", "test:b0"), ("test:a1", "test:b1")];
+            dispatch_emissive(&FakeHost::empty(), &firing_mods, &mut layers);
         }
         // server_about_to_start: unregistered, nothing runs.
         {
-            dispatch_server_about_to_start(&mut FakeHost::empty(), &mods, true);
+            dispatch_server_about_to_start(&mut FakeHost::empty(), &firing_mods, true);
         }
         // server_stopping: unregistered, nothing runs.
         {
-            dispatch_server_stopping(&mut FakeHost::empty(), &mods, true);
+            dispatch_server_stopping(&mut FakeHost::empty(), &firing_mods, true);
         }
         // level_tick_pre: unregistered, nothing runs.
         {
-            dispatch_level_tick_pre(&mut FakeHost::empty(), &mods, "test:dimension");
+            dispatch_level_tick_pre(&mut FakeHost::empty(), &firing_mods, "test:dimension");
         }
         // level_tick_post: unregistered, nothing runs.
         {
-            dispatch_level_tick_post(&mut FakeHost::empty(), &mods, "test:dimension");
+            dispatch_level_tick_post(&mut FakeHost::empty(), &firing_mods, "test:dimension");
         }
         // block_changed: unregistered, nothing runs.
         {
             dispatch_block_changed(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockPos::new(2, 3, 4),
                 BlockStateId(10),
@@ -8034,29 +10668,90 @@ mod generated_tests {
         }
         // key: unregistered, nothing runs.
         {
-            dispatch_key(&mut FakeHost::empty(), &mods, "test:key", false);
+            dispatch_key(&mut FakeHost::empty(), &firing_mods, "test:key", false);
         }
         // wheel: unregistered, nothing runs.
         {
             let mut claimed = false;
-            dispatch_wheel(&mut FakeHost::empty(), &mods, 1.5, &mut claimed);
+            dispatch_wheel(&mut FakeHost::empty(), &firing_mods, 1.5, &mut claimed);
             assert!(!claimed, "claimed changed with no handler");
+        }
+        // commands: unregistered, nothing runs.
+        {
+            let mut commands = vec!["test:seed", "test:seed2"];
+            dispatch_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
+        }
+        // zoom: unregistered, nothing runs.
+        {
+            let mut zoom: Option<NativeZoom> = None;
+            dispatch_zoom(&FakeHost::empty(), &firing_mods, &mut zoom);
+        }
+        // minimap: unregistered, nothing runs.
+        {
+            let mut minimap: Option<NativeMinimap> = None;
+            dispatch_minimap(&FakeHost::empty(), &firing_mods, &mut minimap);
+        }
+        // mods: unregistered, nothing runs.
+        {
+            let mut mods = vec![
+                NativeMod {
+                    id: "test:mod0".into(),
+                    title: "test:title0".into(),
+                    description: "test:desc0".into(),
+                    keys: vec![[
+                        "test:key0".into(),
+                        "test:label0".into(),
+                        "test:default0".into(),
+                    ]],
+                },
+                NativeMod {
+                    id: "test:mod1".into(),
+                    title: "test:title1".into(),
+                    description: "test:desc1".into(),
+                    keys: vec![[
+                        "test:key1".into(),
+                        "test:label1".into(),
+                        "test:default1".into(),
+                    ]],
+                },
+            ];
+            dispatch_mods(&mut FakeHost::empty(), &firing_mods, &mut mods);
         }
         // settings: unregistered, nothing runs.
         {
-            let mut buttons = vec!["test:seed".to_owned()];
-            dispatch_settings(&mut FakeHost::empty(), &mods, "test:mod_id", &mut buttons);
+            let mut buttons = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_settings(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:mod_id",
+                &mut buttons,
+            );
         }
         // settings_click: unregistered, nothing runs.
         {
-            dispatch_settings_click(&mut FakeHost::empty(), &mods, "test:mod_id", 8);
+            dispatch_settings_click(&mut FakeHost::empty(), &firing_mods, "test:mod_id", 8);
+        }
+        // block_entity_container: unregistered, nothing runs.
+        {
+            let mut container: Option<ModContainer> = None;
+            dispatch_block_entity_container(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut container,
+            );
+        }
+        // screen: unregistered, nothing runs.
+        {
+            let mut screen: Option<NativeScreen> = None;
+            dispatch_screen(&FakeHost::empty(), &firing_mods, "test:block", &mut screen);
         }
         // screen_click: unregistered, nothing runs.
         {
             let mut button: Option<i32> = None;
             dispatch_screen_click(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:block",
                 &[5, 10],
                 [3.5, 4.5],
@@ -8066,10 +10761,10 @@ mod generated_tests {
         }
         // screen_tooltip: unregistered, nothing runs.
         {
-            let mut lines = vec!["test:seed".to_owned()];
+            let mut lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
             dispatch_screen_tooltip(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:block",
                 &[5, 10],
                 [3.5, 4.5],
@@ -8078,22 +10773,55 @@ mod generated_tests {
         }
         // menu_clicked: unregistered, nothing runs.
         {
-            dispatch_menu_clicked(&mut FakeHost::empty(), &mods, 7, 8, 9, 10, 11);
+            dispatch_menu_clicked(&mut FakeHost::empty(), &firing_mods, 7, 8, 9, 10, 11);
         }
         // menu_closed: unregistered, nothing runs.
         {
-            dispatch_menu_closed(&mut FakeHost::empty(), &mods, 7, 8);
+            dispatch_menu_closed(&mut FakeHost::empty(), &firing_mods, 7, 8);
+        }
+        // tooltip: unregistered, nothing runs.
+        {
+            let mut lines = vec![
+                (Text::literal("test:line1"), 3),
+                (Text::literal("test:line2"), 4),
+            ];
+            dispatch_tooltip(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut lines,
+            );
         }
         // block_spread: unregistered, nothing runs.
         {
             let mut canceled = false;
             dispatch_block_spread(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 "test:kind",
                 BlockPos::new(3, 4, 5),
                 BlockPos::new(4, 5, 6),
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
+        // piston_move: unregistered, nothing runs.
+        {
+            let mut canceled = false;
+            dispatch_piston_move(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                [3, 4, 5],
+                &[BlockPos::new(4, 5, 6), BlockPos::new(5, 6, 7)],
+                &[BlockPos::new(5, 6, 7), BlockPos::new(6, 7, 8)],
                 &mut canceled,
             );
             assert!(!canceled, "canceled changed with no handler");
@@ -8103,7 +10831,7 @@ mod generated_tests {
             let mut canceled = false;
             dispatch_fill_bucket(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 &ItemStack {
                     item: "test:stack".into(),
                     count: 1,
@@ -8115,31 +10843,54 @@ mod generated_tests {
             );
             assert!(!canceled, "canceled changed with no handler");
         }
+        // net_from_client: unregistered, nothing runs.
+        {
+            dispatch_net_from_client(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:channel",
+                &[116u8, 0u8, 159u8],
+            );
+        }
+        // net_from_server: unregistered, nothing runs.
+        {
+            dispatch_net_from_server(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:channel",
+                &[116u8, 0u8, 159u8],
+            );
+        }
         // on_equip: unregistered, nothing runs.
         {
-            dispatch_on_equip(
-                &mut FakeHost::empty(),
-                &mods,
-                "test:slot",
-                Some(&ItemStack {
-                    item: "test:new".into(),
-                    count: 1,
-                    damage: 0,
-                    extra: None,
-                }),
+            dispatch_on_equip(&mut FakeHost::empty(), &firing_mods, "test:slot", None);
+        }
+        // block_signal: unregistered, nothing runs.
+        {
+            let mut signal = 12;
+            dispatch_block_signal(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                Direction::South,
+                true,
+                &mut signal,
             );
         }
         // is_signal_source: unregistered, nothing runs.
         {
             let mut source = false;
-            dispatch_is_signal_source(&FakeLevel, &mods, BlockStateId(8), &mut source);
+            dispatch_is_signal_source(&FakeLevel, &firing_mods, BlockStateId(8), &mut source);
         }
         // left_click_block: unregistered, nothing runs.
         {
             let mut canceled = false;
             dispatch_left_click_block(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 [1, 2, 3],
                 [2, 3, 4],
                 BlockStateId(10),
@@ -8151,10 +10902,20 @@ mod generated_tests {
         {
             dispatch_entity_leave_level(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 "test:kind",
+            );
+        }
+        // block_entity_fluids: unregistered, nothing runs.
+        {
+            let mut fluids: Option<ModFluidTanks> = None;
+            dispatch_block_entity_fluids(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut fluids,
             );
         }
         // should_apply_effect_tick_this_tick: unregistered, nothing runs.
@@ -8162,7 +10923,7 @@ mod generated_tests {
             let mut apply = false;
             dispatch_should_apply_effect_tick_this_tick(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:effect",
                 8,
                 9,
@@ -8174,7 +10935,7 @@ mod generated_tests {
             let mut keep = true;
             dispatch_apply_effect_tick(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:effect",
                 "test:dimension",
                 Some(9),
@@ -8184,17 +10945,17 @@ mod generated_tests {
         }
         // on_effect_added: unregistered, nothing runs.
         {
-            dispatch_on_effect_added(&mut FakeHost::empty(), &mods, "test:effect", Some(8), 9);
+            dispatch_on_effect_added(&mut FakeHost::empty(), &firing_mods, "test:effect", None, 9);
         }
         // mob_effect_added: unregistered, nothing runs.
         {
-            dispatch_mob_effect_added(&mut FakeHost::empty(), &mods, "test:effect", Some(8), 9);
+            dispatch_mob_effect_added(&mut FakeHost::empty(), &firing_mods, "test:effect", None, 9);
         }
         // chunk_load: unregistered, nothing runs.
         {
             dispatch_chunk_load(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 [4, -6],
                 true,
@@ -8202,24 +10963,75 @@ mod generated_tests {
         }
         // chunk_unload: unregistered, nothing runs.
         {
-            dispatch_chunk_unload(&mut FakeHost::empty(), &mods, "test:dimension", [4, -6]);
+            dispatch_chunk_unload(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [4, -6],
+            );
+        }
+        // item_bar: unregistered, nothing runs.
+        {
+            let mut bar = Some((8, 2));
+            dispatch_item_bar(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut bar,
+            );
         }
         // has_analog_output: unregistered, nothing runs.
         {
             let mut output = false;
-            dispatch_has_analog_output(&FakeLevel, &mods, BlockStateId(8), &mut output);
+            dispatch_has_analog_output(&FakeLevel, &firing_mods, BlockStateId(8), &mut output);
+        }
+        // analog_output: unregistered, nothing runs.
+        {
+            let mut output = 11;
+            dispatch_analog_output(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                Direction::South,
+                &mut output,
+            );
         }
         // component_types: unregistered, nothing runs.
         {
-            let mut types = vec!["test:seed".to_owned()];
-            dispatch_component_types(&mods, &mut types);
+            let mut types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_component_types(&firing_mods, &mut types);
+        }
+        // dispense_item: unregistered, nothing runs.
+        {
+            let mut answer: Option<NativeDispensed> = None;
+            dispatch_dispense_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                Direction::North,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: None,
+                },
+                &mut answer,
+            );
         }
         // tooltip_component: unregistered, nothing runs.
         {
             let mut size: Option<[f32; 2]> = None;
             dispatch_tooltip_component(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 &ItemStack {
                     item: "test:stack".into(),
                     count: 1,
@@ -8234,7 +11046,7 @@ mod generated_tests {
             let mut survives: Option<bool> = None;
             dispatch_can_survive(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockPos::new(2, 3, 4),
                 BlockStateId(10),
@@ -8246,7 +11058,7 @@ mod generated_tests {
             let mut may: Option<bool> = None;
             dispatch_may_place_on(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockStateId(9),
                 BlockStateId(10),
@@ -8259,7 +11071,7 @@ mod generated_tests {
             let mut valid: Option<bool> = None;
             dispatch_is_valid_bonemeal_target(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockPos::new(2, 3, 4),
                 BlockStateId(10),
@@ -8271,23 +11083,113 @@ mod generated_tests {
             let mut success = false;
             dispatch_is_bonemeal_success(
                 &mut FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockPos::new(2, 3, 4),
                 BlockStateId(10),
                 &mut success,
             );
         }
+        // consume_effect: unregistered, nothing runs.
+        {
+            dispatch_consume_effect(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:kind",
+                &serde_json::json!({ "testkey": 8 }),
+            );
+        }
+        // loot_table_load: unregistered, nothing runs.
+        {
+            let mut table = serde_json::json!({ "testkey": 8 });
+            dispatch_loot_table_load(&firing_mods, "test:id", &mut table);
+        }
+        // state_for_placement: unregistered, nothing runs.
+        {
+            let mut answer: Option<Option<BlockStateId>> = None;
+            dispatch_state_for_placement(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &PlacementContext {
+                    pos: BlockPos::new(3, 4, 5),
+                    hit_pos: BlockPos::new(3, 4, 5),
+                    face: Direction::North,
+                    hit: Default::default(),
+                    inside: true,
+                    yaw: 92.0,
+                    pitch: 0.0,
+                    sneaking: false,
+                    item: "test:item2".into(),
+                    replace_clicked: true,
+                },
+                FluidState::EMPTY,
+                &mut answer,
+            );
+        }
+        // enchant_effect: unregistered, nothing runs.
+        {
+            dispatch_enchant_effect(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:enchantment",
+                "test:kind",
+                &serde_json::json!({ "testkey": 9 }),
+                10,
+                11,
+            );
+        }
+        // modify_default_components: unregistered, nothing runs.
+        {
+            let mut components = [("testkey".to_owned(), serde_json::json!(8))]
+                .into_iter()
+                .collect();
+            dispatch_modify_default_components(&firing_mods, "test:item", &mut components);
+        }
+        // shader_params: unregistered, nothing runs.
+        {
+            let mut params = [[2.5, 2.5, 3.5, 4.5]; 8];
+            dispatch_shader_params(&FakeHost::empty(), &firing_mods, 1.5, &mut params);
+        }
+        // block_highlight: unregistered, nothing runs.
+        {
+            let mut canceled = false;
+            dispatch_block_highlight(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                BlockStateId(9),
+                3.5,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
+        // render_hand: unregistered, nothing runs.
+        {
+            let mut canceled = false;
+            dispatch_render_hand(
+                &FakeHost::empty(),
+                &firing_mods,
+                Hand::Main,
+                None,
+                3.5,
+                4.5,
+                5.5,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
         // client_resources_reloaded: unregistered, nothing runs.
         {
-            dispatch_client_resources_reloaded(&mut FakeHost::empty(), &mods);
+            dispatch_client_resources_reloaded(&mut FakeHost::empty(), &firing_mods);
         }
         // use_duration: unregistered, nothing runs.
         {
             let mut duration = 8;
             dispatch_use_duration(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 &ItemStack {
                     item: "test:stack".into(),
                     count: 1,
@@ -8297,12 +11199,27 @@ mod generated_tests {
                 &mut duration,
             );
         }
+        // use_animation: unregistered, nothing runs.
+        {
+            let mut animation = UseAnimation::Block;
+            dispatch_use_animation(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut animation,
+            );
+        }
         // can_eat: unregistered, nothing runs.
         {
             let mut can_eat = false;
             dispatch_can_eat(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 &ItemStack {
                     item: "test:stack".into(),
                     count: 1,
@@ -8317,7 +11234,7 @@ mod generated_tests {
             let mut ran = false;
             dispatch_perform_console_command(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:command",
                 &mut ran,
             );
@@ -8325,14 +11242,14 @@ mod generated_tests {
         }
         // server_data_loaded: unregistered, nothing runs.
         {
-            dispatch_server_data_loaded(&mut FakeHost::empty(), &mods, true);
+            dispatch_server_data_loaded(&mut FakeHost::empty(), &firing_mods, true);
         }
         // compute_fov: unregistered, nothing runs.
         {
             let mut degrees = 3.5;
             dispatch_compute_fov(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 1.5,
                 [2.0, 2.0, 3.0],
                 &mut degrees,
@@ -8341,27 +11258,78 @@ mod generated_tests {
         // mouse_button_pre: unregistered, nothing runs.
         {
             let mut canceled = false;
-            dispatch_mouse_button_pre(&mut FakeHost::empty(), &mods, 7, false, 9, &mut canceled);
+            dispatch_mouse_button_pre(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                false,
+                9,
+                &mut canceled,
+            );
             assert!(!canceled, "canceled changed with no handler");
         }
         // mouse_button_post: unregistered, nothing runs.
         {
-            dispatch_mouse_button_post(&mut FakeHost::empty(), &mods, 7, false, 9);
+            dispatch_mouse_button_post(&mut FakeHost::empty(), &firing_mods, 7, false, 9);
+        }
+        // music: unregistered, nothing runs.
+        {
+            let mut music = Some(Music {
+                sound: "test:sound0".into(),
+                min_delay: 1,
+                max_delay: 2,
+                replace_current_music: true,
+            });
+            let mut volume = 2.5;
+            dispatch_music(&FakeHost::empty(), &firing_mods, &mut music, &mut volume);
+        }
+        // music_layers: unregistered, nothing runs.
+        {
+            let mut layers = vec![
+                MusicLayer {
+                    sound: "test:sound0".into(),
+                    volume: 0.5,
+                },
+                MusicLayer {
+                    sound: "test:sound1".into(),
+                    volume: 1.5,
+                },
+            ];
+            dispatch_music_layers(&FakeHost::empty(), &firing_mods, &mut layers);
         }
         // datapack_sync: unregistered, nothing runs.
         {
-            let mut recipe_types = vec!["test:seed".to_owned()];
-            dispatch_datapack_sync(&mut FakeHost::empty(), &mods, &mut recipe_types);
+            let mut recipe_types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_datapack_sync(&mut FakeHost::empty(), &firing_mods, &mut recipe_types);
         }
         // recipes_received: unregistered, nothing runs.
         {
-            dispatch_recipes_received(&mut FakeHost::empty(), &mods, &["test:seed".to_owned()]);
+            dispatch_recipes_received(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &["test:seed".to_owned(), "test:seed2".to_owned()],
+            );
+        }
+        // mouse_scrolling: unregistered, nothing runs.
+        {
+            let mut canceled = false;
+            dispatch_mouse_scrolling(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1.5, 2.5],
+                [4, -6],
+                [true, false, false],
+                [4.5, 5.5],
+                11,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
         }
         // mod_container_viewers: unregistered, nothing runs.
         {
             dispatch_mod_container_viewers(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 [2, 3, 4],
                 9,
@@ -8373,7 +11341,7 @@ mod generated_tests {
             let mut can_merge = false;
             dispatch_experience_orb_can_merge(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 9,
@@ -8387,7 +11355,7 @@ mod generated_tests {
             let mut canceled = false;
             dispatch_experience_orb_merge(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 9,
@@ -8401,7 +11369,7 @@ mod generated_tests {
             let mut may_place = false;
             let mut max_stack = 11;
             dispatch_menu_slot_rules(
-                &mods,
+                &firing_mods,
                 "test:menu",
                 8,
                 &ItemStack {
@@ -8414,60 +11382,99 @@ mod generated_tests {
                 &mut max_stack,
             );
         }
-        // on_use_tick: unregistered, nothing runs.
+        // living_entity_use_item_tick: unregistered, nothing runs.
         {
-            dispatch_on_use_tick(
+            let mut duration = 10;
+            let mut canceled = false;
+            dispatch_living_entity_use_item_tick(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 &ItemStack {
                     item: "test:stack".into(),
                     count: 1,
                     damage: 0,
                     extra: None,
                 },
-                Some(8),
+                None,
+                Hand::Main,
+                &mut duration,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
+        // on_use_tick: unregistered, nothing runs.
+        {
+            dispatch_on_use_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                None,
                 9,
             );
+        }
+        // living_entity_use_item_stop: unregistered, nothing runs.
+        {
+            let mut canceled = false;
+            dispatch_living_entity_use_item_stop(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                None,
+                Hand::Main,
+                10,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
         }
         // release_using: unregistered, nothing runs.
         {
             let mut used = false;
             dispatch_release_using(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 &ItemStack {
                     item: "test:stack".into(),
                     count: 1,
                     damage: 0,
                     extra: None,
                 },
-                Some(8),
+                None,
                 9,
                 &mut used,
             );
         }
         // level_load: unregistered, nothing runs.
         {
-            dispatch_level_load(&mut FakeHost::empty(), &mods, "test:dimension");
+            dispatch_level_load(&mut FakeHost::empty(), &firing_mods, "test:dimension");
         }
         // level_unload: unregistered, nothing runs.
         {
-            dispatch_level_unload(&mut FakeHost::empty(), &mods, "test:dimension");
+            dispatch_level_unload(&mut FakeHost::empty(), &firing_mods, "test:dimension");
         }
         // client_level_load: unregistered, nothing runs.
         {
-            dispatch_client_level_load(&mut FakeHost::empty(), &mods, "test:dimension");
+            dispatch_client_level_load(&mut FakeHost::empty(), &firing_mods, "test:dimension");
         }
         // client_level_unload: unregistered, nothing runs.
         {
-            dispatch_client_level_unload(&mut FakeHost::empty(), &mods, "test:dimension");
+            dispatch_client_level_unload(&mut FakeHost::empty(), &firing_mods, "test:dimension");
         }
         // entity_mount: unregistered, nothing runs.
         {
             let mut canceled = false;
             dispatch_entity_mount(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 "test:kind",
@@ -8478,11 +11485,58 @@ mod generated_tests {
             );
             assert!(!canceled, "canceled changed with no handler");
         }
+        // interaction_key: unregistered, nothing runs.
+        {
+            let mut swing_hand = false;
+            let mut canceled = false;
+            dispatch_interaction_key(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:key_mapping",
+                Hand::Main,
+                &mut swing_hand,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
+        // map_decorations: unregistered, nothing runs.
+        {
+            let mut decorations = vec![
+                NativeMapDecoration {
+                    sprite: "test:sprite1".into(),
+                    x: 2,
+                    y: 2,
+                    rot: 0,
+                    shown_on_frame: false,
+                },
+                NativeMapDecoration {
+                    sprite: "test:sprite2".into(),
+                    x: 3,
+                    y: 2,
+                    rot: 0,
+                    shown_on_frame: true,
+                },
+            ];
+            dispatch_map_decorations(
+                &FakeHost::empty(),
+                &firing_mods,
+                &NativeMapInfo {
+                    id: 7,
+                    center: [3, -5],
+                    scale: 0,
+                    dimension: "minecraft:overworld",
+                    locked: true,
+                    in_frame: false,
+                },
+                &mut decorations,
+            );
+        }
         // player_start_tracking: unregistered, nothing runs.
         {
             dispatch_player_start_tracking(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -8494,7 +11548,7 @@ mod generated_tests {
         {
             dispatch_player_stop_tracking(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -8502,13 +11556,37 @@ mod generated_tests {
                 "test:kind",
             );
         }
+        // block_entity_energy: unregistered, nothing runs.
+        {
+            let mut energy: Option<ModEnergyBuffer> = None;
+            dispatch_block_entity_energy(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut energy,
+            );
+        }
+        // data_map_types: unregistered, nothing runs.
+        {
+            let mut types = vec![
+                NativeDataMapType {
+                    id: "test:map0".into(),
+                    registry: "test:registry0".into(),
+                },
+                NativeDataMapType {
+                    id: "test:map1".into(),
+                    registry: "test:registry1".into(),
+                },
+            ];
+            dispatch_data_map_types(&FakeHost::empty(), &firing_mods, &mut types);
+        }
         // living_breathe: unregistered, nothing runs.
         {
             let mut can_breathe = true;
             let mut consume = 10;
             let mut refill = 11;
             dispatch_living_breathe(
-                &mods,
+                &firing_mods,
                 7,
                 "test:kind",
                 &mut can_breathe,
@@ -8521,7 +11599,7 @@ mod generated_tests {
             let mut canceled = false;
             dispatch_entity_tick_pre(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 "test:kind",
@@ -8532,20 +11610,20 @@ mod generated_tests {
         // item_fluid_tank: unregistered, nothing runs.
         {
             let mut capacity: Option<i32> = None;
-            dispatch_item_fluid_tank(&FakeHost::empty(), &mods, "test:item", &mut capacity);
+            dispatch_item_fluid_tank(&FakeHost::empty(), &firing_mods, "test:item", &mut capacity);
         }
         // player_render_listened: unregistered, nothing runs.
         {
             let mut listened = true;
-            dispatch_player_render_listened(&FakeHost::empty(), &mods, &mut listened);
+            dispatch_player_render_listened(&FakeHost::empty(), &firing_mods, &mut listened);
         }
         // sign_changed: unregistered, nothing runs.
         {
-            let mut lines = vec!["test:seed".to_owned()];
+            let mut lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
             let mut cancel = false;
             dispatch_sign_changed(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:dimension",
@@ -8558,14 +11636,14 @@ mod generated_tests {
         }
         // standalone_models: unregistered, nothing runs.
         {
-            let mut models = vec!["test:seed".to_owned()];
-            dispatch_standalone_models(&mods, &mut models);
+            let mut models = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_standalone_models(&firing_mods, &mut models);
         }
         // player_container_close: unregistered, nothing runs.
         {
             dispatch_player_container_close(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:dimension",
@@ -8578,7 +11656,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_player_toggle_flight(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 true,
@@ -8590,7 +11668,7 @@ mod generated_tests {
         {
             dispatch_anvil_damaged(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 [2, 3, 4],
                 "test:from",
@@ -8603,7 +11681,7 @@ mod generated_tests {
             let mut canceled = false;
             dispatch_arrow_loose(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 &ItemStack {
                     item: "test:stack".into(),
                     count: 1,
@@ -8620,7 +11698,7 @@ mod generated_tests {
         {
             dispatch_beacon_state_change(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 [2, 3, 4],
                 true,
@@ -8631,9 +11709,9 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_bell_ring(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
-                Some(8),
+                None,
                 BlockPos::new(3, 4, 5),
                 &mut cancel,
             );
@@ -8643,7 +11721,7 @@ mod generated_tests {
         {
             dispatch_block_break_progress_update(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -8655,7 +11733,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_block_burn(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockPos::new(2, 3, 4),
                 &mut cancel,
@@ -8666,7 +11744,7 @@ mod generated_tests {
         {
             dispatch_block_cook(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 [1, 2, 3],
                 "test:item",
                 "test:result",
@@ -8674,13 +11752,19 @@ mod generated_tests {
         }
         // block_damage_abort: unregistered, nothing runs.
         {
-            dispatch_block_damage_abort(&mut FakeHost::empty(), &mods, 7, "test:name", [3, 4, 5]);
+            dispatch_block_damage_abort(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+            );
         }
         // block_dispense_armor: unregistered, nothing runs.
         {
             dispatch_block_dispense_armor(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 [2, 3, 4],
                 "test:item",
@@ -8692,7 +11776,7 @@ mod generated_tests {
             let mut experience = 10;
             dispatch_block_exp(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockPos::new(2, 3, 4),
                 "test:block",
@@ -8704,7 +11788,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_block_fade(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockPos::new(2, 3, 4),
                 BlockStateId(10),
@@ -8717,7 +11801,7 @@ mod generated_tests {
         {
             dispatch_block_failed_dispense(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 [2, 3, 4],
                 "test:item",
@@ -8728,7 +11812,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_block_form(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockPos::new(2, 3, 4),
                 BlockStateId(10),
@@ -8742,9 +11826,9 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_block_ignite(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
-                Some(8),
+                None,
                 BlockPos::new(3, 4, 5),
                 "test:cause",
                 &mut cancel,
@@ -8756,7 +11840,7 @@ mod generated_tests {
             let mut locked = false;
             dispatch_block_lock_check(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -8769,7 +11853,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_block_receive_game(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 [2, 3, 4],
                 "test:block",
@@ -8782,7 +11866,7 @@ mod generated_tests {
         {
             dispatch_block_shear_entity(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 [2, 3, 4],
                 9,
@@ -8791,28 +11875,40 @@ mod generated_tests {
         }
         // brewing_complete: unregistered, nothing runs.
         {
-            dispatch_brewing_complete(&FakeHost::empty(), &mods, [1, 2, 3]);
+            dispatch_brewing_complete(&FakeHost::empty(), &firing_mods, [1, 2, 3]);
         }
         // brewing_fuel: unregistered, nothing runs.
         {
-            dispatch_brewing_fuel(&FakeHost::empty(), &mods, [1, 2, 3], "test:fuel");
+            dispatch_brewing_fuel(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
         }
         // brewing_start: unregistered, nothing runs.
         {
-            dispatch_brewing_start(&FakeHost::empty(), &mods, [1, 2, 3], "test:ingredient");
+            dispatch_brewing_start(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                "test:ingredient",
+            );
+        }
+        // broadcast_message: unregistered, nothing runs.
+        {
+            let mut line = Text::literal("test:line");
+            let mut cancel = false;
+            dispatch_broadcast_message(&FakeHost::empty(), &firing_mods, &mut line, &mut cancel);
+            assert!(!cancel, "cancel changed with no handler");
         }
         // campfire_start: unregistered, nothing runs.
         {
-            dispatch_campfire_start(&FakeHost::empty(), &mods, [1, 2, 3], "test:item");
+            dispatch_campfire_start(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
         }
         // cauldron_level_changed: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_cauldron_level_changed(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
-                Some(8),
+                None,
                 BlockPos::new(3, 4, 5),
                 10,
                 11,
@@ -8827,7 +11923,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_chorus_fruit_teleport(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3.0, 2.0, 3.0],
@@ -8838,19 +11934,19 @@ mod generated_tests {
         }
         // compost_item: unregistered, nothing runs.
         {
-            dispatch_compost_item(&FakeHost::empty(), &mods, [1, 2, 3], "test:item");
+            dispatch_compost_item(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
         }
         // crafter_craft: unregistered, nothing runs.
         {
-            dispatch_crafter_craft(&FakeHost::empty(), &mods, [1, 2, 3], "test:recipe");
+            dispatch_crafter_craft(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:recipe");
         }
         // creeper_ignite: unregistered, nothing runs.
         {
-            dispatch_creeper_ignite(&mut FakeHost::empty(), &mods, 7, 8, "test:item");
+            dispatch_creeper_ignite(&mut FakeHost::empty(), &firing_mods, 7, 8, "test:item");
         }
         // creeper_power: unregistered, nothing runs.
         {
-            dispatch_creeper_power(&mut FakeHost::empty(), &mods, 7, [2.0, 2.0, 3.0]);
+            dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 7, [2.0, 2.0, 3.0]);
         }
         // critical_hit: unregistered, nothing runs.
         {
@@ -8858,7 +11954,7 @@ mod generated_tests {
             let mut damage_multiplier = 4.5;
             dispatch_critical_hit(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:target_kind",
                 false,
                 &mut critical,
@@ -8867,14 +11963,19 @@ mod generated_tests {
         }
         // difficulty_changed: unregistered, nothing runs.
         {
-            dispatch_difficulty_changed(&mut FakeHost::empty(), &mods, "test:from", "test:to");
+            dispatch_difficulty_changed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:from",
+                "test:to",
+            );
         }
         // dragon_egg_form: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_dragon_egg_form(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockPos::new(2, 3, 4),
                 &mut cancel,
@@ -8885,7 +11986,7 @@ mod generated_tests {
         {
             dispatch_enchant_item(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -8905,7 +12006,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_ender_pearl_teleport(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -8918,25 +12019,43 @@ mod generated_tests {
         }
         // entities_load: unregistered, nothing runs.
         {
-            dispatch_entities_load(&mut FakeHost::empty(), &mods, "test:dimension", [4, -6], 9);
+            dispatch_entities_load(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [4, -6],
+                9,
+            );
         }
         // entities_unload: unregistered, nothing runs.
         {
-            dispatch_entities_unload(&mut FakeHost::empty(), &mods, "test:dimension", [4, -6], 9);
+            dispatch_entities_unload(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [4, -6],
+                9,
+            );
         }
         // entity_break_door: unregistered, nothing runs.
         {
-            dispatch_entity_break_door(&mut FakeHost::empty(), &mods, 7, "test:kind", [3, 4, 5]);
+            dispatch_entity_break_door(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                [3, 4, 5],
+            );
         }
         // entity_breed: unregistered, nothing runs.
         {
-            dispatch_entity_breed(&mut FakeHost::empty(), &mods, 7, 8, Some(9));
+            dispatch_entity_breed(&mut FakeHost::empty(), &firing_mods, 7, 8, Some(9));
         }
         // entity_change_block: unregistered, nothing runs.
         {
             dispatch_entity_change_block(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:kind",
                 [3, 4, 5],
@@ -8948,7 +12067,7 @@ mod generated_tests {
         {
             dispatch_entity_drop_item(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:item",
                 9,
@@ -8959,7 +12078,7 @@ mod generated_tests {
         {
             dispatch_entity_enter_block(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:kind",
                 [3, 4, 5],
@@ -8968,13 +12087,19 @@ mod generated_tests {
         }
         // entity_enter_love_mode: unregistered, nothing runs.
         {
-            dispatch_entity_enter_love_mode(&mut FakeHost::empty(), &mods, 7, "test:kind", Some(9));
+            dispatch_entity_enter_love_mode(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                Some(9),
+            );
         }
         // entity_portal: unregistered, nothing runs.
         {
             dispatch_entity_portal(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 [3, 4, 5],
@@ -8984,7 +12109,7 @@ mod generated_tests {
         {
             dispatch_entity_pose_change(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:from",
@@ -8993,17 +12118,23 @@ mod generated_tests {
         }
         // entity_shoot_bow: unregistered, nothing runs.
         {
-            dispatch_entity_shoot_bow(&mut FakeHost::empty(), &mods, 7, "test:name", 9, 4.5);
+            dispatch_entity_shoot_bow(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9, 4.5);
         }
         // entity_tame: unregistered, nothing runs.
         {
-            dispatch_entity_tame(&mut FakeHost::empty(), &mods, 7, "test:kind", Some(9));
+            dispatch_entity_tame(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                Some(9),
+            );
         }
         // entity_teleport: unregistered, nothing runs.
         {
             dispatch_entity_teleport(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 [3.0, 2.0, 3.0],
@@ -9012,13 +12143,19 @@ mod generated_tests {
         }
         // entity_toggle_glide: unregistered, nothing runs.
         {
-            dispatch_entity_toggle_glide(&mut FakeHost::empty(), &mods, 7, "test:name", true);
+            dispatch_entity_toggle_glide(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                true,
+            );
         }
         // entity_transform: unregistered, nothing runs.
         {
             dispatch_entity_transform(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:kind",
                 9,
@@ -9027,16 +12164,20 @@ mod generated_tests {
         }
         // entity_unleash: unregistered, nothing runs.
         {
-            dispatch_entity_unleash(&mut FakeHost::empty(), &mods, 7, "test:kind");
+            dispatch_entity_unleash(&mut FakeHost::empty(), &firing_mods, 7, "test:kind");
         }
         // exp_bottle: unregistered, nothing runs.
         {
-            dispatch_exp_bottle(&mut FakeHost::empty(), &mods, [1.0, 2.0, 3.0], 8);
+            dispatch_exp_bottle(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 8);
         }
         // experience_orb_pickup_listened: unregistered, nothing runs.
         {
             let mut listened = true;
-            dispatch_experience_orb_pickup_listened(&FakeHost::empty(), &mods, &mut listened);
+            dispatch_experience_orb_pickup_listened(
+                &FakeHost::empty(),
+                &firing_mods,
+                &mut listened,
+            );
         }
         // experience_orb_pickup: unregistered, nothing runs.
         {
@@ -9045,7 +12186,7 @@ mod generated_tests {
             let mut canceled = false;
             dispatch_experience_orb_pickup(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:dimension",
                 9,
@@ -9060,7 +12201,7 @@ mod generated_tests {
             let mut repair = 10;
             dispatch_mending_repair(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 &ItemStack {
                     item: "test:stack".into(),
@@ -9074,14 +12215,25 @@ mod generated_tests {
         }
         // explosion_prime: unregistered, nothing runs.
         {
-            dispatch_explosion_prime(&mut FakeHost::empty(), &mods, [1.0, 2.0, 3.0], 2.5);
+            dispatch_explosion_prime(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 2.5);
+        }
+        // fire_odds: unregistered, nothing runs.
+        {
+            let mut odds: Option<(i32, i32)> = None;
+            dispatch_fire_odds(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &mut odds,
+            );
         }
         // smoke_source: unregistered, nothing runs.
         {
             let mut smoke: Option<bool> = None;
             dispatch_smoke_source(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockStateId(9),
                 &mut smoke,
@@ -9089,14 +12241,14 @@ mod generated_tests {
         }
         // firework_explode: unregistered, nothing runs.
         {
-            dispatch_firework_explode(&mut FakeHost::empty(), &mods, 7, [2.0, 2.0, 3.0], 9);
+            dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 7, [2.0, 2.0, 3.0], 9);
         }
         // fluid_level_change: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_fluid_level_change(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockPos::new(2, 3, 4),
                 "test:fluid",
@@ -9109,17 +12261,24 @@ mod generated_tests {
         // framerate_limit: unregistered, nothing runs.
         {
             let mut limit = 10;
-            dispatch_framerate_limit(&FakeHost::empty(), &mods, true, false, true, &mut limit);
+            dispatch_framerate_limit(
+                &FakeHost::empty(),
+                &firing_mods,
+                true,
+                false,
+                true,
+                &mut limit,
+            );
         }
         // furnace_burn: unregistered, nothing runs.
         {
-            dispatch_furnace_burn(&FakeHost::empty(), &mods, [1, 2, 3], "test:fuel");
+            dispatch_furnace_burn(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
         }
         // furnace_extract: unregistered, nothing runs.
         {
             dispatch_furnace_extract(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -9131,7 +12290,7 @@ mod generated_tests {
         {
             dispatch_furnace_smelt(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 [1, 2, 3],
                 "test:item",
                 "test:result",
@@ -9139,17 +12298,22 @@ mod generated_tests {
         }
         // furnace_start_smelt: unregistered, nothing runs.
         {
-            dispatch_furnace_start_smelt(&FakeHost::empty(), &mods, [1, 2, 3], "test:item");
+            dispatch_furnace_start_smelt(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
         }
         // game_event: unregistered, nothing runs.
         {
-            dispatch_game_event(&mut FakeHost::empty(), &mods, "test:event", [2.0, 2.0, 3.0]);
+            dispatch_game_event(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:event",
+                [2.0, 2.0, 3.0],
+            );
         }
         // hopper_inventory_search: unregistered, nothing runs.
         {
             dispatch_hopper_inventory_search(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 [1, 2, 3],
                 Some([2, 3, 4]),
                 Some(9),
@@ -9160,7 +12324,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_hopper_pickup_item(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockPos::new(2, 3, 4),
                 "test:item",
@@ -9169,12 +12333,24 @@ mod generated_tests {
             );
             assert!(!cancel, "cancel changed with no handler");
         }
+        // ingredient: unregistered, nothing runs.
+        {
+            let mut items = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_ingredient(
+                &firing_mods,
+                "test:kind",
+                &[("testkey".to_owned(), serde_json::json!(8))]
+                    .into_iter()
+                    .collect(),
+                &mut items,
+            );
+        }
         // inventory_block_start: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_inventory_block_start(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -9187,7 +12363,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_inventory_move_item(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 [1, 2, 3],
                 [2, 3, 4],
                 "test:item",
@@ -9199,19 +12375,24 @@ mod generated_tests {
         {
             dispatch_item_despawn(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:item",
                 9,
                 [4.0, 2.0, 3.0],
             );
         }
+        // item_energy_buffer: unregistered, nothing runs.
+        {
+            let mut buffer: Option<ItemEnergyBuffer> = None;
+            dispatch_item_energy_buffer(&FakeHost::empty(), &firing_mods, "test:item", &mut buffer);
+        }
         // item_expire: unregistered, nothing runs.
         {
             let mut extra_life = 9;
             dispatch_item_expire(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 &ItemStack {
                     item: "test:stack".into(),
@@ -9226,7 +12407,7 @@ mod generated_tests {
         {
             dispatch_item_spawn(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:item",
                 9,
@@ -9238,7 +12419,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_leaves_decay(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockPos::new(2, 3, 4),
                 &mut cancel,
@@ -9250,7 +12431,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_lightning_strike(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 Some(7),
                 [2, 3, 4],
                 "test:cause",
@@ -9263,11 +12444,64 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_moisture_change(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockPos::new(2, 3, 4),
                 9,
                 10,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
+        }
+        // anvil_craft_post: unregistered, nothing runs.
+        {
+            dispatch_anvil_craft_post(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &AnvilCraft {
+                    left: Some(ItemStack {
+                        item: "test:craft".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    }),
+                    right: None,
+                    output: ItemStack {
+                        item: "test:craft".into(),
+                        count: 2,
+                        damage: 0,
+                        extra: None,
+                    },
+                },
+            );
+        }
+        // anvil_craft_pre: unregistered, nothing runs.
+        {
+            let mut cancel = false;
+            dispatch_anvil_craft_pre(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &AnvilCraft {
+                    left: Some(ItemStack {
+                        item: "test:craft".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    }),
+                    right: None,
+                    output: ItemStack {
+                        item: "test:craft".into(),
+                        count: 2,
+                        damage: 0,
+                        extra: None,
+                    },
+                },
                 &mut cancel,
             );
             assert!(!cancel, "cancel changed with no handler");
@@ -9277,7 +12511,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_armor_stand_manipulate(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9291,7 +12525,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_bucket_empty(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -9305,7 +12539,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_container_opened(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:kind",
@@ -9319,7 +12553,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_creative_slot(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9335,7 +12569,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_food_level_changed(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9349,7 +12583,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_hanging_break(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 Some(7),
                 "test:kind",
                 [3, 4, 5],
@@ -9362,7 +12596,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_hanging_place(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:kind",
@@ -9377,7 +12611,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_item_damaged(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:item",
@@ -9388,14 +12622,14 @@ mod generated_tests {
         }
         // player_clone: unregistered, nothing runs.
         {
-            dispatch_player_clone(&mut FakeHost::empty(), &mods, 7, "test:name", true);
+            dispatch_player_clone(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
         }
         // player_commands_sent: unregistered, nothing runs.
         {
-            let mut names = vec!["test:seed".to_owned()];
+            let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
             dispatch_player_commands_sent(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 &mut names,
@@ -9405,7 +12639,7 @@ mod generated_tests {
         {
             dispatch_player_destroy_item(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:item",
@@ -9417,7 +12651,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_player_fish(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9429,7 +12663,7 @@ mod generated_tests {
         {
             dispatch_player_flower_pot_manipulate(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -9441,7 +12675,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_player_game_mode_changed(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9454,7 +12688,7 @@ mod generated_tests {
         {
             dispatch_player_insert_lectern_book(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -9465,7 +12699,7 @@ mod generated_tests {
         {
             dispatch_player_item_frame_change(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9478,7 +12712,7 @@ mod generated_tests {
         {
             dispatch_player_item_mend(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:item",
@@ -9490,28 +12724,68 @@ mod generated_tests {
         {
             dispatch_player_lectern_page_change(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
                 10,
             );
         }
+        // player_load_from_file: unregistered, nothing runs.
+        {
+            dispatch_player_load_from_file(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                std::path::Path::new("test:path"),
+            );
+        }
+        // player_login: unregistered, nothing runs.
+        {
+            let mut reason = Some(Text::literal("test:reason"));
+            let mut cancel = false;
+            dispatch_player_login(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut reason,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
+        }
+        // player_save_to_file: unregistered, nothing runs.
+        {
+            dispatch_player_save_to_file(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                std::path::Path::new("test:path"),
+            );
+        }
         // player_sprint: unregistered, nothing runs.
         {
-            dispatch_player_sprint(&mut FakeHost::empty(), &mods, 7, "test:name", true);
+            dispatch_player_sprint(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
         }
         // player_swap_hands: unregistered, nothing runs.
         {
             let mut cancel = false;
-            dispatch_player_swap_hands(&mut FakeHost::empty(), &mods, 7, "test:name", &mut cancel);
+            dispatch_player_swap_hands(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut cancel,
+            );
             assert!(!cancel, "cancel changed with no handler");
         }
         // player_take_lectern_book: unregistered, nothing runs.
         {
             dispatch_player_take_lectern_book(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -9522,7 +12796,7 @@ mod generated_tests {
         {
             dispatch_player_teleported(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3.0, 2.0, 3.0],
@@ -9532,22 +12806,22 @@ mod generated_tests {
         }
         // player_totem: unregistered, nothing runs.
         {
-            dispatch_player_totem(&mut FakeHost::empty(), &mods, 7, "test:name");
+            dispatch_player_totem(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         }
         // resource_pack_status: unregistered, nothing runs.
         {
-            dispatch_resource_pack_status(&mut FakeHost::empty(), &mods, 7, "test:name", 9);
+            dispatch_resource_pack_status(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
         }
         // spawn_change: unregistered, nothing runs.
         {
-            dispatch_spawn_change(&mut FakeHost::empty(), &mods, [1, 2, 3], [2.5, 3.5]);
+            dispatch_spawn_change(&mut FakeHost::empty(), &firing_mods, [1, 2, 3], [2.5, 3.5]);
         }
         // tnt_primed: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_tnt_primed(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 Some(7),
                 [2, 3, 4],
                 &mut cancel,
@@ -9556,7 +12830,12 @@ mod generated_tests {
         }
         // vehicle_create: unregistered, nothing runs.
         {
-            dispatch_vehicle_create(&mut FakeHost::empty(), &mods, "test:kind", [2.0, 2.0, 3.0]);
+            dispatch_vehicle_create(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:kind",
+                [2.0, 2.0, 3.0],
+            );
         }
         // vehicle_damage: unregistered, nothing runs.
         {
@@ -9564,7 +12843,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_vehicle_damage(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:kind",
                 &mut damage,
                 &mut cancel,
@@ -9573,13 +12852,18 @@ mod generated_tests {
         }
         // vehicle_destroy: unregistered, nothing runs.
         {
-            dispatch_vehicle_destroy(&mut FakeHost::empty(), &mods, "test:kind", [2.0, 2.0, 3.0]);
+            dispatch_vehicle_destroy(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:kind",
+                [2.0, 2.0, 3.0],
+            );
         }
         // vehicle_moved: unregistered, nothing runs.
         {
             dispatch_vehicle_moved(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 Some(7),
                 "test:kind",
                 [3.0, 2.0, 3.0],
@@ -9588,17 +12872,17 @@ mod generated_tests {
         }
         // world_border_bounds_changed: unregistered, nothing runs.
         {
-            dispatch_world_border_bounds_changed(&mut FakeHost::empty(), &mods);
+            dispatch_world_border_bounds_changed(&mut FakeHost::empty(), &firing_mods);
         }
         // world_border_center_changed: unregistered, nothing runs.
         {
-            dispatch_world_border_center_changed(&mut FakeHost::empty(), &mods);
+            dispatch_world_border_center_changed(&mut FakeHost::empty(), &firing_mods);
         }
         // world_game_rule_change: unregistered, nothing runs.
         {
             dispatch_world_game_rule_change(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:rule",
@@ -9610,9 +12894,9 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_note_play(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
-                Some(8),
+                None,
                 BlockPos::new(3, 4, 5),
                 "test:instrument",
                 11,
@@ -9624,7 +12908,7 @@ mod generated_tests {
         {
             dispatch_player_advancement_criterion_grant(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:advancement",
@@ -9635,7 +12919,7 @@ mod generated_tests {
         {
             dispatch_player_advancement_done(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:advancement",
@@ -9645,7 +12929,7 @@ mod generated_tests {
         {
             dispatch_player_advancement_progress(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:advancement",
@@ -9655,21 +12939,38 @@ mod generated_tests {
         }
         // player_arm_swing: unregistered, nothing runs.
         {
-            dispatch_player_arm_swing(&mut FakeHost::empty(), &mods, 7, "test:name", "test:hand");
+            dispatch_player_arm_swing(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:hand",
+            );
         }
         // player_attack_cooldown_reset: unregistered, nothing runs.
         {
-            dispatch_player_attack_cooldown_reset(&mut FakeHost::empty(), &mods, 7, "test:name");
+            dispatch_player_attack_cooldown_reset(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+            );
         }
         // player_bed_leave: unregistered, nothing runs.
         {
-            dispatch_player_bed_leave(&mut FakeHost::empty(), &mods, 7, "test:name", [3, 4, 5]);
+            dispatch_player_bed_leave(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+            );
         }
         // player_bucket_entity: unregistered, nothing runs.
         {
             dispatch_player_bucket_entity(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9680,7 +12981,7 @@ mod generated_tests {
         {
             dispatch_player_bundle_item_select(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9691,7 +12992,7 @@ mod generated_tests {
         {
             dispatch_player_change_beacon_effect(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -9701,22 +13002,33 @@ mod generated_tests {
         }
         // player_change_main_hand: unregistered, nothing runs.
         {
-            dispatch_player_change_main_hand(&mut FakeHost::empty(), &mods, 7, "test:name", true);
+            dispatch_player_change_main_hand(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                true,
+            );
         }
         // player_client_loaded_world: unregistered, nothing runs.
         {
-            dispatch_player_client_loaded_world(&mut FakeHost::empty(), &mods, 7, "test:name");
+            dispatch_player_client_loaded_world(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+            );
         }
         // player_deep_sleep: unregistered, nothing runs.
         {
-            dispatch_player_deep_sleep(&mut FakeHost::empty(), &mods, 7, "test:name");
+            dispatch_player_deep_sleep(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         }
         // player_edit_book: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_player_edit_book(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9727,22 +13039,22 @@ mod generated_tests {
         }
         // player_egg_throw: unregistered, nothing runs.
         {
-            dispatch_player_egg_throw(&mut FakeHost::empty(), &mods, 7, "test:name");
+            dispatch_player_egg_throw(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         }
         // player_elytra_boost: unregistered, nothing runs.
         {
-            dispatch_player_elytra_boost(&mut FakeHost::empty(), &mods, 7, "test:name");
+            dispatch_player_elytra_boost(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         }
         // player_input: unregistered, nothing runs.
         {
-            dispatch_player_input(&mut FakeHost::empty(), &mods, 7, "test:name", 9);
+            dispatch_player_input(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
         }
         // player_item_held: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_player_item_held(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9753,17 +13065,23 @@ mod generated_tests {
         }
         // player_jump: unregistered, nothing runs.
         {
-            dispatch_player_jump(&mut FakeHost::empty(), &mods, 7, "test:name");
+            dispatch_player_jump(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         }
         // player_kicked: unregistered, nothing runs.
         {
-            dispatch_player_kicked(&mut FakeHost::empty(), &mods, 7, "test:name", "test:reason");
+            dispatch_player_kicked(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:reason",
+            );
         }
         // player_launch_projectile: unregistered, nothing runs.
         {
             dispatch_player_launch_projectile(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:item",
@@ -9771,13 +13089,20 @@ mod generated_tests {
         }
         // player_level_change: unregistered, nothing runs.
         {
-            dispatch_player_level_change(&mut FakeHost::empty(), &mods, 7, "test:name", 9, 10);
+            dispatch_player_level_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+            );
         }
         // player_locale_change: unregistered, nothing runs.
         {
             dispatch_player_locale_change(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:locale",
@@ -9785,17 +13110,23 @@ mod generated_tests {
         }
         // player_loom_pattern_select: unregistered, nothing runs.
         {
-            dispatch_player_loom_pattern_select(&mut FakeHost::empty(), &mods, 7, "test:name", 9);
+            dispatch_player_loom_pattern_select(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+            );
         }
         // player_map_filled: unregistered, nothing runs.
         {
-            dispatch_player_map_filled(&mut FakeHost::empty(), &mods, 7, "test:name", 9);
+            dispatch_player_map_filled(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
         }
         // player_name_entity: unregistered, nothing runs.
         {
             dispatch_player_name_entity(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9806,7 +13137,7 @@ mod generated_tests {
         {
             dispatch_player_open_sign(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -9818,7 +13149,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_player_pick_item(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 true,
@@ -9832,7 +13163,7 @@ mod generated_tests {
         {
             dispatch_player_pickup_arrow(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9844,7 +13175,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_player_portal(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:from_dimension",
@@ -9858,7 +13189,7 @@ mod generated_tests {
         {
             dispatch_player_ready_arrow(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:arrow",
@@ -9868,7 +13199,7 @@ mod generated_tests {
         {
             dispatch_player_recipe_book_click(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:recipe",
@@ -9879,7 +13210,7 @@ mod generated_tests {
         {
             dispatch_player_recipe_book_settings_change(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9892,7 +13223,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_player_recipe_discovered(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:recipe",
@@ -9902,14 +13233,14 @@ mod generated_tests {
         }
         // player_riptide: unregistered, nothing runs.
         {
-            dispatch_player_riptide(&mut FakeHost::empty(), &mods, 7, "test:name");
+            dispatch_player_riptide(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         }
         // player_shear_entity: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_player_shear_entity(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9923,7 +13254,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_player_spawn_point_set(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:dimension",
@@ -9938,7 +13269,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_player_stat_award(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:stat_type",
@@ -9952,7 +13283,7 @@ mod generated_tests {
         {
             dispatch_player_stonecutter_recipe_select(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9962,7 +13293,7 @@ mod generated_tests {
         {
             dispatch_player_stop_spectating_entity(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -9970,13 +13301,13 @@ mod generated_tests {
         }
         // player_stop_using_item: unregistered, nothing runs.
         {
-            dispatch_player_stop_using_item(&mut FakeHost::empty(), &mods, 7, "test:name");
+            dispatch_player_stop_using_item(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         }
         // player_swap_with_equipment_slot: unregistered, nothing runs.
         {
             dispatch_player_swap_with_equipment_slot(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:slot",
@@ -9987,7 +13318,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_player_teleport_end_gateway(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -9999,7 +13330,7 @@ mod generated_tests {
         {
             dispatch_player_toggle_entity_age_lock(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -10008,21 +13339,27 @@ mod generated_tests {
         }
         // player_toggle_sneak: unregistered, nothing runs.
         {
-            dispatch_player_toggle_sneak(&mut FakeHost::empty(), &mods, 7, "test:name", true);
+            dispatch_player_toggle_sneak(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                true,
+            );
         }
         // player_trade: unregistered, nothing runs.
         {
-            dispatch_player_trade(&mut FakeHost::empty(), &mods, 7, "test:name", 9);
+            dispatch_player_trade(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
         }
         // player_unleash_entity: unregistered, nothing runs.
         {
-            dispatch_player_unleash_entity(&mut FakeHost::empty(), &mods, 7, "test:name", 9);
+            dispatch_player_unleash_entity(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
         }
         // player_velocity: unregistered, nothing runs.
         {
             dispatch_player_velocity(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3.0, 2.0, 3.0],
@@ -10030,11 +13367,21 @@ mod generated_tests {
         }
         // portal_create: unregistered, nothing runs.
         {
-            dispatch_portal_create(&mut FakeHost::empty(), &mods, "test:dimension", [2, 3, 4]);
+            dispatch_portal_create(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+            );
         }
         // potion_splash: unregistered, nothing runs.
         {
-            dispatch_potion_splash(&mut FakeHost::empty(), &mods, "test:item", [2.0, 2.0, 3.0]);
+            dispatch_potion_splash(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:item",
+                [2.0, 2.0, 3.0],
+            );
         }
         // prepare_anvil: unregistered, nothing runs.
         {
@@ -10042,7 +13389,7 @@ mod generated_tests {
             let mut result: Option<ItemStack> = None;
             dispatch_prepare_anvil(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -10055,7 +13402,7 @@ mod generated_tests {
             let mut result: Option<ItemStack> = None;
             dispatch_prepare_grindstone(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -10064,14 +13411,14 @@ mod generated_tests {
         }
         // prepare_hopper_transfer: unregistered, nothing runs.
         {
-            dispatch_prepare_hopper_transfer(&FakeHost::empty(), &mods, [1, 2, 3]);
+            dispatch_prepare_hopper_transfer(&FakeHost::empty(), &firing_mods, [1, 2, 3]);
         }
         // prepare_item_craft: unregistered, nothing runs.
         {
             let mut result: Option<ItemStack> = None;
             dispatch_prepare_item_craft(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 Some([3, 4, 5]),
@@ -10083,7 +13430,7 @@ mod generated_tests {
             let mut costs = [4, 5, 6];
             dispatch_prepare_item_enchant(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -10095,7 +13442,7 @@ mod generated_tests {
             let mut result: Option<ItemStack> = None;
             dispatch_prepare_smithing(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
@@ -10104,22 +13451,33 @@ mod generated_tests {
         }
         // raid_spawn_wave: unregistered, nothing runs.
         {
-            dispatch_raid_spawn_wave(&mut FakeHost::empty(), &mods, 7, [2, 3, 4], 9, 10);
+            dispatch_raid_spawn_wave(&mut FakeHost::empty(), &firing_mods, 7, [2, 3, 4], 9, 10);
         }
         // raid_state_change: unregistered, nothing runs.
         {
-            dispatch_raid_state_change(&mut FakeHost::empty(), &mods, 7, [2, 3, 4], "test:state");
+            dispatch_raid_state_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                [2, 3, 4],
+                "test:state",
+            );
         }
         // sculk_bloom: unregistered, nothing runs.
         {
-            dispatch_sculk_bloom(&mut FakeHost::empty(), &mods, "test:dimension", [2, 3, 4]);
+            dispatch_sculk_bloom(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+            );
         }
         // sleep_finished_time: unregistered, nothing runs.
         {
             let mut new_time = 9;
             dispatch_sleep_finished_time(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 &mut new_time,
@@ -10129,16 +13487,42 @@ mod generated_tests {
         {
             dispatch_sponge_absorb(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockPos::new(2, 3, 4),
+            );
+        }
+        // tab_complete: unregistered, nothing runs.
+        {
+            let mut suggestions = vec![
+                Suggestion {
+                    range: (7 + 4, 12 + 4),
+                    text: "test:suggestion4".into(),
+                    tooltip: None,
+                    int_value: None,
+                },
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: None,
+                    int_value: None,
+                },
+            ];
+            dispatch_tab_complete(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:command",
+                [10, 15],
+                &mut suggestions,
             );
         }
         // target_hit: unregistered, nothing runs.
         {
             dispatch_target_hit(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 [2, 3, 4],
                 9,
@@ -10149,7 +13533,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_thunder_change(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 false,
                 &mut cancel,
@@ -10161,7 +13545,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_time_skip(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 9,
@@ -10172,13 +13556,53 @@ mod generated_tests {
         }
         // trade_select: unregistered, nothing runs.
         {
-            dispatch_trade_select(&mut FakeHost::empty(), &mods, 7, "test:name", Some(9), 10);
+            dispatch_trade_select(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                Some(9),
+                10,
+            );
+        }
+        // trade_with_villager: unregistered, nothing runs.
+        {
+            dispatch_trade_with_villager(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                &MerchantOffer {
+                    base_cost_a: ItemCost {
+                        stack: ItemStack {
+                            item: "test:offer".into(),
+                            count: 1,
+                            damage: 0,
+                            extra: None,
+                        },
+                    },
+                    cost_b: None,
+                    result: ItemStack {
+                        item: "test:offer".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    },
+                    uses: 2,
+                    max_uses: 1,
+                    reward_exp: true,
+                    special_price_diff: 0,
+                    demand: 0,
+                    price_multiplier: 1.0,
+                    xp: 1,
+                },
+            );
         }
         // vault_change_state: unregistered, nothing runs.
         {
             dispatch_vault_change_state(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 [2, 3, 4],
                 "test:state",
@@ -10186,14 +13610,14 @@ mod generated_tests {
         }
         // vault_loot: unregistered, nothing runs.
         {
-            dispatch_vault_loot(&FakeHost::empty(), &mods, [1, 2, 3], "test:item");
+            dispatch_vault_loot(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
         }
         // weather_change: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_weather_change(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 false,
                 true,
@@ -10203,15 +13627,15 @@ mod generated_tests {
         }
         // whitelist_state_update: unregistered, nothing runs.
         {
-            dispatch_whitelist_state_update(&mut FakeHost::empty(), &mods, true);
+            dispatch_whitelist_state_update(&mut FakeHost::empty(), &firing_mods, true);
         }
         // world_border_bounds_change_finish: unregistered, nothing runs.
         {
-            dispatch_world_border_bounds_change_finish(&mut FakeHost::empty(), &mods);
+            dispatch_world_border_bounds_change_finish(&mut FakeHost::empty(), &firing_mods);
         }
         // world_saved: unregistered, nothing runs.
         {
-            dispatch_world_saved(&mut FakeHost::empty(), &mods, true);
+            dispatch_world_saved(&mut FakeHost::empty(), &firing_mods, true);
         }
         // living_drown: unregistered, nothing runs.
         {
@@ -10219,7 +13643,7 @@ mod generated_tests {
             let mut damage_amount = 4.5;
             let mut cancel = false;
             dispatch_living_drown(
-                &mods,
+                &firing_mods,
                 7,
                 "test:kind",
                 &mut is_drowning,
@@ -10231,14 +13655,34 @@ mod generated_tests {
         }
         // living_jump: unregistered, nothing runs.
         {
-            dispatch_living_jump(&mods, 7, "test:kind");
+            dispatch_living_jump(&firing_mods, 7, "test:kind");
+        }
+        // arrow_nock: unregistered, nothing runs.
+        {
+            let mut cancel = false;
+            dispatch_arrow_nock(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &ItemStack {
+                    item: "test:bow".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                Hand::Off,
+                true,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
         }
         // baby_entity_spawn: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_baby_entity_spawn(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 8,
                 9,
@@ -10252,23 +13696,54 @@ mod generated_tests {
             let mut problem = Some("test:problem".to_owned());
             dispatch_can_player_sleep(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3, 4, 5],
                 &mut problem,
             );
         }
+        // explosion_knockback: unregistered, nothing runs.
+        {
+            let mut knockback_velocity = [5.0, 2.0, 3.0];
+            dispatch_explosion_knockback(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 2.0, 3.0],
+                &[[3, 4, 5], [4, 5, 6]],
+                None,
+                &mut knockback_velocity,
+            );
+        }
+        // ingredient_test: unregistered, nothing runs.
+        {
+            let mut accept = false;
+            dispatch_ingredient_test(
+                &firing_mods,
+                "test:kind",
+                &[("testkey".to_owned(), serde_json::json!(8))]
+                    .into_iter()
+                    .collect(),
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                &mut accept,
+            );
+        }
         // item_container: unregistered, nothing runs.
         {
             let mut slots: Option<u32> = None;
-            dispatch_item_container(&FakeHost::empty(), &mods, "test:item", &mut slots);
+            dispatch_item_container(&FakeHost::empty(), &firing_mods, "test:item", &mut slots);
         }
         // living_conversion_post: unregistered, nothing runs.
         {
             dispatch_living_conversion_post(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:kind",
                 9,
@@ -10280,7 +13755,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_living_conversion_pre(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:kind",
                 "test:outcome",
@@ -10293,7 +13768,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_living_death(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:kind",
                 "test:damage_type",
@@ -10302,6 +13777,50 @@ mod generated_tests {
             );
             assert!(!cancel, "cancel changed with no handler");
         }
+        // living_get_projectile: unregistered, nothing runs.
+        {
+            let mut projectile = Some(ItemStack {
+                item: "test:projectile".into(),
+                count: 6,
+                damage: 5,
+                extra: None,
+            });
+            dispatch_living_get_projectile(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:name",
+                Some(9),
+                "test:kind",
+                &ItemStack {
+                    item: "test:weapon".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                },
+                &mut projectile,
+            );
+        }
+        // living_incoming_damage_v2: unregistered, nothing runs.
+        {
+            let mut amount = 9.5;
+            let mut canceled = false;
+            dispatch_living_incoming_damage_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                "test:damage_type",
+                10,
+                Some([5.0, 2.0, 3.0]),
+                [6.0, 2.0, 3.0],
+                [7.0, 2.0, 3.0],
+                None,
+                &mut amount,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
         // living_knockback_v2: unregistered, nothing runs.
         {
             let mut strength = 6.5;
@@ -10309,16 +13828,11 @@ mod generated_tests {
             let mut z = 8.5;
             let mut canceled = false;
             dispatch_living_knockback_v2(
-                &mods,
+                &firing_mods,
                 7,
                 "test:kind",
                 9,
-                Some(&ItemStack {
-                    item: "test:attacker_main".into(),
-                    count: 1,
-                    damage: 0,
-                    extra: None,
-                }),
+                None,
                 Some(&ItemStack {
                     item: "test:attacker_off".into(),
                     count: 1,
@@ -10338,7 +13852,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_mob_split(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:kind",
                 9,
@@ -10348,6 +13862,24 @@ mod generated_tests {
             );
             assert!(!cancel, "cancel changed with no handler");
         }
+        // register_configs: unregistered, nothing runs.
+        {
+            let mut configs = vec![
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod0", NativeConfigKind::Server, "test:default0");
+                    c.file = "test:file0".into();
+                    c
+                },
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod1", NativeConfigKind::Server, "test:default1");
+                    c.file = "test:file1".into();
+                    c
+                },
+            ];
+            dispatch_register_configs(&mut FakeHost::empty(), &firing_mods, &mut configs);
+        }
         // movement_input: unregistered, nothing runs.
         {
             let mut forward = 1.5;
@@ -10356,19 +13888,67 @@ mod generated_tests {
             let mut sneak = false;
             dispatch_movement_input(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 &mut forward,
                 &mut strafe,
                 &mut jump,
                 &mut sneak,
             );
         }
+        // note_block_change: unregistered, nothing runs.
+        {
+            let mut new_note = 8;
+            let mut cancel = false;
+            dispatch_note_block_change(
+                &FakeLevel,
+                &firing_mods,
+                &NativeNoteBlockChange {
+                    dimension: LevelDimension::Overworld,
+                    pos: BlockPos::new(1, 2, 3),
+                    instrument: "test:instrument0",
+                    old_note: 7,
+                },
+                &mut new_note,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
+        }
+        // potential_spawns: unregistered, nothing runs.
+        {
+            let mut entries = vec![
+                SpawnEntry {
+                    entity: "test:entity3".into(),
+                    weight: 10,
+                    min: 1,
+                    max: 2,
+                    constant: false,
+                },
+                SpawnEntry {
+                    entity: "test:entity4".into(),
+                    weight: 11,
+                    min: 1,
+                    max: 2,
+                    constant: true,
+                },
+            ];
+            let mut canceled = false;
+            dispatch_potential_spawns(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                "test:category",
+                [3, 4, 5],
+                &mut entries,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
         // village_siege: unregistered, nothing runs.
         {
             let mut canceled = false;
             dispatch_village_siege(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 [3.0, 2.0, 3.0],
@@ -10382,7 +13962,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_player_xp_change(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 &mut amount,
@@ -10390,12 +13970,54 @@ mod generated_tests {
             );
             assert!(!cancel, "cancel changed with no handler");
         }
+        // recipe_book_categories: unregistered, nothing runs.
+        {
+            let mut categories = vec![
+                RecipeBookCategory {
+                    id: "test:cat0".into(),
+                    recipe_type: "test:type0".into(),
+                    icon: "test:icon0".into(),
+                },
+                RecipeBookCategory {
+                    id: "test:cat1".into(),
+                    recipe_type: "test:type1".into(),
+                    icon: "test:icon1".into(),
+                },
+            ];
+            dispatch_recipe_book_categories(&FakeHost::empty(), &firing_mods, &mut categories);
+        }
+        // render_hand_pose: unregistered, nothing runs.
+        {
+            let mut x = 6.5;
+            let mut y = 7.5;
+            let mut z = 8.5;
+            let mut pitch = 9.5;
+            let mut yaw = 10.5;
+            let mut roll = 11.5;
+            let mut scale = 12.5;
+            dispatch_render_hand_pose(
+                &FakeHost::empty(),
+                &firing_mods,
+                Hand::Main,
+                None,
+                3.5,
+                4.5,
+                5.5,
+                &mut x,
+                &mut y,
+                &mut z,
+                &mut pitch,
+                &mut yaw,
+                &mut roll,
+                &mut scale,
+            );
+        }
         // render_item_in_frame: unregistered, nothing runs.
         {
             let mut canceled = false;
             dispatch_render_item_in_frame(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 [2, 3, 4],
                 &ItemStack {
@@ -10414,7 +14036,7 @@ mod generated_tests {
             let mut text = Some("test:text".to_owned());
             dispatch_render_name_tag(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:kind",
                 true,
@@ -10429,7 +14051,7 @@ mod generated_tests {
             let mut border_bottom = 10;
             dispatch_tooltip_color(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 Some(&ItemStack {
                     item: "test:stack".into(),
                     count: 1,
@@ -10448,36 +14070,169 @@ mod generated_tests {
             let mut pitch = 4.5;
             dispatch_camera_pose(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 1.5,
                 &mut position,
                 &mut yaw,
                 &mut pitch,
             );
         }
+        // client_chat_received: unregistered, nothing runs.
+        {
+            let mut message = Text::literal("test:message");
+            let mut cancel = false;
+            dispatch_client_chat_received(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                true,
+                false,
+                9,
+                None,
+                &mut message,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
+        }
+        // menu_extra_data: unregistered, nothing runs.
+        {
+            let mut data: Option<Vec<u8>> = None;
+            dispatch_menu_extra_data(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                "test:block",
+                [4, 5, 6],
+                &mut data,
+            );
+        }
+        // merchant_offer_traded: unregistered, nothing runs.
+        {
+            let mut offer = MerchantOffer {
+                base_cost_a: ItemCost {
+                    stack: ItemStack {
+                        item: "test:offer".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    },
+                },
+                cost_b: None,
+                result: ItemStack {
+                    item: "test:offer".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                uses: 2,
+                max_uses: 1,
+                reward_exp: true,
+                special_price_diff: 0,
+                demand: 0,
+                price_multiplier: 1.0,
+                xp: 1,
+            };
+            dispatch_merchant_offer_traded(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                &mut offer,
+            );
+        }
+        // add_server_reload_listeners: unregistered, nothing runs.
+        {
+            let mut listeners = vec![
+                NativeReloadListener::json("test:id0", "test:folder0"),
+                NativeReloadListener::json("test:id1", "test:folder1"),
+            ];
+            dispatch_add_server_reload_listeners(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &mut listeners,
+            );
+        }
+        // server_reload_listener_apply: unregistered, nothing runs.
+        {
+            dispatch_server_reload_listener_apply(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &NativeReloadListener::json("test:id0", "test:folder0"),
+                &[
+                    ("test:path1".to_owned(), serde_json::json!(8)),
+                    ("test:path2".to_owned(), serde_json::json!(9)),
+                ],
+            );
+        }
         // client_start: unregistered, nothing runs.
         {
-            dispatch_client_start(&mut FakeHost::empty(), &mods);
+            dispatch_client_start(&mut FakeHost::empty(), &firing_mods);
         }
         // client_disconnecting: unregistered, nothing runs.
         {
-            dispatch_client_disconnecting(&FakeHost::empty(), &mods);
+            dispatch_client_disconnecting(&FakeHost::empty(), &firing_mods);
         }
         // client_stopping: unregistered, nothing runs.
         {
-            dispatch_client_stopping(&FakeHost::empty(), &mods);
+            dispatch_client_stopping(&FakeHost::empty(), &firing_mods);
         }
         // menu_background: unregistered, nothing runs.
         {
             let mut radius = Some(1.5);
-            dispatch_menu_background(&FakeHost::empty(), &mods, &mut radius);
+            dispatch_menu_background(&FakeHost::empty(), &firing_mods, &mut radius);
+        }
+        // anvil_update: unregistered, nothing runs.
+        {
+            let mut output = Some(ItemStack {
+                item: "test:output".into(),
+                count: 9,
+                damage: 8,
+                extra: None,
+            });
+            let mut xp_cost = 16;
+            let mut material_cost = 17;
+            let mut canceled = false;
+            dispatch_anvil_update(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &ItemStack {
+                    item: "test:left".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                None,
+                Some("test:item_name"),
+                None,
+                13,
+                14,
+                &mut output,
+                &mut xp_cost,
+                &mut material_cost,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
+        // block_clone_item: unregistered, nothing runs.
+        {
+            let mut stack: Option<ItemStack> = None;
+            dispatch_block_clone_item(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                [2, 3, 4],
+                BlockStateId(10),
+                &mut stack,
+            );
         }
         // block_entity_accepts_fluid: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_block_entity_accepts_fluid(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:block",
                 8,
                 "test:fluid",
@@ -10490,7 +14245,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_block_place(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 &ItemStack {
@@ -10510,18 +14265,30 @@ mod generated_tests {
             let mut new = 10;
             dispatch_block_redstone(
                 &FakeLevel,
-                &mods,
+                &firing_mods,
                 LevelDimension::Overworld,
                 BlockPos::new(2, 3, 4),
                 9,
                 &mut new,
             );
         }
+        // break_speed: unregistered, nothing runs.
+        {
+            let mut speed = 4.5;
+            dispatch_break_speed(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                BlockStateId(9),
+                3.5,
+                &mut speed,
+            );
+        }
         // chat_suggestion_applied: unregistered, nothing runs.
         {
             dispatch_chat_suggestion_applied(
                 &FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:original",
                 8,
                 9,
@@ -10531,39 +14298,48 @@ mod generated_tests {
         }
         // client_attack: unregistered, nothing runs.
         {
-            dispatch_client_attack(&mut FakeHost::empty(), &mods, 7, false);
+            dispatch_client_attack(&mut FakeHost::empty(), &firing_mods, 7, false);
         }
         // client_hurt: unregistered, nothing runs.
         {
-            dispatch_client_hurt(&mut FakeHost::empty(), &mods, Some(7), false);
+            dispatch_client_hurt(&mut FakeHost::empty(), &firing_mods, Some(7), false);
         }
         // client_player_network_logging_in: unregistered, nothing runs.
         {
-            dispatch_client_player_network_logging_in(&mut FakeHost::empty(), &mods);
+            dispatch_client_player_network_logging_in(&mut FakeHost::empty(), &firing_mods);
         }
         // client_tick_pre: unregistered, nothing runs.
         {
-            dispatch_client_tick_pre(&mut FakeHost::empty(), &mods);
+            dispatch_client_tick_pre(&mut FakeHost::empty(), &firing_mods);
         }
         // client_tick_post: unregistered, nothing runs.
         {
-            dispatch_client_tick_post(&mut FakeHost::empty(), &mods);
+            dispatch_client_tick_post(&mut FakeHost::empty(), &firing_mods);
+        }
+        // console_line: unregistered, nothing runs.
+        {
+            let mut replies = vec![Text::literal("test:line2"), Text::literal("test:line3")];
+            let mut cancel = false;
+            dispatch_console_line(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:source",
+                "test:line",
+                &mut replies,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
         }
         // creative_slot_v2: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_creative_slot_v2(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
-                Some(&ItemStack {
-                    item: "test:stack".into(),
-                    count: 1,
-                    damage: 0,
-                    extra: None,
-                }),
+                None,
                 &mut cancel,
             );
             assert!(!cancel, "cancel changed with no handler");
@@ -10571,16 +14347,72 @@ mod generated_tests {
         // custom_block_fluids: unregistered, nothing runs.
         {
             let mut custom = false;
-            dispatch_custom_block_fluids(&FakeHost::empty(), &mods, "test:block", &mut custom);
+            dispatch_custom_block_fluids(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut custom,
+            );
+        }
+        // custom_fluid_tanks: unregistered, nothing runs.
+        {
+            let mut out: Option<Vec<NativeFluidTankView>> = None;
+            dispatch_custom_fluid_tanks(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &mut out,
+            );
+        }
+        // custom_fluid_fill: unregistered, nothing runs.
+        {
+            let mut out: Option<i32> = None;
+            dispatch_custom_fluid_fill(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &NativeFluidStack {
+                    fluid: "test:fluid2".into(),
+                    amount: 9,
+                    components: Compound::new(),
+                },
+                NativeFluidAction::Execute,
+                &mut out,
+            );
+        }
+        // custom_fluid_drain: unregistered, nothing runs.
+        {
+            let mut out: Option<NativeFluidStack> = None;
+            dispatch_custom_fluid_drain(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &NativeFluidDrain::Any(9),
+                NativeFluidAction::Execute,
+                &mut out,
+            );
+        }
+        // custom_payload_from_client: unregistered, nothing runs.
+        {
+            dispatch_custom_payload_from_client(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:channel",
+                &[116u8, 0u8, 159u8],
+            );
         }
         // entity_change_block_v2: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_entity_change_block_v2(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 Some(7),
-                Some(8),
+                None,
                 "test:kind",
                 [4, 5, 6],
                 "test:from",
@@ -10594,7 +14426,7 @@ mod generated_tests {
             let mut claimed = false;
             dispatch_entity_interact_specific(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:kind",
                 Some(&ItemStack {
@@ -10611,13 +14443,19 @@ mod generated_tests {
         // entity_outline: unregistered, nothing runs.
         {
             let mut outline = Some(9);
-            dispatch_entity_outline(&FakeHost::empty(), &mods, 7, "test:kind", &mut outline);
+            dispatch_entity_outline(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                &mut outline,
+            );
         }
         // fishing_hook_landed: unregistered, nothing runs.
         {
             dispatch_fishing_hook_landed(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 8,
                 "test:dimension",
@@ -10625,12 +14463,41 @@ mod generated_tests {
                 [5, 6, 7],
             );
         }
+        // handshake: unregistered, nothing runs.
+        {
+            let mut host = "test:host".to_owned();
+            let mut reason = None;
+            let mut cancel = false;
+            dispatch_handshake(
+                &firing_mods,
+                "127.0.0.1:25565".parse().unwrap(),
+                &mut host,
+                9,
+                &mut reason,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
+        }
+        // interact_entity_v2: unregistered, nothing runs.
+        {
+            let mut cancel = false;
+            dispatch_interact_entity_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                Hand::Main,
+                None,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
+        }
         // inventory_click: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_inventory_click(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -10646,7 +14513,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_inventory_drag(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 9,
@@ -10656,12 +14523,35 @@ mod generated_tests {
             );
             assert!(!cancel, "cancel changed with no handler");
         }
+        // item_after_vertical_collision: unregistered, nothing runs.
+        {
+            let mut stack = ItemStack {
+                item: "test:stack".into(),
+                count: 7,
+                damage: 6,
+                extra: None,
+            };
+            let mut discard = false;
+            dispatch_item_after_vertical_collision(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                false,
+                9,
+                BlockStateId(11),
+                [5, 6, 7],
+                [6.0, 2.0, 3.0],
+                &mut stack,
+                &mut discard,
+            );
+            assert!(!discard, "discard changed with no handler");
+        }
         // item_dropped_v2: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_item_dropped_v2(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 &ItemStack {
                     item: "test:stack".into(),
@@ -10678,7 +14568,7 @@ mod generated_tests {
             let mut swing: Option<bool> = None;
             dispatch_item_interact_mob(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:kind",
                 Some(&ItemStack {
@@ -10695,7 +14585,7 @@ mod generated_tests {
             let mut canceled = false;
             dispatch_item_picked_up_v2(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 &ItemStack {
                     item: "test:stack".into(),
@@ -10713,11 +14603,11 @@ mod generated_tests {
         {
             let mut cancel = false;
             dispatch_living_change_target(
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 "test:kind",
-                Some(10),
+                None,
                 Some(11),
                 &mut cancel,
             );
@@ -10727,7 +14617,7 @@ mod generated_tests {
         {
             let mut amount = 6.5;
             dispatch_living_damage_pre(
-                &mods,
+                &firing_mods,
                 7,
                 "test:kind",
                 "test:damage_type",
@@ -10738,20 +14628,28 @@ mod generated_tests {
         }
         // living_damage_post: unregistered, nothing runs.
         {
-            dispatch_living_damage_post(&mods, 7, "test:kind", "test:damage_type", 10, 11, 6.5);
+            dispatch_living_damage_post(
+                &firing_mods,
+                7,
+                "test:kind",
+                "test:damage_type",
+                10,
+                11,
+                6.5,
+            );
         }
         // living_incoming_damage_v3: unregistered, nothing runs.
         {
             let mut amount = 8.5;
             let mut cancel = false;
             dispatch_living_incoming_damage_v3(
-                &mods,
+                &firing_mods,
                 7,
-                Some(8),
+                None,
                 "test:kind",
-                Some(10),
+                None,
                 Some(11),
-                Some(12),
+                None,
                 "test:damage_type",
                 &mut amount,
                 &mut cancel,
@@ -10761,26 +14659,63 @@ mod generated_tests {
         // log_line: unregistered, nothing runs.
         {
             dispatch_log_line(
-                &mods,
+                &firing_mods,
                 "test:level",
                 "test:thread",
                 "test:message",
                 "test:line",
             );
         }
+        // menu_input_closed: unregistered, nothing runs.
+        {
+            let mut slots = vec![
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                }),
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: None,
+                }),
+            ];
+            dispatch_menu_input_closed(&mut FakeHost::empty(), &firing_mods, 7, 8, &mut slots);
+        }
+        // menu_links: unregistered, nothing runs.
+        {
+            let mut links = vec![[4, 5, 6], [5, 6, 7]];
+            dispatch_menu_links(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                [3, 4, 5],
+                &mut links,
+            );
+        }
         // permission_check: unregistered, nothing runs.
         {
             let mut result: Option<bool> = None;
-            dispatch_permission_check(&FakeHost::empty(), &mods, 7, "test:node", 9, &mut result);
+            dispatch_permission_check(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:node",
+                9,
+                &mut result,
+            );
         }
         // player_register_channels: unregistered, nothing runs.
         {
             dispatch_player_register_channels(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
-                &["test:seed".to_owned()],
+                &["test:seed".to_owned(), "test:seed2".to_owned()],
                 false,
             );
         }
@@ -10789,7 +14724,7 @@ mod generated_tests {
             let mut level = 10;
             dispatch_player_command_level(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:command",
@@ -10798,23 +14733,37 @@ mod generated_tests {
         }
         // player_commands_sent_v2: unregistered, nothing runs.
         {
-            let mut names = vec!["test:seed".to_owned()];
-            let mut names_hidden = vec!["test:seed".to_owned()];
+            let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            let mut names_hidden = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
             dispatch_player_commands_sent_v2(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 &mut names,
                 &mut names_hidden,
             );
         }
+        // player_fish_v2: unregistered, nothing runs.
+        {
+            let mut cancel = false;
+            dispatch_player_fish_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                Hand::Off,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
+        }
         // player_hurt_by_player: unregistered, nothing runs.
         {
             let mut amount = 7.5;
             let mut canceled = false;
             dispatch_player_hurt_by_player(
-                &mods,
+                &firing_mods,
                 7,
                 8,
                 9,
@@ -10831,7 +14780,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_player_launch_projectile_v2(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 &ItemStack {
@@ -10846,14 +14795,14 @@ mod generated_tests {
         }
         // player_logging_out: unregistered, nothing runs.
         {
-            dispatch_player_logging_out(&mut FakeHost::empty(), &mods, 7, "test:name");
+            dispatch_player_logging_out(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         }
         // player_move: unregistered, nothing runs.
         {
             let mut to = [4.0, 2.0, 3.0];
             let mut cancel = false;
             dispatch_player_move(
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 [3.0, 2.0, 3.0],
@@ -10865,6 +14814,17 @@ mod generated_tests {
             );
             assert!(!cancel, "cancel changed with no handler");
         }
+        // player_pre_login: unregistered, nothing runs.
+        {
+            let mut defer = Vec::new();
+            dispatch_player_pre_login(
+                &firing_mods,
+                7,
+                "test:name",
+                "127.0.0.1:25567".parse().unwrap(),
+                &mut defer,
+            );
+        }
         // player_respawn_position: unregistered, nothing runs.
         {
             let mut dimension = "test:dimension".to_owned();
@@ -10873,7 +14833,7 @@ mod generated_tests {
             let mut pitch = 6.5;
             dispatch_player_respawn_position(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 &mut dimension,
@@ -10886,10 +14846,10 @@ mod generated_tests {
         {
             let mut dimension = "test:dimension".to_owned();
             let mut position = [4.0, 2.0, 3.0];
-            let mut rotation = [5.5, 6.5];
+            let mut rotation = [5.0, 2.0];
             dispatch_player_spawn_location(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 &mut dimension,
@@ -10903,7 +14863,7 @@ mod generated_tests {
             let mut relative = 14;
             let mut cancel = false;
             dispatch_player_teleport(
-                &mods,
+                &firing_mods,
                 7,
                 "test:name",
                 "test:cause",
@@ -10918,7 +14878,7 @@ mod generated_tests {
         }
         // player_tick_pre: unregistered, nothing runs.
         {
-            dispatch_player_tick_pre(&mut FakeHost::empty(), &mods);
+            dispatch_player_tick_pre(&mut FakeHost::empty(), &firing_mods);
         }
         // projectile_world_border: unregistered, nothing runs.
         {
@@ -10926,7 +14886,7 @@ mod generated_tests {
             let mut velocity = [5.0, 2.0, 3.0];
             let mut collide = false;
             dispatch_projectile_world_border(
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 "test:kind",
@@ -10935,16 +14895,48 @@ mod generated_tests {
                 &mut collide,
             );
         }
+        // recipe_sources: unregistered, nothing runs.
+        {
+            let mut sources = vec![[4, 5, 6], [5, 6, 7]];
+            dispatch_recipe_sources(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                [3, 4, 5],
+                &mut sources,
+            );
+        }
         // resource_pack_status_v2: unregistered, nothing runs.
         {
-            dispatch_resource_pack_status_v2(&mut FakeHost::empty(), &mods, 7, "test:name", 9, 10);
+            dispatch_resource_pack_status_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+            );
+        }
+        // right_click_block_v2: unregistered, nothing runs.
+        {
+            let mut cancel = false;
+            dispatch_right_click_block_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                [2, 3, 4],
+                Hand::Main,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
         }
         // screen_mouse_dragged_pre_v2: unregistered, nothing runs.
         {
             let mut canceled = false;
             dispatch_screen_mouse_dragged_pre_v2(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:screen",
                 [2.5, 3.5],
                 9,
@@ -10959,7 +14951,7 @@ mod generated_tests {
             let mut canceled = false;
             dispatch_screen_mouse_scrolled_pre_v2(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:screen",
                 [2.5, 3.5],
                 [3.5, 4.5],
@@ -10968,17 +14960,82 @@ mod generated_tests {
             );
             assert!(!canceled, "canceled changed with no handler");
         }
+        // server_tick_timed: unregistered, nothing runs.
+        {
+            dispatch_server_tick_timed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                None,
+                &[
+                    TickSpan {
+                        name: "test:span2",
+                        ms: 3.5,
+                        cpu_ms: 0.5,
+                        depth: 0,
+                    },
+                    TickSpan {
+                        name: "test:span3",
+                        ms: 4.5,
+                        cpu_ms: 0.5,
+                        depth: 0,
+                    },
+                ],
+            );
+        }
         // stateful_block_entity: unregistered, nothing runs.
         {
             let mut stateful = false;
-            dispatch_stateful_block_entity(&FakeHost::empty(), &mods, "test:block", &mut stateful);
+            dispatch_stateful_block_entity(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut stateful,
+            );
+        }
+        // block_entity_from_state: unregistered, nothing runs.
+        {
+            let mut entity: Option<(String, Compound)> = None;
+            dispatch_block_entity_from_state(
+                &firing_mods,
+                "test:block",
+                &BlockProperties::new(),
+                &mut entity,
+            );
+        }
+        // tab_complete_v2: unregistered, nothing runs.
+        {
+            let mut suggestions = vec![
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: None,
+                    int_value: None,
+                },
+                Suggestion {
+                    range: (7 + 6, 12 + 6),
+                    text: "test:suggestion6".into(),
+                    tooltip: None,
+                    int_value: None,
+                },
+            ];
+            dispatch_tab_complete_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:label",
+                &["test:seed".to_owned(), "test:seed2".to_owned()],
+                [11, 16],
+                &mut suggestions,
+            );
         }
         // toast_add: unregistered, nothing runs.
         {
             let mut cancel = false;
             dispatch_toast_add(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 "test:kind",
                 "test:id",
                 &mut cancel,
@@ -10989,7 +15046,7 @@ mod generated_tests {
         {
             let mut cancel = false;
             dispatch_trample(
-                &mods,
+                &firing_mods,
                 "test:dimension",
                 8,
                 "test:kind",
@@ -11005,7 +15062,7 @@ mod generated_tests {
             let mut cancel = false;
             dispatch_vehicle_moved_v2(
                 &mut FakeHost::empty(),
-                &mods,
+                &firing_mods,
                 Some(7),
                 "test:dimension",
                 9,
@@ -11015,6 +15072,17 @@ mod generated_tests {
                 &mut cancel,
             );
             assert!(!cancel, "cancel changed with no handler");
+        }
+        // wind_burst: unregistered, nothing runs.
+        {
+            let mut blocks = vec![[3, 4, 5], [4, 5, 6]];
+            dispatch_wind_burst(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 2.0, 3.0],
+                &mut blocks,
+            );
         }
         no_error(&id);
         drop_dir(dir);

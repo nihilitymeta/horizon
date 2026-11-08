@@ -60,6 +60,12 @@ const TYPES: &[(&str, &str)] = &[
     ),
     ("Data", "{ [string]: any }"),
     ("Props", "{ [string]: string }"),
+    // The vanilla JSON text-component table a text field's `_component`
+    // carries (`{text=, color=, bold=, extra={}}`, `{translate=, with={}}`).
+    (
+        "Component",
+        "{ text: string?, translate: string?, color: string?, bold: boolean?, italic: boolean?, underlined: boolean?, strikethrough: boolean?, obfuscated: boolean?, extra: { Component }? }",
+    ),
     // Base shapes the generated event tables below stand on (`Vec3` for
     // positions, `Item` for stacks, `PlayerRef` for players the table names
     // by uuid, `Vec2` for pairs, `Chunk` for chunk columns).
@@ -285,6 +291,7 @@ struct GeneratedHook {
 fn extra_ts(conv: &super::lua_model::Conv) -> &'static str {
     match conv {
         super::lua_model::Conv::BlockAtPos | super::lua_model::Conv::BlockFromState => "string",
+        super::lua_model::Conv::StateProps => "Props",
         _ => "any",
     }
 }
@@ -297,17 +304,23 @@ fn generated_hooks() -> Result<Vec<GeneratedHook>, String> {
             continue;
         };
         let event_ty = event_name(&model.name);
-        let mut fields: Vec<String> = model
-            .fields
-            .iter()
-            .map(|f| format!("{}: {}", f.name, f.ts))
-            .collect();
+        let mut fields: Vec<String> = Vec::new();
+        for f in &model.fields {
+            fields.push(format!("{}: {}", f.name, f.ts));
+            // A text field reads alongside its vanilla JSON component table.
+            if matches!(
+                f.conv,
+                super::lua_model::Conv::TextVal | super::lua_model::Conv::TextOpt
+            ) {
+                fields.push(format!("{}_component: Component?", f.name));
+            }
+        }
         for extra in &model.extras {
             fields.push(format!("{}: {}", extra.name, extra_ts(&extra.conv)));
         }
         if let Some(o) = &model.out {
             // A replace out seeds nil until the handler answers.
-            fields.push(format!("{}: {}?", o.name, replace_ts(o.read)));
+            fields.push(format!("{}: {}?", o.name, replace_ts(o.read, &o.ret)));
         }
         out.push(GeneratedHook {
             hook: model.name.clone(),
