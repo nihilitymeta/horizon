@@ -57,7 +57,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ),
     (
         "hud",
-        "cannot: hud: unsupported: HudBatch borrows render state (render thread); hud: unsupported: Corners borrows render state (render thread)",
+        "cannot: hud: unsupported: the hand-written hook keeps this name (removing it is #44)",
     ),
     ("key", "generated"),
     ("wheel", "generated"),
@@ -505,7 +505,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ),
     (
         "gui_layer_post",
-        "cannot: gui_layer_post: unsupported: HudBatch borrows render state (render thread)",
+        "cannot: gui_layer_post: unsupported: the hand-written hook keeps this name (removing it is #44)",
     ),
     (
         "map_decorations",

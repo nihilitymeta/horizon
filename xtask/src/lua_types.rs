@@ -89,6 +89,19 @@ const TYPES: &[(&str, &str)] = &[
     ("CommandArgs", "{ raw: string, [string]: any }"),
     ("Inventory", "{ [number]: Item }"),
     ("Carried", "{ [string]: number }"),
+    // The HUD pilot's draw handles (`hud_hooks`): tables of plain functions
+    // over the call's batch and corners, dot-called (`batch.fill(...)`).
+    // Every method draws at once; the tables expire with the call.
+    (
+        "HudBatch",
+        "{ fill: (x: number, y: number, w: number, h: number, argb: number) -> (), text: (text: string, x: number, y: number, rgb: number, shadow: boolean) -> (), sprite: (name: string, sx: number, sy: number, sw: number, sh: number, dx: number, dy: number, dw: number, dh: number) -> boolean, item: (id: string, x: number, y: number, size: number) -> boolean, item_stack: (stack: Item, x: number, y: number, size: number) -> boolean, item_model: (item: string, model: string, x: number, y: number, size: number) -> boolean, quad: (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, x4: number, y4: number, argb: number) -> (), text_width: (text: string) -> number }",
+    ),
+    (
+        "HudCorners",
+        "{ place: (corner: string, w: number, h: number) -> (number, number), shown: (corner: string) -> boolean }",
+    ),
+    ("HudEvent", "{ batch: HudBatch, corners: HudCorners }"),
+    ("GuiLayerPostEvent", "{ layer: string, batch: HudBatch }"),
 ];
 
 /// Every hook a script registers for (`horizon.on(name, fn[, kind])`) and
@@ -251,6 +264,8 @@ const HOOKS: &[(&str, &str)] = &[
         "block_placed",
         "(x: number, y: number, z: number, block: string, player: Player, item: Item) -> ()",
     ),
+    ("hud", "(event: HudEvent) -> ()"),
+    ("gui_layer_post", "(event: GuiLayerPostEvent) -> ()"),
 ];
 
 /// One generated hook's types, derived from the same model as the runtime

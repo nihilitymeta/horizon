@@ -35,12 +35,12 @@ use horizon_client::mod_api::{
     PlayerLoggedInEvent, PlayerLoggedOutEvent, PlayerRespawnedEvent, UseItemEvent, UseItemOnEvent,
 };
 use horizon_client::mod_api::{
-    EntityJoinLevelEvent, ExplosionDetonateEvent, HearsProjectileImpactsEvent, HurtEnemyEvent,
-    ItemCraftedEvent, ItemDroppedEvent, LivingEntityUseItemStartEvent, LivingEquipmentChangeEvent,
-    LivingEquipmentListenedEvent, LivingFallEvent, LivingHealEvent, LivingKnockbackEvent,
-    LootDropsEvent, PlayerBedEnterEvent, PlayerChangedDimensionEvent, PlayerChatEvent,
-    PlayerCommandEvent, PlayerContainerOpenEvent, PlayerExpChangeEvent, PlayerTickEvent,
-    ProjectileImpactEvent, ProjectileLaunchEvent,
+    EntityJoinLevelEvent, ExplosionDetonateEvent, GuiLayerPostEvent, HearsProjectileImpactsEvent,
+    HudEvent, HurtEnemyEvent, ItemCraftedEvent, ItemDroppedEvent, LivingEntityUseItemStartEvent,
+    LivingEquipmentChangeEvent, LivingEquipmentListenedEvent, LivingFallEvent, LivingHealEvent,
+    LivingKnockbackEvent, LootDropsEvent, PlayerBedEnterEvent, PlayerChangedDimensionEvent,
+    PlayerChatEvent, PlayerCommandEvent, PlayerContainerOpenEvent, PlayerExpChangeEvent,
+    PlayerTickEvent, ProjectileImpactEvent, ProjectileLaunchEvent,
 };
 use horizon_client::mod_api::{NativeCommand, PerformCommandEvent, RegisterCommandsEvent};
 use horizon_mods::{Capability, Content, Package};
@@ -67,6 +67,14 @@ pub mod nbt;
 /// interrupt stops it with an error: the server thread runs them, so an
 /// endless loop would otherwise freeze the game.
 pub const HANDLER_BUDGET: Duration = Duration::from_millis(250);
+/// Wall-clock time one handler of a hook that fires every frame (`hud`,
+/// `gui_layer_post`) may take: a 250 ms stall would freeze rendering, so a
+/// frame hook gets a slice of a frame instead (see `hud_hooks`). Scaled by
+/// the handler count like `HANDLER_BUDGET`.
+pub(crate) const FRAME_BUDGET: Duration = Duration::from_millis(8);
+/// Consecutive frame-budget overruns after which a frame hook's handlers
+/// are disabled (see `hud_hooks`): `/reload` registers them again.
+pub(crate) const FRAME_OVERRUNS_UNTIL_DISABLED: u32 = 3;
 /// The same for `init.lua` and the modules it requires, at load and reload.
 const LOAD_BUDGET: Duration = Duration::from_secs(5);
 /// Memory one mod's state may take.
@@ -173,6 +181,8 @@ pub const LUA_HOOK_NAMES: &[&str] = &[
     "player_container_open",
     "block_broken",
     "block_placed",
+    "hud",
+    "gui_layer_post",
     "command",
 ];
 
@@ -311,7 +321,7 @@ end
 /// What a hook's handlers may read from while they run: the hook's host.
 /// It reaches Lua as a function of the call's scope (`Lua::scope`), gone
 /// when the call returns, whatever kept it.
-enum Reader<'a> {
+pub(crate) enum Reader<'a> {
     /// A hook without a host (`mob_hurt`, `mob_ai_register`): reads fail.
     None,
     Host(&'a mut dyn Host),
@@ -907,7 +917,7 @@ pub struct LuaMod {
     library_versions: Vec<(String, String)>,
     /// The `.hmod` or folder the scripts came from.
     source: PathBuf,
-    lua: Lua,
+    pub(crate) lua: Lua,
     /// The scripts, by path, as last read from `source`.
     scripts: Scripts,
     /// The mods it depends on (`depends`), whose scripts `require` reaches
@@ -929,6 +939,10 @@ pub struct LuaMod {
     /// The kinds of mob the scripts watch, by hook (`horizon.on(name, fn,
     /// kind)`), so a mob hook of any other kind costs nothing.
     kinds: Kinds,
+    /// Consecutive frame-budget overruns, by frame hook: a frame hook's
+    /// handler that keeps missing `FRAME_BUDGET` is disabled after
+    /// `FRAME_OVERRUNS_UNTIL_DISABLED`, until `/reload`.
+    frame_overruns: Mutex<HashMap<String, u32>>,
     /// The mod's saved data on a mob (`data` in the mob hooks): the engine's
     /// attachment under the mod's id, saved with the mob.
     attachment: AttachmentType<Compound>,
@@ -956,8 +970,8 @@ type Goals = Arc<Mutex<HashMap<String, goals::GoalDef>>>;
 type Kinds = Arc<Mutex<HashMap<String, HashSet<String>>>>;
 
 /// A mob kind as the mob hooks name it: `minecraft:zombie`, or a content
-/// mod's own id as it is.
-fn qualify(kind: &str) -> String {
+/// mod's own id as it is. Item ids too (`hud_hooks` qualifies what it draws).
+pub(crate) fn qualify(kind: &str) -> String {
     if kind.contains(':') {
         kind.to_owned()
     } else {
@@ -1376,6 +1390,7 @@ impl LuaMod {
             loads: AtomicU32::new(0),
             budget,
             kinds: Kinds::default(),
+            frame_overruns: Mutex::default(),
             attachment,
             world_attachment,
             player_attachment,
@@ -1512,9 +1527,14 @@ impl LuaMod {
     }
 
     /// Reload because of `why`, and tell the log and the console how it went.
-    fn reload_now(&self, why: &str) {
+    pub(crate) fn reload_now(&self, why: &str) {
         match self.reload() {
             Ok(()) => {
+                // Fresh tables, fresh chances: a frame hook disabled for
+                // overruns registers again with its count cleared.
+                if let Ok(mut overruns) = self.frame_overruns.lock() {
+                    overruns.clear();
+                }
                 self.reloads.fetch_add(1, Ordering::Relaxed);
                 log::info!("Horizon: Lua mod {} reloaded ({why})", self.id);
                 to_console(false, format!("[{}] reloaded ({why})", self.id));
@@ -1578,7 +1598,7 @@ impl LuaMod {
     }
 
     /// An error of a hook or an action: the log, the console, the status.
-    fn error(&self, text: String) {
+    pub(crate) fn error(&self, text: String) {
         log::error!("[lua:{}] {text}", self.id);
         to_console(true, format!("[{}] {text}", self.id));
         set_error(&self.id, text);
@@ -1665,6 +1685,13 @@ impl LuaMod {
                         && !crate::generated_hooks::GENERATED_KIND_HOOK_NAMES
                             .contains(&name.as_str())
                     {
+                        return Err(mlua::Error::runtime(format!(
+                            "horizon.on({name:?}): this hook takes no kind"
+                        )));
+                    }
+                    // The frame hooks answer every event to every handler:
+                    // a kind would silently never fire.
+                    if kind.is_some() && (name == "hud" || name == "gui_layer_post") {
                         return Err(mlua::Error::runtime(format!(
                             "horizon.on({name:?}): this hook takes no kind"
                         )));
@@ -1969,8 +1996,10 @@ impl LuaMod {
     }
 
     /// Whether any handler is registered for `hook`: the hooks that fire
-    /// often (random ticks) build their arguments only then.
-    fn has_handlers(&self, hook: &str) -> bool {
+    /// often (random ticks) build their arguments only then. The frame
+    /// hooks (`hud_hooks`) check it first, so an unregistered frame hook
+    /// does no Lua work and no table allocation.
+    pub(crate) fn has_handlers(&self, hook: &str) -> bool {
         let handlers: mlua::Result<Table> = self.lua.named_registry_value(HANDLERS);
         handlers.is_ok_and(|h| h.get::<Option<Table>>(hook).ok().flatten().is_some())
     }
@@ -2305,6 +2334,37 @@ impl LuaMod {
         Flow::Continue
     }
 
+    /// A frame hook's (`hud`, `gui_layer_post`) handlers finished: `overrun`
+    /// when the budget stopped them. A handler that errors, or runs clean,
+    /// resets its count; one that keeps missing `FRAME_BUDGET` is disabled
+    /// after `FRAME_OVERRUNS_UNTIL_DISABLED` consecutive misses, until
+    /// `/reload` registers it again. Reports like any handler failure: the
+    /// log, the console, and the mod's status row.
+    pub(crate) fn note_frame_outcome(&self, hook: &str, overrun: bool) {
+        let misses = {
+            let mut all = self.frame_overruns.lock().unwrap();
+            if !overrun {
+                all.remove(hook);
+                return;
+            }
+            let misses = all.entry(hook.to_owned()).or_insert(0);
+            *misses += 1;
+            if *misses < FRAME_OVERRUNS_UNTIL_DISABLED {
+                return;
+            }
+            *misses
+        };
+        if let Ok(handlers) = self.lua.named_registry_value::<Table>(HANDLERS) {
+            let _ = handlers.set(hook, Value::Nil);
+        }
+        if let Ok(mut kinds) = self.kinds.lock() {
+            kinds.remove(hook);
+        }
+        self.error(format!(
+            "{hook}: disabled after {misses} consecutive overruns of the frame budget; /reload enables it again"
+        ));
+    }
+
     /// Call the handlers of `hook` with `args`, then run what they queued
     /// with the hook's host (none: the actions are dropped with a warning).
     fn call(&self, host: Option<&mut dyn Host>, hook: &str, args: impl mlua::IntoLuaMulti) {
@@ -2406,6 +2466,20 @@ impl LuaMod {
         reader: Reader<'_>,
         args: impl mlua::IntoLuaMulti,
     ) -> mlua::Result<Vec<(String, Table)>> {
+        self.run_handlers_with(hook, kind, reader, args, HANDLER_BUDGET)
+    }
+
+    /// `run_handlers` with `limit` as one handler's time budget (the frame
+    /// hooks in `hud_hooks` pass `FRAME_BUDGET`, for the hooks that fire
+    /// every frame).
+    pub(crate) fn run_handlers_with(
+        &self,
+        hook: &str,
+        kind: Option<&str>,
+        reader: Reader<'_>,
+        args: impl mlua::IntoLuaMulti,
+        limit: Duration,
+    ) -> mlua::Result<Vec<(String, Table)>> {
         let lua = &self.lua;
         let list = self.handlers(hook, kind)?;
         if list.is_empty() {
@@ -2449,8 +2523,7 @@ impl LuaMod {
             args.push_front(Value::Boolean(full));
             args.push_front(read);
             args.push_front(Value::Table(handlers));
-            self.budget
-                .run(HANDLER_BUDGET * count, || runner.call::<()>(args))
+            self.budget.run(limit * count, || runner.call::<()>(args))
         });
         // The runner restores the slot itself when it gets that far; one
         // stopped by the budget (raised at every safepoint past the
@@ -2482,7 +2555,12 @@ impl LuaMod {
         Ok(out)
     }
 
-    fn run_action(&self, host: &mut dyn Host, action: &str, args: &Table) -> mlua::Result<()> {
+    pub(crate) fn run_action(
+        &self,
+        host: &mut dyn Host,
+        action: &str,
+        args: &Table,
+    ) -> mlua::Result<()> {
         match action {
             "broadcast" => {
                 let line: String = args.get(1)?;
@@ -4570,6 +4648,18 @@ impl Hooks for LuaMod {
     // The generated hooks (`generated_hooks.rs`): one method per hook above,
     // wired the same way, with one event table each.
     impl_generated_hooks!();
+    /// The HUD (not drawn under F1), after the minimap: `hud(event)`, with
+    /// `event.batch` to draw on and `event.corners` to stack boxes in. The
+    /// batch lives for the call only (see `hud_hooks`).
+    fn hud(&self, host: &mut dyn Host, event: &mut HudEvent<'_>) {
+        crate::hud_hooks::hud(self, host, event);
+    }
+    /// After one of vanilla's GUI layers: `gui_layer_post(event)`, with
+    /// `event.layer` and `event.batch` to draw above it. The batch lives
+    /// for the call only (see `hud_hooks`).
+    fn gui_layer_post(&self, host: &mut dyn Host, event: &mut GuiLayerPostEvent<'_>) {
+        crate::hud_hooks::gui_layer_post(self, host, event);
+    }
 }
 
 /// The table at `key` in `table`, made when there is none.

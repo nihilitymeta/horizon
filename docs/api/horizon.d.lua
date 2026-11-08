@@ -33,6 +33,10 @@ export type Light = { block: number, sky: number }
 export type CommandArgs = { raw: string, [string]: any }
 export type Inventory = { [number]: Item }
 export type Carried = { [string]: number }
+export type HudBatch = { fill: (x: number, y: number, w: number, h: number, argb: number) -> (), text: (text: string, x: number, y: number, rgb: number, shadow: boolean) -> (), sprite: (name: string, sx: number, sy: number, sw: number, sh: number, dx: number, dy: number, dw: number, dh: number) -> boolean, item: (id: string, x: number, y: number, size: number) -> boolean, item_stack: (stack: Item, x: number, y: number, size: number) -> boolean, item_model: (item: string, model: string, x: number, y: number, size: number) -> boolean, quad: (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, x4: number, y4: number, argb: number) -> (), text_width: (text: string) -> number }
+export type HudCorners = { place: (corner: string, w: number, h: number) -> (number, number), shown: (corner: string) -> boolean }
+export type HudEvent = { batch: HudBatch, corners: HudCorners }
+export type GuiLayerPostEvent = { layer: string, batch: HudBatch }
 
 -- The event tables of the generated hooks: one table per hook,
 -- holding the struct's fields by name.
@@ -394,6 +398,8 @@ export type HorizonOn =
     ((name: "player_container_open", fn: (player: PlayerRef, menu: string, pos: Vec3?) -> (), kind: string?) -> ()) &
     ((name: "block_broken", fn: (x: number, y: number, z: number, block: string, player: Player) -> (), kind: string?) -> ()) &
     ((name: "block_placed", fn: (x: number, y: number, z: number, block: string, player: Player, item: Item) -> (), kind: string?) -> ()) &
+    ((name: "hud", fn: (event: HudEvent) -> (), kind: string?) -> ()) &
+    ((name: "gui_layer_post", fn: (event: GuiLayerPostEvent) -> (), kind: string?) -> ()) &
     ((name: "anvil_damaged", fn: (event: AnvilDamagedEvent) -> ()) -> ()) &
     ((name: "apply_effect_tick", fn: (event: ApplyEffectTickEvent) -> (), kind: string?) -> ()) &
     ((name: "armor_stand_manipulate", fn: (event: ArmorStandManipulateEvent) -> ()) -> ()) &
