@@ -141,6 +141,7 @@ declare horizon: {
     add_target_goal: (priority: number, name: string) -> (),
     clear_goals: () -> (),
     clear_target_goals: () -> (),
+    set_body_rotation: (mode: string, degrees_per_tick: number?) -> (),
     set_block_property: (key: string, value: string, flags: number?) -> (),
     schedule_tick: (delay: number) -> (),
     handled: () -> (),

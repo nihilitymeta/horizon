@@ -110,10 +110,27 @@ impl LookControl {
         self.cooldown = 2;
     }
 }
+/// How a stationary mob's body follows its head: vanilla's
+/// `BodyRotationControl` ramp, a steady lerp a modder picked, or no body
+/// turn at all. A moving mob always turns its body to its yaw. Vanilla is
+/// the default; mods opt in per kind (`entity-types.json`) or per mob
+/// (`horizon.set_body_rotation`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum BodyRotationMode {
+    #[default]
+    Vanilla,
+    /// Turn the body towards the head by at most `degrees_per_tick` a tick.
+    Smooth { degrees_per_tick: f32 },
+    /// The head stays clamped to the body; the body never turns.
+    Frozen,
+}
 #[derive(Clone, Debug, Default)]
 pub struct BodyRotation {
     head_stable_time: i32,
     last_stable_head: f32,
+    /// The kind's body-rotation mode, copied from `MobType` when the mob
+    /// is built; `horizon.set_body_rotation` changes it per mob.
+    pub mode: BodyRotationMode,
 }
 impl Mob {
     /// `Mob.getMaxHeadXRot`, with `Wolf`'s 20 degrees while sitting.
@@ -456,6 +473,15 @@ impl Mob {
             self.head_yaw = rotate_if_necessary(self.head_yaw, self.body_yaw, max);
             self.ai.body.last_stable_head = self.head_yaw;
             self.ai.body.head_stable_time = 0;
+        } else if !matches!(self.ai.body.mode, BodyRotationMode::Vanilla) {
+            // A modder's mode: clamp the head to the body, then either turn
+            // the body towards it at the picked rate or not at all.
+            self.head_yaw = rotate_if_necessary(self.head_yaw, self.body_yaw, max);
+            if let BodyRotationMode::Smooth { degrees_per_tick } = self.ai.body.mode {
+                self.body_yaw = rotate_towards(self.body_yaw, self.head_yaw, degrees_per_tick);
+            }
+            self.ai.body.last_stable_head = self.head_yaw;
+            self.ai.body.head_stable_time = 0;
         } else if (self.head_yaw - self.ai.body.last_stable_head).abs() > 15.0 {
             self.ai.body.head_stable_time = 0;
             self.ai.body.last_stable_head = self.head_yaw;
@@ -474,6 +500,120 @@ impl Mob {
 /// Entity.rotlerp used by Mob.lookAt (clamped turn, no wrap of the result).
 fn rotate_toward_max(from: f32, to: f32, max: f32) -> f32 {
     from + wrap(to - from).clamp(-max, max)
+}
+
+#[cfg(test)]
+mod body_rotation_tests {
+    use super::*;
+    use horizon_core::geometry::Vec3;
+    use std::sync::Arc;
+
+    /// A standing cow facing 0 whose head looks 140 degrees to the side.
+    fn mob() -> Mob {
+        let mut kind = (*crate::mobs::sensor_scan_tests::kind()).clone();
+        kind.max_head_y_rot = 75.0;
+        let mut m = Mob::new(1, Arc::new(kind), Vec3::ZERO, 0.0);
+        m.body_yaw = 0.0;
+        m.previous_body_yaw = 0.0;
+        m.head_yaw = 140.0;
+        m
+    }
+
+    /// Twelve stationary ticks of vanilla's ramp from a 140-degree head
+    /// turn: the first tick clamps the body with the full allowance (75, so
+    /// the body jumps to 65), ten ticks of stillness follow, then the
+    /// allowance shrinks to 67.5 and the body steps to 72.5. Pin the
+    /// sequence so the default cannot drift into a modder's mode.
+    #[test]
+    fn vanilla_reproduces_the_ramp_tick_by_tick() {
+        let mut m = mob();
+        let body: Vec<f32> = (0..12)
+            .map(|_| {
+                m.body_rotation_tick();
+                m.body_yaw
+            })
+            .collect();
+        let expected = [
+            65.0, 65.0, 65.0, 65.0, 65.0, 65.0, 65.0, 65.0, 65.0, 65.0, 65.0, 72.5,
+        ];
+        for (tick, (&got, &want)) in body.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (got - want).abs() < 1.0e-3,
+                "vanilla tick {}: body {got}, expected {want}",
+                tick + 1
+            );
+        }
+    }
+
+    /// A smooth body turns towards the head by at most the picked rate and
+    /// arrives; the head is clamped to the body first.
+    #[test]
+    fn smooth_turns_at_most_the_rate_and_reaches_the_head() {
+        let mut m = mob();
+        m.ai.body.mode = BodyRotationMode::Smooth {
+            degrees_per_tick: 7.0,
+        };
+        let mut last = m.body_yaw;
+        for _ in 0..30 {
+            m.body_rotation_tick();
+            assert!(
+                (m.body_yaw - last).abs() <= 7.0 + 1.0e-3,
+                "smooth stepped {} in one tick",
+                m.body_yaw - last
+            );
+            assert!(
+                (m.head_yaw - m.body_yaw).abs() <= 75.0 + 1.0e-3,
+                "the head outran the body: head {}, body {}",
+                m.head_yaw,
+                m.body_yaw
+            );
+            last = m.body_yaw;
+        }
+        assert!(
+            (m.body_yaw - m.head_yaw).abs() < 1.0e-3,
+            "the body never reached the head: body {}, head {}",
+            m.body_yaw,
+            m.head_yaw
+        );
+        // A later mode switch starts clean: the bookkeeping follows the head.
+        assert!((m.ai.body.last_stable_head - m.head_yaw).abs() < 1.0e-3);
+        assert_eq!(m.ai.body.head_stable_time, 0);
+    }
+
+    /// A frozen body never turns; the head is still clamped to it.
+    #[test]
+    fn frozen_never_moves_the_body() {
+        let mut m = mob();
+        m.ai.body.mode = BodyRotationMode::Frozen;
+        for _ in 0..30 {
+            m.body_rotation_tick();
+            assert_eq!(m.body_yaw, 0.0, "a frozen body turned");
+        }
+        assert!(
+            (m.head_yaw - m.body_yaw).abs() <= 75.0 + 1.0e-3,
+            "the head outran the frozen body: head {}",
+            m.head_yaw
+        );
+    }
+
+    /// A moving mob turns its body to its yaw in every mode.
+    #[test]
+    fn moving_turns_the_body_in_every_mode() {
+        for mode in [
+            BodyRotationMode::Vanilla,
+            BodyRotationMode::Smooth {
+                degrees_per_tick: 7.0,
+            },
+            BodyRotationMode::Frozen,
+        ] {
+            let mut m = mob();
+            m.ai.body.mode = mode;
+            m.yaw = 30.0;
+            m.position.x = 1.0;
+            m.body_rotation_tick();
+            assert_eq!(m.body_yaw, 30.0, "mode {mode:?} kept the body still");
+        }
+    }
 }
 
 #[cfg(test)]

@@ -1163,6 +1163,7 @@ mod tests {
             head_rot_speed: 10.0,
             max_head_x_rot: 40.0,
             max_head_y_rot: 75.0,
+            body_rotation: Default::default(),
             ambient_interval: 80,
             flags: Default::default(),
             model: std::sync::Arc::new(Part {

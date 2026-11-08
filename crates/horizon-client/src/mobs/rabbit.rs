@@ -463,6 +463,7 @@ mod tests {
         ));
         let kind = Arc::new(MobType {
             id: "minecraft:rabbit".into(),
+            body_rotation: Default::default(),
             species: Species::Rabbit,
             width: 0.4,
             height: 0.5,

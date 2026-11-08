@@ -39,6 +39,7 @@ fn kind() -> Arc<MobType> {
         head_rot_speed: 10.0,
         max_head_x_rot: 40.0,
         max_head_y_rot: 75.0,
+        body_rotation: Default::default(),
         ambient_interval: 120,
         flags: Flags::default(),
         model: Arc::new(Part {

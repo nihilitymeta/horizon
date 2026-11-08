@@ -401,6 +401,10 @@ pub struct MobType {
     pub head_rot_speed: f32,
     pub max_head_x_rot: f32,
     pub max_head_y_rot: f32,
+    /// How a stationary mob's body follows its head (vanilla's ramp by
+    /// default); a mod kind table may name `"vanilla"`, `"smooth"` or
+    /// `"frozen"`.
+    pub body_rotation: control::BodyRotationMode,
     pub ambient_interval: i32,
     pub flags: Flags,
     pub model: Arc<Part>,
@@ -469,6 +473,7 @@ impl MobType {
             head_rot_speed: 10.0,
             max_head_x_rot: 40.0,
             max_head_y_rot: 75.0,
+            body_rotation: Default::default(),
             ambient_interval: 120,
             flags: Flags {
                 animal: true,
@@ -532,7 +537,71 @@ fn culls_back_faces(key: &str) -> bool {
 pub struct MobTypes {
     pub types: HashMap<String, MobType>,
 }
+/// A kind's `body_rotation`: a mode name on its own, or a table with
+/// the mode and the smooth rate. Anything else warns and stays vanilla.
+fn parse_body_rotation_inner(v: &Value, id: &str) -> control::BodyRotationMode {
+    use control::BodyRotationMode as Mode;
+    const ACCEPTED: &str = "`vanilla`, `smooth` or `frozen`";
+    let warn = |what: &str| {
+        log::warn!("Horizon: entity type {id}: {what}; expected {ACCEPTED}, using vanilla");
+    };
+    const DEFAULT_RATE: f32 = 5.0;
+    let rate = |v: &Value| -> f32 {
+        // No rate named: the default, no warning.
+        if v.is_null() {
+            return DEFAULT_RATE;
+        }
+        let Some(n) = v.as_f64().map(|n| n as f32) else {
+            warn("the smooth rate is not a number, using 5.0");
+            return DEFAULT_RATE;
+        };
+        if n.is_finite() && (0.1..=90.0).contains(&n) {
+            n
+        } else {
+            warn(&format!(
+                "the smooth rate {n} is outside 0.1..=90.0, using 5.0"
+            ));
+            DEFAULT_RATE
+        }
+    };
+    match v {
+        Value::Null => Mode::Vanilla,
+        Value::String(mode) => match mode.as_str() {
+            "vanilla" => Mode::Vanilla,
+            "smooth" => Mode::Smooth {
+                degrees_per_tick: DEFAULT_RATE,
+            },
+            "frozen" => Mode::Frozen,
+            _ => {
+                warn(&format!("unknown body rotation mode {mode:?}"));
+                Mode::Vanilla
+            }
+        },
+        Value::Object(_) => match v["mode"].as_str() {
+            Some("smooth") => Mode::Smooth {
+                degrees_per_tick: rate(&v["degrees_per_tick"]),
+            },
+            Some("vanilla") => Mode::Vanilla,
+            Some("frozen") => Mode::Frozen,
+            _ => {
+                warn("a body rotation table needs a `mode`");
+                Mode::Vanilla
+            }
+        },
+        _ => {
+            warn("a body rotation is a mode name or a table");
+            Mode::Vanilla
+        }
+    }
+}
+
 impl MobTypes {
+    /// The kind-table `body_rotation` parser, for tests.
+    #[cfg(test)]
+    pub(crate) fn parse_body_rotation_for_tests(v: &Value, id: &str) -> control::BodyRotationMode {
+        parse_body_rotation_inner(v, id)
+    }
+
     pub fn load(root: &Path) -> crate::Result<Self> {
         Self::load_with_models(root, true, None)
     }
@@ -662,6 +731,7 @@ impl MobTypes {
                 head_rot_speed: def.head_rot_speed(),
                 max_head_x_rot: def.max_head_x_rot(),
                 max_head_y_rot: def.max_head_y_rot(),
+                body_rotation: parse_body_rotation_inner(&t["body_rotation"], &id),
                 ambient_interval: def.ambient_interval(),
                 flags,
                 model: model.map_or_else(
@@ -3399,6 +3469,9 @@ impl Mob {
         mob.extra.explosion_radius = 3;
         // The PathNavigation constructor: the base follow range.
         mob.ai.nav.max_visited_nodes = (mob.kind.follow_range * 16.0).floor() as i32;
+        // The kind body-rotation mode travels with the mob; Lua may change
+        // it per mob afterwards (`horizon.set_body_rotation`).
+        mob.ai.body.mode = mob.kind.body_rotation;
         ai::register(&mut mob);
         // A mod's mob that leaves its goals to scripts: the species' goals
         // go, its controls and the rest of its nature stay.
@@ -5815,6 +5888,52 @@ mod totem_tests {
         );
     }
 }
+#[cfg(test)]
+mod body_rotation_mode_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The `body_rotation` rows of kind tables: a string, a table with a
+    /// rate, an unknown mode, an out-of-range rate and a missing key.
+    #[test]
+    fn kind_tables_parse_to_modes_with_a_vanilla_default() {
+        let parsed = |v: serde_json::Value| {
+            // `parse_body_rotation` lives in `load_with_models`' body; the
+            // hook reads it once here so a typo fails loudly.
+            MobTypes::parse_body_rotation_for_tests(&v, "minecraft:cow")
+        };
+        assert_eq!(
+            parsed(json!("smooth")),
+            control::BodyRotationMode::Smooth {
+                degrees_per_tick: 5.0
+            }
+        );
+        assert_eq!(
+            parsed(json!({"mode": "smooth", "degrees_per_tick": 7})),
+            control::BodyRotationMode::Smooth {
+                degrees_per_tick: 7.0
+            }
+        );
+        assert_eq!(parsed(json!("frozen")), control::BodyRotationMode::Frozen);
+        assert_eq!(parsed(json!("vanilla")), control::BodyRotationMode::Vanilla);
+        assert_eq!(parsed(json!(null)), control::BodyRotationMode::Vanilla);
+        // An unknown mode warns and stays vanilla.
+        assert_eq!(parsed(json!("swivel")), control::BodyRotationMode::Vanilla);
+        // A rate outside 0.1..=90.0 warns and takes the default.
+        assert_eq!(
+            parsed(json!({"mode": "smooth", "degrees_per_tick": 200})),
+            control::BodyRotationMode::Smooth {
+                degrees_per_tick: 5.0
+            }
+        );
+        // A table without a mode warns and stays vanilla.
+        assert_eq!(
+            parsed(json!({"degrees_per_tick": 7})),
+            control::BodyRotationMode::Vanilla
+        );
+    }
+}
+
 #[cfg(test)]
 mod effect_refusal_tests {
     use super::*;

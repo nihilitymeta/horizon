@@ -558,6 +558,7 @@ mod tests {
         let model = Arc::new(Part::parse("root", &json!({"children": {"head": {}}})));
         let kind = Arc::new(MobType {
             id: "minecraft:camel".into(),
+            body_rotation: Default::default(),
             species: Species::Camel,
             width: 1.7,
             height: 2.375,

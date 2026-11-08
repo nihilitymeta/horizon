@@ -1779,6 +1779,7 @@ impl LuaMod {
             "add_target_goal",
             "clear_goals",
             "clear_target_goals",
+            "set_body_rotation",
             "set_block_property",
             "schedule_tick",
             "handled",
@@ -3100,7 +3101,10 @@ impl Hooks for LuaMod {
     /// A mob's goals as its species set them up: handlers see the mob's view
     /// and add Lua goals (`horizon.add_goal(priority, name)`,
     /// `horizon.add_target_goal`) or clear the selectors first
-    /// (`horizon.clear_goals()`, `horizon.clear_target_goals()`).
+    /// (`horizon.clear_goals()`, `horizon.clear_target_goals()`). Handlers
+    /// can also set how a stationary mob's body follows its head
+    /// (`horizon.set_body_rotation(mode, rate)` with `mode` one of
+    /// `vanilla`, `smooth` or `frozen` and `rate` the smooth degrees a tick).
     fn mob_ai_register(&self, event: &mut MobAiRegisterEvent<'_>) {
         let mob = &mut *event.mob;
         let view = match goals::view_table(&self.lua, &MobView::of(mob, None)) {
@@ -3131,6 +3135,33 @@ impl Hooks for LuaMod {
                 }
                 "clear_goals" => mob.ai.goals.clear(),
                 "clear_target_goals" => mob.ai.targets.clear(),
+                "set_body_rotation" => {
+                    use horizon_client::mobs::control::BodyRotationMode as Mode;
+                    let (mode, rate): (String, Option<f64>) =
+                        (args.get(1)?, args.get(2)?);
+                    const ACCEPTED: &str = "`vanilla`, `smooth` or `frozen`";
+                    mob.ai.body.mode = match mode.as_str() {
+                        "vanilla" => Mode::Vanilla,
+                        "smooth" => {
+                            let rate = rate.unwrap_or(5.0) as f32;
+                            if rate.is_finite() && (0.1..=90.0).contains(&rate) {
+                                Mode::Smooth {
+                                    degrees_per_tick: rate,
+                                }
+                            } else {
+                                return Err(mlua::Error::runtime(format!(
+                                    "set_body_rotation({mode:?}, {rate}): the smooth rate stays within 0.1..=90.0"
+                                )));
+                            }
+                        }
+                        "frozen" => Mode::Frozen,
+                        _ => {
+                            return Err(mlua::Error::runtime(format!(
+                                "set_body_rotation({mode:?}): no such body rotation; use {ACCEPTED}"
+                            )));
+                        }
+                    };
+                }
                 other => self.warn(format!("mob_ai_register: {other} needs a host; dropped")),
             }
             Ok(())
@@ -4625,6 +4656,85 @@ experimental = ["scripts"]
         );
         let e = r.unwrap_err().to_string();
         assert!(e.contains("no goal missing"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_script_sets_a_mobs_body_rotation_from_mob_ai_register() {
+        let (dir, path) = hmod(
+            "rotation",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.on("mob_ai_register", function(mob)
+                  if mob.kind == "minecraft:cow" then
+                    horizon.set_body_rotation("smooth", 7)
+                  end
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut mob = horizon_client::mobs::Mob::new(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        assert_eq!(
+            mob.ai.body.mode,
+            horizon_client::mobs::control::BodyRotationMode::Vanilla
+        );
+        m.mob_ai_register(&mut test_events::mob_ai_register_event(&mut mob));
+        assert_eq!(
+            mob.ai.body.mode,
+            horizon_client::mobs::control::BodyRotationMode::Smooth {
+                degrees_per_tick: 7.0
+            }
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn an_unknown_body_rotation_mode_is_the_handlers_error() {
+        let (dir, path) = hmod(
+            "rotation-bad",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.on("mob_ai_register", function(mob)
+                  horizon.set_body_rotation("swivel")
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        // `load` leaves a status row behind, so a later `error`-like lookup
+        // sees this mod; the handler then runs against a real mob. The
+        // game's own unknown-mode error must name the accepted modes, and
+        // the mob stays vanilla.
+        set_status(ModStatus {
+            id: m.id().into(),
+            ..Default::default()
+        });
+        let mut mob = horizon_client::mobs::Mob::new(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        m.mob_ai_register(&mut test_events::mob_ai_register_event(&mut mob));
+        assert_eq!(
+            mob.ai.body.mode,
+            horizon_client::mobs::control::BodyRotationMode::Vanilla
+        );
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == m.id())
+            .and_then(|s| s.error)
+            .expect("the failed set_body_rotation is recorded");
+        assert!(e.contains("no such body rotation"), "{e}");
+        assert!(e.contains("vanilla"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

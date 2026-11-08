@@ -207,6 +207,7 @@ fn load_player_type(models: &horizon_client::mobs::EntityModelDocument) -> Optio
             head_rot_speed: 10.0,
             max_head_x_rot: 40.0,
             max_head_y_rot: 75.0,
+            body_rotation: Default::default(),
             ambient_interval: 80,
             flags: Default::default(),
             model: Arc::new(model),
