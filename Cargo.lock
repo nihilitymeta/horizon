@@ -1196,7 +1196,7 @@ dependencies = [
 name = "event-horizon-websocket"
 version = "0.1.0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "getrandom 0.3.4",
  "horizon-core",
  "horizon-transport",

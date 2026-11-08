@@ -34,7 +34,8 @@ pub(in crate::game) fn id_of(t: Target) -> Option<u32> {
         | Target::Trident(id)
         | Target::Spawner(id)
         | Target::Fangs(id)
-        | Target::Cloud(id) => Some(id),
+        | Target::Cloud(id)
+        | Target::Cushion(id) => Some(id),
     }
 }
 

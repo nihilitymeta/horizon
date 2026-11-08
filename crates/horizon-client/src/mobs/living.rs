@@ -2423,6 +2423,7 @@ mod tests {
                 others_grid: None,
                 others_index: None,
                 others_villagers: None,
+                kinds: None,
                 others_solid: None,
                 daylight: true,
                 monsters_burn: false,
