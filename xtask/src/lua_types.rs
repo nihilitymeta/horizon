@@ -83,6 +83,60 @@ const TYPES: &[(&str, &str)] = &[
     ("CommandArgs", "{ raw: string, [string]: any }"),
     ("Inventory", "{ [number]: Item }"),
     ("Carried", "{ [string]: number }"),
+    // The event tables of the generated hooks (`generated_hooks.rs`): one
+    // table per hook, holding the struct's fields by name.
+    ("Vec2", "{ x: number, y: number }"),
+    ("Chunk", "{ x: number, z: number }"),
+    ("LevelTickPreEvent", "{ dimension: string }"),
+    (
+        "ChunkLoadEvent",
+        "{ dimension: string, chunk: Chunk, new: boolean }",
+    ),
+    (
+        "BlockCookEvent",
+        "{ pos: Vec3, item: string, result: string }",
+    ),
+    (
+        "AnvilDamagedEvent",
+        "{ dimension: string, pos: Vec3, from: string, to: string }",
+    ),
+    (
+        "PlayerContainerCloseEvent",
+        "{ player: PlayerRef, dimension: string, menu: string, pos: Vec3? }",
+    ),
+    (
+        "BlockBurnEvent",
+        "{ dimension: string, pos: Vec3, block: string }",
+    ),
+    (
+        "BellRingEvent",
+        "{ dimension: string, pos: Vec3, block: string, player: string? }",
+    ),
+    (
+        "ArrowLooseEvent",
+        "{ item: Item, has_ammo: boolean, charge: number }",
+    ),
+    ("BlockLockCheckEvent", "{ player: PlayerRef, pos: Vec3 }"),
+    ("ComponentTypesEvent", "{ types: { string } }"),
+    ("DatapackSyncEvent", "{ recipe_types: { string } }"),
+    (
+        "ScreenTooltipEvent",
+        "{ block: string, data: { number }, at: Vec2, lines: { string } }",
+    ),
+    (
+        "IsBonemealSuccessEvent",
+        "{ dimension: string, pos: Vec3, block: string, success: boolean }",
+    ),
+    ("ItemFluidTankEvent", "{ item: string, capacity: number? }"),
+    ("TooltipComponentEvent", "{ item: Item, size: Vec2? }"),
+    (
+        "ScreenClickEvent",
+        "{ block: string, data: { number }, at: Vec2, right: boolean, button: number? }",
+    ),
+    (
+        "PrepareAnvilEvent",
+        "{ player: PlayerRef, pos: Vec3, cost: number, result: Item? }",
+    ),
 ];
 
 /// Every hook a script registers for (`horizon.on(name, fn[, kind])`) and
@@ -245,6 +299,30 @@ const HOOKS: &[(&str, &str)] = &[
         "block_placed",
         "(x: number, y: number, z: number, block: string, player: Player, item: Item) -> ()",
     ),
+    // The generated hooks (`generated_hooks.rs`): one event table per hook.
+    ("level_tick_pre", "(event: LevelTickPreEvent) -> ()"),
+    ("chunk_load", "(event: ChunkLoadEvent) -> ()"),
+    ("block_cook", "(event: BlockCookEvent) -> ()"),
+    ("anvil_damaged", "(event: AnvilDamagedEvent) -> ()"),
+    (
+        "player_container_close",
+        "(event: PlayerContainerCloseEvent) -> ()",
+    ),
+    ("block_burn", "(event: BlockBurnEvent) -> ()"),
+    ("bell_ring", "(event: BellRingEvent) -> ()"),
+    ("arrow_loose", "(event: ArrowLooseEvent) -> ()"),
+    ("block_lock_check", "(event: BlockLockCheckEvent) -> ()"),
+    ("component_types", "(event: ComponentTypesEvent) -> ()"),
+    ("datapack_sync", "(event: DatapackSyncEvent) -> ()"),
+    ("screen_tooltip", "(event: ScreenTooltipEvent) -> ()"),
+    (
+        "is_bonemeal_success",
+        "(event: IsBonemealSuccessEvent) -> ()",
+    ),
+    ("item_fluid_tank", "(event: ItemFluidTankEvent) -> ()"),
+    ("tooltip_component", "(event: TooltipComponentEvent) -> ()"),
+    ("screen_click", "(event: ScreenClickEvent) -> ()"),
+    ("prepare_anvil", "(event: PrepareAnvilEvent) -> ()"),
 ];
 
 /// Every function and field of `horizon`, with its type; the runtime
@@ -480,20 +558,27 @@ mod tests {
     }
 
     /// Every hook `horizon.on` takes (the runtime's `LUA_HOOK_NAMES`, less
-    /// `command`, which is `horizon.command`'s) has a handler type, and no
-    /// other hook has one.
+    /// `command`, which is `horizon.command`'s, plus the generated hooks'
+    /// `GENERATED_HOOK_NAMES`) has a handler type, and no other hook has one.
     #[test]
     fn every_hook_the_runtime_takes_has_a_handler_type() {
-        let src = runtime_source();
-        let start = src.find("pub const LUA_HOOK_NAMES").unwrap();
-        let end = start + src[start..].find("];").unwrap();
-        let mut runtime: BTreeSet<String> = src[start..end]
-            .split('"')
-            .skip(1)
-            .step_by(2)
-            .map(str::to_owned)
-            .collect();
+        fn names(src: &str, list: &str) -> BTreeSet<String> {
+            let start = src.find(list).unwrap();
+            let end = start + src[start..].find("];").unwrap();
+            src[start..end]
+                .split('"')
+                .skip(1)
+                .step_by(2)
+                .map(str::to_owned)
+                .collect()
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let mut runtime = names(&runtime_source(), "pub const LUA_HOOK_NAMES");
         runtime.remove("command");
+        let generated =
+            std::fs::read_to_string(root.join("crates/event-horizon-lua/src/generated_hooks.rs"))
+                .unwrap();
+        runtime.extend(names(&generated, "pub const GENERATED_HOOK_NAMES"));
         let typed: BTreeSet<String> = super::HOOKS.iter().map(|(h, _)| h.to_string()).collect();
         assert_eq!(runtime, typed);
     }

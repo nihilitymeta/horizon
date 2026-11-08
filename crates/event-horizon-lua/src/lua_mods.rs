@@ -1648,10 +1648,21 @@ impl LuaMod {
             "on",
             lua.create_function(
                 move |lua, (name, f, kind): (String, Function, Option<String>)| {
-                    if !LUA_HOOK_NAMES.contains(&name.as_str()) {
+                    if !LUA_HOOK_NAMES.contains(&name.as_str())
+                        && !crate::generated_hooks::GENERATED_HOOK_NAMES.contains(&name.as_str())
+                    {
                         return Err(mlua::Error::runtime(format!(
                             "horizon.on({name:?}): no such hook; the hooks are {}",
                             LUA_HOOK_NAMES.join(", ")
+                        )));
+                    }
+                    // The generated hooks answer every event to every handler:
+                    // a kind would silently never fire.
+                    if kind.is_some()
+                        && crate::generated_hooks::GENERATED_HOOK_NAMES.contains(&name.as_str())
+                    {
+                        return Err(mlua::Error::runtime(format!(
+                            "horizon.on({name:?}): this hook takes no kind"
                         )));
                     }
                     let list = match kind {
@@ -4540,6 +4551,9 @@ impl Hooks for LuaMod {
             self.hook_error(hook, e);
         }
     }
+    // The generated hooks (`generated_hooks.rs`): one method per hook above,
+    // wired the same way, with one event table each.
+    impl_generated_hooks!();
 }
 
 /// The table at `key` in `table`, made when there is none.

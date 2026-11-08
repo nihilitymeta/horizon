@@ -31,6 +31,25 @@ export type Light = { block: number, sky: number }
 export type CommandArgs = { raw: string, [string]: any }
 export type Inventory = { [number]: Item }
 export type Carried = { [string]: number }
+export type Vec2 = { x: number, y: number }
+export type Chunk = { x: number, z: number }
+export type LevelTickPreEvent = { dimension: string }
+export type ChunkLoadEvent = { dimension: string, chunk: Chunk, new: boolean }
+export type BlockCookEvent = { pos: Vec3, item: string, result: string }
+export type AnvilDamagedEvent = { dimension: string, pos: Vec3, from: string, to: string }
+export type PlayerContainerCloseEvent = { player: PlayerRef, dimension: string, menu: string, pos: Vec3? }
+export type BlockBurnEvent = { dimension: string, pos: Vec3, block: string }
+export type BellRingEvent = { dimension: string, pos: Vec3, block: string, player: string? }
+export type ArrowLooseEvent = { item: Item, has_ammo: boolean, charge: number }
+export type BlockLockCheckEvent = { player: PlayerRef, pos: Vec3 }
+export type ComponentTypesEvent = { types: { string } }
+export type DatapackSyncEvent = { recipe_types: { string } }
+export type ScreenTooltipEvent = { block: string, data: { number }, at: Vec2, lines: { string } }
+export type IsBonemealSuccessEvent = { dimension: string, pos: Vec3, block: string, success: boolean }
+export type ItemFluidTankEvent = { item: string, capacity: number? }
+export type TooltipComponentEvent = { item: Item, size: Vec2? }
+export type ScreenClickEvent = { block: string, data: { number }, at: Vec2, right: boolean, button: number? }
+export type PrepareAnvilEvent = { player: PlayerRef, pos: Vec3, cost: number, result: Item? }
 
 -- `horizon.on(name, fn[, kind])`: one overload per hook, with its handler's signature.
 export type HorizonOn =
@@ -82,7 +101,24 @@ export type HorizonOn =
     ((name: "player_exp_change", fn: (player: PlayerRef, amount: number) -> (), kind: string?) -> ()) &
     ((name: "player_container_open", fn: (player: PlayerRef, menu: string, pos: Vec3?) -> (), kind: string?) -> ()) &
     ((name: "block_broken", fn: (x: number, y: number, z: number, block: string, player: Player) -> (), kind: string?) -> ()) &
-    ((name: "block_placed", fn: (x: number, y: number, z: number, block: string, player: Player, item: Item) -> (), kind: string?) -> ())
+    ((name: "block_placed", fn: (x: number, y: number, z: number, block: string, player: Player, item: Item) -> (), kind: string?) -> ()) &
+    ((name: "level_tick_pre", fn: (event: LevelTickPreEvent) -> (), kind: string?) -> ()) &
+    ((name: "chunk_load", fn: (event: ChunkLoadEvent) -> (), kind: string?) -> ()) &
+    ((name: "block_cook", fn: (event: BlockCookEvent) -> (), kind: string?) -> ()) &
+    ((name: "anvil_damaged", fn: (event: AnvilDamagedEvent) -> (), kind: string?) -> ()) &
+    ((name: "player_container_close", fn: (event: PlayerContainerCloseEvent) -> (), kind: string?) -> ()) &
+    ((name: "block_burn", fn: (event: BlockBurnEvent) -> (), kind: string?) -> ()) &
+    ((name: "bell_ring", fn: (event: BellRingEvent) -> (), kind: string?) -> ()) &
+    ((name: "arrow_loose", fn: (event: ArrowLooseEvent) -> (), kind: string?) -> ()) &
+    ((name: "block_lock_check", fn: (event: BlockLockCheckEvent) -> (), kind: string?) -> ()) &
+    ((name: "component_types", fn: (event: ComponentTypesEvent) -> (), kind: string?) -> ()) &
+    ((name: "datapack_sync", fn: (event: DatapackSyncEvent) -> (), kind: string?) -> ()) &
+    ((name: "screen_tooltip", fn: (event: ScreenTooltipEvent) -> (), kind: string?) -> ()) &
+    ((name: "is_bonemeal_success", fn: (event: IsBonemealSuccessEvent) -> (), kind: string?) -> ()) &
+    ((name: "item_fluid_tank", fn: (event: ItemFluidTankEvent) -> (), kind: string?) -> ()) &
+    ((name: "tooltip_component", fn: (event: TooltipComponentEvent) -> (), kind: string?) -> ()) &
+    ((name: "screen_click", fn: (event: ScreenClickEvent) -> (), kind: string?) -> ()) &
+    ((name: "prepare_anvil", fn: (event: PrepareAnvilEvent) -> (), kind: string?) -> ())
 
 declare horizon: {
     on: HorizonOn,

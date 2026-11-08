@@ -8,6 +8,8 @@
 #![forbid(unsafe_code)]
 
 pub mod console;
+#[macro_use]
+mod generated_hooks;
 pub mod lua_mods;
 
 pub use lua_mods::{LUA_HOOK_NAMES, check_mod, discover};
