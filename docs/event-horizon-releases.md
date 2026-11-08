@@ -63,8 +63,9 @@ choosing (matching `horizon-mod.toml`), and its own `NIGHTLY_PAUSED` variable on
 
 On Linux the launcher is also one file to install rather than unpack: download `horizon-launcher.flatpak` and run
 `flatpak install horizon-launcher.flatpak`, then start **Event Horizon** from the menu. It carries its own JRE, keeps
-its versions in the same `~/.local/share/horizon-launcher` a distribution build uses, and updates with
-`flatpak update` rather than by itself.
+its versions in the same `~/.local/share/horizon-launcher` a distribution build uses, and never replaces itself: a
+newer bundle is installed over it with `flatpak install --reinstall horizon-launcher.flatpak` (a bundle has no
+repository, so `flatpak update` has nothing to ask).
 
 The launcher's Versions page lists Event Horizon's builds in a section of their own, above Horizon's: a release as
 **Event Horizon 0.1.0**, a build you made from the checkout as **Event Horizon · local <commit>**. Its **GitHub

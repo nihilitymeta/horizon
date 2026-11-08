@@ -6,7 +6,8 @@
 # The binary is built inside the SDK, so it links the runtime's libraries and no distribution's; `horizon-launcher.sh`
 # is the command, which points the launcher at the player's own data folder (so versions, worlds and settings are the
 # ones a distribution build uses) and at the bundled JRE. Built without `HORIZON_LAUNCHER_TAG`, the launcher is a
-# "built by hand" build: it never replaces itself, and `flatpak update` is how it updates.
+# "built by hand" build: it never replaces itself. The bundle has no repository, so a newer one is installed over it
+# (`flatpak install --reinstall`), which is what the release notes say.
 app-id: dev.playhorizon.HorizonLauncher
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
