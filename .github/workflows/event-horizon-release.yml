@@ -180,8 +180,13 @@ jobs:
         with:
           name: horizon-launcher-flatpak
           path: dist
-      - name: Put the bundle on the release
+      - name: Put the bundle on the release, and its checksum with the others
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.decide.outputs.tag }}
-        run: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" dist/horizon-launcher.flatpak
+        run: |
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" dist/horizon-launcher.flatpak
+          # SHA256SUMS is written before the bundle exists: add its line to the list and put the list back.
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p SHA256SUMS -D dist --clobber
+          (cd dist && sha256sum horizon-launcher.flatpak >> SHA256SUMS)
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" dist/SHA256SUMS --clobber
