@@ -170,7 +170,7 @@ impl Game<'_> {
                             .is_none_or(|warned| waiting - warned >= SERVER_STOP_WARN)
                         {
                             log::warn!(
-                                "Horizon: the server thread did not answer within {} s \
+                                "Horizon: the server has not stopped after {} s \
                                  (running: {}, autosaving: {}, smoothed tick {:.1} ms)",
                                 waiting.as_secs(),
                                 !server.stopped(),
@@ -316,7 +316,7 @@ impl Game<'_> {
         horizon_client::level_loading::draw_progress(
             &mut hud,
             &self.gui.atlas,
-            &super::screen_info::tr("menu.savingLevel", &[]),
+            &super::screen_info::tr("menu.savingChunks", &[]),
             progress,
         );
         renderer.render(&loading_frame(&hud))?;
