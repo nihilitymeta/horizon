@@ -539,10 +539,10 @@ pub struct MobTypes {
 }
 /// A kind's `body_rotation`: a mode name on its own, or a table with
 /// the mode and the smooth rate. Anything else warns and stays vanilla.
-fn parse_body_rotation_inner(v: &Value, id: &str) -> control::BodyRotationMode {
+fn parse_body_rotation(v: &Value, id: &str) -> control::BodyRotationMode {
     use control::BodyRotationMode as Mode;
     const ACCEPTED: &str = "`vanilla`, `smooth` or `frozen`";
-    let warn = |what: &str| {
+    let warn_mode = |what: &str| {
         log::warn!("Horizon: entity type {id}: {what}; expected {ACCEPTED}, using vanilla");
     };
     const DEFAULT_RATE: f32 = 5.0;
@@ -551,17 +551,15 @@ fn parse_body_rotation_inner(v: &Value, id: &str) -> control::BodyRotationMode {
         if v.is_null() {
             return DEFAULT_RATE;
         }
-        let Some(n) = v.as_f64().map(|n| n as f32) else {
-            warn("the smooth rate is not a number, using 5.0");
-            return DEFAULT_RATE;
-        };
-        if n.is_finite() && (0.1..=90.0).contains(&n) {
-            n
-        } else {
-            warn(&format!(
-                "the smooth rate {n} is outside 0.1..=90.0, using 5.0"
-            ));
-            DEFAULT_RATE
+        match v.as_f64().map(|n| n as f32) {
+            Some(n) if n.is_finite() && (0.1..=90.0).contains(&n) => n,
+            _ => {
+                log::warn!(
+                    "Horizon: entity type {id}: the smooth rate is not a number in \
+                     0.1..=90.0, using {DEFAULT_RATE}"
+                );
+                DEFAULT_RATE
+            }
         }
     };
     match v {
@@ -573,7 +571,7 @@ fn parse_body_rotation_inner(v: &Value, id: &str) -> control::BodyRotationMode {
             },
             "frozen" => Mode::Frozen,
             _ => {
-                warn(&format!("unknown body rotation mode {mode:?}"));
+                warn_mode(&format!("unknown body rotation mode {mode:?}"));
                 Mode::Vanilla
             }
         },
@@ -584,24 +582,18 @@ fn parse_body_rotation_inner(v: &Value, id: &str) -> control::BodyRotationMode {
             Some("vanilla") => Mode::Vanilla,
             Some("frozen") => Mode::Frozen,
             _ => {
-                warn("a body rotation table needs a `mode`");
+                warn_mode("a body rotation table needs a `mode`");
                 Mode::Vanilla
             }
         },
         _ => {
-            warn("a body rotation is a mode name or a table");
+            warn_mode("a body rotation is a mode name or a table");
             Mode::Vanilla
         }
     }
 }
 
 impl MobTypes {
-    /// The kind-table `body_rotation` parser, for tests.
-    #[cfg(test)]
-    pub(crate) fn parse_body_rotation_for_tests(v: &Value, id: &str) -> control::BodyRotationMode {
-        parse_body_rotation_inner(v, id)
-    }
-
     pub fn load(root: &Path) -> crate::Result<Self> {
         Self::load_with_models(root, true, None)
     }
@@ -731,7 +723,7 @@ impl MobTypes {
                 head_rot_speed: def.head_rot_speed(),
                 max_head_x_rot: def.max_head_x_rot(),
                 max_head_y_rot: def.max_head_y_rot(),
-                body_rotation: parse_body_rotation_inner(&t["body_rotation"], &id),
+                body_rotation: parse_body_rotation(&t["body_rotation"], &id),
                 ambient_interval: def.ambient_interval(),
                 flags,
                 model: model.map_or_else(
@@ -5897,11 +5889,7 @@ mod body_rotation_mode_tests {
     /// rate, an unknown mode, an out-of-range rate and a missing key.
     #[test]
     fn kind_tables_parse_to_modes_with_a_vanilla_default() {
-        let parsed = |v: serde_json::Value| {
-            // `parse_body_rotation` lives in `load_with_models`' body; the
-            // hook reads it once here so a typo fails loudly.
-            MobTypes::parse_body_rotation_for_tests(&v, "minecraft:cow")
-        };
+        let parsed = |v: serde_json::Value| parse_body_rotation(&v, "minecraft:cow");
         assert_eq!(
             parsed(json!("smooth")),
             control::BodyRotationMode::Smooth {
