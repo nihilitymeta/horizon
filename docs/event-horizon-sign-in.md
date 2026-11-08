@@ -85,6 +85,14 @@ signed in with. When the session runs out, the launcher says "This build of the 
 sign in with Horizon's launcher again. Once your own app is approved, sign in with Event Horizon's launcher, and the
 account renews itself from then on.
 
+### A borrowed app, as a stopgap
+
+A fork without an approved app of its own can set the repository variable to **Horizon's** app,
+`331e08f8-172d-43b9-835a-3108c2fcdbf3`, which is Mojang-approved: an account signed in with Horizon's launcher then
+renews itself in the fork's launcher too. It is a stopgap, never a setup. Horizon's owner can turn that app off for
+everyone, and Mojang approved it for Horizon, not for a fork; put the fork's own app in the variable as soon as it is
+approved.
+
 ## If something goes wrong
 
 | What the launcher says | What it means |
