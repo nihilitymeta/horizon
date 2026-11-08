@@ -223,13 +223,8 @@ impl Game<'_> {
             (true, None) => {
                 let was = window.fullscreen().is_some();
                 if !was {
-                    if window.is_maximized() {
-                        window.set_maximized(false);
-                    }
-                    let monitor = window
-                        .current_monitor()
-                        .or_else(|| window.primary_monitor());
-                    window.set_fullscreen(Some(Fullscreen::Borderless(monitor)));
+                    let borderless = horizon_client::window::borderless_fullscreen(window);
+                    horizon_client::window::enter_fullscreen(window, borderless);
                 }
                 self.ui.options.calibration_fullscreen = Some(was);
             }
@@ -384,7 +379,9 @@ impl Game<'_> {
                 Event::Close => {
                     self.settings.save(&Self::options_path());
                     let to_game = std::mem::take(&mut self.options_to_game);
-                    self.screen = if std::mem::take(&mut self.options_to_world_options) {
+                    self.screen = if let Some(screen) = self.panel.recipes_settings_return.take() {
+                        screen
+                    } else if std::mem::take(&mut self.options_to_world_options) {
                         Screen::WorldOptions
                     } else if self.options_from_title || to_game {
                         Screen::Playing
@@ -481,6 +478,12 @@ impl Game<'_> {
                     self.confirm_trusted_link(ACCESSIBILITY_HELP_LINK, Screen::Options)
                 }
                 Event::Narrator => self.narrator_status_changed(),
+                Event::OpenStudioReplay(path) => {
+                    let path = path.to_string_lossy().to_string();
+                    if let Err(e) = self.open_studio_replay(&path) {
+                        log::warn!("Horizon Studio: could not open {path}: {e}");
+                    }
+                }
                 Event::OpenStudioFolder => {
                     let dir = std::path::PathBuf::from("recordings");
                     let _ = std::fs::create_dir_all(&dir);
@@ -557,13 +560,24 @@ impl Game<'_> {
                 s.horizon.fxaa,
                 s.horizon.taa,
                 s.horizon.upscaling.ratio(),
+                s.horizon.upscaling_sharpness as f32 / 100.0,
             );
             r.set_frame_generation(
                 s.horizon.frame_generation != horizon_client::graphics::FrameGeneration::Off,
             );
             r.set_hdr_lighting(s.horizon.hdr_lighting);
             // Where it is offered (`Renderer::gpu_culling_offer`); unchanged, it does nothing.
-            let _ = r.set_gpu_culling(s.horizon.gpu_culling);
+            // Auto has it on while its measurements say so (`GpuCullingAuto`), and starts over
+            // when the choice is another one.
+            let gpu_culling = match s.horizon.gpu_culling {
+                horizon_client::graphics::GpuCullingMode::Off => false,
+                horizon_client::graphics::GpuCullingMode::On => true,
+                horizon_client::graphics::GpuCullingMode::Auto => self.gpu_culling_auto.on(),
+            };
+            if s.horizon.gpu_culling != horizon_client::graphics::GpuCullingMode::Auto {
+                self.gpu_culling_auto.reset();
+            }
+            let _ = r.set_gpu_culling(gpu_culling);
             r.set_hdr(
                 s.horizon.hdr,
                 s.horizon.paper_white_nits() as f32,
@@ -634,12 +648,11 @@ impl Game<'_> {
             }
             if let Some(w) = &self.window {
                 let on = w.fullscreen().is_none();
-                if on && w.is_maximized() {
-                    w.set_maximized(false);
-                }
-                let monitor = w.current_monitor().or_else(|| w.primary_monitor());
-                w.set_fullscreen(on.then_some(Fullscreen::Borderless(monitor)));
-                if !on {
+                if on {
+                    let borderless = horizon_client::window::borderless_fullscreen(w);
+                    horizon_client::window::enter_fullscreen(w, borderless);
+                } else {
+                    w.set_fullscreen(None);
                     windowed_again(w);
                 }
             }

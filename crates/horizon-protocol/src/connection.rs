@@ -290,6 +290,18 @@ pub struct Connection {
     pub reader: ConnReader,
     pub writer: ConnWriter,
 }
+fn configure_stream(stream: &TcpStream) -> Result<()> {
+    stream.set_nodelay(true)?;
+    let sock = socket2::SockRef::from(stream);
+    let keepalive = socket2::TcpKeepalive::new()
+        .with_time(Duration::from_secs(10))
+        .with_interval(Duration::from_secs(3));
+    #[cfg(not(any(target_os = "windows", target_os = "openbsd")))]
+    let keepalive = keepalive.with_retries(3);
+    let _ = sock.set_tcp_keepalive(&keepalive);
+    Ok(())
+}
+
 impl Connection {
     /// Connects to `host` and `port`, or through the first registered connector that recognizes `host`.
     pub fn connect(host: &str, port: u16, timeout: Duration) -> Result<Self> {
@@ -379,7 +391,7 @@ impl Connection {
         }
     }
     pub fn from_stream(stream: TcpStream) -> Result<Self> {
-        stream.set_nodelay(true)?;
+        configure_stream(&stream)?;
         Self::over(Stream::Tcp(stream))
     }
     /// A connection over a registered custom transport.
@@ -673,6 +685,20 @@ impl ConnReader {
     }
 }
 impl ConnWriter {
+    /// The server release selected for this connection (local play uses the pinned release).
+    pub fn server_version(&self) -> crate::adapter::ServerVersion {
+        self.adapter
+            .as_ref()
+            .map_or(crate::adapter::ServerVersion::Current, |a| a.version)
+    }
+
+    /// The old ServerData flag, once it arrived on a pre-component connection.
+    pub fn legacy_secure_chat_enforcement(&self) -> Option<bool> {
+        self.adapter
+            .as_ref()
+            .and_then(|a| a.legacy_secure_chat_enforcement())
+    }
+
     /// Write bytes as they are, with no framing: the legacy server list ping
     /// (`LegacyServerPinger`) is not a framed protocol.
     pub fn write_raw(&mut self, data: &[u8]) -> Result<()> {
@@ -1012,5 +1038,14 @@ mod tests {
         let (id, payload) = c.recv().unwrap();
         assert_eq!((id, payload.as_slice()), (3, &b"after"[..]));
         server.join().unwrap();
+    }
+
+    #[test]
+    fn tcp_stream_enables_nodelay_and_keepalive() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let _server = listener.accept().unwrap();
+        assert!(Connection::from_stream(stream).is_ok());
     }
 }

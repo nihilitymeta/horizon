@@ -398,7 +398,8 @@ enum InstanceCmd {
     /// List the instances other launchers keep (Prism Launcher, MultiMC, the official
     /// launcher, the CurseForge app, the Modrinth App), read without changing anything there
     Others {
-        /// Look in this folder instead: a launcher's folder, its instances/ or one instance
+        /// Look in this folder instead: a launcher's folder, a folder of instances (its
+        /// instances/, the CurseForge app's Instances) or one instance
         #[arg(long)]
         folder: Option<PathBuf>,
     },
@@ -407,7 +408,8 @@ enum InstanceCmd {
     CopyFrom {
         /// Its name, as `instance others` lists it
         name: String,
-        /// Look in this folder instead: a launcher's folder, its instances/ or one instance
+        /// Look in this folder instead: a launcher's folder, a folder of instances (its
+        /// instances/, the CurseForge app's Instances) or one instance
         #[arg(long)]
         folder: Option<PathBuf>,
         /// The new instance's name (default: the same)
@@ -1992,7 +1994,12 @@ fn account_command(action: AccountCmd, as_json: bool) -> Result<(), String> {
                         " "
                     };
                     let status = account::session::status(account::store(), &a.uuid);
-                    println!("{mark} {}  {}  {}", a.name, a.uuid, status.label());
+                    // Why it couldn't be checked (a keyring that didn't answer, #12179).
+                    let why = match status.state {
+                        account::session::State::Retry => format!(": {}", status.message),
+                        _ => String::new(),
+                    };
+                    println!("{mark} {}  {}  {}{why}", a.name, a.uuid, status.label());
                 }
                 for n in &accounts.offline {
                     let on = accounts.player() == account::Player::Offline(n.clone());
@@ -2004,7 +2011,11 @@ fn account_command(action: AccountCmd, as_json: bool) -> Result<(), String> {
                     );
                 }
                 if !accounts.has_owner(account::store()) {
-                    println!("{} {}", account::NoOwner, tr(backend::SIGN_IN_HINT));
+                    println!(
+                        "{} {}",
+                        account::NoOwner::default(),
+                        tr(backend::SIGN_IN_HINT)
+                    );
                 }
             }
         }
@@ -2539,7 +2550,7 @@ fn mods(action: ModsCmd, as_json: bool) -> Result<(), String> {
                 }).collect());
             } else {
                 if datapack && !found.is_empty() {
-                    println!("{}\n", horizon_launcher::browser::DATAPACK_SUPPORT);
+                    println!("{}\n", horizon_launcher::browser::datapack_support());
                 }
                 for p in &found {
                     let support = p.support();
@@ -2864,6 +2875,32 @@ fn other_instances(folder: Option<&Path>) -> Result<Vec<other_launchers::Found>,
             other_launchers::scan(Os::current(), &folders)
         }
     })
+}
+
+/// Where `instance others` looked when it found nothing, and what it looks for.
+fn no_other_instances(folder: Option<&Path>) -> String {
+    use horizon_launcher::sources::{Folders, Os};
+    match folder {
+        Some(dir) => format!(
+            "No other launcher's instance found in {}. Name a launcher's own folder (the \
+             official launcher's .minecraft, Prism Launcher, MultiMC, ATLauncher, the Modrinth \
+             App, the CurseForge app's minecraft folder), a folder of instances (instances, or \
+             the CurseForge app's Instances), or one instance's folder.",
+            dir.display()
+        ),
+        None => {
+            let looked: String = Folders::current()
+                .map(|f| other_launchers::scanned_folders(Os::current(), &f))
+                .unwrap_or_default()
+                .iter()
+                .map(|d| format!("\n    {}", d.display()))
+                .collect();
+            format!(
+                "No other launcher's instance found. Looked in:{looked}\nKeep yours somewhere \
+                 else? Name that folder with --folder."
+            )
+        }
+    }
 }
 
 fn other_plays(f: &other_launchers::Found) -> String {
@@ -3219,7 +3256,7 @@ fn instance(action: InstanceCmd, as_json: bool) -> Result<(), String> {
             if as_json {
                 json(found.iter().map(other_json).collect());
             } else if found.is_empty() {
-                println!("No other launcher's instance found.");
+                println!("{}", no_other_instances(folder.as_deref()));
             }
             for f in found.iter().filter(|_| !as_json) {
                 println!(
@@ -3845,7 +3882,12 @@ fn modpack(action: ModpackCmd, as_json: bool) -> Result<(), String> {
                 p.summary(),
                 counts.join(", ")
             );
-            println!("  {} portable, {} carried over", p.portable, p.mods.len());
+            println!(
+                "  {} portable, {} carried over, {} data packs for new worlds",
+                p.portable,
+                p.mods.len(),
+                p.datapacks
+            );
             if let Some(jars) = p.jars() {
                 println!("  {jars}");
             }

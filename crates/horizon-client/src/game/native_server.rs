@@ -25,7 +25,6 @@ use std::{collections::HashMap, path::PathBuf};
 /// A sidebar a server mod shows one player (`native_sidebar`): its title and
 /// up to 15 lines, top first, each a text on the left and, where the score's
 /// number would be, an optional text on the right. API 49.
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct NativeSidebar {
     pub(crate) title: Text,
@@ -319,7 +318,7 @@ fn server_player(host: &LanHost, g: &horizon_client::lan::guest::Guest) -> Nativ
 
 /// Helpers for server mods, kept as stable as the hook points.
 // Native mods use these; nothing in Horizon does.
-#[allow(dead_code)]
+#[allow(dead_code, reason = "native mod API (docs/native-mods.md)")]
 impl Game<'_> {
     /// The players on this server, in the order they joined. Empty on a
     /// client and in a world nobody else can join.
@@ -1317,7 +1316,6 @@ fn add_to(
 /// state is swapped in. Only plain stacks count; the inventory's 36 slots
 /// and the off hand, never the armour. Each change reaches the player's
 /// screen as any change to their inventory does.
-#[allow(dead_code)]
 impl Game<'_> {
     /// The main hand's stack: its item, count, and whether it is plain. On a
     /// client, the player's own.
@@ -1477,7 +1475,6 @@ fn orb_meets(position: [f64; 3], min: [f64; 3], max: [f64; 3]) -> bool {
 }
 
 /// Experience for server mods. API 101.
-#[allow(dead_code)]
 impl Game<'_> {
     /// The experience orbs of the server level `dimension` whose box meets
     /// the box `min`..`max`, in the level's order: what a mod reads before it
@@ -1597,7 +1594,7 @@ impl Game<'_> {
     /// they are the acting player (the host, or a guest swapped in), else a
     /// guest's through `as_guest`, only where no other player is swapped in.
     /// False when it didn't run: no such player here, or dead.
-    fn native_as_player(&mut self, uuid: u128, f: impl FnOnce(&mut Self)) -> bool {
+    pub(super) fn native_as_player(&mut self, uuid: u128, f: impl FnOnce(&mut Self)) -> bool {
         if uuid == self.native_acting_id() {
             if self
                 .player

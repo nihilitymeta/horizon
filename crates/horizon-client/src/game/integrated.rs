@@ -572,6 +572,7 @@ impl Game<'_> {
         self.server_packs_world_pack(&folder);
         self.connect_local(pipe, &player)?;
         if let Some(r) = self.remote.as_mut() {
+            r.save_folder = Some(folder.clone());
             // `new LevelLoadTracker(newWorld ? 500L : 0L)`.
             r.level_load = horizon_client::level_loading::LevelLoadTracker::new(if new_world {
                 horizon_client::level_loading::LEVEL_LOAD_CLOSE_DELAY_MS
@@ -880,10 +881,11 @@ impl Game<'_> {
             pending: None,
             load: LoadPhase::default(),
         });
-        // MinecraftServer.prepareLevels: no forced chunks to load, so the
-        // stage is over at once; the player's chunks come after.
+        // MinecraftServer.prepareLevels: the saved tickets' chunks load; the
+        // player's chunks come after.
         let view = &flags.load;
         view.start(Stage::LoadInitialChunks, 0);
+        startup::time("server.prepare_levels", || self.prepare_levels())?;
         view.finish(Stage::LoadInitialChunks);
         let _ = ready.send(Ok((pipe, self.level.name.clone())));
         startup::time("server.settle_spawn", || self.settle_spawn())

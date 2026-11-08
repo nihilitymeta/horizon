@@ -19,6 +19,7 @@ pub use crate::crafting::{CustomRecipe, Ingredient};
 pub use crate::extras::Corner;
 pub use crate::extras_hud::Corners;
 pub use crate::first_person::Hand;
+pub use crate::fluid_render::NativeFluidRenderOptions;
 pub use crate::fog::{FogData, FogType};
 pub use crate::game::NativeChunkSnapshot;
 pub use crate::game::NativeEffect;
@@ -27,7 +28,9 @@ pub use crate::game::NativeInventoryKind;
 pub use crate::game::native_block_entity_draw::{BlockEntityDraw, CubeFace};
 pub use crate::game::native_client_services::{
     NativeClientEntity, NativeClientHead, NativeClientItem, NativeClientProfile, NativeClientState,
+    NativeScreenKind, NativeWorldId,
 };
+pub use crate::game::native_text_field::NativeTextField;
 pub use crate::game::{
     ItemEnergyBuffer, NativeBiomeId, NativeBlockEdit, NativeBlockInfo, NativeBlockReadError,
     NativeBlockRun, NativeClientBiomes, NativeClientChunks, NativeClock, NativeColumnBlocks,
@@ -37,6 +40,9 @@ pub use crate::game::{
     NativeModEvent, NativePlayer, NativePlayerRender, NativeReloadListener, NativeShake,
     NativeStructureBlock, NativeStructureTemplate, NativeWorldDraw,
 };
+pub use crate::gamerules::Value as GameRuleValue;
+/// What a mod asks of the terrain's picture each frame (`native_world_hold`). API @API:world_hold@.
+pub use crate::gfx::WorldHold;
 pub use crate::gfx::native_render::{
     BlockSpriteArrays, RenderHooks, RenderNeeds, RenderNeedsEvent, WorldDrawn, WorldDrawnEvent,
     wgpu,
@@ -66,6 +72,9 @@ pub use crate::recipe_book::RecipeBookCategory;
 pub use crate::sound_engine::SoundPlayback;
 /// A named step of the server tick and its wall and CPU milliseconds (`native_server_tick_timed`).
 pub use crate::spans::Span as TickSpan;
+pub use crate::terrain_model::{
+    NativeModelMaterial, NativeModelRenderOptions, NativeModelShade, NativeModelUvShift,
+};
 pub use crate::text::Text;
 pub use crate::world_primitives::{PrimitiveShape, WorldPrimitive, WorldPrimitives};
 pub use horizon_assets::item_model::{DisplayContext, StackView};
@@ -90,6 +99,7 @@ pub use horizon_world::{
     attachments::{
         AttachmentCodec, AttachmentError, AttachmentHost, AttachmentType, Attachments, Holder,
     },
+    block_state_properties::BlockProperties,
     fluid::{FluidKind, FluidState},
     level::{BlockId, Dimension as LevelDimension, PlacementContext},
     loot::{LootStack, NativeLootContext},
@@ -977,6 +987,8 @@ mod generated_host {
     include!(concat!(env!("OUT_DIR"), "/mod_api_generated_host.rs"));
 }
 pub use generated_host::Host;
+
+pub use crate::game::native_client_services::HudMode;
 
 /// Result of accessing or decoding an attachment.
 pub type AttachmentResult<T> = std::result::Result<T, AttachmentError>;

@@ -90,6 +90,11 @@ fn round_to_u16(v: f32) -> u16 {
 }
 /// Fixed-point steps per unit of `TerrainVertex` UVs, which span `[0, 2)`.
 pub const UV_STEPS: f32 = 32768.0;
+/// A model quad's own UVs in `TerrainVertex` fixed point, the packing
+/// `TerrainVertex::new` does, baked once per face (`BakedFace::uv_fixed`).
+pub(crate) fn baked_uv(uv: [[f32; 2]; 4]) -> [[u16; 2]; 4] {
+    uv.map(|uv| uv.map(|v| round_to_u16(v * UV_STEPS)))
+}
 /// Fixed-point steps per block of distant-terrain UVs (`TerrainVertex::tiled`),
 /// which span `[0, 2048)`: merged faces repeat their sprite once per block.
 pub const TILED_UV_STEPS: f32 = 32.0;
@@ -98,6 +103,23 @@ impl TerrainVertex {
         Self {
             pos,
             uv: uv.map(|v| round_to_u16(v * UV_STEPS)),
+            layer,
+            light,
+            color,
+        }
+    }
+    /// A vertex whose UV is already in `UV_STEPS` fixed point (a model face's
+    /// own UVs, baked in `BakedFace::uv_fixed`).
+    pub(crate) fn packed_uv(
+        pos: [f32; 3],
+        uv: [u16; 2],
+        layer: u16,
+        color: u32,
+        light: u16,
+    ) -> Self {
+        Self {
+            pos,
+            uv,
             layer,
             light,
             color,
@@ -122,6 +144,63 @@ impl TerrainVertex {
 #[cfg(test)]
 mod vertex_tests {
     use super::TerrainVertex;
+
+    #[test]
+    fn baked_face_keeps_shape_bounds_and_fixed_point_uvs() {
+        use crate::models::catalog::BakedFace;
+        use horizon_assets::{
+            bake::ModelQuad,
+            model::{Direction, Material},
+        };
+
+        let face = BakedFace::new(
+            ModelQuad {
+                positions: [
+                    [-0.25, 0.5, 0.125],
+                    [-0.25, 0.5, 0.875],
+                    [0.625, 0.5, 0.875],
+                    [0.625, 0.5, 0.125],
+                ],
+                uv: [
+                    [-0.25, f32::NAN],
+                    [1.0 / 65536.0, 3.0 / 65536.0],
+                    [1.5, 2.0],
+                    [f32::INFINITY, f32::NEG_INFINITY],
+                ],
+                facing: Direction::Up,
+                cull: None,
+                material: Material {
+                    sprite: "test:face".into(),
+                    force_translucent: false,
+                },
+                tint_index: -1,
+                shade_direction_override: None,
+                light_emission: 0,
+                light: [0; 2],
+                color: None,
+                ambient_occlusion: None,
+                render_type: None,
+                shade: true,
+            },
+            0,
+            true,
+            false,
+            None,
+        );
+        // Literal expectations: axis-ordered extrema and complements, plus
+        // clamping and half-step rounding in 1/32768 UV units.
+        let bounds: [f32; 12] = [
+            0.5, 0.5, 0.125, 0.875, -0.25, 0.625, 0.5, 0.5, 0.875, 0.125, 1.25, 0.375,
+        ];
+        for shape in face.shapes {
+            assert_eq!(shape.bounds.map(f32::to_bits), bounds.map(f32::to_bits));
+            assert!(shape.partial);
+        }
+        assert!(!face.shapes[0].cubic);
+        assert!(face.shapes[1].cubic);
+        assert_eq!(face.uv_fixed, [[0, 0], [1, 2], [49152, 65535], [65535, 0]]);
+    }
+
     #[test]
     fn model_uvs_pack_exactly() {
         for i in 0..=32 {
@@ -268,6 +347,10 @@ pub struct SectionMesh {
     /// model order before.
     pub sides: Sides,
     pub translucent: Vec<TerrainVertex>,
+    /// Whether `packed` holds far tile records (`lod::packed`) rather than
+    /// section records (`mesher::packed`): the two are read apart, by the base
+    /// vertex their draws use.
+    pub packed_far: bool,
     /// `solid` in the compact layout (`packed`), when the renderer reads it and it is
     /// smaller; empty otherwise. Made by `sort_solid`.
     pub packed: Vec<[u32; 6]>,
@@ -300,6 +383,7 @@ impl Default for SectionMesh {
             sides: Sides::default(),
             translucent: Vec::new(),
             packed: Vec::new(),
+            packed_far: false,
             solid_tints: Vec::new(),
             visibility: ALL_VISIBLE,
             block_entities: Vec::new(),
@@ -334,6 +418,7 @@ impl SectionMesh {
         self.solid.clear();
         self.translucent.clear();
         self.packed.clear();
+        self.packed_far = false;
         self.solid_tints.clear();
         self.block_entities.clear();
         self.lights.clear();
@@ -363,6 +448,7 @@ impl SectionMesh {
         self.sides = sides::sort_tinted(&mut self.solid, &mut self.solid_tints);
         self.bounds = self.compute_bounds();
         self.packed.clear();
+        self.packed_far = false;
         if packed::packing() && quads > 0 && self.solid_tints.len() == quads {
             self.packed = packed::layout(&self.solid, &self.solid_tints);
         }
@@ -573,7 +659,11 @@ struct Info {
     /// and a full collision shape. The only block leaf culling treats as solid.
     opaque_cube: bool,
     blocks_flow: bool,
+    /// `instanceof IceBlock` (frosted ice too): fluids read it.
     ice: bool,
+    /// Regular ice, the block the Opaque Ice option draws opaque; frosted ice
+    /// keeps its see-through, cracking look.
+    opaque_ice: bool,
     sturdy: u8,
     /// Occlusion face per direction: 0 empty, 1 the full-block singleton, 2 partial.
     face: [u8; 6],
@@ -765,6 +855,7 @@ impl MeshTables {
                 ),
                 blocks_flow: assets.blocks_fluid_flow.contains(&*s.name),
                 ice: s.has_class("IceBlock"),
+                opaque_ice: s.has_class("IceBlock") && !s.has_class("FrostedIceBlock"),
                 sturdy: s.sturdy_full,
                 face,
                 cover,
@@ -957,6 +1048,12 @@ const P: usize = 16 + 2 * B as usize;
 fn pi(x: i32, y: i32, z: i32) -> usize {
     ((y + B) as usize * P + (z + B) as usize) * P + (x + B) as usize
 }
+/// `pi`'s index offset of a step `n`: `pi(p + n) - pi(p)`, so the samples
+/// around a cell are `base + step_index(n)` rather than another `pi`.
+#[inline]
+const fn step_index(n: [i32; 3]) -> isize {
+    (n[0] + P as i32 * n[2] + (P * P) as i32 * n[1]) as isize
+}
 /// Blocks and light of one section plus a `B`-block border.
 #[derive(Default)]
 struct Padded {
@@ -1079,6 +1176,17 @@ const DIRECTIONS: [(Direction, [i32; 3], u8); 6] = [
 const fn direction_info(d: Direction) -> (Direction, [i32; 3], u8) {
     (d, d.normal(), d.opposite() as u8)
 }
+/// `step_index` of each direction's normal, indexed like `DIRECTIONS`: the
+/// padded index of a block's neighbour is its own plus one of these.
+const OFFSETS: [isize; 6] = {
+    let mut out = [0isize; 6];
+    let mut i = 0;
+    while i < 6 {
+        out[i] = step_index(DIRECTIONS[i].1);
+        i += 1;
+    }
+    out
+};
 /// Per-worker temporary arrays. They never hold resource-pack references or
 /// geometry still owned by the renderer, and total about 150 KiB per worker
 /// (the leaf mask adds 8,000 cells, depths and a queue).
@@ -1154,6 +1262,8 @@ fn row_masks_match_cell_definition() {
 }
 #[cfg(test)]
 mod leaf_culling_tests;
+#[cfg(test)]
+mod opaque_ice_tests;
 #[cfg(test)]
 mod reuse_tests;
 #[cfg(test)]
@@ -1484,6 +1594,8 @@ pub struct Mesher<'a> {
     pub smooth_lighting: bool,
     /// The `cutoutLeaves` option (fancy graphics); off makes leaves opaque.
     pub cutout_leaves: bool,
+    /// The `opaqueIce` option: regular ice draws opaque in the solid pass.
+    pub opaque_ice: bool,
     /// Sprite layers a shader pack moves into the translucent pass, by layer.
     pub translucent_layers: &'a [bool],
     /// What the worker does with leaf faces inside a canopy.
@@ -1540,8 +1652,12 @@ impl Mesher<'_> {
         let mut models = Vec::new();
         for y in 0..16 {
             for z in 0..16 {
+                // The padded index of the row's x = 0 cell: `pi(x, y, z)` is
+                // `row + x` and a neighbour adds `OFFSETS[d]`.
+                let row = pi(0, y, z);
                 for x in 0..16 {
-                    let id = pad.blocks[pi(x, y, z)];
+                    let cell = row + x as usize;
+                    let id = pad.blocks[cell];
                     if id == 0 {
                         continue;
                     }
@@ -1596,7 +1712,7 @@ impl Mesher<'_> {
                         && self.leaf_culling.is_interior()
                         && scratch.leaf.interior(self.leaf_culling, x, y, z);
                     for (d, [dx, dy, dz], opposite) in DIRECTIONS {
-                        let neighbor = pad.blocks[pi(x + dx, y + dy, z + dz)];
+                        let neighbor = pad.blocks[(cell as isize + OFFSETS[d as usize]) as usize];
                         // `should_render_face`'s first test, without its lookups: a
                         // full occlusion face toward this block hides the face.
                         if full_faces[neighbor as usize] >> opposite & 1 != 0 {
@@ -1605,6 +1721,9 @@ impl Mesher<'_> {
                         let other = &info[neighbor as usize];
                         // LeavesBlock.skipRendering with opaque leaves.
                         let opaque_leaves = !self.cutout_leaves && state.leaves && other.leaves;
+                        // Opaque Ice: faces between two ice blocks are hidden, as they are
+                        // between two opaque blocks.
+                        let opaque_ice = self.opaque_ice && state.opaque_ice && other.opaque_ice;
                         let culled_leaf = match self.leaf_culling {
                             LeafCullingMode::Hollow | LeafCullingMode::Hidden => {
                                 state.leaves
@@ -1622,6 +1741,7 @@ impl Mesher<'_> {
                             _ => false,
                         };
                         visible[d as usize] = !opaque_leaves
+                            && !opaque_ice
                             && !culled_leaf
                             && self
                                 .visibility
@@ -1656,7 +1776,8 @@ impl Mesher<'_> {
                                 let on_edge = p.iter().all(|v| (v[1] - plane).abs() < 1e-4);
                                 let centre =
                                     [0, 2].map(|k| p.iter().map(|v| v[k]).sum::<f32>() / 4.0);
-                                let other = pad.blocks[pi(x, y + dy, z)];
+                                let other =
+                                    pad.blocks[(cell as isize + step_index([0, dy, 0])) as usize];
                                 if on_edge && connected.stacked_pane_hides(id, other, centre) {
                                     continue;
                                 }
@@ -1666,6 +1787,7 @@ impl Mesher<'_> {
                                 &mut tints,
                                 &mut out,
                                 [x, y, z],
+                                cell,
                                 origin,
                                 face,
                                 ao,
@@ -1706,6 +1828,7 @@ impl Mesher<'_> {
         tints: &mut Tints,
         out: &mut SectionMesh,
         pos: [i32; 3],
+        cell: usize,
         origin: [f32; 3],
         face: &BakedFace,
         ao: bool,
@@ -1730,11 +1853,14 @@ impl Mesher<'_> {
         } else {
             lighting::cardinal(self.nether_shading, shade_face)
         };
+        // The quad's shape (bounds, partial, cubic), baked per face for full and
+        // non-full blocks: a pure function of the quad and the block's `full`.
+        let shape = &face.shapes[usize::from(state.full)];
         // Grey level per vertex before tinting, vanilla light coords, and ambient occlusion factor.
         let (gray, coords, ao_factor) = if ao {
             let info = &self.tables.info;
             let (brightness, coords) =
-                lighting::ambient_occlusion(pad, info, state, pos, &q.positions, q.facing);
+                lighting::ambient_occlusion(pad, info, state, pos, shape, q.facing);
             let gray = if self.separate_ao {
                 [lighting::gray(directional); 4]
             } else {
@@ -1744,7 +1870,7 @@ impl Mesher<'_> {
         } else {
             let coords = match q.cull {
                 Some(d) => lighting::coords(pad, state, lighting::step(pos, d)),
-                None => lighting::flat(pad, state, pos, &q.positions, q.facing),
+                None => lighting::flat_shaped(pad, state, pos, q.facing, shape),
             };
             ([lighting::gray(directional); 4], [coords; 4], [1.0f32; 4])
         };
@@ -1768,8 +1894,7 @@ impl Mesher<'_> {
                 count += 1;
             }
         };
-        let neighbour =
-            |[dx, dy, dz]: [i32; 3]| pad.blocks[pi(pos[0] + dx, pos[1] + dy, pos[2] + dz)];
+        let neighbour = |n: [i32; 3]| pad.blocks[(cell as isize + step_index(n)) as usize];
         let fused = face.fusion.and_then(|rule| {
             fusion.pick(
                 rule,
@@ -1810,47 +1935,46 @@ impl Mesher<'_> {
                 &mut push,
             )
         };
+        let vertex = |tint: Option<u32>, i: usize, uv: [u16; 2]| {
+            let g = gray[i] as u32;
+            let rgb = match tint {
+                Some(t) => [16, 8, 0].map(|shift| g * (t >> shift & 255) / 255),
+                None => [g; 3],
+            };
+            let p = q.positions[i];
+            let color = if self.separate_ao {
+                let ao_byte = (ao_factor[i] * 255.0).round().clamp(0.0, 255.0) as u32;
+                ao_byte << 24 | (pack_rgb(rgb) & 0x00FF_FFFF)
+            } else {
+                emitting(pack_rgb(rgb), tier)
+            };
+            TerrainVertex::packed_uv(
+                [p[0] + origin[0], p[1] + origin[1], p[2] + origin[2]],
+                uv,
+                0,
+                color,
+                pack_coords(lighting::with_min(coords[i], q.light)),
+            )
+        };
         let vertices = |tint: Option<u32>, uv: [[f32; 2]; 4]| {
-            std::array::from_fn::<_, 4, _>(|i| {
-                let g = gray[i] as u32;
-                let rgb = match tint {
-                    Some(t) => [16, 8, 0].map(|shift| g * (t >> shift & 255) / 255),
-                    None => [g; 3],
-                };
-                let p = q.positions[i];
-                let color = if self.separate_ao {
-                    let ao_byte = (ao_factor[i] * 255.0).round().clamp(0.0, 255.0) as u32;
-                    ao_byte << 24 | (pack_rgb(rgb) & 0x00FF_FFFF)
-                } else {
-                    emitting(pack_rgb(rgb), tier)
-                };
-                (
-                    TerrainVertex::new(
-                        [p[0] + origin[0], p[1] + origin[1], p[2] + origin[2]],
-                        uv[i],
-                        0,
-                        color,
-                        pack_coords(lighting::with_min(coords[i], q.light)),
-                    ),
-                    uv[i],
-                )
-            })
+            let fixed = uv.map(|uv| uv.map(|v| round_to_u16(v * UV_STEPS)));
+            std::array::from_fn::<_, 4, _>(|i| (vertex(tint, i, fixed[i]), uv[i]))
         };
         // Vanilla's pane models mirror some faces' textures; OptiFine's don't, so a tile's borders
         // land where the neighbours are: on a pane, tiles take the cube's own UVs.
         let standard = || q.positions.map(|p| standard_uv(q.facing, p));
         let tiled = !matches!(pick, Pick::Keep);
-        let corners = vertices(
-            tint,
-            if state.pane && tiled {
-                standard()
-            } else {
-                q.uv
-            },
-        );
-        // Opaque leaves (forceOpaque) and leaves a leaf-culling mode proved internal draw in the
-        // solid layer whatever their sprite.
-        let solid_leaves = !self.cutout_leaves && state.leaves || interior_leaf;
+        let corners = if state.pane && tiled {
+            vertices(tint, standard())
+        } else {
+            // The face's own UVs, already packed: no per-vertex rounding.
+            std::array::from_fn(|i| (vertex(tint, i, face.uv_fixed[i]), q.uv[i]))
+        };
+        // Opaque leaves (forceOpaque), leaves a leaf-culling mode proved internal and Opaque
+        // Ice draw in the solid layer whatever their sprite.
+        let force_solid = !self.cutout_leaves && state.leaves
+            || interior_leaf
+            || self.opaque_ice && state.opaque_ice;
         let own = TileLayer::Layer {
             layer: face.layer as u16,
             translucent: face.translucent,
@@ -1870,8 +1994,8 @@ impl Mesher<'_> {
             TileLayer::Skip | TileLayer::Default => own,
         };
         match pick {
-            Pick::Keep => self.quad(out, solid_leaves, own, corners.map(|c| c.0), tint),
-            Pick::Tile(t) => self.quad(out, solid_leaves, tile(t), corners.map(|c| c.0), tint),
+            Pick::Keep => self.quad(out, force_solid, own, corners.map(|c| c.0), tint),
+            Pick::Tile(t) => self.quad(out, force_solid, tile(t), corners.map(|c| c.0), tint),
             Pick::Quarters(tiles) => {
                 let cuts = cuts(&corners);
                 for s in cuts.windows(2) {
@@ -1880,7 +2004,7 @@ impl Mesher<'_> {
                             .map(|(s, t)| bilinear(&corners, s, t));
                         let quarter = quarter_of(&piece);
                         let piece = piece.map(|c| c.0);
-                        self.quad(out, solid_leaves, tile(tiles[quarter]), piece, tint);
+                        self.quad(out, force_solid, tile(tiles[quarter]), piece, tint);
                     }
                 }
             }
@@ -1929,17 +2053,17 @@ impl Mesher<'_> {
             }
         }
     }
-    /// One terrain quad with sprite `tile`, in the pass its alpha needs (`solid_leaves`: no
+    /// One terrain quad with sprite `tile`, in the pass its alpha needs (`force_solid`: no
     /// alpha cutout whatever the sprite).
     fn quad(
         &self,
         out: &mut SectionMesh,
-        solid_leaves: bool,
+        force_solid: bool,
         tile: TileLayer,
         v: [TerrainVertex; 4],
         tint: Option<u32>,
     ) {
-        self.quad_as(out, solid_leaves, tile, v, true, tint);
+        self.quad_as(out, force_solid, tile, v, true, tint);
     }
     /// Whether [`Mesher::quad`] draws `tile` in the translucent pass.
     fn translucent(&self, tile: TileLayer) -> bool {
@@ -1963,7 +2087,7 @@ impl Mesher<'_> {
     fn quad_as(
         &self,
         out: &mut SectionMesh,
-        solid_leaves: bool,
+        force_solid: bool,
         tile: TileLayer,
         mut v: [TerrainVertex; 4],
         by_sprite: bool,
@@ -1980,14 +2104,16 @@ impl Mesher<'_> {
         if self.tables.is_animated(layer) {
             out.note_sprite_layer(layer);
         }
-        let translucent = if by_sprite {
+        let translucent = if force_solid {
+            false
+        } else if by_sprite {
             self.translucent(tile)
         } else {
             translucent
         };
         // Quads over opaque texels draw in the solid layer: no alpha cutout (a dirt path's side
         // skips its clear top row). All four vertices share the layer.
-        let layer = if opaque && !translucent || solid_leaves {
+        let layer = if opaque && !translucent || force_solid {
             layer | OPAQUE_LAYER
         } else {
             layer

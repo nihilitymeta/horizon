@@ -71,6 +71,8 @@ pub(crate) struct TestLevel {
     /// `ShulkerBoxBlockEntity.isClosed` at a position: `true` for a shut lid,
     /// `false` for an open box. Positions not listed have no block entity.
     pub shulker_closed: HashMap<BlockPos, bool>,
+    /// The containers `container_open` reports as open.
+    pub opened: HashSet<BlockPos>,
 }
 impl TestLevel {
     fn new(b: &Behaviours) -> Self {
@@ -92,10 +94,14 @@ impl TestLevel {
             openers: HashMap::new(),
             opener_rechecks: Vec::new(),
             shulker_closed: HashMap::new(),
+            opened: HashSet::new(),
         }
     }
 }
 impl LevelAccess for TestLevel {
+    fn container_open(&self, pos: BlockPos) -> bool {
+        self.opened.contains(&pos)
+    }
     fn recheck_container_openers(&mut self, pos: BlockPos) -> Option<(i32, i32)> {
         self.opener_rechecks.push(pos);
         self.openers.get(&pos).copied()
@@ -497,6 +503,25 @@ fn neighbor_observation_follows_dispatch_order() {
         level.seen.borrow().last(),
         Some(&(BlockPos::new(3, 4, 5), b.air(), changed, true))
     );
+}
+
+/// `WeatheringCopperChestBlock.randomTick`: a copper chest someone has open
+/// skips `changeOverTime` and its draws; a closed one draws (#11378).
+#[test]
+fn a_viewed_copper_chest_does_not_weather() {
+    let Some(f) = fixture() else { return };
+    let mut w = World::new(f);
+    let pos = BlockPos::new(0, 64, 0);
+    let chest = w.id("copper_chest", &[("type", "single")]);
+    w.put(pos, chest);
+    let draw = |w: &World| w.level.random.clone().next_long();
+    w.level.opened.insert(pos);
+    let before = draw(&w);
+    f.behaviours.random_tick(&mut w.level, &mut w.ticks, pos);
+    assert_eq!(draw(&w), before, "an open chest draws nothing");
+    w.level.opened.clear();
+    f.behaviours.random_tick(&mut w.level, &mut w.ticks, pos);
+    assert_ne!(draw(&w), before, "a closed one rolls changeOverTime");
 }
 
 #[test]
@@ -1025,6 +1050,40 @@ fn water_spreads_on_a_floor() {
     assert_eq!(w.get(BlockPos::new(8, 1, 0)), w.b().air());
     // Diagonals follow Manhattan distance.
     assert_eq!(w.prop(BlockPos::new(2, 1, 2), "level"), "4");
+}
+
+#[test]
+fn water_keeps_spreading_over_waterlogged_scaffolding() {
+    // `FlowingFluid.canPassThroughWall` reads `getCollisionShape(level, pos)`,
+    // where scaffolding is the stable shape: a full top face, so the water above
+    // it is no water hole and still spreads sideways.
+    let mut w = world!();
+    w.floor(0, 10, "stone");
+    let stone = w.id("stone", &[]);
+    for x in 0..=9 {
+        w.put(BlockPos::new(x, 1, -1), stone);
+        w.put(BlockPos::new(x, 1, 1), stone);
+    }
+    let scaffolding = w.id(
+        "scaffolding",
+        &[
+            ("bottom", "false"),
+            ("distance", "0"),
+            ("waterlogged", "true"),
+        ],
+    );
+    // Stone under it keeps it supported, so its own tick leaves it in place.
+    w.put(BlockPos::new(5, -1, 0), stone);
+    w.put(BlockPos::new(5, 0, 0), scaffolding);
+    let water = w.id("water", &[]);
+    w.set(BlockPos::new(0, 1, 0), water);
+    for _ in 0..80 {
+        w.tick();
+    }
+    for d in 1..=7 {
+        let pos = BlockPos::new(d, 1, 0);
+        assert_eq!(w.prop(pos, "level"), d.to_string(), "flow at {d}");
+    }
 }
 
 #[test]
@@ -3073,6 +3132,38 @@ fn dust_on_a_downward_piston_survives_extend_and_retract() {
         "the dust stays through the retract, got {}",
         w.name(dust)
     );
+}
+
+#[test]
+fn diodes_on_downward_pistons_survive_retraction() {
+    // DiodeBlock.canSurviveOn asks `isFaceSturdy(level, pos, UP, RIGID)` of
+    // the block below, both in canSurvive and in updateShape with the
+    // neighbour's new state. While the base retracts it is a moving_piston,
+    // whose block entity shape holds the extended base: a full top face
+    // (#12019).
+    for base_kind in ["piston", "sticky_piston"] {
+        for diode_kind in ["repeater", "comparator"] {
+            let mut w = world!();
+            w.floor(0, 10, "stone");
+            let base = BlockPos::new(0, 3, 0);
+            let pos = BlockPos::new(0, 4, 0);
+            let power = BlockPos::new(1, 3, 0);
+            let diode = w.id(diode_kind, &[("facing", "south")]);
+            w.set(base, w.id(base_kind, &[("facing", "down")]));
+            w.set(pos, diode);
+            w.set(power, w.id("redstone_block", &[]));
+            for _ in 0..4 {
+                w.full_tick();
+            }
+            assert_eq!(w.prop(base, "extended"), "true");
+            w.set(power, w.b().air());
+            for _ in 0..4 {
+                w.full_tick();
+                assert_eq!(w.get(pos), diode, "{diode_kind} on {base_kind}");
+            }
+            assert_eq!(w.prop(base, "extended"), "false");
+        }
+    }
 }
 
 #[test]
