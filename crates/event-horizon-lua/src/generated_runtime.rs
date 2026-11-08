@@ -374,10 +374,10 @@ macro_rules! gen_listen {
     ($name:ident, none, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(=> $write:ident)?),* $(,)?]) => {
         fn $name(&self, _event: &mut $event) {
             let hook = stringify!($name);
-            let kind: Option<String> = gen_kind!($kind, (), _event);
             if !self.has_any_handlers(hook) {
                 return;
             }
+            let kind: Option<String> = gen_kind!($kind, (), _event);
             if let Some(kind) = kind.as_ref() {
                 if !self.watches(hook, kind) {
                     return;
@@ -409,10 +409,10 @@ macro_rules! gen_listen {
     ($name:ident, game_mut, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(=> $write:ident)?),* $(,)?]) => {
         fn $name(&self, host: &mut dyn horizon_client::mod_api::Host, _event: &mut $event) {
             let hook = stringify!($name);
-            let kind: Option<String> = gen_kind!($kind, host, _event);
             if !self.has_any_handlers(hook) {
                 return;
             }
+            let kind: Option<String> = gen_kind!($kind, host, _event);
             if let Some(kind) = kind.as_ref() {
                 if !self.watches(hook, kind) {
                     return;
@@ -445,10 +445,10 @@ macro_rules! gen_listen {
     ($name:ident, game_ref, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(=> $write:ident)?),* $(,)?]) => {
         fn $name(&self, _host: &dyn horizon_client::mod_api::Host, _event: &mut $event) {
             let hook = stringify!($name);
-            let kind: Option<String> = gen_kind!($kind, _host, _event);
             if !self.has_any_handlers(hook) {
                 return;
             }
+            let kind: Option<String> = gen_kind!($kind, _host, _event);
             if let Some(kind) = kind.as_ref() {
                 if !self.watches(hook, kind) {
                     return;
@@ -480,10 +480,10 @@ macro_rules! gen_listen {
     ($name:ident, level, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(=> $write:ident)?),* $(,)?]) => {
         fn $name(&self, level: &dyn horizon_client::mod_api::LevelHost, _event: &mut $event) {
             let hook = stringify!($name);
-            let kind: Option<String> = gen_kind!($kind, (), _event);
             if !self.has_any_handlers(hook) {
                 return;
             }
+            let kind: Option<String> = gen_kind!($kind, (), _event);
             if let Some(kind) = kind.as_ref() {
                 if !self.watches(hook, kind) {
                     return;
@@ -516,10 +516,10 @@ macro_rules! gen_listen {
             _event: &mut $event,
         ) {
             let hook = stringify!($name);
-            let kind: Option<String> = gen_kind!($kind, (), _event);
             if !self.has_any_handlers(hook) {
                 return;
             }
+            let kind: Option<String> = gen_kind!($kind, (), _event);
             if let Some(kind) = kind.as_ref() {
                 if !self.watches(hook, kind) {
                     return;
@@ -560,10 +560,10 @@ macro_rules! gen_cancel {
     ($name:ident, none, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(=> $write:ident)?),* $(,)?]) => {
         fn $name(&self, _event: &mut $event) -> horizon_client::mod_api::Flow {
             let hook = stringify!($name);
-            let kind: Option<String> = gen_kind!($kind, (), _event);
             if !self.has_any_handlers(hook) {
                 return horizon_client::mod_api::Flow::Continue;
             }
+            let kind: Option<String> = gen_kind!($kind, (), _event);
             if let Some(kind) = kind.as_ref() {
                 if !self.watches(hook, kind) {
                     return horizon_client::mod_api::Flow::Continue;
@@ -605,10 +605,10 @@ macro_rules! gen_cancel {
             _event: &mut $event,
         ) -> horizon_client::mod_api::Flow {
             let hook = stringify!($name);
-            let kind: Option<String> = gen_kind!($kind, host, _event);
             if !self.has_any_handlers(hook) {
                 return horizon_client::mod_api::Flow::Continue;
             }
+            let kind: Option<String> = gen_kind!($kind, host, _event);
             if let Some(kind) = kind.as_ref() {
                 if !self.watches(hook, kind) {
                     return horizon_client::mod_api::Flow::Continue;
@@ -651,10 +651,10 @@ macro_rules! gen_cancel {
             _event: &mut $event,
         ) -> horizon_client::mod_api::Flow {
             let hook = stringify!($name);
-            let kind: Option<String> = gen_kind!($kind, _host, _event);
             if !self.has_any_handlers(hook) {
                 return horizon_client::mod_api::Flow::Continue;
             }
+            let kind: Option<String> = gen_kind!($kind, _host, _event);
             if let Some(kind) = kind.as_ref() {
                 if !self.watches(hook, kind) {
                     return horizon_client::mod_api::Flow::Continue;
@@ -696,10 +696,10 @@ macro_rules! gen_cancel {
             _event: &mut $event,
         ) -> horizon_client::mod_api::Flow {
             let hook = stringify!($name);
-            let kind: Option<String> = gen_kind!($kind, (), _event);
             if !self.has_any_handlers(hook) {
                 return horizon_client::mod_api::Flow::Continue;
             }
+            let kind: Option<String> = gen_kind!($kind, (), _event);
             if let Some(kind) = kind.as_ref() {
                 if !self.watches(hook, kind) {
                     return horizon_client::mod_api::Flow::Continue;
@@ -736,10 +736,10 @@ macro_rules! gen_cancel {
             _event: &mut $event,
         ) -> horizon_client::mod_api::Flow {
             let hook = stringify!($name);
-            let kind: Option<String> = gen_kind!($kind, (), _event);
             if !self.has_any_handlers(hook) {
                 return horizon_client::mod_api::Flow::Continue;
             }
+            let kind: Option<String> = gen_kind!($kind, (), _event);
             if let Some(kind) = kind.as_ref() {
                 if !self.watches(hook, kind) {
                     return horizon_client::mod_api::Flow::Continue;
@@ -803,10 +803,10 @@ macro_rules! gen_replace {
     ($name:ident, none, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(=> $write:ident)?),* $(,)?], $out:ident : $read:ident, $ret:ty) => {
         fn $name(&self, _event: &mut $event) -> $ret {
             let hook = stringify!($name);
-            let kind: Option<String> = gen_kind!($kind, (), _event);
             if !self.has_any_handlers(hook) {
                 return None;
             }
+            let kind: Option<String> = gen_kind!($kind, (), _event);
             if let Some(kind) = kind.as_ref() {
                 if !self.watches(hook, kind) {
                     return None;
@@ -847,10 +847,10 @@ macro_rules! gen_replace {
             _event: &mut $event,
         ) -> $ret {
             let hook = stringify!($name);
-            let kind: Option<String> = gen_kind!($kind, host, _event);
             if !self.has_any_handlers(hook) {
                 return None;
             }
+            let kind: Option<String> = gen_kind!($kind, host, _event);
             if let Some(kind) = kind.as_ref() {
                 if !self.watches(hook, kind) {
                     return None;
@@ -892,10 +892,10 @@ macro_rules! gen_replace {
             _event: &mut $event,
         ) -> $ret {
             let hook = stringify!($name);
-            let kind: Option<String> = gen_kind!($kind, _host, _event);
             if !self.has_any_handlers(hook) {
                 return None;
             }
+            let kind: Option<String> = gen_kind!($kind, _host, _event);
             if let Some(kind) = kind.as_ref() {
                 if !self.watches(hook, kind) {
                     return None;
@@ -936,10 +936,10 @@ macro_rules! gen_replace {
             _event: &mut $event,
         ) -> $ret {
             let hook = stringify!($name);
-            let kind: Option<String> = gen_kind!($kind, (), _event);
             if !self.has_any_handlers(hook) {
                 return None;
             }
+            let kind: Option<String> = gen_kind!($kind, (), _event);
             if let Some(kind) = kind.as_ref() {
                 if !self.watches(hook, kind) {
                     return None;
@@ -977,10 +977,10 @@ macro_rules! gen_replace {
             _event: &mut $event,
         ) -> $ret {
             let hook = stringify!($name);
-            let kind: Option<String> = gen_kind!($kind, (), _event);
             if !self.has_any_handlers(hook) {
                 return None;
             }
+            let kind: Option<String> = gen_kind!($kind, (), _event);
             if let Some(kind) = kind.as_ref() {
                 if !self.watches(hook, kind) {
                     return None;

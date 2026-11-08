@@ -71,6 +71,20 @@ pub fn no_error(id: &str) {
 // id 7, which is stone (the spike's sample). Entity 11 is a zombie, 13 a
 // skeleton, anything else resolves to nothing.
 pub struct FakeHost;
+thread_local! {
+    static ENTITY_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+/// Entity lookups (`Host::entity`, `Host::entity_kind`) the fake host answered on this thread since
+/// `reset_entity_reads`: a hook nobody listens to must not make any.
+pub fn entity_reads() -> usize {
+    ENTITY_READS.with(|reads| reads.get())
+}
+pub fn reset_entity_reads() {
+    ENTITY_READS.with(|reads| reads.set(0));
+}
+fn count_entity_read() {
+    ENTITY_READS.with(|reads| reads.set(reads.get() + 1));
+}
 impl FakeHost {
     pub fn empty() -> Self {
         Self
@@ -86,10 +100,12 @@ impl Host for FakeHost {
     }
 
     fn entity(&self, id: u32) -> Option<EntityRef> {
+        count_entity_read();
         Some(EntityRef::new(NativeWorldEpoch::new(0), id))
     }
 
     fn entity_kind(&self, entity: EntityRef) -> Option<String> {
+        count_entity_read();
         match entity.id() {
             11 => Some("minecraft:zombie".to_owned()),
             13 => Some("minecraft:skeleton".to_owned()),

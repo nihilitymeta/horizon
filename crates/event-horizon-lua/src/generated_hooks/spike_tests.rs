@@ -1,14 +1,17 @@
 //! The spike round 1 tests for its 17 hooks, kept verbatim: hand-picked
 //! samples (`ruby:drum`, `Alex`, `81000`) the model-derived tests do not
 //! replace. The model-derived tests in `mod.rs` skip these hooks.
-use super::test_support::{FakeHost, FakeLevel, boxed, drop_dir, loaded, no_error};
+use super::test_support::{
+    FakeHost, FakeLevel, boxed, drop_dir, entity_reads, loaded, no_error, reset_entity_reads,
+};
 use horizon_client::mod_api::{
     BlockPos, BlockStateId, ItemStack, LevelDimension, dispatch_anvil_damaged,
     dispatch_arrow_loose, dispatch_bell_ring, dispatch_block_burn, dispatch_block_cook,
-    dispatch_block_lock_check, dispatch_chunk_load, dispatch_component_types,
-    dispatch_datapack_sync, dispatch_is_bonemeal_success, dispatch_item_fluid_tank,
-    dispatch_level_tick_pre, dispatch_player_container_close, dispatch_prepare_anvil,
-    dispatch_screen_click, dispatch_screen_tooltip, dispatch_tooltip_component,
+    dispatch_block_lock_check, dispatch_chunk_load, dispatch_client_attack,
+    dispatch_component_types, dispatch_datapack_sync, dispatch_is_bonemeal_success,
+    dispatch_item_fluid_tank, dispatch_level_tick_pre, dispatch_player_container_close,
+    dispatch_prepare_anvil, dispatch_screen_click, dispatch_screen_tooltip,
+    dispatch_tooltip_component,
 };
 #[test]
 fn generated_level_tick_pre() {
@@ -505,6 +508,37 @@ fn generated_no_handler_does_no_lua_work() {
         &mut result,
     );
     assert!(result.is_none() && cost == 5);
+    no_error(&id);
+    drop_dir(dir);
+}
+
+/// A hook that resolves its kind through the game host (`client_attack`: the entity id) must do
+/// so only when something listens to it: a mod that is loaded but listens to another hook makes
+/// the host read nothing, and the control shows the counter works once a handler is registered.
+#[test]
+fn a_kind_filtered_hook_nobody_listens_to_reads_no_entity() {
+    let (m, id, dir) = loaded(
+        "gen_no_entity_reads",
+        "horizon.on(\"tick\", function(event) end)",
+    );
+    let mods = boxed(m);
+    reset_entity_reads();
+    dispatch_client_attack(&mut FakeHost::empty(), &mods, 11, false);
+    assert_eq!(entity_reads(), 0, "an unregistered hook read the host");
+    no_error(&id);
+    drop_dir(dir);
+
+    let (m, id, dir) = loaded(
+        "gen_entity_reads_control",
+        "horizon.on(\"client_attack\", function(event) end, \"minecraft:zombie\")",
+    );
+    let mods = boxed(m);
+    reset_entity_reads();
+    dispatch_client_attack(&mut FakeHost::empty(), &mods, 11, false);
+    assert!(
+        entity_reads() > 0,
+        "a registered kind filter resolves the kind"
+    );
     no_error(&id);
     drop_dir(dir);
 }
