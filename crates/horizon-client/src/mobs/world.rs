@@ -607,11 +607,8 @@ pub(crate) fn with_resource_test_world(
         others_grid: None,
         others_index: None,
         others_villagers: None,
-<<<<<<< HEAD
         kinds: Some(&kinds),
-=======
         others_solid: None,
->>>>>>> upstream/main
         daylight: true,
         monsters_burn: false,
         game_time: 1000,

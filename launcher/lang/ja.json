@@ -1212,7 +1212,6 @@
   "Doesn't build on the Horizon you play ({code}): a build leaves it out until its author updates it": "プレイ中の Horizon ではビルドできません ({code}): 作者が更新するまでビルドから除外されます",
   "Where you are, the founder set is claimed through a free checkout on playhorizon.dev. Claim it from the Shop: it opens the checkout for you.": "お住まいの地域では、ファウンダーセットは playhorizon.dev の無料チェックアウトで受け取ります。ショップから受け取ってください。チェックアウトが開きます。",
   "The founder set can't be claimed from your country.": "お住まいの国ではファウンダーセットを受け取れません。",
-<<<<<<< HEAD
   "Update the launcher automatically": "ランチャーを自動的に更新する",
   "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "新しいランチャーのリリースが見つかるとインストールします。オフにするとローカルビルドはそのまま残ります。",
   "Added {repo}.": "{repo} を追加しました。",
@@ -1228,8 +1227,7 @@
   "newest {version}": "最新 {version}",
   "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "Event Horizon 用：このインスタンスは Modkit を実行しない Horizon のビルドを遊んでいます。バージョンページで Event Horizon のビルドを選んでください。",
   "Horizon Modkit · for Event Horizon": "Horizon Modkit · Event Horizon 用",
-  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Event Horizon の Mod を書くための Lua ライブラリ。Event Horizon のビルドを遊ぶすべてのインスタンスに有効な状態で入ります。"
-=======
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Event Horizon の Mod を書くための Lua ライブラリ。Event Horizon のビルドを遊ぶすべてのインスタンスに有効な状態で入ります。",
   "{source} isn't set up.": "{source} isn't set up.",
   "Installed {mods}, checksums checked.": "Installed {mods}, checksums checked.",
   "Pick the world the data pack goes into first.": "Pick the world the data pack goes into first.",
@@ -1274,5 +1272,4 @@
   "Can't read {name}'s sign-in: {why}": "{name}のサインイン情報を読み取れません: {why}",
   "Horizon runs a data pack's functions, function tags, predicates, item modifiers, recipes, loot tables, advancements, villager trades, damage types, most tags and most worldgen (biomes, features, structures, dimensions). Other files, such as world presets, are not read yet.": "Horizon はデータパックの関数、関数タグ、条件、アイテム修飾、レシピ、ルートテーブル、進捗、村人の取引、ダメージ種別、ほとんどのタグ、ワールド生成の大部分（バイオーム、地物、構造物、ディメンション）を実行します。ワールドプリセットなど、その他のファイルはまだ読み込みません。",
   "{title} would change nothing in Horizon yet: Horizon doesn't read its {files}.": "{title} は今のところ Horizon に何も変えません。Horizon はその {files} をまだ読み込みません。"
->>>>>>> upstream/main
 }

@@ -1212,7 +1212,6 @@
   "Doesn't build on the Horizon you play ({code}): a build leaves it out until its author updates it": "플레이 중인 Horizon에서 빌드되지 않습니다 ({code}): 제작자가 업데이트할 때까지 빌드에서 제외됩니다",
   "Where you are, the founder set is claimed through a free checkout on playhorizon.dev. Claim it from the Shop: it opens the checkout for you.": "현재 지역에서는 창립자 세트를 playhorizon.dev의 무료 결제로 받습니다. 상점에서 받으세요. 결제 화면을 열어 드립니다.",
   "The founder set can't be claimed from your country.": "현재 국가에서는 창립자 세트를 받을 수 없습니다.",
-<<<<<<< HEAD
   "Update the launcher automatically": "런처 자동 업데이트",
   "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "새 런처 릴리스를 찾으면 설치합니다. 끄면 로컬 빌드를 그대로 유지합니다.",
   "Added {repo}.": "{repo}을(를) 추가했습니다.",
@@ -1228,8 +1227,7 @@
   "newest {version}": "최신 {version}",
   "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "Event Horizon용: 이 인스턴스는 Modkit을 실행하지 않는 Horizon 빌드를 플레이합니다. 버전 페이지에서 Event Horizon 빌드를 선택하세요.",
   "Horizon Modkit · for Event Horizon": "Horizon Modkit · Event Horizon용",
-  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Event Horizon 모드를 작성하는 Lua 라이브러리입니다. Event Horizon 빌드를 플레이하는 모든 인스턴스에 켜진 상태로 들어갑니다."
-=======
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Event Horizon 모드를 작성하는 Lua 라이브러리입니다. Event Horizon 빌드를 플레이하는 모든 인스턴스에 켜진 상태로 들어갑니다.",
   "{source} isn't set up.": "{source} isn't set up.",
   "Installed {mods}, checksums checked.": "Installed {mods}, checksums checked.",
   "Pick the world the data pack goes into first.": "Pick the world the data pack goes into first.",
@@ -1274,5 +1272,4 @@
   "Can't read {name}'s sign-in: {why}": "{name}의 로그인 정보를 읽을 수 없습니다: {why}",
   "Horizon runs a data pack's functions, function tags, predicates, item modifiers, recipes, loot tables, advancements, villager trades, damage types, most tags and most worldgen (biomes, features, structures, dimensions). Other files, such as world presets, are not read yet.": "Horizon은 데이터 팩의 함수, 함수 태그, 조건, 아이템 수정자, 제작법, 전리품 표, 발전 과제, 주민 거래, 피해 유형, 대부분의 태그와 월드 생성 대부분(생물 군계, 특징, 구조물, 차원)을 실행합니다. 월드 프리셋 같은 다른 파일은 아직 읽지 않습니다.",
   "{title} would change nothing in Horizon yet: Horizon doesn't read its {files}.": "{title}은(는) 아직 Horizon에서 아무것도 바꾸지 않습니다. Horizon이 {files}을(를) 아직 읽지 않습니다."
->>>>>>> upstream/main
 }

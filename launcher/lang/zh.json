@@ -1212,7 +1212,6 @@
   "Doesn't build on the Horizon you play ({code}): a build leaves it out until its author updates it": "无法在你玩的 Horizon 上构建（{code}）：在作者更新之前，构建会略过它",
   "Where you are, the founder set is claimed through a free checkout on playhorizon.dev. Claim it from the Shop: it opens the checkout for you.": "在你所在的地区，创始者套装需通过 playhorizon.dev 上的免费结账领取。请在商店中领取：商店会为你打开结账页面。",
   "The founder set can't be claimed from your country.": "你所在的国家无法领取创始者套装。",
-<<<<<<< HEAD
   "Update the launcher automatically": "自动更新启动器",
   "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "找到更新的启动器版本时自动安装。关闭后本地构建保持不变。",
   "Added {repo}.": "已添加 {repo}。",
@@ -1228,8 +1227,7 @@
   "newest {version}": "最新 {version}",
   "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "用于 Event Horizon：此实例运行的是 Horizon 的构建，它不会运行 Modkit。请在“版本”页面为它选择一个 Event Horizon 构建。",
   "Horizon Modkit · for Event Horizon": "Horizon Modkit · 用于 Event Horizon",
-  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "编写 Event Horizon 模组所用的 Lua 库。它会安装并启用到每个运行 Event Horizon 构建的实例中。"
-=======
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "编写 Event Horizon 模组所用的 Lua 库。它会安装并启用到每个运行 Event Horizon 构建的实例中。",
   "{source} isn't set up.": "{source} isn't set up.",
   "Installed {mods}, checksums checked.": "Installed {mods}, checksums checked.",
   "Pick the world the data pack goes into first.": "Pick the world the data pack goes into first.",
@@ -1274,5 +1272,4 @@
   "Can't read {name}'s sign-in: {why}": "无法读取 {name} 的登录信息：{why}",
   "Horizon runs a data pack's functions, function tags, predicates, item modifiers, recipes, loot tables, advancements, villager trades, damage types, most tags and most worldgen (biomes, features, structures, dimensions). Other files, such as world presets, are not read yet.": "Horizon 会运行数据包中的函数、函数标签、谓词、物品修饰器、配方、战利品表、进度、村民交易、伤害类型、大部分标签以及大部分世界生成内容（生物群系、地物、结构、维度）。世界预设等其他文件暂时还不会读取。",
   "{title} would change nothing in Horizon yet: Horizon doesn't read its {files}.": "{title} 目前不会改变 Horizon 中的任何内容：Horizon 还不会读取它的 {files}。"
->>>>>>> upstream/main
 }

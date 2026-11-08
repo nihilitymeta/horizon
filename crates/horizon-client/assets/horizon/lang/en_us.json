@@ -1009,7 +1009,6 @@
   "Press the button for this. %s cancels.": "Press the button for this. %s cancels.",
   "This button also does: %s": "This button also does: %s",
   "horizon.pad.notice.connected.press": "Press to use it",
-<<<<<<< HEAD
   "key.zoom": "Zoom",
   "key.minimap": "Minimap",
   "key.devTools": "Free Mouse for Dev Windows",
@@ -1087,8 +1086,7 @@
   "horizon.dev_tools.lua.closed": "Lua console closed",
   "horizon.dev_tools.stick.no_windows": "Your game can't show the inspect stick's windows: they need Event Horizon with Lua mods",
   "horizon.dev_tools.stick.page": "Inspect stick: /%s, page %s of %s",
-  "horizon.dev_tools.stick.block": "Inspect stick: the block window"
-=======
+  "horizon.dev_tools.stick.block": "Inspect stick: the block window",
   "horizon.recipe_transfer.missing": "Missing Items",
   "horizon.recipe_transfer.no_room": "Inventory full",
   "horizon.recipe_transfer.unavailable": "Recipe does not fit this menu",
@@ -1126,5 +1124,4 @@
   "horizon.studio.topbar.clear_keyframes": "🗑 Clear Keyframes",
   "horizon.studio.topbar.timeline_hud": "⏱ Timeline",
   "horizon.studio.topbar.split_scene": "Split Scene"
->>>>>>> upstream/main
 }

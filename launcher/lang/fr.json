@@ -1212,7 +1212,6 @@
   "Doesn't build on the Horizon you play ({code}): a build leaves it out until its author updates it": "Ne se compile pas sur le Horizon auquel vous jouez ({code}) : une compilation le laisse de côté jusqu'à ce que son auteur le mette à jour",
   "Where you are, the founder set is claimed through a free checkout on playhorizon.dev. Claim it from the Shop: it opens the checkout for you.": "Là où vous êtes, le set fondateur se réclame par un paiement gratuit sur playhorizon.dev. Réclamez-le depuis la Boutique : elle ouvre le paiement pour vous.",
   "The founder set can't be claimed from your country.": "Le set fondateur ne peut pas être réclamé depuis votre pays.",
-<<<<<<< HEAD
   "Update the launcher automatically": "Mettre à jour le launcher automatiquement",
   "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installe une version plus récente du launcher dès qu'elle est trouvée. Désactivé, une compilation locale reste telle quelle.",
   "Added {repo}.": "{repo} ajouté.",
@@ -1228,8 +1227,7 @@
   "newest {version}": "dernière {version}",
   "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "Pour Event Horizon : cette instance joue un build d'Horizon, qui n'exécute pas le modkit. Choisis-lui un build d'Event Horizon sur la page Versions.",
   "Horizon Modkit · for Event Horizon": "Horizon Modkit · pour Event Horizon",
-  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "La bibliothèque Lua avec laquelle les mods d'Event Horizon sont écrits. Elle va, activée, dans chaque instance qui joue un build d'Event Horizon."
-=======
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "La bibliothèque Lua avec laquelle les mods d'Event Horizon sont écrits. Elle va, activée, dans chaque instance qui joue un build d'Event Horizon.",
   "{source} isn't set up.": "{source} n'est pas configuré.",
   "Installed {mods}, checksums checked.": "{mods} installé, sommes de contrôle vérifiées.",
   "Pick the world the data pack goes into first.": "Choisissez d'abord le monde où va le pack de données.",
@@ -1274,5 +1272,4 @@
   "Can't read {name}'s sign-in: {why}": "Impossible de lire la connexion de {name} : {why}",
   "Horizon runs a data pack's functions, function tags, predicates, item modifiers, recipes, loot tables, advancements, villager trades, damage types, most tags and most worldgen (biomes, features, structures, dimensions). Other files, such as world presets, are not read yet.": "Horizon exécute les fonctions, les étiquettes de fonctions, les prédicats, les modificateurs d'objets, les recettes, les tables de butin, les progrès, les échanges de villageois, les types de dégâts, la plupart des étiquettes et la plupart de la génération du monde (biomes, caractéristiques, structures, dimensions) d'un pack de données. Les autres fichiers, comme les préréglages de monde, ne sont pas encore lus.",
   "{title} would change nothing in Horizon yet: Horizon doesn't read its {files}.": "{title} ne changerait encore rien dans Horizon : Horizon ne lit pas encore ses {files}."
->>>>>>> upstream/main
 }

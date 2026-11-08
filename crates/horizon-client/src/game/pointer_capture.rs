@@ -146,6 +146,9 @@ impl Game<'_> {
         if self.lan_acting.is_some() {
             return;
         }
+        // The developer tools hold the pointer (docs/dev-tools.md): nothing
+        // grabs it until their key gives it back.
+        let capture = capture && !crate::dev_input::holds_pointer();
         // MouseHandler.grabMouse never captures an inactive window, and vanilla
         // grabs only on `setScreen(null)`: the pack prompt and server dialogs
         // are screens over the world that keep the pointer.

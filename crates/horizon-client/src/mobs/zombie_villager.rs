@@ -240,11 +240,8 @@ mod tests {
             others_grid: None,
             others_index: None,
             others_villagers: None,
-<<<<<<< HEAD
             kinds: None,
-=======
             others_solid: None,
->>>>>>> upstream/main
             daylight: true,
             monsters_burn: false,
             game_time: 1000,

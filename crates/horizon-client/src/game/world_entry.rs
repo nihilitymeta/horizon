@@ -303,6 +303,12 @@ impl Game<'_> {
     /// Reload the content tables with the world's packs, as
     /// `/reload` reloads a server's (`ReloadableServerResources`).
     pub(super) fn reload_world_tables(&mut self) {
+        // A shutdown asked for while `/reload` runs must not start, or go on
+        // with, a rebuild: the world is going away.
+        if self.server_stopping() {
+            log::info!("Horizon: skipping the world table reload, the server is stopping");
+            return;
+        }
         if self.remote.is_some() {
             return;
         }
@@ -316,8 +322,15 @@ impl Game<'_> {
                 return;
             }
         }
+        if self.server_stopping() {
+            log::info!("Horizon: skipping the reloaded data send, the server is stopping");
+            return;
+        }
         self.damage_tag_generation = self.damage_tag_generation.wrapping_add(1);
         self.recipe_tables.categories = None;
+        // The load ran the scripted mods' init.lua again: their commands
+        // may have changed with it.
+        self.refresh_native_commands();
         horizon_client::structure_blocks::forget_loot_data();
         // Before the players are sent the reloaded data below.
         self.sync_recipe_content();

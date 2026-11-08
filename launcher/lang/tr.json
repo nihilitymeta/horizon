@@ -1212,7 +1212,6 @@
   "Doesn't build on the Horizon you play ({code}): a build leaves it out until its author updates it": "Oynadığın Horizon'da derlenmiyor ({code}): yazarı güncelleyene kadar derleme onu dışarıda bırakır",
   "Where you are, the founder set is claimed through a free checkout on playhorizon.dev. Claim it from the Shop: it opens the checkout for you.": "Bulunduğun yerde kurucu seti playhorizon.dev üzerinde ücretsiz bir ödeme ile alınır. Mağaza'dan al: ödemeyi senin için açar.",
   "The founder set can't be claimed from your country.": "Kurucu seti ülkenden alınamaz.",
-<<<<<<< HEAD
   "Update the launcher automatically": "Başlatıcıyı otomatik güncelle",
   "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Bulunduğunda daha yeni bir başlatıcı sürümünü yükler. Kapalıyken yerel derleme olduğu gibi kalır.",
   "Added {repo}.": "{repo} eklendi.",
@@ -1228,8 +1227,7 @@
   "newest {version}": "en yeni {version}",
   "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "Event Horizon için: bu örnek, modkit'i çalıştırmayan bir Horizon derlemesi oynuyor. Sürümler sayfasında ona bir Event Horizon derlemesi seç.",
   "Horizon Modkit · for Event Horizon": "Horizon Modkit · Event Horizon için",
-  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Event Horizon modlarının yazıldığı Lua kütüphanesi. Event Horizon derlemesi oynayan her örneğe açık olarak kurulur."
-=======
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Event Horizon modlarının yazıldığı Lua kütüphanesi. Event Horizon derlemesi oynayan her örneğe açık olarak kurulur.",
   "{source} isn't set up.": "{source} isn't set up.",
   "Installed {mods}, checksums checked.": "Installed {mods}, checksums checked.",
   "Pick the world the data pack goes into first.": "Pick the world the data pack goes into first.",
@@ -1274,5 +1272,4 @@
   "Can't read {name}'s sign-in: {why}": "{name} hesabının oturum bilgisi okunamıyor: {why}",
   "Horizon runs a data pack's functions, function tags, predicates, item modifiers, recipes, loot tables, advancements, villager trades, damage types, most tags and most worldgen (biomes, features, structures, dimensions). Other files, such as world presets, are not read yet.": "Horizon bir veri paketinin işlevlerini, işlev etiketlerini, koşullarını, eşya değiştiricilerini, tariflerini, ganimet tablolarını, ilerlemelerini, köylü ticaretlerini, hasar türlerini, çoğu etiketini ve dünya oluşturmanın çoğunu (biyomlar, özellikler, yapılar, boyutlar) çalıştırır. Dünya ön ayarları gibi diğer dosyalar henüz okunmuyor.",
   "{title} would change nothing in Horizon yet: Horizon doesn't read its {files}.": "{title} Horizon'da henüz hiçbir şeyi değiştirmez: Horizon bunun {files} dosyalarını henüz okumuyor."
->>>>>>> upstream/main
 }

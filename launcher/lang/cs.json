@@ -1212,7 +1212,6 @@
   "Doesn't build on the Horizon you play ({code}): a build leaves it out until its author updates it": "Nesestaví se na Horizonu, který hraješ ({code}): sestavení ho vynechá, dokud ho autor neaktualizuje",
   "Where you are, the founder set is claimed through a free checkout on playhorizon.dev. Claim it from the Shop: it opens the checkout for you.": "Tam, kde jste, se zakladatelská sada získává přes bezplatnou pokladnu na playhorizon.dev. Získejte ji v Obchodě: pokladnu vám otevře sám.",
   "The founder set can't be claimed from your country.": "Zakladatelskou sadu nelze získat z vaší země.",
-<<<<<<< HEAD
   "Update the launcher automatically": "Automaticky aktualizovat spouštěč",
   "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Nainstaluje novější verzi spouštěče, když ji najde. Vypnuto ponechá místní sestavení beze změny.",
   "Added {repo}.": "{repo} přidáno.",
@@ -1228,8 +1227,7 @@
   "newest {version}": "nejnovější {version}",
   "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "Pro Event Horizon: tato instance hraje sestavení Horizonu, které modkit nespouští. Vyber pro ni sestavení Event Horizon na stránce Verze.",
   "Horizon Modkit · for Event Horizon": "Horizon Modkit · pro Event Horizon",
-  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Knihovna Lua, ve které se píší mody Event Horizon. Přidá se, zapnutá, do každé instance, která hraje sestavení Event Horizon."
-=======
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Knihovna Lua, ve které se píší mody Event Horizon. Přidá se, zapnutá, do každé instance, která hraje sestavení Event Horizon.",
   "{source} isn't set up.": "{source} isn't set up.",
   "Installed {mods}, checksums checked.": "Installed {mods}, checksums checked.",
   "Pick the world the data pack goes into first.": "Pick the world the data pack goes into first.",
@@ -1274,5 +1272,4 @@
   "Can't read {name}'s sign-in: {why}": "Nelze přečíst přihlášení účtu {name}: {why}",
   "Horizon runs a data pack's functions, function tags, predicates, item modifiers, recipes, loot tables, advancements, villager trades, damage types, most tags and most worldgen (biomes, features, structures, dimensions). Other files, such as world presets, are not read yet.": "Horizon runs a data pack's functions, function tags, predicates, item modifiers, recipes, loot tables, advancements, villager trades, damage types, most tags and most worldgen (biomes, features, structures, dimensions). Other files, such as world presets, are not read yet.",
   "{title} would change nothing in Horizon yet: Horizon doesn't read its {files}.": "{title} would change nothing in Horizon yet: Horizon doesn't read its {files}."
->>>>>>> upstream/main
 }

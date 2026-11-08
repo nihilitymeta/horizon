@@ -1212,7 +1212,6 @@
   "Doesn't build on the Horizon you play ({code}): a build leaves it out until its author updates it": "Не собирается на Horizon, в который вы играете ({code}): сборка пропустит его, пока автор не обновит",
   "Where you are, the founder set is claimed through a free checkout on playhorizon.dev. Claim it from the Shop: it opens the checkout for you.": "В вашей стране набор основателя получают через бесплатное оформление на playhorizon.dev. Получите его в Магазине: он сам откроет оформление.",
   "The founder set can't be claimed from your country.": "Набор основателя нельзя получить из вашей страны.",
-<<<<<<< HEAD
   "Update the launcher automatically": "Обновлять лаунчер автоматически",
   "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Устанавливает новый выпуск лаунчера, как только он найден. Выключено: локальная сборка остаётся как есть.",
   "Added {repo}.": "{repo} добавлен.",
@@ -1228,8 +1227,7 @@
   "newest {version}": "новейшая {version}",
   "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "Для Event Horizon: этот экземпляр играет сборку Horizon, которая не запускает modkit. Выберите для него сборку Event Horizon на странице «Версии».",
   "Horizon Modkit · for Event Horizon": "Horizon Modkit · для Event Horizon",
-  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Библиотека Lua, на которой пишутся моды Event Horizon. Она ставится и включается в каждом экземпляре, который играет сборку Event Horizon."
-=======
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Библиотека Lua, на которой пишутся моды Event Horizon. Она ставится и включается в каждом экземпляре, который играет сборку Event Horizon.",
   "{source} isn't set up.": "{source} не настроен.",
   "Installed {mods}, checksums checked.": "{mods} установлены, контрольные суммы проверены.",
   "Pick the world the data pack goes into first.": "Сначала выберите мир, в который будет добавлен датапак.",
@@ -1274,5 +1272,4 @@
   "Can't read {name}'s sign-in: {why}": "Не удаётся прочитать вход {name}: {why}",
   "Horizon runs a data pack's functions, function tags, predicates, item modifiers, recipes, loot tables, advancements, villager trades, damage types, most tags and most worldgen (biomes, features, structures, dimensions). Other files, such as world presets, are not read yet.": "Horizon выполняет функции, теги функций, предикаты, модификаторы предметов, рецепты, таблицы добычи, достижения, обмены жителей, типы урона, большинство тегов и большую часть генерации мира (биомы, особенности, структуры, измерения) из датапака. Остальные файлы, например пресеты мира, пока не читаются.",
   "{title} would change nothing in Horizon yet: Horizon doesn't read its {files}.": "{title} пока ничего не изменит в Horizon: Horizon ещё не читает его {files}."
->>>>>>> upstream/main
 }

@@ -98,8 +98,18 @@ impl Game<'_> {
                 None => (None, None),
             },
         };
+        // Another player is no entity of the level: found by its network id.
+        let player = |g: &Self, id: i32| {
+            g.lan.as_ref().and_then(|l| {
+                l.hub
+                    .guests
+                    .iter()
+                    .find(|guest| guest.entity_id == id && Some(guest.conn) != g.lan_acting)
+                    .map(|guest| super::commands::Target::Guest(guest.conn))
+            })
+        };
         if let Some(id) = named
-            && let Some(entity) = self.level_entity(id)
+            && let Some(entity) = self.level_entity(id).or_else(|| player(self, id))
         {
             // The point clicked, measured from the entity's position: a
             // guest's packet carries it, and the local player's is where the

@@ -1212,7 +1212,6 @@
   "Doesn't build on the Horizon you play ({code}): a build leaves it out until its author updates it": "Не збирається на Horizon, у який ви граєте ({code}): збирання пропустить його, доки автор не оновить",
   "Where you are, the founder set is claimed through a free checkout on playhorizon.dev. Claim it from the Shop: it opens the checkout for you.": "Там, де ви є, набір засновника отримують через безкоштовне оформлення на playhorizon.dev. Отримайте його в Крамниці: вона сама відкриє оформлення.",
   "The founder set can't be claimed from your country.": "Набір засновника не можна отримати з вашої країни.",
-<<<<<<< HEAD
   "Update the launcher automatically": "Оновлювати лаунчер автоматично",
   "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Встановлює новіший випуск лаунчера, щойно його знайдено. Вимкнено: локальна збірка лишається як є.",
   "Added {repo}.": "{repo} додано.",
@@ -1228,8 +1227,7 @@
   "newest {version}": "найновіша {version}",
   "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "Для Event Horizon: цей екземпляр грає збірку Horizon, яка не запускає modkit. Виберіть для нього збірку Event Horizon на сторінці «Версії».",
   "Horizon Modkit · for Event Horizon": "Horizon Modkit · для Event Horizon",
-  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Бібліотека Lua, якою пишуться моди Event Horizon. Вона потрапляє, увімкнена, в кожен екземпляр, що грає збірку Event Horizon."
-=======
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "Бібліотека Lua, якою пишуться моди Event Horizon. Вона потрапляє, увімкнена, в кожен екземпляр, що грає збірку Event Horizon.",
   "{source} isn't set up.": "{source} isn't set up.",
   "Installed {mods}, checksums checked.": "Installed {mods}, checksums checked.",
   "Pick the world the data pack goes into first.": "Pick the world the data pack goes into first.",
@@ -1274,5 +1272,4 @@
   "Can't read {name}'s sign-in: {why}": "Не вдається прочитати вхід {name}: {why}",
   "Horizon runs a data pack's functions, function tags, predicates, item modifiers, recipes, loot tables, advancements, villager trades, damage types, most tags and most worldgen (biomes, features, structures, dimensions). Other files, such as world presets, are not read yet.": "Horizon виконує функції, теги функцій, предикати, модифікатори предметів, рецепти, таблиці здобичі, досягнення, обміни селян, типи шкоди, більшість тегів і більшу частину генерації світу (біоми, особливості, структури, виміри) із датапака. Інші файли, як-от пресети світу, поки не читаються.",
   "{title} would change nothing in Horizon yet: Horizon doesn't read its {files}.": "{title} поки нічого не змінить у Horizon: Horizon ще не читає його {files}."
->>>>>>> upstream/main
 }

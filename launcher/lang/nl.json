@@ -1212,7 +1212,6 @@
   "Doesn't build on the Horizon you play ({code}): a build leaves it out until its author updates it": "Bouwt niet op de Horizon die je speelt ({code}): een build laat het weg tot de maker het bijwerkt",
   "Where you are, the founder set is claimed through a free checkout on playhorizon.dev. Claim it from the Shop: it opens the checkout for you.": "Waar jij bent, claim je de founder-set via een gratis checkout op playhorizon.dev. Claim hem in de Winkel: die opent de checkout voor je.",
   "The founder set can't be claimed from your country.": "De founder-set kan niet vanuit jouw land worden geclaimd.",
-<<<<<<< HEAD
   "Update the launcher automatically": "Launcher automatisch bijwerken",
   "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installeert een nieuwere launcherversie zodra die gevonden wordt. Uit laat een lokale build zoals hij is.",
   "Added {repo}.": "{repo} toegevoegd.",
@@ -1228,8 +1227,7 @@
   "newest {version}": "nieuwste {version}",
   "For Event Horizon: this instance plays a build of Horizon's, which doesn't run the modkit. Pick an Event Horizon build for it on the Versions page.": "Voor Event Horizon: deze instantie speelt een build van Horizon, die de modkit niet draait. Kies er een Event Horizon-build voor op de pagina Versies.",
   "Horizon Modkit · for Event Horizon": "Horizon Modkit · voor Event Horizon",
-  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "De Lua-bibliotheek waarmee de mods van Event Horizon geschreven worden. Hij komt, aangezet, in elke instantie die een Event Horizon-build speelt."
-=======
+  "The Lua library Event Horizon's mods are written with. It goes into every instance that plays an Event Horizon build, turned on.": "De Lua-bibliotheek waarmee de mods van Event Horizon geschreven worden. Hij komt, aangezet, in elke instantie die een Event Horizon-build speelt.",
   "{source} isn't set up.": "{source} isn't set up.",
   "Installed {mods}, checksums checked.": "Installed {mods}, checksums checked.",
   "Pick the world the data pack goes into first.": "Pick the world the data pack goes into first.",
@@ -1274,5 +1272,4 @@
   "Can't read {name}'s sign-in: {why}": "Kan de aanmelding van {name} niet lezen: {why}",
   "Horizon runs a data pack's functions, function tags, predicates, item modifiers, recipes, loot tables, advancements, villager trades, damage types, most tags and most worldgen (biomes, features, structures, dimensions). Other files, such as world presets, are not read yet.": "Horizon voert de functies, functietags, predicaten, voorwerpwijzigers, recepten, buittabellen, vorderingen, dorpelingenhandel, schadetypen, de meeste tags en het grootste deel van de wereldgeneratie (biomen, kenmerken, structuren, dimensies) van een datapack uit. Andere bestanden, zoals wereldvoorinstellingen, worden nog niet gelezen.",
   "{title} would change nothing in Horizon yet: Horizon doesn't read its {files}.": "{title} zou in Horizon nog niets veranderen: Horizon leest de {files} ervan nog niet."
->>>>>>> upstream/main
 }

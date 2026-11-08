@@ -473,15 +473,13 @@
   "Built-in settings": "Вбудовані налаштування",
   "%s settings": "Налаштування %s",
   "Settings made by the pack's author: they change only this pack.": "Налаштування, створені автором пакета: вони змінюють лише цей пакет.",
-<<<<<<< HEAD
   "horizon.shader_packs.empty": "Немає пакетів шейдерів: покладіть їх у теку shaderpacks",
   "horizon.shader_packs.kind_horizon": " (Horizon)",
   "horizon.shader_options.open": "Налаштування шейдерів…",
   "horizon.shader_options.loading": "Читання налаштувань набору шейдерів…",
   "horizon.extras.wheel_cycles_settings.tooltip": "Коліщатко миші над кнопкою в налаштуваннях змінює її значення, як у ванільній грі. Вимкнено — коліщатко лише гортає список.",
   "key.zoom": "Наближення",
-  "key.minimap": "Мінікарта"
-=======
+  "key.minimap": "Мінікарта",
   "horizon.extras.header.world": "Світ",
   "horizon.extras.pregen": "Попередня генерація чанків",
   "horizon.extras.pregen.tooltip": "Вмикає /pregen у ваших одиночних і LAN-світах. З увімкненими читами введіть /pregen start, щоб згенерувати область, перш ніж її досліджувати. На серверах, до яких ви приєднуєтесь, команда не вмикається.",
@@ -927,5 +925,4 @@
   "horizon.recipe_transfer.no_room": "Інвентар заповнено",
   "horizon.recipe_transfer.unavailable": "Рецепт не підходить для цього меню",
   "horizon.recipe_transfer.unsupported": "Сервер вимагає відомого рецепта"
->>>>>>> upstream/main
 }
