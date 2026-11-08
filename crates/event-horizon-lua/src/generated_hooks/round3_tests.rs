@@ -12,13 +12,17 @@ use crate::generated_runtime::{
     LuaStruct, placement_answer, props_of, split_state_name, struct_vec_from_lua,
     struct_vec_to_lua, text_from_parts,
 };
+use horizon_client::item_data::StackData;
 use horizon_client::mod_api::{
-    BlockStateId, Compound, Corner, Direction, Hand, ItemStack, NativeConfigKind,
-    NativeFluidAction, Tag, dispatch_custom_block_fluids, dispatch_item_after_vertical_collision,
-    dispatch_net_from_client, dispatch_prepare_anvil, dispatch_state_for_placement,
+    BlockStateId, Compound, Corner, Direction, Hand, ItemStack, ModContainer, ModEnergyBuffer,
+    NativeConfigKind, NativeFluidAction, NativeScreen, Tag, Text, dispatch_broadcast_message,
+    dispatch_custom_block_fluids, dispatch_item_after_vertical_collision,
+    dispatch_menu_input_closed, dispatch_mouse_scrolling, dispatch_net_from_client,
+    dispatch_prepare_anvil, dispatch_screen, dispatch_shader_params, dispatch_state_for_placement,
 };
 use horizon_world::consumable::UseAnimation;
 use mlua::{Lua, Value};
+use std::time::Duration;
 
 fn lua() -> Lua {
     Lua::new()
@@ -173,23 +177,32 @@ fn enums_convert_every_variant() {
             kind
         );
     }
+    // Every name converts to its own variant (the converter's last arm is
+    // a catch-all, so converting without checking the variant proves
+    // nothing).
     let animations = [
-        "none",
-        "eat",
-        "drink",
-        "block",
-        "bow",
-        "trident",
-        "crossbow",
-        "spyglass",
-        "toot_horn",
-        "brush",
-        "bundle",
-        "spear",
+        ("none", UseAnimation::None),
+        ("eat", UseAnimation::Eat),
+        ("drink", UseAnimation::Drink),
+        ("block", UseAnimation::Block),
+        ("bow", UseAnimation::Bow),
+        ("trident", UseAnimation::Trident),
+        ("crossbow", UseAnimation::Crossbow),
+        ("spyglass", UseAnimation::Spyglass),
+        ("toot_horn", UseAnimation::TootHorn),
+        ("brush", UseAnimation::Brush),
+        ("bundle", UseAnimation::Bundle),
+        ("spear", UseAnimation::Spear),
     ];
     assert_eq!(animations.len(), 12);
-    for name in animations {
-        UseAnimation::from_value(&lua, s(&lua, name), "animation").unwrap();
+    for (name, expected) in animations {
+        assert_eq!(
+            UseAnimation::from_value(&lua, s(&lua, name), "animation").unwrap(),
+            expected,
+            "wrong variant for {name:?}",
+        );
+        let back = UseAnimation::to_value(&lua, &expected).unwrap();
+        assert_eq!(back.as_string().unwrap().to_str().unwrap(), name);
     }
     let err = Hand::from_value(&lua, s(&lua, "middle"), "hand").unwrap_err();
     let text = err.to_string();
@@ -200,8 +213,9 @@ fn enums_convert_every_variant() {
     );
 }
 
-/// An NBT round trip keeps each number's type; a new whole number is an
-/// int, a fraction a double, and a key set to nil is removed.
+/// An NBT round trip through the generated write path keeps each number's
+/// type; a new whole number is an int, a fraction a double, and a key set
+/// to nil is removed.
 #[test]
 fn nbt_compound_roundtrip_keeps_types() {
     let lua = lua();
@@ -209,12 +223,16 @@ fn nbt_compound_roundtrip_keeps_types() {
     seed.insert("kept_int".into(), Tag::Int(3));
     seed.insert("kept_double".into(), Tag::Double(1.5f64.to_bits()));
     seed.insert("name".into(), Tag::String("pig".into()));
-    let table = crate::lua_mods::nbt::compound_to_table(&lua, &seed).unwrap();
+    // The write path the hooks use: `Compound::from_value` with no
+    // like-compound.
+    let Value::Table(table) = Compound::to_value(&lua, &seed).unwrap() else {
+        panic!("a compound seeds as a table");
+    };
     // New whole numbers are ints, fractions doubles.
     table.set("whole", 4).unwrap();
     table.set("fraction", 4.5).unwrap();
     table.set("kept_int", Value::Nil).unwrap();
-    let back = crate::lua_mods::nbt::table_to_compound(&table, Some(&seed)).unwrap();
+    let back = Compound::from_value(&lua, Value::Table(table), "tag").unwrap();
     assert_eq!(
         back.get(&"kept_double".into()),
         Some(&Tag::Double(1.5f64.to_bits()))
@@ -226,8 +244,11 @@ fn nbt_compound_roundtrip_keeps_types() {
         Some(&Tag::Double(4.5f64.to_bits()))
     );
     assert!(!back.contains_key(&"kept_int".into()));
-    // Untouched numbers keep their type through the like-compound.
-    let again = crate::lua_mods::nbt::table_to_compound(&table, Some(&back)).unwrap();
+    // Untouched numbers keep their type on the way back through.
+    let Value::Table(table) = Compound::to_value(&lua, &back).unwrap() else {
+        panic!("a compound seeds as a table");
+    };
+    let again = Compound::from_value(&lua, Value::Table(table), "tag").unwrap();
     assert_eq!(again.get(&"whole".into()), Some(&Tag::Int(4)));
     // A nest past the limit is an error, not a stack overflow.
     let mut deep = lua.create_table().unwrap();
@@ -236,7 +257,7 @@ fn nbt_compound_roundtrip_keeps_types() {
         outer.set("inner", deep).unwrap();
         deep = outer;
     }
-    let err = crate::lua_mods::nbt::table_to_compound(&deep, None).unwrap_err();
+    let err = Compound::from_value(&lua, Value::Table(deep), "tag").unwrap_err();
     assert!(err.to_string().contains("deeper"), "names the depth: {err}");
 }
 
@@ -312,7 +333,8 @@ fn out_stack_and_mutable_stack() {
     no_error(&id);
 }
 
-/// Byte strings cross with zero bytes and bytes above 127 intact.
+/// Byte strings cross the hook with zero bytes and bytes above 127
+/// intact, including the 159 the old test never checked.
 #[test]
 fn bytes_roundtrip_zero_and_high() {
     let lua = lua();
@@ -321,7 +343,7 @@ fn bytes_roundtrip_zero_and_high() {
     assert_eq!(s.as_bytes(), bytes);
     let (m, id, _dir) = loaded(
         "gen_bytes",
-        "horizon.on(\"net_from_client\", function(event) assert(#event.data == 3 and event.data:byte(2) == 0, \"bytes\") end)",
+        "horizon.on(\"net_from_client\", function(event) assert(#event.data == 3, \"len\") assert(event.data:byte(1) == 116, \"first\") assert(event.data:byte(2) == 0, \"zero\") assert(event.data:byte(3) == 159, \"high\") end)",
     );
     let mods = boxed(m);
     dispatch_net_from_client(
@@ -355,8 +377,14 @@ impl horizon_client::mod_api::LevelHost for PropLevel {
     fn state_block(&self, state: BlockStateId) -> Option<String> {
         (state == BlockStateId(7) || state == BlockStateId(8)).then(|| "minecraft:stone".to_owned())
     }
-    fn state_properties(&self, _: BlockStateId) -> Vec<(String, String)> {
-        Vec::new()
+    // State 8 carries one property, so a seed test can read a non-empty
+    // property table (the shared fake grants none).
+    fn state_properties(&self, state: BlockStateId) -> Vec<(String, String)> {
+        if state == BlockStateId(8) {
+            vec![("facing".into(), "north".into())]
+        } else {
+            Vec::new()
+        }
     }
 }
 
@@ -381,6 +409,425 @@ fn placement_answer_applies_own_props() {
     placement_answer(&level, BlockStateId(7), "minecraft:dirt", "answer").unwrap_err();
     placement_answer(&level, BlockStateId(7), "minecraft:stone[bad=1]", "answer").unwrap_err();
     placement_answer(&level, BlockStateId(7), "minecraft:stone[bad]", "answer").unwrap_err();
+}
+
+/// A non-empty property table seeds through `gen_seed`: the state name
+/// and its `state_props` reach the handler together.
+#[test]
+fn state_props_seed_nonempty_through_gen_seed() {
+    let (m, id, _dir) = loaded(
+        "gen_state_props",
+        "horizon.on(\"state_for_placement\", function(event) assert(event.state == \"minecraft:stone\", \"state\") assert(event.state_props.facing == \"north\", \"props\") end)",
+    );
+    let mods = boxed(m);
+    let mut answer = None;
+    dispatch_state_for_placement(
+        &PropLevel,
+        &mods,
+        horizon_client::mod_api::LevelDimension::Overworld,
+        BlockStateId(8),
+        &horizon_client::mod_api::PlacementContext {
+            pos: horizon_client::mod_api::BlockPos::new(3, 4, 5),
+            hit_pos: horizon_client::mod_api::BlockPos::new(3, 4, 5),
+            face: Direction::North,
+            hit: Default::default(),
+            inside: true,
+            yaw: 92.0,
+            pitch: 0.0,
+            sneaking: false,
+            item: "test:item2".into(),
+            replace_clicked: true,
+        },
+        horizon_client::mod_api::FluidState::EMPTY,
+        &mut answer,
+    );
+    assert_eq!(answer, None);
+    no_error(&id);
+}
+
+/// A text write through a real hook: a string-only change wins while the
+/// seeded component sits untouched, a component-only change wins, and an
+/// untouched event keeps the native text.
+#[test]
+fn text_string_and_component_writes() {
+    let seed = || Text::empty().with_component(serde_json::json!({ "text": "hello" }));
+    let (m, id, _dir) = loaded(
+        "gen_text_string",
+        "horizon.on(\"broadcast_message\", function(event) event.line = \"bye\" horizon.cancel() end)",
+    );
+    let mods = boxed(m);
+    let mut line = seed();
+    let mut cancel = false;
+    dispatch_broadcast_message(&FakeHost::empty(), &mods, &mut line, &mut cancel);
+    assert!(cancel, "cancel not cancelled");
+    assert_eq!(line, Text::literal("bye"));
+    no_error(&id);
+
+    let (m, id, _dir) = loaded(
+        "gen_text_component",
+        "horizon.on(\"broadcast_message\", function(event) event.line_component = { text = \"comp\" } horizon.cancel() end)",
+    );
+    let mods = boxed(m);
+    let mut line = seed();
+    let mut cancel = false;
+    dispatch_broadcast_message(&FakeHost::empty(), &mods, &mut line, &mut cancel);
+    assert!(cancel, "cancel not cancelled");
+    assert_eq!(
+        line,
+        Text::empty().with_component(serde_json::json!({ "text": "comp" }))
+    );
+    no_error(&id);
+
+    let (m, id, _dir) = loaded(
+        "gen_text_untouched",
+        "horizon.on(\"broadcast_message\", function(event) horizon.cancel() end)",
+    );
+    let mods = boxed(m);
+    let mut line = seed();
+    let mut cancel = false;
+    dispatch_broadcast_message(&FakeHost::empty(), &mods, &mut line, &mut cancel);
+    assert!(cancel, "cancel not cancelled");
+    assert_eq!(line, seed());
+    no_error(&id);
+}
+
+/// A stack write that only changes `count` keeps the native components; the
+/// script clears them with `extra = nil`, and a fresh table without `extra`
+/// is a plain stack.
+#[test]
+fn item_stack_count_only_keeps_extra() {
+    let extra = || StackData {
+        enchantments: vec![(std::sync::Arc::from("test:ench"), 1)],
+        ..Default::default()
+    };
+    let stack = || ItemStack {
+        item: "test:fall".into(),
+        count: 1,
+        damage: 0,
+        extra: Some(Box::new(extra())),
+    };
+    let (m, id, _dir) = loaded(
+        "gen_extra_kept",
+        "horizon.on(\"item_after_vertical_collision\", function(event) event.stack.count = 9 end)",
+    );
+    let mods = boxed(m);
+    let mut kept = stack();
+    let mut discard = false;
+    dispatch_item_after_vertical_collision(
+        &mut FakeHost::empty(),
+        &mods,
+        "minecraft:overworld",
+        true,
+        7,
+        BlockStateId(7),
+        [1, 2, 3],
+        [1.0, 2.0, 3.0],
+        &mut kept,
+        &mut discard,
+    );
+    assert_eq!(kept.count, 9);
+    assert_eq!(kept.extra.as_deref(), Some(&extra()));
+    no_error(&id);
+
+    let (m, id, _dir) = loaded(
+        "gen_extra_cleared",
+        "horizon.on(\"item_after_vertical_collision\", function(event) event.stack.extra = nil end)",
+    );
+    let mods = boxed(m);
+    let mut cleared = stack();
+    let mut discard = false;
+    dispatch_item_after_vertical_collision(
+        &mut FakeHost::empty(),
+        &mods,
+        "minecraft:overworld",
+        true,
+        7,
+        BlockStateId(7),
+        [1, 2, 3],
+        [1.0, 2.0, 3.0],
+        &mut cleared,
+        &mut discard,
+    );
+    assert_eq!(cleared.count, 1);
+    assert_eq!(cleared.extra, None);
+    no_error(&id);
+
+    let (m, id, _dir) = loaded(
+        "gen_extra_fresh",
+        "horizon.on(\"item_after_vertical_collision\", function(event) event.stack = { id = \"test:new\", count = 2, damage = 0 } end)",
+    );
+    let mods = boxed(m);
+    let mut fresh = stack();
+    let mut discard = false;
+    dispatch_item_after_vertical_collision(
+        &mut FakeHost::empty(),
+        &mods,
+        "minecraft:overworld",
+        true,
+        7,
+        BlockStateId(7),
+        [1, 2, 3],
+        [1.0, 2.0, 3.0],
+        &mut fresh,
+        &mut discard,
+    );
+    assert_eq!(fresh.item.as_ref(), "test:new");
+    assert_eq!((fresh.count, fresh.damage), (2, 0));
+    assert_eq!(fresh.extra, None);
+    no_error(&id);
+}
+
+/// A `nil` hole or trailing nil in a seeded slot list reads back as `None`
+/// in place: fixed positions, not a dropped tail.
+#[test]
+fn menu_input_closed_none_slot_stays_in_place() {
+    let (m, id, _dir) = loaded(
+        "gen_menu_none",
+        "horizon.on(\"menu_input_closed\", function(event) assert(event.slots[2] == false, \"hole seeds as false\") event.slots[1] = nil event.slots[2] = { id = \"test:new\", count = 1, damage = 0 } event.slots[3] = nil end)",
+    );
+    let mods = boxed(m);
+    let mut slots = vec![
+        Some(ItemStack {
+            item: "test:a".into(),
+            count: 1,
+            damage: 0,
+            extra: None,
+        }),
+        None,
+        Some(ItemStack {
+            item: "test:b".into(),
+            count: 2,
+            damage: 0,
+            extra: None,
+        }),
+    ];
+    dispatch_menu_input_closed(&mut FakeHost::empty(), &mods, 7, 8, &mut slots);
+    assert_eq!(
+        format!("{:?}", slots),
+        format!(
+            "{:?}",
+            vec![
+                None,
+                Some(ItemStack {
+                    item: "test:new".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                }),
+                None,
+            ]
+        )
+    );
+    no_error(&id);
+}
+
+/// A replaced screen reads the `false` sentinel as the `None` slot in the
+/// middle: three elements, not one.
+#[test]
+fn screen_none_slot_reads_false_sentinel() {
+    let (m, id, _dir) = loaded(
+        "gen_screen_none",
+        "horizon.on(\"screen\", function(event) event.screen = { width = 100.0, height = 50.0, slots = { { x = 1.0, y = 2.0 }, false, { x = 3.0, y = 4.0 } }, inventory_y = 10.0, inventory_x = 20.0, own_labels = true, own_background = false } end)",
+    );
+    let firing_mods = boxed(m);
+    let mut screen: Option<NativeScreen> = None;
+    dispatch_screen(&FakeHost::empty(), &firing_mods, "test:block", &mut screen);
+    assert_eq!(
+        screen,
+        Some(NativeScreen {
+            width: 100.0,
+            height: 50.0,
+            slots: vec![Some([1.0, 2.0]), None, Some([3.0, 4.0])],
+            inventory_y: 10.0,
+            inventory_x: 20.0,
+            own_labels: true,
+            own_background: false,
+        })
+    );
+    no_error(&id);
+}
+
+/// A short shader write errors naming the count instead of padding with
+/// zeros, and the native values stay.
+#[test]
+fn shader_params_short_write_errors() {
+    let (m, id, _dir) = loaded(
+        "gen_shader_short",
+        "horizon.on(\"shader_params\", function(event) event.params = { { x = 1.0, y = 2.0, z = 3.0, w = 4.0 } } end)",
+    );
+    let firing_mods = boxed(m);
+    let mut params = [[2.5, 2.5, 3.5, 4.5]; 8];
+    dispatch_shader_params(&FakeHost::empty(), &firing_mods, 1.5, &mut params);
+    assert_eq!(params, [[2.5, 2.5, 3.5, 4.5]; 8]);
+    let err = horizon_client::dev_input::mods::status()
+        .into_iter()
+        .find(|s| s.id == id)
+        .and_then(|s| s.error)
+        .expect("a short write errors");
+    assert!(err.contains("eight"), "names the count: {err}");
+}
+
+/// A scroll delta that `f32` cannot hold crosses the hook exactly.
+#[test]
+fn scroll_keeps_full_precision() {
+    let (m, id, _dir) = loaded(
+        "gen_scroll_precise",
+        "horizon.on(\"mouse_scrolling\", function(event) assert(event.scroll.x == 1.1, \"scroll x\") assert(event.scroll.y == 2.5, \"scroll y\") horizon.cancel() end)",
+    );
+    let firing_mods = boxed(m);
+    let mut canceled = false;
+    dispatch_mouse_scrolling(
+        &mut FakeHost::empty(),
+        &firing_mods,
+        [1.1, 2.5],
+        [4, -6],
+        [true, false, false],
+        [4.5, 5.5],
+        11,
+        &mut canceled,
+    );
+    assert!(canceled, "canceled not cancelled");
+    no_error(&id);
+}
+
+/// `Duration` reads finite seconds, clamps negatives, and errors on
+/// non-finite or huge numbers instead of panicking.
+#[test]
+fn duration_rejects_nonfinite_and_huge() {
+    let lua = lua();
+    assert_eq!(
+        Duration::from_value(&lua, Value::Number(1.5), "elapsed").unwrap(),
+        Duration::new(1, 500_000_000)
+    );
+    assert_eq!(
+        Duration::from_value(&lua, Value::Integer(3), "elapsed").unwrap(),
+        Duration::new(3, 0)
+    );
+    assert_eq!(
+        Duration::from_value(&lua, Value::Number(-2.0), "elapsed").unwrap(),
+        Duration::new(0, 0)
+    );
+    for bad in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN, 1e20] {
+        Duration::from_value(&lua, Value::Number(bad), "elapsed").unwrap_err();
+    }
+}
+
+/// Fixed-length sequences error on the wrong length instead of padding or
+/// truncating.
+#[test]
+fn fixed_sequences_reject_wrong_length() {
+    let lua = lua();
+    let seq = |values: &[bool]| {
+        let t = lua.create_table().unwrap();
+        for (i, v) in values.iter().enumerate() {
+            t.set(i + 1, *v).unwrap();
+        }
+        t
+    };
+    let err =
+        <[bool; 3] as LuaStruct>::from_value(&lua, Value::Table(seq(&[true, false])), "buttons")
+            .unwrap_err();
+    assert!(err.to_string().contains("three"), "names the count: {err}");
+    let err = <[bool; 3] as LuaStruct>::from_value(
+        &lua,
+        Value::Table(seq(&[true, false, true, false])),
+        "buttons",
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("three"), "names the count: {err}");
+
+    // Five face lists, not six.
+    let faces = lua.create_table().unwrap();
+    for i in 1..=5 {
+        let face = lua.create_table().unwrap();
+        face.set(1, 0).unwrap();
+        faces.set(i, face).unwrap();
+    }
+    let container = lua.create_table().unwrap();
+    container.set("slots", 9).unwrap();
+    container.set("faces", faces).unwrap();
+    let inputs = lua.create_table().unwrap();
+    inputs.set(1, 0).unwrap();
+    container.set("inputs", inputs).unwrap();
+    container
+        .set("outputs", lua.create_table().unwrap())
+        .unwrap();
+    let err = ModContainer::from_value(&lua, Value::Table(container), "container").unwrap_err();
+    assert!(err.to_string().contains("six"), "names the count: {err}");
+
+    // Five face flags, not six.
+    let buffer = lua.create_table().unwrap();
+    buffer.set("capacity", 1000).unwrap();
+    buffer.set("max_insert", 100).unwrap();
+    buffer.set("max_extract", 100).unwrap();
+    buffer
+        .set("insert_faces", seq(&[true, false, false, false, false]))
+        .unwrap();
+    buffer
+        .set(
+            "extract_faces",
+            seq(&[false, false, false, false, false, false]),
+        )
+        .unwrap();
+    let err = ModEnergyBuffer::from_value(&lua, Value::Table(buffer), "buffer").unwrap_err();
+    assert!(err.to_string().contains("six"), "names the count: {err}");
+
+    // Seven shader slots, not eight.
+    let params = lua.create_table().unwrap();
+    for i in 1..=7 {
+        let slot = lua.create_table().unwrap();
+        slot.set("x", 1.0).unwrap();
+        slot.set("y", 2.0).unwrap();
+        slot.set("z", 3.0).unwrap();
+        slot.set("w", 4.0).unwrap();
+        params.set(i, slot).unwrap();
+    }
+    let err =
+        <[[f32; 4]; 8] as LuaStruct>::from_value(&lua, Value::Table(params), "params").unwrap_err();
+    assert!(err.to_string().contains("eight"), "names the count: {err}");
+}
+
+/// Setting a non-optional field to nil keeps the native value.
+#[test]
+fn nil_on_required_fields_keeps_native() {
+    let (m, id, _dir) = loaded(
+        "gen_nil_stack",
+        "horizon.on(\"item_after_vertical_collision\", function(event) event.stack = nil end)",
+    );
+    let mods = boxed(m);
+    let mut stack = ItemStack {
+        item: "test:fall".into(),
+        count: 4,
+        damage: 2,
+        extra: None,
+    };
+    let mut discard = false;
+    dispatch_item_after_vertical_collision(
+        &mut FakeHost::empty(),
+        &mods,
+        "minecraft:overworld",
+        true,
+        7,
+        BlockStateId(7),
+        [1, 2, 3],
+        [1.0, 2.0, 3.0],
+        &mut stack,
+        &mut discard,
+    );
+    assert_eq!(stack.count, 4);
+    assert_eq!(stack.damage, 2);
+    assert_eq!(stack.item.as_ref(), "test:fall");
+    no_error(&id);
+
+    let (m, id, _dir) = loaded(
+        "gen_nil_bool",
+        "horizon.on(\"custom_block_fluids\", function(event) event.custom = nil end)",
+    );
+    let mods = boxed(m);
+    let mut custom = true;
+    dispatch_custom_block_fluids(&FakeHost::empty(), &mods, "test:block", &mut custom);
+    assert!(custom, "nil keeps the native value");
+    no_error(&id);
 }
 
 /// An unset placement answer leaves the decision to the next mod.

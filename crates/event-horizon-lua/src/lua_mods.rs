@@ -424,13 +424,15 @@ fn carried_in(stacks: &[Option<ItemStack>]) -> Vec<(String, u32)> {
     out
 }
 
-/// An item stack as a table: `id`, `count`, `damage`, `plain` (no
-/// components beyond count and damage).
+/// An item stack as a table: `id`, `count`, `damage`, the `extra`
+/// components compound when the stack has any (nil when plain), and `plain`
+/// (no components beyond count and damage) for the older readers.
 pub(crate) fn item_table_of(lua: &Lua, stack: &ItemStack) -> mlua::Result<Table> {
     let t = lua.create_table()?;
     t.set("id", &*stack.item)?;
     t.set("count", stack.count)?;
     t.set("damage", stack.damage)?;
+    t.set("extra", crate::generated_runtime::extra_seed(lua, stack)?)?;
     t.set("plain", stack.extra.is_none())?;
     Ok(t)
 }

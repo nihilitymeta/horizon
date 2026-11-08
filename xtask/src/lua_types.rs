@@ -13,9 +13,11 @@ use std::{fs, path::Path};
 /// The tables a hook or helper hands a script, as Luau types.
 const TYPES: &[(&str, &str)] = &[
     ("Vec3", "{ x: number, y: number, z: number }"),
+    // `extra` is the components compound when the stack has any (nil when
+    // plain); `plain` stays for the older readers.
     (
         "Item",
-        "{ id: string, count: number, damage: number, plain: boolean }",
+        "{ id: string, count: number, damage: number, extra: Data?, plain: boolean }",
     ),
     ("Held", "{ item: string, count: number, plain: boolean }"),
     (

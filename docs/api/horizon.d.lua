@@ -3,7 +3,7 @@
 --   luau-lsp analyze --definitions @horizon=horizon.d.lua --platform=standard scripts
 
 export type Vec3 = { x: number, y: number, z: number }
-export type Item = { id: string, count: number, damage: number, plain: boolean }
+export type Item = { id: string, count: number, damage: number, extra: Data?, plain: boolean }
 export type Held = { item: string, count: number, plain: boolean }
 export type Player = { uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number, held: Held? }
 export type Named = { uuid: string, name: string }
@@ -250,7 +250,7 @@ export type ModsEvent = { mods: any }
 export type MoistureChangeEvent = { dimension: string, pos: Vec3, from: number, to: number }
 export type MouseButtonPostEvent = { button: number, pressed: boolean, modifiers: number }
 export type MouseButtonPreEvent = { button: number, pressed: boolean, modifiers: number }
-export type MouseScrollingEvent = { scroll: Vec2, accumulated: { x: number, z: number }, buttons: { boolean }, cursor: Vec2, modifiers: number }
+export type MouseScrollingEvent = { scroll: Vec2, accumulated: { x: number, y: number }, buttons: { boolean }, cursor: Vec2, modifiers: number }
 export type MovementInputEvent = { forward: number, strafe: number, jump: boolean, sneak: boolean }
 export type MusicEvent = { music: { sound: string, min_delay: number, max_delay: number, replace_current_music: boolean }?, volume: number }
 export type MusicLayersEvent = { layers: any }

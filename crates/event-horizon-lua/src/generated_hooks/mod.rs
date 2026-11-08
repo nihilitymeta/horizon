@@ -2816,12 +2816,24 @@ mod generated_tests {
     fn generated_shader_params() {
         let (m, id, _dir) = loaded(
             "gen_shader_params",
-            "horizon.on(\"shader_params\", function(event)\n    assert(event.partial == 1.5, \"partial\")\n    event.params = { { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 12.5, y = 2.5, z = 3.5, w = 4.5 } }\nend)",
+            "horizon.on(\"shader_params\", function(event)\n    assert(event.partial == 1.5, \"partial\")\n    event.params = { { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 13.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 14.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 15.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 16.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 17.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 18.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 19.5, y = 2.5, z = 3.5, w = 4.5 } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut params = [[2.5, 2.5, 3.5, 4.5]; 8];
         dispatch_shader_params(&FakeHost::empty(), &firing_mods, 1.5, &mut params);
-        assert_eq!(params, [[12.5, 2.5, 3.5, 4.5]; 8]);
+        assert_eq!(
+            params,
+            [
+                [12.5, 2.5, 3.5, 4.5],
+                [13.5, 2.5, 3.5, 4.5],
+                [14.5, 2.5, 3.5, 4.5],
+                [15.5, 2.5, 3.5, 4.5],
+                [16.5, 2.5, 3.5, 4.5],
+                [17.5, 2.5, 3.5, 4.5],
+                [18.5, 2.5, 3.5, 4.5],
+                [19.5, 2.5, 3.5, 4.5]
+            ]
+        );
         no_error(&id);
     }
 
@@ -3096,7 +3108,7 @@ mod generated_tests {
     fn generated_mouse_scrolling() {
         let (m, id, _dir) = loaded(
             "gen_mouse_scrolling",
-            "horizon.on(\"mouse_scrolling\", function(event)\n    assert(event.scroll.x == 1.5, \"scroll\")\n    assert(event.scroll.y == 2.5, \"scroll\")\n    assert(event.accumulated.x == 4, \"accumulated\")\n    assert(event.cursor.x == 4.5, \"cursor\")\n    assert(event.cursor.y == 5.5, \"cursor\")\n    assert(event.modifiers == 11, \"modifiers\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"mouse_scrolling\", function(event)\n    assert(event.scroll.x == 1.5, \"scroll\")\n    assert(event.scroll.y == 2.5, \"scroll\")\n    assert(event.accumulated.x == 4, \"accumulated\")\n    assert(event.accumulated.y == -6, \"accumulated\")\n    assert(event.buttons[1] == true, \"buttons\")\n    assert(event.buttons[2] == false, \"buttons\")\n    assert(event.buttons[3] == false, \"buttons\")\n    assert(event.cursor.x == 4.5, \"cursor\")\n    assert(event.cursor.y == 5.5, \"cursor\")\n    assert(event.modifiers == 11, \"modifiers\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -4144,7 +4156,7 @@ mod generated_tests {
     fn generated_broadcast_message() {
         let (m, id, _dir) = loaded(
             "gen_broadcast_message",
-            "horizon.on(\"broadcast_message\", function(event)\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.line_component.text == \"test:line\", \"line\")\n    event.line = \"test:line:edited\"; event.line_component = nil\n    horizon.cancel()\nend)",
+            "horizon.on(\"broadcast_message\", function(event)\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.line_component.text == \"test:line\", \"line\")\n    event.line = \"test:line:edited\"\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut line = Text::literal("test:line");
@@ -8660,7 +8672,7 @@ mod generated_tests {
     fn generated_client_chat_received() {
         let (m, id, _dir) = loaded(
             "gen_client_chat_received",
-            "horizon.on(\"client_chat_received\", function(event)\n    assert(event.system == true, \"system\")\n    assert(event.overlay == false, \"overlay\")\n    assert(event.sender == 9, \"sender\")\n    assert(event.chat_type == nil, \"chat_type\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.message_component.text == \"test:message\", \"message\")\n    event.message = \"test:message:edited\"; event.message_component = nil\n    horizon.cancel()\nend)",
+            "horizon.on(\"client_chat_received\", function(event)\n    assert(event.system == true, \"system\")\n    assert(event.overlay == false, \"overlay\")\n    assert(event.sender == 9, \"sender\")\n    assert(event.chat_type == nil, \"chat_type\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.message_component.text == \"test:message\", \"message\")\n    event.message = \"test:message:edited\"\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut message = Text::literal("test:message");

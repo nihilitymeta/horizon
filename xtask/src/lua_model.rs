@@ -1230,7 +1230,7 @@ fn struct_ts(key: &str) -> &'static str {
         "Option<[f32;2]>" => "Vec2?",
         "Option<(i32,u32)>" => "{ value: number, max: number }?",
         "NativeDispensed" | "(Option<ItemStack>,i32)" => "{ remainder: Item?, event: number }",
-        "[i32;2]" => "{ x: number, z: number }",
+        "[i32;2]" => "{ x: number, y: number }",
         "[bool;3]" => "{ boolean }",
         "[usize;2]" => "{ start: number, end: number }",
         "(usize,usize)" => "{ start: number, end: number }",
@@ -1535,13 +1535,20 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
         ),
         "[i32;2]" => fixed(
             format!("[{}, {}]", 3 + n as i32, -5 - n as i32),
-            format!("{{ x = {}, z = {} }}", 3 + n as i32, -5 - n as i32),
-            vec![leaf("x", format!("{}", 3 + n as i32))],
+            format!("{{ x = {}, y = {} }}", 3 + n as i32, -5 - n as i32),
+            vec![
+                leaf("x", format!("{}", 3 + n as i32)),
+                leaf("y", format!("{}", -5 - n as i32)),
+            ],
         ),
         "[bool;3]" => fixed(
             format!("[{}, {}, {}]", n.is_multiple_of(2), n % 2 == 1, false),
             format!("{{ {}, {}, false }}", n.is_multiple_of(2), n % 2 == 1),
-            vec![],
+            vec![
+                ("[1]".into(), format!("{}", n.is_multiple_of(2))),
+                ("[2]".into(), format!("{}", n % 2 == 1)),
+                ("[3]".into(), "false".into()),
+            ],
         ),
         "[usize;2]" => fixed(
             format!("[{}, {}]", 7 + n, 12 + n),
@@ -1553,34 +1560,44 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             format!("{{ start = {}, [\"end\"] = {} }}", 7 + n, 12 + n),
             vec![leaf("start", format!("{}", 7 + n))],
         ),
-        "[[f32;4];8]" => mutable(
-            format!("[[{:?}, 2.5, 3.5, 4.5]; 8]", 1.5 + n as f32),
-            format!(
-                "{{ {}; {}; {}; {}; {}; {}; {}; {} }}",
-                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
-                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
-                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
-                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
-                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
-                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
-                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
-                "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }"
+        "[[f32;4];8]" => {
+            // Eight different values, so a permuted or padded write fails
+            // the Rust-side assert.
+            let write_x: Vec<f32> = (0..8).map(|i| 11.5 + n as f32 + i as f32).collect();
+            let write_rust = format!(
+                "[{}]",
+                write_x
+                    .iter()
+                    .map(|x| format!("[{x:?}, 2.5, 3.5, 4.5]"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            let write_lua = format!(
+                "{{ {} }}",
+                write_x
+                    .iter()
+                    .map(|x| format!("{{ x = {x:?}, y = 2.5, z = 3.5, w = 4.5 }}"))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            );
+            mutable(
+                format!("[[{:?}, 2.5, 3.5, 4.5]; 8]", 1.5 + n as f32),
+                format!(
+                    "{{ {}; {}; {}; {}; {}; {}; {}; {} }}",
+                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
+                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
+                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
+                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
+                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
+                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
+                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
+                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }"
+                )
+                .replace("1.5", &format!("{:?}", 1.5 + n as f32)),
+                write_rust,
+                write_lua,
             )
-            .replace("1.5", &format!("{:?}", 1.5 + n as f32)),
-            format!("[[{:?}, 2.5, 3.5, 4.5]; 8]", 11.5 + n as f32),
-            format!(
-                "{{ {}; {}; {}; {}; {}; {}; {}; {} }}",
-                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }",
-                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }",
-                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }",
-                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }",
-                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }",
-                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }",
-                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }",
-                "{ x = 11.5, y = 2.5, z = 3.5, w = 4.5 }"
-            )
-            .replace("11.5", &format!("{:?}", 11.5 + n as f32)),
-        ),
+        }
         "[i32;3]" => {
             let mut s = mutable(
                 format!("[{}, {}, {}]", 1 + n as i32, 2 + n as i32, 3 + n as i32),
@@ -2975,7 +2992,11 @@ pub fn mutate_line(conv: &Conv, field: &str, write_lua: &str) -> String {
         Conv::MutStrVec => {
             format!("    {e}[1] = \"test:edited\"; table.insert({e}, \"test:added\")")
         }
-        Conv::TextVal | Conv::TextOpt => {
+        // A plain-string write must win while the seeded component sits
+        // untouched, so the smoke handler sets only the string; clearing an
+        // optional still clears both sides.
+        Conv::TextVal => format!("    {e} = {write_lua}"),
+        Conv::TextOpt => {
             format!("    {e} = {write_lua}; {e}_component = nil")
         }
         _ => format!("    {e} = {write_lua}"),

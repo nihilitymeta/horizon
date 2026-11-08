@@ -13,7 +13,9 @@
 //! `table`.
 
 use crate::lua_mods::item_table_of;
+use horizon_client::item_data::{StackData, components_tag, decode_components};
 use horizon_client::mod_api::ItemStack;
+use horizon_world::nbt::Tag;
 use mlua::{Lua, Table, Value};
 
 /// Round 3 (`adapter`) converters: one [`LuaStruct`] per native field type
@@ -99,14 +101,51 @@ pub(crate) fn read_pair(t: &Table) -> mlua::Result<[f32; 2]> {
     Ok([read_number(t, "x")?, read_number(t, "y")?])
 }
 
-/// An item stack from its table: `id`, `count`, `damage`. Extra components
-/// do not survive: a replaced stack is plain.
+/// An item stack's components beyond count and damage, as the settled
+/// `{id, count, damage, extra?}` shape: `nil` when the stack is plain, else
+/// the components compound (damage rides its own field, so the seed leaves
+/// it out and the way back ignores it). A script that only changes `count`
+/// keeps this table untouched, and the way back decodes the same
+/// components; setting `extra` to nil (or leaving it out of a fresh table)
+/// clears them.
+pub(crate) fn extra_seed(lua: &Lua, stack: &ItemStack) -> mlua::Result<Value> {
+    match &stack.extra {
+        None => Ok(Value::Nil),
+        Some(data) => match components_tag(0, Some(data)) {
+            Some(Tag::Compound(compound)) => Ok(Value::Table(
+                crate::lua_mods::nbt::compound_to_table(lua, &compound)?,
+            )),
+            _ => Ok(Value::Nil),
+        },
+    }
+}
+
+/// The seeded components back: `nil` (or a missing key) is a plain stack, a
+/// table decodes through the components compound, anything else errors.
+pub(crate) fn extra_back(table: &Table) -> mlua::Result<Option<Box<StackData>>> {
+    match table.get::<Value>("extra")? {
+        Value::Nil => Ok(None),
+        Value::Table(extra) => {
+            let compound = crate::lua_mods::nbt::table_to_compound(&extra, None)
+                .map_err(|e| mlua::Error::runtime(format!("extra: {e}")))?;
+            let (_, data) = decode_components(Some(&Tag::Compound(compound)));
+            Ok(data)
+        }
+        other => Err(mlua::Error::runtime(format!(
+            "extra: expected a components table or nil, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+/// An item stack from its table: `id`, `count`, `damage`, and the seeded
+/// `extra` components back (nil is plain).
 pub(crate) fn item_from_table(table: &Table) -> mlua::Result<ItemStack> {
     Ok(ItemStack {
         item: std::sync::Arc::from(table.get::<String>("id")?.as_str()),
         count: table.get::<Option<u32>>("count")?.unwrap_or(1),
         damage: table.get::<Option<u32>>("damage")?.unwrap_or(0),
-        extra: None,
+        extra: extra_back(table)?,
     })
 }
 
@@ -225,10 +264,7 @@ macro_rules! gen_seed {
     ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : mut_pair64) => {
         $table.set(
             stringify!($field),
-            crate::generated_runtime::pair_table(
-                $lua,
-                [(*$event.$field)[0] as f32, (*$event.$field)[1] as f32],
-            )?,
+            crate::generated_runtime::pair64_table($lua, *$event.$field)?,
         )?
     };
     ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : uuid) => {
@@ -299,10 +335,7 @@ macro_rules! gen_seed {
     ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : pair64) => {
         $table.set(
             stringify!($field),
-            crate::generated_runtime::pair_table(
-                $lua,
-                [$event.$field[0] as f32, $event.$field[1] as f32],
-            )?,
+            crate::generated_runtime::pair64_table($lua, $event.$field)?,
         )?
     };
     ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : vec3) => {
@@ -404,22 +437,33 @@ macro_rules! gen_seed {
             $event.$field.to_string_lossy().into_owned(),
         )?
     };
-    // Rich text: the plain string and the component table.
+    // Rich text: the plain string and the component table, plus a seed
+    // snapshot under NUL-prefixed keys so the write-back can tell which
+    // side the script changed.
     ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : s_text) => {{
         let (plain, component) = crate::generated_runtime::text_parts($lua, &*$event.$field)?;
-        $table.set(stringify!($field), plain)?;
-        $table.set(concat!(stringify!($field), "_component"), component)?;
+        $table.set(stringify!($field), plain.clone())?;
+        $table.set(concat!(stringify!($field), "_component"), component.clone())?;
+        $table.set(concat!("\0", stringify!($field), "#text"), plain)?;
+        $table.set(concat!("\0", stringify!($field), "#component"), component)?;
     }};
     ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : s_opt_text) => {{
         match &*$event.$field {
             Some(text) => {
                 let (plain, component) = crate::generated_runtime::text_parts($lua, text)?;
-                $table.set(stringify!($field), plain)?;
-                $table.set(concat!(stringify!($field), "_component"), component)?;
+                $table.set(stringify!($field), plain.clone())?;
+                $table.set(concat!(stringify!($field), "_component"), component.clone())?;
+                $table.set(concat!("\0", stringify!($field), "#text"), plain)?;
+                $table.set(concat!("\0", stringify!($field), "#component"), component)?;
             }
             None => {
                 $table.set(stringify!($field), mlua::Value::Nil)?;
                 $table.set(concat!(stringify!($field), "_component"), mlua::Value::Nil)?;
+                $table.set(concat!("\0", stringify!($field), "#text"), mlua::Value::Nil)?;
+                $table.set(
+                    concat!("\0", stringify!($field), "#component"),
+                    mlua::Value::Nil,
+                )?;
             }
         }
     }};
@@ -501,15 +545,12 @@ macro_rules! gen_writeback {
     ($table:ident, $lua:ident, $event:ident, $level:expr, $field:ident, mut_pos) => {
         match $table.get::<mlua::Value>(stringify!($field))? {
             mlua::Value::Nil => {}
-            mlua::Value::Table(updated) => {
-                *$event.$field = crate::generated_runtime::read_pos(&updated)?
-            }
             v => {
-                return Err(mlua::Error::runtime(format!(
-                    "{}: expected {{x, y, z}}, got {}",
+                *$event.$field = <[i32; 3] as crate::generated_runtime::LuaStruct>::from_value(
+                    $lua,
+                    v,
                     stringify!($field),
-                    v.type_name()
-                )));
+                )?
             }
         }
     };
@@ -626,19 +667,29 @@ macro_rules! gen_writeback {
             }
         }
     };
-    // Rich text: both missing is unchanged; a component table wins.
+    // Rich text: both missing is unchanged (or cleared, when optional);
+    // otherwise the side the script changed since the seed wins (see
+    // `text_pick` for the rule).
     ($table:ident, $lua:ident, $event:ident, $level:expr, $field:ident, w_text) => {{
         let text: mlua::Value = $table.get(stringify!($field))?;
         let component: mlua::Value = $table.get(concat!(stringify!($field), "_component"))?;
         match (&text, &component) {
             (mlua::Value::Nil, mlua::Value::Nil) => {}
             _ => {
-                *$event.$field = crate::generated_runtime::text_from_parts(
+                let seed_text: mlua::Value =
+                    $table.get(concat!("\0", stringify!($field), "#text"))?;
+                let seed_component: mlua::Value =
+                    $table.get(concat!("\0", stringify!($field), "#component"))?;
+                if let Some(written) = crate::generated_runtime::text_pick(
                     $lua,
                     text,
                     component,
+                    seed_text,
+                    seed_component,
                     stringify!($field),
-                )?
+                )? {
+                    *$event.$field = written;
+                }
             }
         }
     }};
@@ -648,12 +699,20 @@ macro_rules! gen_writeback {
         match (&text, &component) {
             (mlua::Value::Nil, mlua::Value::Nil) => *$event.$field = None,
             _ => {
-                *$event.$field = Some(crate::generated_runtime::text_from_parts(
+                let seed_text: mlua::Value =
+                    $table.get(concat!("\0", stringify!($field), "#text"))?;
+                let seed_component: mlua::Value =
+                    $table.get(concat!("\0", stringify!($field), "#component"))?;
+                if let Some(written) = crate::generated_runtime::text_pick(
                     $lua,
                     text,
                     component,
+                    seed_text,
+                    seed_component,
                     stringify!($field),
-                )?)
+                )? {
+                    *$event.$field = Some(written);
+                }
             }
         }
     }};
@@ -1146,8 +1205,26 @@ pub(crate) fn static_str(s: &str) -> &'static str {
     leaked
 }
 
+/// The seeded element count of a sequence table: in-place edits keep their
+/// positions even through `nil` holes, so the count rides the table itself.
+const SEQ_LEN_KEY: &str = "__len";
+
+/// A sequence table's element count: the seeded count when the script kept
+/// the seeded table (so a hole or trailing nil reads back in place), else
+/// the table's own length. A table the script replaced wholesale resizes to
+/// its own length; shrinking or growing in place is not a thing (replace
+/// the table to resize).
+pub(crate) fn struct_seq_len(t: &Table) -> usize {
+    let seeded = match t.get::<Value>(SEQ_LEN_KEY) {
+        Ok(Value::Integer(n)) if n > 0 => n as usize,
+        _ => 0,
+    };
+    seeded.max(t.raw_len())
+}
+
 /// A sequence table of converted elements; a `nil` element has no Lua form
-/// and reads as `false`, which reads back as `nil`.
+/// and reads as `false`, which reads back as `nil`. The seeded count rides
+/// along under `__len` so holes read back in place.
 pub(crate) fn struct_vec_to_lua<T: LuaStruct>(lua: &Lua, items: &[T]) -> mlua::Result<Table> {
     let t = lua.create_table()?;
     for (i, item) in items.iter().enumerate() {
@@ -1157,18 +1234,23 @@ pub(crate) fn struct_vec_to_lua<T: LuaStruct>(lua: &Lua, items: &[T]) -> mlua::R
             v => t.set(i + 1, v)?,
         }
     }
+    t.set(SEQ_LEN_KEY, items.len() as i64)?;
     Ok(t)
 }
 
-/// A sequence table back into elements; `false` reads as `nil`.
+/// A sequence table back into elements; `false` reads as `nil`, and so does
+/// a hole or trailing nil inside the seeded count (element positions are
+/// fixed: `{slot, nil, slot}` is three elements with a `None` in the
+/// middle). A `nil` where the element type is not optional errors instead
+/// of silently dropping the tail.
 pub(crate) fn struct_vec_from_lua<T: LuaStruct>(
     lua: &Lua,
     t: &Table,
     field: &str,
 ) -> mlua::Result<Vec<T>> {
-    let mut out = Vec::new();
-    for pair in t.sequence_values::<Value>() {
-        let v = pair?;
+    let mut out = Vec::with_capacity(struct_seq_len(t));
+    for i in 1..=struct_seq_len(t) {
+        let v: Value = t.get(i)?;
         let v = match v {
             Value::Boolean(false) => Value::Nil,
             v => v,
@@ -1682,17 +1764,25 @@ fn faces_to_lua(lua: &Lua, faces: &[Vec<usize>; 6]) -> mlua::Result<Table> {
     Ok(t)
 }
 
+/// Exactly six face lists: a short or long write errors naming the count,
+/// instead of padding with empties or dropping the tail.
 fn faces_from_lua(_lua: &Lua, v: Value, field: &str) -> mlua::Result<[Vec<usize>; 6]> {
     match v {
         Value::Table(t) => {
-            let mut out: [Vec<usize>; 6] = Default::default();
-            for (i, face) in t.sequence_values::<Table>().enumerate() {
-                if i >= 6 {
-                    break;
-                }
-                let face = face.map_err(|_| {
+            let faces: Vec<Table> = t
+                .sequence_values::<Table>()
+                .collect::<mlua::Result<_>>()
+                .map_err(|_| {
                     mlua::Error::runtime(format!("{field}: expected six slot sequences"))
                 })?;
+            if faces.len() != 6 {
+                return Err(mlua::Error::runtime(format!(
+                    "{field}: expected six slot sequences, got {}",
+                    faces.len()
+                )));
+            }
+            let mut out: [Vec<usize>; 6] = Default::default();
+            for (i, face) in faces.iter().enumerate() {
                 let at = format!("{field}[{}]", i + 1);
                 let mut slots = Vec::new();
                 for slot in face.sequence_values::<usize>() {
@@ -1848,17 +1938,23 @@ fn face_flags_to_lua(lua: &Lua, faces: &[bool; 6]) -> mlua::Result<Table> {
     lua.create_sequence_from(faces.iter().copied())
 }
 
+/// Exactly six face flags: a short or long write errors naming the count,
+/// instead of padding with `false` or dropping the tail.
 fn face_flags_from_lua(v: Value, field: &str) -> mlua::Result<[bool; 6]> {
     match v {
         Value::Table(t) => {
-            let mut out = [false; 6];
-            for (i, flag) in t.sequence_values::<bool>().enumerate() {
-                if i >= 6 {
-                    break;
-                }
-                out[i] = flag
-                    .map_err(|_| mlua::Error::runtime(format!("{field}: expected six booleans")))?;
+            let flags: Vec<bool> = t
+                .sequence_values::<bool>()
+                .collect::<mlua::Result<_>>()
+                .map_err(|_| mlua::Error::runtime(format!("{field}: expected six booleans")))?;
+            if flags.len() != 6 {
+                return Err(mlua::Error::runtime(format!(
+                    "{field}: expected six booleans, got {}",
+                    flags.len()
+                )));
             }
+            let mut out = [false; 6];
+            out.copy_from_slice(&flags);
             Ok(out)
         }
         other => Err(mlua::Error::runtime(format!(
@@ -1928,7 +2024,12 @@ impl<'a> LuaStruct for NativeMapInfo<'a> {
     fn to_value(lua: &Lua, v: &Self) -> mlua::Result<Value> {
         let t = lua.create_table()?;
         t.set("id", v.id)?;
-        t.set("center", <[i32; 2]>::to_value(lua, &v.center)?)?;
+        // The map center is world x/z, not steps: its own `{x, z}` table
+        // (the shared `[i32; 2]` shape is `{x, y}` for scroll steps).
+        let center = lua.create_table()?;
+        center.set("x", v.center[0])?;
+        center.set("z", v.center[1])?;
+        t.set("center", center)?;
         t.set("scale", v.scale)?;
         t.set("dimension", v.dimension)?;
         t.set("locked", v.locked)?;
@@ -2570,6 +2671,34 @@ pub(crate) fn text_from_parts(
     }
 }
 
+/// Which side of an event text write changed since the seed: the seed
+/// snapshot rides the event table under NUL-prefixed keys, so a script that
+/// only sets `event.line = "bye"` reads back as the string even though the
+/// seeded component table is still there. `None` is unchanged (the native
+/// text stays). The rule, enforced here and nowhere else: a changed
+/// component wins when only it changed; a changed string wins when only it
+/// changed; when both changed, a component table wins and a cleared
+/// component falls back to the string; a cleared string falls back to an
+/// untouched component.
+pub(crate) fn text_pick(
+    lua: &Lua,
+    text: Value,
+    component: Value,
+    seed_text: Value,
+    seed_component: Value,
+    field: &str,
+) -> mlua::Result<Option<Text>> {
+    let text_changed = text != seed_text;
+    let comp_changed = component != seed_component;
+    if !text_changed && !comp_changed {
+        return Ok(None);
+    }
+    if matches!(component, Value::Table(_)) && (comp_changed || matches!(text, Value::Nil)) {
+        return Ok(Some(text_from_parts(lua, Value::Nil, component, field)?));
+    }
+    Ok(Some(text_from_parts(lua, text, Value::Nil, field)?))
+}
+
 impl LuaStruct for Text {
     fn to_value(lua: &Lua, v: &Self) -> mlua::Result<Value> {
         let (plain, component) = text_parts(lua, v)?;
@@ -2774,29 +2903,41 @@ impl LuaStruct for [f32; 2] {
     }
 }
 
-/// A fixed 2-int pair (`{x, z}`).
+/// A fixed 2-int step pair (`{x, y}`): whole mouse-scroll steps. (Chunks
+/// and columns use the `{x, z}` chunk table instead; the map center builds
+/// its own `{x, z}` table.)
 impl LuaStruct for [i32; 2] {
     fn to_value(lua: &Lua, v: &Self) -> mlua::Result<Value> {
         let t = lua.create_table()?;
         t.set("x", v[0])?;
-        t.set("z", v[1])?;
+        t.set("y", v[1])?;
         Ok(Value::Table(t))
     }
     fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
         match v {
             Value::Table(t) => Ok([
                 req_key::<i32>(&t, "x", field)?,
-                req_key::<i32>(&t, "z", field)?,
+                req_key::<i32>(&t, "y", field)?,
             ]),
             other => Err(mlua::Error::runtime(format!(
-                "{field}: expected {{x, z}}, got {}",
+                "{field}: expected {{x, y}}, got {}",
                 other.type_name()
             ))),
         }
     }
 }
 
-/// Three toggles as a sequence (mouse buttons).
+/// `{x, y}` of an f64 pair at full precision (scroll deltas): never
+/// narrowed through `f32` the way the f32 pair table would.
+pub(crate) fn pair64_table(lua: &Lua, pos: [f64; 2]) -> mlua::Result<Table> {
+    let t = lua.create_table()?;
+    t.set("x", pos[0])?;
+    t.set("y", pos[1])?;
+    Ok(t)
+}
+
+/// Three toggles as a sequence (mouse buttons): exactly three, or an error
+/// naming the count.
 impl LuaStruct for [bool; 3] {
     fn to_value(lua: &Lua, v: &Self) -> mlua::Result<Value> {
         Ok(Value::Table(lua.create_sequence_from(v.iter().copied())?))
@@ -2804,15 +2945,20 @@ impl LuaStruct for [bool; 3] {
     fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
         match v {
             Value::Table(t) => {
-                let mut out = [false; 3];
-                for (i, value) in t.sequence_values::<bool>().enumerate() {
-                    if i >= 3 {
-                        break;
-                    }
-                    out[i] = value.map_err(|_| {
+                let values: Vec<bool> = t
+                    .sequence_values::<bool>()
+                    .collect::<mlua::Result<_>>()
+                    .map_err(|_| {
                         mlua::Error::runtime(format!("{field}: expected three booleans"))
                     })?;
+                if values.len() != 3 {
+                    return Err(mlua::Error::runtime(format!(
+                        "{field}: expected three booleans, got {}",
+                        values.len()
+                    )));
                 }
+                let mut out = [false; 3];
+                out.copy_from_slice(&values);
                 Ok(out)
             }
             other => Err(mlua::Error::runtime(format!(
@@ -2866,7 +3012,8 @@ impl LuaStruct for [usize; 2] {
     }
 }
 
-/// Eight `vec4<f32>` shader values, one `{x, y, z, w}` table each.
+/// Eight `vec4<f32>` shader values, one `{x, y, z, w}` table each: exactly
+/// eight, or an error naming the count.
 impl LuaStruct for [[f32; 4]; 8] {
     fn to_value(lua: &Lua, v: &Self) -> mlua::Result<Value> {
         let t = lua.create_table()?;
@@ -2883,22 +3030,26 @@ impl LuaStruct for [[f32; 4]; 8] {
     fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
         match v {
             Value::Table(t) => {
+                let slots: Vec<Table> = t
+                    .sequence_values::<Table>()
+                    .collect::<mlua::Result<_>>()
+                    .map_err(|_| {
+                    mlua::Error::runtime(format!("{field}: expected eight {{x, y, z, w}} tables"))
+                })?;
+                if slots.len() != 8 {
+                    return Err(mlua::Error::runtime(format!(
+                        "{field}: expected eight {{x, y, z, w}} tables, got {}",
+                        slots.len()
+                    )));
+                }
                 let mut out = [[0.0f32; 4]; 8];
-                for (i, slot) in t.sequence_values::<Table>().enumerate() {
-                    if i >= 8 {
-                        break;
-                    }
-                    let slot = slot.map_err(|_| {
-                        mlua::Error::runtime(format!(
-                            "{field}: expected eight {{x, y, z, w}} tables"
-                        ))
-                    })?;
+                for (i, slot) in slots.iter().enumerate() {
                     let at = format!("{field}[{}]", i + 1);
                     out[i] = [
-                        req_key::<f32>(&slot, "x", &at)?,
-                        req_key::<f32>(&slot, "y", &at)?,
-                        req_key::<f32>(&slot, "z", &at)?,
-                        req_key::<f32>(&slot, "w", &at)?,
+                        req_key::<f32>(slot, "x", &at)?,
+                        req_key::<f32>(slot, "y", &at)?,
+                        req_key::<f32>(slot, "z", &at)?,
+                        req_key::<f32>(slot, "w", &at)?,
                     ];
                 }
                 Ok(out)
@@ -2916,14 +3067,34 @@ impl LuaStruct for Duration {
         Ok(Value::Number(v.as_secs_f64()))
     }
     fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
-        match v {
-            Value::Number(n) => Ok(Duration::from_secs_f64(n.max(0.0))),
-            Value::Integer(i) => Ok(Duration::from_secs_f64((i as f64).max(0.0))),
-            _ => Err(mlua::Error::runtime(format!(
-                "{field}: expected seconds, got {}",
-                v.type_name()
-            ))),
-        }
+        // Non-finite and huge numbers are Lua errors, never a panic:
+        // `from_secs_f64` panics on those. Negatives still clamp to zero.
+        let secs = match v {
+            Value::Number(n) => {
+                if !n.is_finite() {
+                    return Err(mlua::Error::runtime(format!(
+                        "{field}: expected finite seconds, got {n}"
+                    )));
+                }
+                if n > u64::MAX as f64 {
+                    return Err(mlua::Error::runtime(format!(
+                        "{field}: seconds out of range: {n}"
+                    )));
+                }
+                n.max(0.0)
+            }
+            Value::Integer(i) => (i as f64).max(0.0),
+            other => {
+                return Err(mlua::Error::runtime(format!(
+                    "{field}: expected seconds, got {}",
+                    other.type_name()
+                )));
+            }
+        };
+        Ok(Duration::new(
+            secs.trunc() as u64,
+            (secs.fract() * 1e9) as u32,
+        ))
     }
 }
 
@@ -3127,17 +3298,11 @@ macro_rules! gen_replace_out {
     ($table:ident, $lua:ident, $out:ident : struct_vec_out($st:ty) $(, $r:expr $(, $s:expr)?)?) => {
         Ok(match $table.get::<mlua::Value>(stringify!($out))? {
             mlua::Value::Nil => None,
-            mlua::Value::Table(t) => {
-                let mut out = Vec::new();
-                for item in t.sequence_values::<mlua::Value>() {
-                    out.push(<$st as crate::generated_runtime::LuaStruct>::from_value(
-                        $lua,
-                        item?,
-                        stringify!($out),
-                    )?);
-                }
-                Some(out)
-            }
+            mlua::Value::Table(t) => Some(crate::generated_runtime::struct_vec_from_lua::<$st>(
+                $lua,
+                &t,
+                stringify!($out),
+            )?),
             v => {
                 return Err(mlua::Error::runtime(format!(
                     "{}: expected a sequence or nil, got {}",
