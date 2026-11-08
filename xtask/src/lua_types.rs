@@ -7,6 +7,7 @@
 //! file is not what the tables here say, and tests keep the tables equal to
 //! the runtime: every hook `horizon.on` takes has a handler type, every
 //! function the runtime installs has a declaration.
+use super::lua_model::{Class, Kind, classify, event_name, replace_ts};
 use std::{fs, path::Path};
 
 /// The tables a hook or helper hands a script, as Luau types.
@@ -59,6 +60,11 @@ const TYPES: &[(&str, &str)] = &[
     ),
     ("Data", "{ [string]: any }"),
     ("Props", "{ [string]: string }"),
+    // Base shapes the generated event tables below stand on (`Vec3` for
+    // positions, `Item` for stacks, `PlayerRef` for players the table names
+    // by uuid, `Vec2` for pairs, `Chunk` for chunk columns).
+    ("Vec2", "{ x: number, y: number }"),
+    ("Chunk", "{ x: number, z: number }"),
     (
         "DeathCause",
         "{ damage_type: string, causing: number, player: PlayerRef? }",
@@ -83,60 +89,6 @@ const TYPES: &[(&str, &str)] = &[
     ("CommandArgs", "{ raw: string, [string]: any }"),
     ("Inventory", "{ [number]: Item }"),
     ("Carried", "{ [string]: number }"),
-    // The event tables of the generated hooks (`generated_hooks.rs`): one
-    // table per hook, holding the struct's fields by name.
-    ("Vec2", "{ x: number, y: number }"),
-    ("Chunk", "{ x: number, z: number }"),
-    ("LevelTickPreEvent", "{ dimension: string }"),
-    (
-        "ChunkLoadEvent",
-        "{ dimension: string, chunk: Chunk, new: boolean }",
-    ),
-    (
-        "BlockCookEvent",
-        "{ pos: Vec3, item: string, result: string }",
-    ),
-    (
-        "AnvilDamagedEvent",
-        "{ dimension: string, pos: Vec3, from: string, to: string }",
-    ),
-    (
-        "PlayerContainerCloseEvent",
-        "{ player: PlayerRef, dimension: string, menu: string, pos: Vec3? }",
-    ),
-    (
-        "BlockBurnEvent",
-        "{ dimension: string, pos: Vec3, block: string }",
-    ),
-    (
-        "BellRingEvent",
-        "{ dimension: string, pos: Vec3, block: string, player: string? }",
-    ),
-    (
-        "ArrowLooseEvent",
-        "{ item: Item, has_ammo: boolean, charge: number }",
-    ),
-    ("BlockLockCheckEvent", "{ player: PlayerRef, pos: Vec3 }"),
-    ("ComponentTypesEvent", "{ types: { string } }"),
-    ("DatapackSyncEvent", "{ recipe_types: { string } }"),
-    (
-        "ScreenTooltipEvent",
-        "{ block: string, data: { number }, at: Vec2, lines: { string } }",
-    ),
-    (
-        "IsBonemealSuccessEvent",
-        "{ dimension: string, pos: Vec3, block: string, success: boolean }",
-    ),
-    ("ItemFluidTankEvent", "{ item: string, capacity: number? }"),
-    ("TooltipComponentEvent", "{ item: Item, size: Vec2? }"),
-    (
-        "ScreenClickEvent",
-        "{ block: string, data: { number }, at: Vec2, right: boolean, button: number? }",
-    ),
-    (
-        "PrepareAnvilEvent",
-        "{ player: PlayerRef, pos: Vec3, cost: number, result: Item? }",
-    ),
 ];
 
 /// Every hook a script registers for (`horizon.on(name, fn[, kind])`) and
@@ -299,31 +251,60 @@ const HOOKS: &[(&str, &str)] = &[
         "block_placed",
         "(x: number, y: number, z: number, block: string, player: Player, item: Item) -> ()",
     ),
-    // The generated hooks (`generated_hooks.rs`): one event table per hook.
-    ("level_tick_pre", "(event: LevelTickPreEvent) -> ()"),
-    ("chunk_load", "(event: ChunkLoadEvent) -> ()"),
-    ("block_cook", "(event: BlockCookEvent) -> ()"),
-    ("anvil_damaged", "(event: AnvilDamagedEvent) -> ()"),
-    (
-        "player_container_close",
-        "(event: PlayerContainerCloseEvent) -> ()",
-    ),
-    ("block_burn", "(event: BlockBurnEvent) -> ()"),
-    ("bell_ring", "(event: BellRingEvent) -> ()"),
-    ("arrow_loose", "(event: ArrowLooseEvent) -> ()"),
-    ("block_lock_check", "(event: BlockLockCheckEvent) -> ()"),
-    ("component_types", "(event: ComponentTypesEvent) -> ()"),
-    ("datapack_sync", "(event: DatapackSyncEvent) -> ()"),
-    ("screen_tooltip", "(event: ScreenTooltipEvent) -> ()"),
-    (
-        "is_bonemeal_success",
-        "(event: IsBonemealSuccessEvent) -> ()",
-    ),
-    ("item_fluid_tank", "(event: ItemFluidTankEvent) -> ()"),
-    ("tooltip_component", "(event: TooltipComponentEvent) -> ()"),
-    ("screen_click", "(event: ScreenClickEvent) -> ()"),
-    ("prepare_anvil", "(event: PrepareAnvilEvent) -> ()"),
 ];
+
+/// One generated hook's types, derived from the same model as the runtime
+/// table and its smoke test, so the three cannot drift: the event-table
+/// type, and the `horizon.on` overload with the kind parameter exactly
+/// where the runtime filters by kind.
+struct GeneratedHook {
+    hook: String,
+    event_ty: String,
+    event_def: String,
+    handler: String,
+    has_kind: bool,
+}
+
+/// The `.d.lua` type of an extra table field (the spike's hand notes: the
+/// block at the event's `pos`, or the block of its `state`).
+fn extra_ts(conv: &super::lua_model::Conv) -> &'static str {
+    match conv {
+        super::lua_model::Conv::BlockAtPos | super::lua_model::Conv::BlockFromState => "string",
+        _ => "any",
+    }
+}
+
+fn generated_hooks() -> Result<Vec<GeneratedHook>, String> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut out = Vec::new();
+    for hook in classify(&root).map_err(|e| e.to_string())? {
+        let Class::Generated(model) = hook.class else {
+            continue;
+        };
+        let event_ty = event_name(&model.name);
+        let mut fields: Vec<String> = model
+            .fields
+            .iter()
+            .map(|f| format!("{}: {}", f.name, f.ts))
+            .collect();
+        for extra in &model.extras {
+            fields.push(format!("{}: {}", extra.name, extra_ts(&extra.conv)));
+        }
+        if let Some(o) = &model.out {
+            // A replace out seeds nil until the handler answers.
+            fields.push(format!("{}: {}?", o.name, replace_ts(o.read)));
+        }
+        out.push(GeneratedHook {
+            hook: model.name.clone(),
+            event_def: format!("{{ {} }}", fields.join(", ")),
+            handler: format!("(event: {event_ty}) -> ()"),
+            event_ty,
+            has_kind: !matches!(model.kind, Kind::None),
+        });
+    }
+    out.sort_by(|a, b| a.hook.cmp(&b.hook));
+    Ok(out)
+}
 
 /// Every function and field of `horizon`, with its type; the runtime
 /// installs the same names (the `api.set` calls, the reads, the timers and
@@ -502,7 +483,8 @@ const REGISTRY: &[(&str, &str)] = &[
     ),
 ];
 
-fn render() -> String {
+fn render() -> Result<String, String> {
+    let generated = generated_hooks()?;
     let mut out = String::new();
     out.push_str("-- Generated by `cargo run -p xtask -- lua-types` from xtask/src/lua_types.rs: edit that, then regenerate.\n");
     out.push_str("-- Luau type definitions for a Horizon scripted mod (docs/lua-bindings.md), for luau-lsp:\n");
@@ -510,12 +492,24 @@ fn render() -> String {
     for (name, def) in TYPES {
         out.push_str(&format!("export type {name} = {def}\n"));
     }
+    out.push_str("\n-- The event tables of the generated hooks: one table per hook,\n-- holding the struct's fields by name.\n");
+    for g in &generated {
+        out.push_str(&format!("export type {} = {}\n", g.event_ty, g.event_def));
+    }
     out.push_str("\n-- `horizon.on(name, fn[, kind])`: one overload per hook, with its handler's signature.\n");
     out.push_str("export type HorizonOn =\n");
-    for (i, (hook, handler)) in HOOKS.iter().enumerate() {
-        let sep = if i + 1 == HOOKS.len() { "" } else { " &" };
+    for (hook, handler) in HOOKS {
         out.push_str(&format!(
-            "    ((name: \"{hook}\", fn: {handler}, kind: string?) -> ()){sep}\n"
+            "    ((name: \"{hook}\", fn: {handler}, kind: string?) -> ()) &\n"
+        ));
+    }
+    for (i, g) in generated.iter().enumerate() {
+        // The runtime rejects a kind for hooks with no kind to filter by.
+        let kind = if g.has_kind { ", kind: string?" } else { "" };
+        let sep = if i + 1 == generated.len() { "" } else { " &" };
+        out.push_str(&format!(
+            "    ((name: \"{}\", fn: {}{kind}) -> ()){sep}\n",
+            g.hook, g.handler,
         ));
     }
     out.push_str("\ndeclare horizon: {\n    on: HorizonOn,\n");
@@ -527,13 +521,13 @@ fn render() -> String {
         out.push_str(&format!("    {name}: {ty},\n"));
     }
     out.push_str("}\n");
-    out
+    Ok(out)
 }
 
 pub fn run(check: bool) -> Result<(), String> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let path = root.join("docs/api/horizon.d.lua");
-    let out = render();
+    let out = render()?;
     if check {
         let current = fs::read_to_string(&path).unwrap_or_default();
         if current != out {
@@ -575,11 +569,18 @@ mod tests {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let mut runtime = names(&runtime_source(), "pub const LUA_HOOK_NAMES");
         runtime.remove("command");
-        let generated =
-            std::fs::read_to_string(root.join("crates/event-horizon-lua/src/generated_hooks.rs"))
-                .unwrap();
+        let generated = std::fs::read_to_string(
+            root.join("crates/event-horizon-lua/src/generated_hooks/mod.rs"),
+        )
+        .unwrap();
         runtime.extend(names(&generated, "pub const GENERATED_HOOK_NAMES"));
-        let typed: BTreeSet<String> = super::HOOKS.iter().map(|(h, _)| h.to_string()).collect();
+        let mut typed: BTreeSet<String> = super::HOOKS.iter().map(|(h, _)| h.to_string()).collect();
+        typed.extend(
+            super::generated_hooks()
+                .unwrap()
+                .iter()
+                .map(|g| g.hook.clone()),
+        );
         assert_eq!(runtime, typed);
     }
 

@@ -19,6 +19,7 @@
 
 mod hooks_doc;
 mod lua_hooks;
+mod lua_model;
 mod lua_types;
 mod mod_api;
 

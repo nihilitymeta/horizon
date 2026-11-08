@@ -1656,10 +1656,14 @@ impl LuaMod {
                             LUA_HOOK_NAMES.join(", ")
                         )));
                     }
-                    // The generated hooks answer every event to every handler:
-                    // a kind would silently never fire.
+                    // The generated hooks without a kind filter answer every
+                    // event to every handler: a kind would silently never
+                    // fire. Kind-filtered generated hooks register like the
+                    // mob hooks.
                     if kind.is_some()
                         && crate::generated_hooks::GENERATED_HOOK_NAMES.contains(&name.as_str())
+                        && !crate::generated_hooks::GENERATED_KIND_HOOK_NAMES
+                            .contains(&name.as_str())
                     {
                         return Err(mlua::Error::runtime(format!(
                             "horizon.on({name:?}): this hook takes no kind"
@@ -2378,6 +2382,18 @@ impl LuaMod {
             apply(level, &action, &args)?;
         }
         Ok(())
+    }
+
+    /// Whether `hook` has any handler at all, unfiltered or kind-filtered: a
+    /// generated hook resolves its kind only then, so an unregistered hook
+    /// does no Lua work and no host reads.
+    fn has_any_handlers(&self, hook: &str) -> bool {
+        self.has_handlers(hook)
+            || self
+                .kinds
+                .lock()
+                .ok()
+                .is_some_and(|k| k.get(hook).is_some_and(|s| !s.is_empty()))
     }
 
     /// Runs the handlers of `hook` (those for every kind and those watching

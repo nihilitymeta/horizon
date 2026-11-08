@@ -9,6 +9,8 @@
 
 pub mod console;
 #[macro_use]
+mod generated_runtime;
+#[macro_use]
 mod generated_hooks;
 pub mod lua_mods;
 
