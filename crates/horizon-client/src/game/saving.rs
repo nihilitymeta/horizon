@@ -12,6 +12,9 @@ pub(super) struct ClosingSave {
     close: bool,
     reply: Option<std::sync::mpsc::Sender<String>>,
     started: Instant,
+    /// How far the server-stage wait had got the last time it warned: its
+    /// warnings stay at most `SERVER_STOP_WARN` apart.
+    warned: Option<Duration>,
     stage: Stage,
 }
 enum Stage {
@@ -27,6 +30,12 @@ enum Stage {
 // is indivisible; check the time budget after each snapshot, not each batch.
 const SNAPSHOTS_PER_FRAME: usize = 16;
 const SNAPSHOT_BUDGET: Duration = Duration::from_millis(2);
+// How long the closing save waits for the integrated server to stop before
+// giving up on it: long enough for a genuinely slow final save on a big
+// world, so a stuck server cannot hold the "Saving world..." screen forever.
+const SERVER_STOP_TIMEOUT: Duration = Duration::from_secs(60);
+// How often the wait warns while the server is still stopping.
+const SERVER_STOP_WARN: Duration = Duration::from_secs(10);
 
 impl Game<'_> {
     pub(super) fn begin_closing_save(&mut self, quit: bool) -> Result<()> {
@@ -41,6 +50,7 @@ impl Game<'_> {
                 close: true,
                 reply: None,
                 started: Instant::now(),
+                warned: None,
                 stage: Stage::Quit,
             });
             return Ok(());
@@ -56,6 +66,7 @@ impl Game<'_> {
                 close: true,
                 reply: None,
                 started: Instant::now(),
+                warned: None,
                 stage: Stage::Server,
             });
         } else if self.remote.is_some() {
@@ -71,6 +82,7 @@ impl Game<'_> {
                 close: true,
                 reply: None,
                 started: Instant::now(),
+                warned: None,
                 stage: Stage::Quit,
             });
         } else {
@@ -83,6 +95,7 @@ impl Game<'_> {
                 close: true,
                 reply: None,
                 started: Instant::now(),
+                warned: None,
                 stage: Stage::Generation,
             });
         }
@@ -114,6 +127,7 @@ impl Game<'_> {
             close: false,
             reply: Some(reply),
             started: Instant::now(),
+            warned: None,
             stage: Stage::Generation,
         });
         Ok(())
@@ -134,6 +148,37 @@ impl Game<'_> {
                         .as_ref()
                         .ok_or("the integrated server stopped with an error")?;
                     if !server.stopped() {
+                        let waiting = save.started.elapsed();
+                        // A stuck server must not hold the closing save
+                        // forever: the window detaches its thread instead.
+                        if waiting >= SERVER_STOP_TIMEOUT {
+                            log::error!(
+                                "Horizon: the integrated server did not stop in time \
+                                 (running: {}, autosaving: {}, smoothed tick {:.1} ms); \
+                                 its world may not be fully saved",
+                                !server.stopped(),
+                                server.is_saving(),
+                                server.smoothed_tick_ms()
+                            );
+                            self.integrated.take().unwrap().abandon();
+                            return Err("the integrated server did not stop in time; \
+                                 its world may not be fully saved"
+                                .into());
+                        }
+                        if save
+                            .warned
+                            .is_none_or(|warned| waiting - warned >= SERVER_STOP_WARN)
+                        {
+                            log::warn!(
+                                "Horizon: the server thread did not answer within {} s \
+                                 (running: {}, autosaving: {}, smoothed tick {:.1} ms)",
+                                waiting.as_secs(),
+                                !server.stopped(),
+                                server.is_saving(),
+                                server.smoothed_tick_ms()
+                            );
+                            save.warned = Some(waiting);
+                        }
                         return Ok(false);
                     }
                     // Drop/join only after completion; leave_server's teardown
@@ -271,7 +316,7 @@ impl Game<'_> {
         horizon_client::level_loading::draw_progress(
             &mut hud,
             &self.gui.atlas,
-            "Saving world...",
+            &super::screen_info::tr("menu.savingLevel", &[]),
             progress,
         );
         renderer.render(&loading_frame(&hud))?;

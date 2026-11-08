@@ -253,6 +253,15 @@ impl Integrated {
     pub fn request_stop(&self) {
         self.flags.stop.store(true, Ordering::Relaxed);
     }
+    /// Give up waiting for the server thread: set the stop flag and detach
+    /// the thread (no join), then drop `self`. `Drop` runs `halt()` with no
+    /// thread left and must not block, so a server stuck in a long tick
+    /// cannot hold the closing save screen forever. The detached thread is
+    /// told to stop; if it never does, it dies with the process.
+    pub fn abandon(mut self) {
+        self.request_stop();
+        drop(self.thread.take());
+    }
     pub fn stopped(&self) -> bool {
         self.thread
             .as_ref()
@@ -946,6 +955,14 @@ impl Game<'_> {
     pub(super) fn serving(&self) -> bool {
         self.serving.is_some()
     }
+    /// The server thread has been asked to stop (`/stop`, Save and Quit,
+    /// closing the window): long reloads and queued tasks must not start new
+    /// work on a world that is shutting down.
+    pub(super) fn server_stopping(&self) -> bool {
+        self.serving
+            .as_ref()
+            .is_some_and(|s| s.flags.stop.load(Ordering::Relaxed))
+    }
     /// The window's agent runs a command as single player's console does
     /// (`as_console`, as without a server thread): as the world's owner, in
     /// the owner's level, at the owner permission level. The feedback goes to
@@ -1029,8 +1046,13 @@ impl Game<'_> {
         out
     }
 
-    /// The window's requests, between two ticks.
+    /// The window's requests, between two ticks. Once the server is
+    /// stopping, queued tasks must not start new work (a mod live-switch
+    /// must not rebuild the tables during shutdown).
     fn run_tasks(&mut self) {
+        if self.server_stopping() {
+            return;
+        }
         let tasks: Vec<Task> = match &self.serving {
             Some(s) => s.tasks.try_iter().collect(),
             None => return,
@@ -1395,6 +1417,31 @@ mod tests {
         assert!(!server.stopped());
         release.send(()).unwrap();
         server.stop().unwrap();
+    }
+
+    #[test]
+    fn abandoning_a_stuck_server_returns_without_joining_it() {
+        let flags = Arc::new(Flags::default());
+        let (_release, wait) = channel::<()>();
+        let (tasks, _) = channel();
+        let server = Integrated {
+            flags: flags.clone(),
+            thread: Some(std::thread::spawn(move || {
+                // Never released: a server stuck in a long tick.
+                let _ = wait.recv();
+            })),
+            tasks,
+            world_name: String::new(),
+        };
+        let started = Instant::now();
+        server.abandon();
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "abandon must return without waiting for the stuck thread"
+        );
+        assert!(flags.stop.load(Ordering::Relaxed));
+        // `_release` drops here, so the stranded thread's `recv` fails and
+        // it exits instead of outliving the test.
     }
 
     #[test]

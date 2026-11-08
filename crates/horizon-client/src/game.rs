@@ -21156,6 +21156,12 @@ impl Game<'_> {
     /// Re-layers content mods first so data edits in `--dev-mod` folders and
     /// `horizon-mods/` reach the tables without restarting the game.
     pub(super) fn reload_world_tables(&mut self) {
+        // A shutdown asked for while `/reload` runs must not start, or go on
+        // with, a rebuild: the world is going away.
+        if self.server_stopping() {
+            log::info!("Horizon: skipping the world table reload, the server is stopping");
+            return;
+        }
         if self.remote.is_some() {
             return;
         }
@@ -21168,6 +21174,10 @@ impl Game<'_> {
                 log::warn!("Horizon: the world's data packs are not applied: {e}");
                 return;
             }
+        }
+        if self.server_stopping() {
+            log::info!("Horizon: skipping the reloaded data send, the server is stopping");
+            return;
         }
         self.damage_tag_generation = self.damage_tag_generation.wrapping_add(1);
         self.recipe_tables.categories = None;

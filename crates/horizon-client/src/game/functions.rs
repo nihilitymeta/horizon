@@ -172,6 +172,12 @@ impl Game<'_> {
         self.reload_datapacks(false);
     }
     pub(super) fn reload_datapacks(&mut self, run_load: bool) {
+        // A shutdown asked for while `/reload` runs must not start the
+        // tables over: the world is going away.
+        if self.server_stopping() {
+            log::info!("Horizon: skipping the data pack reload, the server is stopping");
+            return;
+        }
         let stack = pack_stack(
             &self.world_root,
             &self.options.resources,
