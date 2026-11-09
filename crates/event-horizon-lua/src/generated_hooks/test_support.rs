@@ -257,6 +257,12 @@ fn stone_or_state(state: BlockStateId) -> String {
     }
 }
 
+/// The state id the fake knows nothing about (`state_block` returns
+/// `None`): the level-tick tests fire it to prove an unknown state tells
+/// nobody, not even unfiltered handlers. No generated dispatch seeds this
+/// id (the `StateLevel` samples stay below it), so only that test fires it.
+pub const UNKNOWN_STATE: u32 = 99;
+
 /// A level of states named by id (7 is stone, as above).
 pub struct FakeLevel;
 impl LevelHost for FakeLevel {
@@ -278,11 +284,14 @@ impl LevelHost for FakeLevel {
     }
     fn state_block(&self, state: BlockStateId) -> Option<String> {
         count_level_read();
+        if state == BlockStateId(UNKNOWN_STATE) {
+            return None;
+        }
         Some(stone_or_state(state))
     }
-    fn state_properties(&self, _: BlockStateId) -> Vec<(String, String)> {
+    fn state_properties(&self, state: BlockStateId) -> Vec<(String, String)> {
         count_level_read();
-        Vec::new()
+        LEVEL_PROPS.with(|props| props.borrow().get(&state).cloned().unwrap_or_default())
     }
 }
 impl LevelRandomHost for FakeLevel {
@@ -312,6 +321,11 @@ thread_local! {
     /// `mod_block_entity_data` answers. Empty unless a test sets it, so the
     /// stock tests seed `data` as nil.
     static LEVEL_DATA: std::cell::RefCell<HashMap<[i32; 3], Compound>> = std::cell::RefCell::new(HashMap::new());
+    /// The state properties by state: what `state_properties` answers.
+    /// Empty unless a test sets it, so the stock tests seed `state_props`
+    /// as an empty table and the props test sets its own key.
+    static LEVEL_PROPS: std::cell::RefCell<HashMap<BlockStateId, Vec<(String, String)>>> =
+        std::cell::RefCell::new(HashMap::new());
 }
 
 /// Every `set_block_property` call the fake level answered.
@@ -348,6 +362,13 @@ pub fn set_level_data(pos: [i32; 3], data: Compound) {
 }
 pub fn reset_level_data() {
     LEVEL_DATA.with(|slot| slot.borrow_mut().clear());
+}
+/// Answer `props` for `state_properties` of `state`.
+pub fn set_level_props(state: BlockStateId, props: Vec<(String, String)>) {
+    LEVEL_PROPS.with(|slot| slot.borrow_mut().insert(state, props));
+}
+pub fn reset_level_props() {
+    LEVEL_PROPS.with(|slot| slot.borrow_mut().clear());
 }
 
 impl LevelTicksHost for FakeLevel {

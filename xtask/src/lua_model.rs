@@ -122,8 +122,9 @@ pub enum Conv {
     /// The spike's hand note, kept for its tests: the block at the event's
     /// `pos`, for level hooks with a `pos` but no state of their own.
     BlockAtPos,
-    /// The spike's hand note, kept for its tests: the block of the event's
-    /// `state`, exposed as `block`.
+    /// The block of the event's `state`: the spike's hand note, kept for
+    /// its tests (exposed as `block` there), and the level-tick `state`
+    /// extra (the ticked state's block id, like the stock seeds).
     BlockFromState,
     /// `&mut` scalar, `&mut Option` scalar, `&mut bool`: copied in and
     /// written back.
@@ -173,8 +174,8 @@ pub enum Conv {
     LootDrops,
     /// A state field's `_props` note: seeded beside the state itself.
     StateProps,
-    /// A level-tick hook's `props`: the ticked state's properties by name,
-    /// seeded from the level (`level.state_properties(event.state)`),
+    /// A level-tick hook's `state_props`: the ticked state's properties by
+    /// name, seeded from the level (`level.state_properties(event.state)`),
     /// read-only. A documentary tag: the bespoke arm seeds it inline with
     /// the hand-written body it replaces.
     LevelProps,
@@ -3325,18 +3326,20 @@ fn model_of(
             conv: Conv::BlockFromState,
         });
     }
-    // A level tick exposes its `state` as `block` (the id) with `props`
-    // (the state's properties) and `data` (the mod block entity's saved
-    // table, or nil): the native id is opaque to scripts, so the event
-    // carries what the legacy positional hook did, by name.
+    // A level tick mirrors its native `{dimension, pos, state}` event:
+    // `state` is the ticked state's block id (like the stock level seeds
+    // name it) with `state_props` (the state's properties) beside it, and
+    // `data` (the mod block entity's saved table, or nil) is the one
+    // documented extra: it is not a native field, and it is written back
+    // after the call.
     if host == Host::LevelWrite {
         fields.retain(|f| f.name != "state");
         extras.push(Extra {
-            name: "block".to_owned(),
+            name: "state".to_owned(),
             conv: Conv::BlockFromState,
         });
         extras.push(Extra {
-            name: "props".to_owned(),
+            name: "state_props".to_owned(),
             conv: Conv::LevelProps,
         });
         extras.push(Extra {
@@ -3484,9 +3487,9 @@ pub fn assert_lines(
         }
         Conv::PreLogin => vec![a(&format!("{e}.count == 0"))],
         Conv::StateProps => vec![a(&format!("next({e}) == nil"))],
-        // A level tick's props seed from the fake level's empty properties
-        // (a block without any), so the stock test pins the empty table;
-        // tables with properties are the hand-written tests'.
+        // A level tick's `state_props` seed from the fake level's property
+        // map (empty unless a test sets it), so the stock test pins the
+        // empty table; tables with properties are the props test's.
         Conv::LevelProps => vec![a(&format!("next({e}) == nil"))],
         // A level tick's data seeds nil without a mod block entity (the
         // fake level has none); data present is the hand-written tests'.
@@ -3990,7 +3993,7 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
         Conv::StateProps => panic!("no sample for a state _props note"),
         // A level tick's extras seed inline in the bespoke arm (their tags
         // only document the seed): sampling one is a model bug.
-        Conv::LevelProps => panic!("no sample for a level tick's props"),
+        Conv::LevelProps => panic!("no sample for a level tick's state_props"),
         Conv::LevelData => panic!("no sample for a level tick's data"),
         // The lifecycle context both lifecycle hooks carry: the authority
         // alternates with `n`, the epoch and tick count up, so every leaf

@@ -56,11 +56,11 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "random_tick",
-        "an event table with `dimension`, `block`, `pos`, `props` and `data`, by block",
+        "an event table with `dimension`, `state` (the id), `pos`, `state_props` and `data` (not a native field; written back), by block",
     ),
     (
         "tick_block",
-        "an event table with `dimension`, `block`, `pos`, `props` and `data`, by block",
+        "an event table with `dimension`, `state` (the id), `pos`, `state_props` and `data` (not a native field; written back), by block",
     ),
     (
         "right_click_block",

@@ -1391,8 +1391,8 @@ macro_rules! impl_generated_hooks {
     gen_listen!(level_tick_pre, game_mut, horizon_client::mod_api::LevelTickPreEvent<'_>, (none), [dimension: cloned]);
     gen_listen!(level_tick_post, game_mut, horizon_client::mod_api::LevelTickPostEvent<'_>, (none), [dimension: cloned]);
     gen_listen!(block_changed, level, horizon_client::mod_api::BlockChangedEvent, (none), [dimension: dim, pos: pos_struct, old: state_level, new: state_level, old_props: state_props_note, new_props: state_props_note]);
-    gen_level_tick!(random_tick, level_write, horizon_client::mod_api::RandomTickEvent, (block state), [dimension: dim, pos: pos_struct, block: block_from_state, props: level_props, data: level_data]);
-    gen_level_tick!(tick_block, level_write, horizon_client::mod_api::TickBlockEvent, (block state), [dimension: dim, pos: pos_struct, block: block_from_state, props: level_props, data: level_data]);
+    gen_level_tick!(random_tick, level_write, horizon_client::mod_api::RandomTickEvent, (block state), [dimension: dim, pos: pos_struct, state: block_from_state, state_props: level_props, data: level_data]);
+    gen_level_tick!(tick_block, level_write, horizon_client::mod_api::TickBlockEvent, (block state), [dimension: dim, pos: pos_struct, state: block_from_state, state_props: level_props, data: level_data]);
     gen_listen!(key, game_mut, horizon_client::mod_api::KeyEvent<'_>, (none), [key: cloned, pressed: copy]);
     gen_cancel!(wheel, game_mut, horizon_client::mod_api::WheelEvent, (none), [steps: copy]);
     gen_cancel!(command, game_mut, horizon_client::mod_api::CommandEvent<'_>, (none), [command: cloned]);
@@ -2729,7 +2729,7 @@ mod generated_tests {
     fn generated_random_tick() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_random_tick",
-            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.handled()\n    assert(event.block == \"minecraft:stone\", \"block\")\n    assert(next(event.props) == nil, \"props\")\n    assert(event.data == nil, \"data\")\nend, \"minecraft:stone\")",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.handled()\n    assert(event.state == \"minecraft:stone\", \"state\")\n    assert(next(event.state_props) == nil, \"state_props\")\n    assert(event.data == nil, \"data\")\nend, \"minecraft:stone\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -2772,6 +2772,7 @@ mod generated_tests {
         reset_level_summons();
         reset_level_data_writes();
         reset_level_data();
+        reset_level_props();
         {
             let mut handled = false;
             dispatch_random_tick(
@@ -2819,6 +2820,7 @@ mod generated_tests {
         reset_level_summons();
         reset_level_data_writes();
         reset_level_data();
+        reset_level_props();
         set_level_data(
             [1, 64, -3],
             [(
@@ -2850,6 +2852,259 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_random_tick_apply_error_after_handled_leaves_the_tick_running() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_random_tick_applyerror",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.handled()\n    horizon.set_block_property(\"stage\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        reset_level_props();
+        {
+            let mut handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(
+                !handled,
+                "an apply error after handled() leaves the tick running"
+            );
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(level_writes(), [], "the failing write never ran");
+        has_error(&id);
+    }
+
+    #[test]
+    fn generated_random_tick_writeback_error_after_handled_leaves_the_tick_running() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_random_tick_writeerror",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.handled()\n    event.data.loop = event.data\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        reset_level_props();
+        set_level_data(
+            [1, 64, -3],
+            [(
+                horizon_world::nbt::JavaString::from("charge"),
+                horizon_world::nbt::Tag::Int(0),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        {
+            let mut handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "a data writeback error leaves the tick running");
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            level_data_writes(),
+            [],
+            "the cyclic data was never written back"
+        );
+        has_error(&id);
+        reset_level_data();
+    }
+
+    #[test]
+    fn generated_random_tick_state_props_reach_the_handler() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_random_tick_props",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.state == \"minecraft:stone\", \"state\")\n    assert(event.state_props.stage == \"dormant\", \"state_props\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        reset_level_props();
+        set_level_props(
+            BlockStateId(7),
+            [("stage".to_owned(), "dormant".to_owned())]
+                .into_iter()
+                .collect(),
+        );
+        {
+            let mut handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "no handled() call leaves the tick running");
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+        reset_level_props();
+    }
+
+    #[test]
+    fn generated_random_tick_unknown_state_tells_nobody() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_random_tick_unknown",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        reset_level_props();
+        {
+            let mut handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(UNKNOWN_STATE),
+                &mut handled,
+            );
+            assert_eq!(witness(&lua), 0, "the unknown state fires no handler");
+            assert!(!handled, "an unknown state leaves the tick running");
+        }
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_random_tick_cancel_spelling_leaves_the_tick_running() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_random_tick_cancelspell",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_block_property(\"stage\", \"growing\")\n    horizon.cancel()\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        reset_level_props();
+        {
+            let mut handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(
+                !handled,
+                "cancel() is not the level-tick cancel; the tick keeps running"
+            );
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            level_writes(),
+            [([1, 64, -3], "stage".to_owned(), "growing".to_owned(), 2)],
+            "the write action still ran"
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_random_tick_replaced_or_seeded_nil_data_writes_nothing() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_random_tick_replace",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    event.data = {charge = 99}\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        reset_level_props();
+        set_level_data(
+            [1, 64, -3],
+            [(
+                horizon_world::nbt::JavaString::from("charge"),
+                horizon_world::nbt::Tag::Int(0),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        {
+            let mut handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "no handled() call leaves the tick running");
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            level_data_writes(),
+            [],
+            "replacing event.data writes nothing back"
+        );
+        no_error(&id);
+        reset_level_data();
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_random_tick_assign",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    event.data = {charge = 1}\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        reset_level_props();
+        {
+            let mut handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "no handled() call leaves the tick running");
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            level_data_writes(),
+            [],
+            "assigning data where the seed was nil writes nothing"
+        );
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_random_tick_data_round_trip() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_random_tick_data",
@@ -2861,6 +3116,7 @@ mod generated_tests {
         reset_level_summons();
         reset_level_data_writes();
         reset_level_data();
+        reset_level_props();
         set_level_data(
             [1, 64, -3],
             [
@@ -2936,6 +3192,7 @@ mod generated_tests {
         reset_level_summons();
         reset_level_data_writes();
         reset_level_data();
+        reset_level_props();
         {
             let mut handled = false;
             dispatch_random_tick(
@@ -2974,6 +3231,7 @@ mod generated_tests {
         reset_level_summons();
         reset_level_data_writes();
         reset_level_data();
+        reset_level_props();
         {
             let mut handled = false;
             dispatch_random_tick(
@@ -3011,6 +3269,7 @@ mod generated_tests {
         reset_level_summons();
         reset_level_data_writes();
         reset_level_data();
+        reset_level_props();
         {
             let mut other_handled = false;
             dispatch_tick_block(
@@ -3043,7 +3302,7 @@ mod generated_tests {
     fn generated_random_tick_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_random_tick_nocancel",
-            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"minecraft:stone\", \"block\")\n    assert(next(event.props) == nil, \"props\")\n    assert(event.data == nil, \"data\")\nend, \"minecraft:stone\")",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"minecraft:stone\", \"state\")\n    assert(next(event.state_props) == nil, \"state_props\")\n    assert(event.data == nil, \"data\")\nend, \"minecraft:stone\")",
         );
         let firing_mods = boxed(m);
         let mut handled = false;
@@ -3186,7 +3445,7 @@ mod generated_tests {
     fn generated_tick_block() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_tick_block",
-            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.handled()\n    assert(event.block == \"minecraft:stone\", \"block\")\n    assert(next(event.props) == nil, \"props\")\n    assert(event.data == nil, \"data\")\nend, \"minecraft:stone\")",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.handled()\n    assert(event.state == \"minecraft:stone\", \"state\")\n    assert(next(event.state_props) == nil, \"state_props\")\n    assert(event.data == nil, \"data\")\nend, \"minecraft:stone\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -3229,6 +3488,7 @@ mod generated_tests {
         reset_level_summons();
         reset_level_data_writes();
         reset_level_data();
+        reset_level_props();
         {
             let mut handled = false;
             dispatch_tick_block(
@@ -3276,6 +3536,7 @@ mod generated_tests {
         reset_level_summons();
         reset_level_data_writes();
         reset_level_data();
+        reset_level_props();
         set_level_data(
             [1, 64, -3],
             [(
@@ -3307,6 +3568,259 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_tick_block_apply_error_after_handled_leaves_the_tick_running() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tick_block_applyerror",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.handled()\n    horizon.set_block_property(\"stage\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        reset_level_props();
+        {
+            let mut handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(
+                !handled,
+                "an apply error after handled() leaves the tick running"
+            );
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(level_writes(), [], "the failing write never ran");
+        has_error(&id);
+    }
+
+    #[test]
+    fn generated_tick_block_writeback_error_after_handled_leaves_the_tick_running() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tick_block_writeerror",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.handled()\n    event.data.loop = event.data\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        reset_level_props();
+        set_level_data(
+            [1, 64, -3],
+            [(
+                horizon_world::nbt::JavaString::from("charge"),
+                horizon_world::nbt::Tag::Int(0),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        {
+            let mut handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "a data writeback error leaves the tick running");
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            level_data_writes(),
+            [],
+            "the cyclic data was never written back"
+        );
+        has_error(&id);
+        reset_level_data();
+    }
+
+    #[test]
+    fn generated_tick_block_state_props_reach_the_handler() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tick_block_props",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.state == \"minecraft:stone\", \"state\")\n    assert(event.state_props.stage == \"dormant\", \"state_props\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        reset_level_props();
+        set_level_props(
+            BlockStateId(7),
+            [("stage".to_owned(), "dormant".to_owned())]
+                .into_iter()
+                .collect(),
+        );
+        {
+            let mut handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "no handled() call leaves the tick running");
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+        reset_level_props();
+    }
+
+    #[test]
+    fn generated_tick_block_unknown_state_tells_nobody() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tick_block_unknown",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        reset_level_props();
+        {
+            let mut handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(UNKNOWN_STATE),
+                &mut handled,
+            );
+            assert_eq!(witness(&lua), 0, "the unknown state fires no handler");
+            assert!(!handled, "an unknown state leaves the tick running");
+        }
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_tick_block_cancel_spelling_leaves_the_tick_running() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tick_block_cancelspell",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_block_property(\"stage\", \"growing\")\n    horizon.cancel()\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        reset_level_props();
+        {
+            let mut handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(
+                !handled,
+                "cancel() is not the level-tick cancel; the tick keeps running"
+            );
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            level_writes(),
+            [([1, 64, -3], "stage".to_owned(), "growing".to_owned(), 2)],
+            "the write action still ran"
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_tick_block_replaced_or_seeded_nil_data_writes_nothing() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tick_block_replace",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    event.data = {charge = 99}\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        reset_level_props();
+        set_level_data(
+            [1, 64, -3],
+            [(
+                horizon_world::nbt::JavaString::from("charge"),
+                horizon_world::nbt::Tag::Int(0),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        {
+            let mut handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "no handled() call leaves the tick running");
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            level_data_writes(),
+            [],
+            "replacing event.data writes nothing back"
+        );
+        no_error(&id);
+        reset_level_data();
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tick_block_assign",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    event.data = {charge = 1}\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        reset_level_props();
+        {
+            let mut handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "no handled() call leaves the tick running");
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            level_data_writes(),
+            [],
+            "assigning data where the seed was nil writes nothing"
+        );
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_tick_block_data_round_trip() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_tick_block_data",
@@ -3318,6 +3832,7 @@ mod generated_tests {
         reset_level_summons();
         reset_level_data_writes();
         reset_level_data();
+        reset_level_props();
         set_level_data(
             [1, 64, -3],
             [
@@ -3393,6 +3908,7 @@ mod generated_tests {
         reset_level_summons();
         reset_level_data_writes();
         reset_level_data();
+        reset_level_props();
         {
             let mut handled = false;
             dispatch_tick_block(
@@ -3431,6 +3947,7 @@ mod generated_tests {
         reset_level_summons();
         reset_level_data_writes();
         reset_level_data();
+        reset_level_props();
         {
             let mut handled = false;
             dispatch_tick_block(
@@ -3468,6 +3985,7 @@ mod generated_tests {
         reset_level_summons();
         reset_level_data_writes();
         reset_level_data();
+        reset_level_props();
         {
             let mut other_handled = false;
             dispatch_random_tick(
@@ -3500,7 +4018,7 @@ mod generated_tests {
     fn generated_tick_block_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_tick_block_nocancel",
-            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"minecraft:stone\", \"block\")\n    assert(next(event.props) == nil, \"props\")\n    assert(event.data == nil, \"data\")\nend, \"minecraft:stone\")",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"minecraft:stone\", \"state\")\n    assert(next(event.state_props) == nil, \"state_props\")\n    assert(event.data == nil, \"data\")\nend, \"minecraft:stone\")",
         );
         let firing_mods = boxed(m);
         let mut handled = false;

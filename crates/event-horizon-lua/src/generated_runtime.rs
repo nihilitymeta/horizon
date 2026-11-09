@@ -1179,15 +1179,23 @@ macro_rules! gen_loot_drops {
 
 /// A level tick (`random_tick`, `tick_block`): like a `game_mut` cancel
 /// hook, but the host is the ticked level and the kind is the ticked
-/// block's id (an unknown state tells nobody, not even unfiltered
+/// state's block id (an unknown state tells nobody, not even unfiltered
 /// handlers). The write actions run on the level itself — they are this
 /// hook's point, unlike the stock level arms, which drop them — and the
 /// block entity's saved table rides `data`, written back with the
 /// before-template rule. The field tags document the inline seed (as the
 /// perform arm's do); only the kind token expands.
 ///
-/// Moved from the hand-written `level_hook`: the props and data seeds, the
-/// apply closure and the writeback are that body, over an event table.
+/// The event mirrors the native hook (`RandomTickEvent`/`TickBlockEvent`
+/// are `{dimension, pos, state}`): `state` is the ticked state's block id
+/// and `state_props` its properties by name, exactly like the stock level
+/// seeds name them. `data` is the one documented extra (not a native
+/// field): the mod block entity's saved table, or nil, written back after
+/// the call.
+///
+/// Moved from the hand-written `level_hook`: the state/state-props and
+/// data seeds, the apply closure and the writeback are that body, over an
+/// event table.
 macro_rules! gen_level_tick {
     ($name:ident, level_write, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(($st:ty))? $(=> $write:ident $(($wt:ty))?)?),* $(,)?]) => {
         fn $name(
@@ -1200,13 +1208,13 @@ macro_rules! gen_level_tick {
             if !self.has_any_handlers(hook) {
                 return Flow::Continue;
             }
-            // The ticked block: its id filters the handlers, and an
+            // The ticked state: its block id filters the handlers, and an
             // unknown state tells nobody.
             let kind: Option<String> = gen_kind!($kind, level, _event);
-            let Some(block) = kind else {
+            let Some(state) = kind else {
                 return Flow::Continue;
             };
-            if !self.watches(hook, &block) {
+            if !self.watches(hook, &state) {
                 return Flow::Continue;
             }
             let at = [_event.pos.x, _event.pos.y, _event.pos.z];
@@ -1217,7 +1225,7 @@ macro_rules! gen_level_tick {
                 #[cfg(test)]
                 crate::generated_runtime::note_event_table();
                 table.set("dimension", dimension_id(_event.dimension))?;
-                table.set("block", block.clone())?;
+                table.set("state", state.clone())?;
                 table.set(
                     "pos",
                     crate::generated_runtime::pos_table(
@@ -1226,7 +1234,7 @@ macro_rules! gen_level_tick {
                     )?,
                 )?;
                 table.set(
-                    "props",
+                    "state_props",
                     crate::generated_runtime::props_of(lua, level.state_properties(_event.state))?,
                 )?;
                 // The block entity's saved data, as a table the handler may
@@ -1243,7 +1251,7 @@ macro_rules! gen_level_tick {
                 table.set("data", data.clone())?;
                 self.call_level(
                     hook,
-                    Some(&block),
+                    Some(&state),
                     &mut *level,
                     table.clone(),
                     &mut |level, action, args| {
@@ -1255,7 +1263,7 @@ macro_rules! gen_level_tick {
                             }
                             "schedule_tick" => {
                                 let delay: i32 = args.get(1)?;
-                                level.schedule_block_tick(at, &block, delay);
+                                level.schedule_block_tick(at, &state, delay);
                             }
                             // As the host's `summon(dimension, kind, x, y,
                             // z)`: this level's dimension is the only one
@@ -1292,8 +1300,14 @@ macro_rules! gen_level_tick {
                 }
                 Ok(())
             })();
+            // Any failure — the seed, a handler, an apply-closure
+            // conversion after `handled()` was queued, or the data
+            // writeback — leaves the tick running, as the old `hook_error`
+            // did: `handled` only counts on the success path, whose actions
+            // already ran.
             if let Err(e) = outcome {
                 self.error(format!("{hook}: {e}"));
+                return Flow::Continue;
             }
             if handled {
                 Flow::Cancel

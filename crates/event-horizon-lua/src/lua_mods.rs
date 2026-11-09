@@ -4737,13 +4737,13 @@ experimental = ["scripts"]
                 horizon.on("random_tick", function() LAMPS = LAMPS + 1 end, "ruby:lamp")
                 horizon.on("random_tick", function(event)
                   TICKS = TICKS + 1
-                  if event.block ~= "ruby:hive" then return end
-                  if event.props.stage == "dormant" then
+                  if event.state ~= "ruby:hive" then return end
+                  if event.state_props.stage == "dormant" then
                     horizon.set_block_property("stage", "growing")
                     horizon.set_block_property("lit", "true", 1)
                     horizon.schedule_tick(40)
                     horizon.handled()
-                  elseif event.props.stage == "mature" then
+                  elseif event.state_props.stage == "mature" then
                     horizon.summon(event.dimension, "ruby:crawler", event.pos.x + 0.5, event.pos.y + 1, event.pos.z + 0.5)
                   end
                 end)
