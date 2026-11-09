@@ -1823,7 +1823,7 @@ mod generated_tests {
     fn generated_frame() {
         let (m, id, _dir) = loaded(
             "gen_frame",
-            "horizon.on(\"frame\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
+            "horizon.on(\"frame\", function(event)\n    assert(event.elapsed == 1.5, \"elapsed\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_frame(
@@ -1933,6 +1933,19 @@ mod generated_tests {
         let mut claimed = false;
         dispatch_wheel(&mut FakeHost::empty(), &firing_mods, 1.5, &mut claimed);
         assert!(claimed, "claimed not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_wheel_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_wheel_nocancel",
+            "horizon.on(\"wheel\", function(event)\n    assert(event.steps == 1.5, \"steps\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut claimed = false;
+        dispatch_wheel(&mut FakeHost::empty(), &firing_mods, 1.5, &mut claimed);
+        assert!(!claimed, "claimed set with no cancel");
         no_error(&id);
     }
 
@@ -2213,6 +2226,27 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_spread_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_block_spread_nocancel",
+            "horizon.on(\"block_spread\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 4, \"from\")\n    assert(event.from.z == 5, \"from\")\n    assert(event.to.x == 4, \"to\")\n    assert(event.to.y == 5, \"to\")\n    assert(event.to.z == 6, \"to\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_block_spread(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            "test:kind",
+            BlockPos::new(3, 4, 5),
+            BlockPos::new(4, 5, 6),
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_piston_move() {
         let (m, id, _dir) = loaded(
             "gen_piston_move",
@@ -2231,6 +2265,28 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_piston_move_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_piston_move_nocancel",
+            "horizon.on(\"piston_move\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.piston.x == 2, \"piston\")\n    assert(event.piston.y == 3, \"piston\")\n    assert(event.piston.z == 4, \"piston\")\n    assert(event.direction.x == 3, \"direction\")\n    assert(event.direction.y == 4, \"direction\")\n    assert(event.direction.z == 5, \"direction\")\n    assert(event.push[1].x == 4, \"push\")\n    assert(event.push[2].x == 5, \"push\")\n    assert(event.destroy[1].x == 5, \"destroy\")\n    assert(event.destroy[2].x == 6, \"destroy\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_piston_move(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            [3, 4, 5],
+            &[BlockPos::new(4, 5, 6), BlockPos::new(5, 6, 7)],
+            &[BlockPos::new(5, 6, 7), BlockPos::new(6, 7, 8)],
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
@@ -2255,6 +2311,30 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_fill_bucket_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_fill_bucket_nocancel",
+            "horizon.on(\"fill_bucket\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_fill_bucket(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 1,
+                damage: 0,
+                extra: None,
+            },
+            [2, 3, 4],
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
@@ -2306,7 +2386,7 @@ mod generated_tests {
     fn generated_block_signal() {
         let (m, id, _dir) = loaded(
             "gen_block_signal",
-            "horizon.on(\"block_signal\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.direct == true, \"direct\")\n    assert(event.signal == 12, \"signal\")\n    event.signal = 55\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"block_signal\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.face == \"south\", \"face\")\n    assert(event.direct == true, \"direct\")\n    assert(event.signal == 12, \"signal\")\n    event.signal = 55\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut signal = 12;
@@ -2354,6 +2434,26 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_left_click_block_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_left_click_block_nocancel",
+            "horizon.on(\"left_click_block\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.face.x == 2, \"face\")\n    assert(event.face.y == 3, \"face\")\n    assert(event.face.z == 4, \"face\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_left_click_block(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            [1, 2, 3],
+            [2, 3, 4],
+            BlockStateId(10),
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
@@ -2597,7 +2697,7 @@ mod generated_tests {
     fn generated_analog_output() {
         let (m, id, _dir) = loaded(
             "gen_analog_output",
-            "horizon.on(\"analog_output\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.output == 11, \"output\")\n    event.output = 54\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"analog_output\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.face == \"south\", \"face\")\n    assert(event.output == 11, \"output\")\n    event.output = 54\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut output = 11;
@@ -2618,7 +2718,7 @@ mod generated_tests {
     fn generated_dispense_item() {
         let (m, id, _dir) = loaded(
             "gen_dispense_item",
-            "horizon.on(\"dispense_item\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.answer == nil, \"replace seed\")\n    event.answer = { remainder = { id = \"test:replace\", count = 1, damage = 0 }, event = 2000 }\nend)",
+            "horizon.on(\"dispense_item\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.facing == \"north\", \"facing\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.answer == nil, \"replace seed\")\n    event.answer = { remainder = { id = \"test:replace\", count = 1, damage = 0 }, event = 2000 }\nend)",
         );
         let firing_mods = boxed(m);
         let mut answer: Option<NativeDispensed> = None;
@@ -2716,7 +2816,7 @@ mod generated_tests {
     fn generated_consume_effect() {
         let (m, id, _dir) = loaded(
             "gen_consume_effect",
-            "horizon.on(\"consume_effect\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\nend)",
+            "horizon.on(\"consume_effect\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.data.testkey == 8, \"data\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_consume_effect(
@@ -2732,7 +2832,7 @@ mod generated_tests {
     fn generated_loot_table_load() {
         let (m, id, _dir) = loaded(
             "gen_loot_table_load",
-            "horizon.on(\"loot_table_load\", function(event)\n    assert(event.id == \"test:id\", \"id\")\n    event.table = { testkey = 51 }\nend)",
+            "horizon.on(\"loot_table_load\", function(event)\n    assert(event.id == \"test:id\", \"id\")\n    assert(event.table.testkey == 8, \"table\")\n    event.table = { testkey = 51 }\nend)",
         );
         let firing_mods = boxed(m);
         let mut table = serde_json::json!({ "testkey": 8 });
@@ -2777,7 +2877,7 @@ mod generated_tests {
     fn generated_enchant_effect() {
         let (m, id, _dir) = loaded(
             "gen_enchant_effect",
-            "horizon.on(\"enchant_effect\", function(event)\n    assert(event.enchantment == \"test:enchantment\", \"enchantment\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.level == 10, \"level\")\n    assert(event.victim == 11, \"victim\")\nend)",
+            "horizon.on(\"enchant_effect\", function(event)\n    assert(event.enchantment == \"test:enchantment\", \"enchantment\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.data.testkey == 9, \"data\")\n    assert(event.level == 10, \"level\")\n    assert(event.victim == 11, \"victim\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_enchant_effect(
@@ -2796,7 +2896,7 @@ mod generated_tests {
     fn generated_modify_default_components() {
         let (m, id, _dir) = loaded(
             "gen_modify_default_components",
-            "horizon.on(\"modify_default_components\", function(event)\n    assert(event.item == \"test:item\", \"item\")\n    event.components = { testkey = 51 }\nend)",
+            "horizon.on(\"modify_default_components\", function(event)\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.components.testkey == 8, \"components\")\n    event.components = { testkey = 51 }\nend)",
         );
         let firing_mods = boxed(m);
         let mut components = [("testkey".to_owned(), serde_json::json!(8))]
@@ -2816,7 +2916,7 @@ mod generated_tests {
     fn generated_shader_params() {
         let (m, id, _dir) = loaded(
             "gen_shader_params",
-            "horizon.on(\"shader_params\", function(event)\n    assert(event.partial == 1.5, \"partial\")\n    event.params = { { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 13.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 14.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 15.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 16.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 17.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 18.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 19.5, y = 2.5, z = 3.5, w = 4.5 } }\nend)",
+            "horizon.on(\"shader_params\", function(event)\n    assert(event.partial == 1.5, \"partial\")\n    assert(event.params[1].x == 2.5, \"params\")\n    assert(event.params[8].x == 2.5, \"params\")\n    event.params = { { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 13.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 14.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 15.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 16.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 17.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 18.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 19.5, y = 2.5, z = 3.5, w = 4.5 } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut params = [[2.5, 2.5, 3.5, 4.5]; 8];
@@ -2858,10 +2958,30 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_highlight_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_block_highlight_nocancel",
+            "horizon.on(\"block_highlight\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_block_highlight(
+            &FakeHost::empty(),
+            &firing_mods,
+            [1, 2, 3],
+            BlockStateId(9),
+            3.5,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_render_hand() {
         let (m, id, _dir) = loaded(
             "gen_render_hand",
-            "horizon.on(\"render_hand\", function(event)\n    assert(event.stack == nil, \"stack\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(event.swing == 4.5, \"swing\")\n    assert(event.equip == 5.5, \"equip\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"render_hand\", function(event)\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack == nil, \"stack\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(event.swing == 4.5, \"swing\")\n    assert(event.equip == 5.5, \"equip\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -2876,6 +2996,28 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_render_hand_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_render_hand_nocancel",
+            "horizon.on(\"render_hand\", function(event)\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack == nil, \"stack\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(event.swing == 4.5, \"swing\")\n    assert(event.equip == 5.5, \"equip\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_render_hand(
+            &FakeHost::empty(),
+            &firing_mods,
+            Hand::Main,
+            None,
+            3.5,
+            4.5,
+            5.5,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
@@ -2917,7 +3059,7 @@ mod generated_tests {
     fn generated_use_animation() {
         let (m, id, _dir) = loaded(
             "gen_use_animation",
-            "horizon.on(\"use_animation\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    event.animation = \"drink\"\nend)",
+            "horizon.on(\"use_animation\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.animation == \"block\", \"animation\")\n    event.animation = \"drink\"\nend)",
         );
         let firing_mods = boxed(m);
         let mut animation = UseAnimation::Block;
@@ -2978,6 +3120,24 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_perform_console_command_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_perform_console_command_nocancel",
+            "horizon.on(\"perform_console_command\", function(event)\n    assert(event.command == \"test:command\", \"command\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut ran = false;
+        dispatch_perform_console_command(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:command",
+            &mut ran,
+        );
+        assert!(!ran, "ran set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_server_data_loaded() {
         let (m, id, _dir) = loaded(
             "gen_server_data_loaded",
@@ -3028,6 +3188,26 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_mouse_button_pre_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_mouse_button_pre_nocancel",
+            "horizon.on(\"mouse_button_pre\", function(event)\n    assert(event.button == 7, \"button\")\n    assert(event.pressed == false, \"pressed\")\n    assert(event.modifiers == 9, \"modifiers\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_mouse_button_pre(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            false,
+            9,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_mouse_button_post() {
         let (m, id, _dir) = loaded(
             "gen_mouse_button_post",
@@ -3042,7 +3222,7 @@ mod generated_tests {
     fn generated_music() {
         let (m, id, _dir) = loaded(
             "gen_music",
-            "horizon.on(\"music\", function(event)\n    event.music = nil\n    assert(event.volume == 2.5, \"volume\")\n    event.volume = 16.5\nend)",
+            "horizon.on(\"music\", function(event)\n    assert(event.music.sound == \"test:sound0\", \"music\")\n    event.music = nil\n    assert(event.volume == 2.5, \"volume\")\n    event.volume = 16.5\nend)",
         );
         let firing_mods = boxed(m);
         let mut music = Some(Music {
@@ -3127,6 +3307,28 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_mouse_scrolling_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_mouse_scrolling_nocancel",
+            "horizon.on(\"mouse_scrolling\", function(event)\n    assert(event.scroll.x == 1.5, \"scroll\")\n    assert(event.scroll.y == 2.5, \"scroll\")\n    assert(event.accumulated.x == 4, \"accumulated\")\n    assert(event.accumulated.y == -6, \"accumulated\")\n    assert(event.buttons[1] == true, \"buttons\")\n    assert(event.buttons[2] == false, \"buttons\")\n    assert(event.buttons[3] == false, \"buttons\")\n    assert(event.cursor.x == 4.5, \"cursor\")\n    assert(event.cursor.y == 5.5, \"cursor\")\n    assert(event.modifiers == 11, \"modifiers\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_mouse_scrolling(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            [1.5, 2.5],
+            [4, -6],
+            [true, false, false],
+            [4.5, 5.5],
+            11,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_mod_container_viewers() {
         let (m, id, _dir) = loaded(
             "gen_mod_container_viewers",
@@ -3188,6 +3390,27 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_experience_orb_merge_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_experience_orb_merge_nocancel",
+            "horizon.on(\"experience_orb_merge\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.into == 8, \"into\")\n    assert(event.from == 9, \"from\")\n    assert(event.from_value == 10, \"from_value\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_experience_orb_merge(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            8,
+            9,
+            10,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_menu_slot_rules() {
         let (m, id, _dir) = loaded(
             "gen_menu_slot_rules",
@@ -3218,7 +3441,7 @@ mod generated_tests {
     fn generated_living_entity_use_item_tick() {
         let (m, id, _dir) = loaded(
             "gen_living_entity_use_item_tick",
-            "horizon.on(\"living_entity_use_item_tick\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.duration == 10, \"duration\")\n    event.duration = 53\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_entity_use_item_tick\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.duration == 10, \"duration\")\n    event.duration = 53\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -3283,6 +3506,33 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_entity_use_item_tick_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_living_entity_use_item_tick_nocancel",
+            "horizon.on(\"living_entity_use_item_tick\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.duration == 10, \"duration\")\n    event.duration = 53\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut duration = 10;
+        let mut canceled = false;
+        dispatch_living_entity_use_item_tick(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 1,
+                damage: 0,
+                extra: None,
+            },
+            Some(11),
+            Hand::Main,
+            &mut duration,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_on_use_tick() {
         let (m, id, _dir) = loaded(
             "gen_on_use_tick",
@@ -3340,7 +3590,7 @@ mod generated_tests {
     fn generated_living_entity_use_item_stop() {
         let (m, id, _dir) = loaded(
             "gen_living_entity_use_item_stop",
-            "horizon.on(\"living_entity_use_item_stop\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.duration == 10, \"duration\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_entity_use_item_stop\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.duration == 10, \"duration\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -3397,6 +3647,32 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_entity_use_item_stop_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_living_entity_use_item_stop_nocancel",
+            "horizon.on(\"living_entity_use_item_stop\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.duration == 10, \"duration\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_living_entity_use_item_stop(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 1,
+                damage: 0,
+                extra: None,
+            },
+            Some(11),
+            Hand::Main,
+            10,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
@@ -3545,10 +3821,33 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_mount_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_entity_mount_nocancel",
+            "horizon.on(\"entity_mount\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.vehicle == 10, \"vehicle\")\n    assert(event.vehicle_kind == \"test:vehicle_kind\", \"vehicle_kind\")\n    assert(event.mounting == false, \"mounting\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_entity_mount(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            8,
+            "minecraft:zombie",
+            10,
+            "test:vehicle_kind",
+            false,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_interaction_key() {
         let (m, id, _dir) = loaded(
             "gen_interaction_key",
-            "horizon.on(\"interaction_key\", function(event)\n    assert(event.button == 7, \"button\")\n    assert(event.key_mapping == \"test:key_mapping\", \"key_mapping\")\n    assert(event.swing_hand == false, \"swing_hand\")\n    event.swing_hand = true\n    horizon.cancel()\nend)",
+            "horizon.on(\"interaction_key\", function(event)\n    assert(event.button == 7, \"button\")\n    assert(event.key_mapping == \"test:key_mapping\", \"key_mapping\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.swing_hand == false, \"swing_hand\")\n    event.swing_hand = true\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut swing_hand = false;
@@ -3564,6 +3863,28 @@ mod generated_tests {
         );
         assert!(canceled, "canceled not cancelled");
         assert!(swing_hand);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_interaction_key_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_interaction_key_nocancel",
+            "horizon.on(\"interaction_key\", function(event)\n    assert(event.button == 7, \"button\")\n    assert(event.key_mapping == \"test:key_mapping\", \"key_mapping\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.swing_hand == false, \"swing_hand\")\n    event.swing_hand = true\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut swing_hand = false;
+        let mut canceled = false;
+        dispatch_interaction_key(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:key_mapping",
+            Hand::Main,
+            &mut swing_hand,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
@@ -3809,6 +4130,26 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_tick_pre_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_entity_tick_pre_nocancel",
+            "horizon.on(\"entity_tick_pre\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_entity_tick_pre(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            8,
+            "minecraft:zombie",
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_player_render_listened() {
         let (m, id, _dir) = loaded(
             "gen_player_render_listened",
@@ -3854,6 +4195,30 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_sign_changed_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_sign_changed_nocancel",
+            "horizon.on(\"sign_changed\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.front == true, \"front\")\n    assert(event.lines[1] == \"test:seed\", \"lines\")\n    assert(event.lines[2] == \"test:seed2\", \"lines\")\n    event.lines[1] = \"test:edited\"; table.insert(event.lines, \"test:added\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+        let mut cancel = false;
+        dispatch_sign_changed(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:dimension",
+            [4, 5, 6],
+            true,
+            &mut lines,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_standalone_models() {
         let (m, id, _dir) = loaded(
             "gen_standalone_models",
@@ -3894,6 +4259,52 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_toggle_flight_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_toggle_flight_nocancel",
+            "horizon.on(\"player_toggle_flight\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.flying == true, \"flying\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_toggle_flight(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            true,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_arrow_loose_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_arrow_loose_nocancel",
+            "horizon.on(\"arrow_loose\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.has_ammo == false, \"has_ammo\")\n    assert(event.charge == 9, \"charge\")\n    event.charge = 52\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut charge = 9;
+        let mut canceled = false;
+        dispatch_arrow_loose(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 1,
+                damage: 0,
+                extra: None,
+            },
+            false,
+            &mut charge,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_beacon_state_change() {
         let (m, id, _dir) = loaded(
             "gen_beacon_state_change",
@@ -3907,6 +4318,26 @@ mod generated_tests {
             [2, 3, 4],
             true,
         );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_bell_ring_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_bell_ring_nocancel",
+            "horizon.on(\"bell_ring\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.block == \"minecraft:stone\", \"block\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_bell_ring(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            None,
+            BlockPos::new(3, 4, 5),
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -3925,6 +4356,25 @@ mod generated_tests {
             [3, 4, 5],
             10,
         );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_burn_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_block_burn_nocancel",
+            "horizon.on(\"block_burn\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"minecraft:stone\", \"block\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_block_burn(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -4005,6 +4455,27 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_fade_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_block_fade_nocancel",
+            "horizon.on(\"block_fade\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:state10\", \"from\")\n    assert(event.to == \"test:state11\", \"to\")\n    assert(next(event.from_props) == nil, \"from_props\")\n    assert(next(event.to_props) == nil, \"to_props\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_block_fade(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            BlockStateId(10),
+            BlockStateId(11),
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_block_failed_dispense() {
         let (m, id, _dir) = loaded(
             "gen_block_failed_dispense",
@@ -4043,6 +4514,27 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_form_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_block_form_nocancel",
+            "horizon.on(\"block_form\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:state10\", \"from\")\n    assert(event.to == \"test:state11\", \"to\")\n    assert(next(event.from_props) == nil, \"from_props\")\n    assert(next(event.to_props) == nil, \"to_props\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_block_form(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            BlockStateId(10),
+            BlockStateId(11),
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_block_ignite() {
         let (m, id, _dir) = loaded(
             "gen_block_ignite",
@@ -4064,6 +4556,47 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_ignite_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_block_ignite_nocancel",
+            "horizon.on(\"block_ignite\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_block_ignite(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            None,
+            BlockPos::new(3, 4, 5),
+            "test:cause",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_lock_check_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_block_lock_check_nocancel",
+            "horizon.on(\"block_lock_check\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut locked = false;
+        dispatch_block_lock_check(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            [3, 4, 5],
+            &mut locked,
+        );
+        assert!(!locked, "locked set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_block_receive_game() {
         let (m, id, _dir) = loaded(
             "gen_block_receive_game",
@@ -4081,6 +4614,27 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_receive_game_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_block_receive_game_nocancel",
+            "horizon.on(\"block_receive_game\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.event == \"test:event\", \"event\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_block_receive_game(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            [2, 3, 4],
+            "test:block",
+            "test:event",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -4168,6 +4722,20 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_broadcast_message_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_broadcast_message_nocancel",
+            "horizon.on(\"broadcast_message\", function(event)\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.line_component.text == \"test:line\", \"line\")\n    event.line = \"test:line:edited\"\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut line = Text::literal("test:line");
+        let mut cancel = false;
+        dispatch_broadcast_message(&FakeHost::empty(), &firing_mods, &mut line, &mut cancel);
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_campfire_start() {
         let (m, id, _dir) = loaded(
             "gen_campfire_start",
@@ -4202,6 +4770,29 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_cauldron_level_changed_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_cauldron_level_changed_nocancel",
+            "horizon.on(\"cauldron_level_changed\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.from_level == 10, \"from_level\")\n    assert(event.to_level == 11, \"to_level\")\n    assert(event.reason == \"test:reason\", \"reason\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_cauldron_level_changed(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            None,
+            BlockPos::new(3, 4, 5),
+            10,
+            11,
+            "test:reason",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_chorus_fruit_teleport() {
         let (m, id, _dir) = loaded(
             "gen_chorus_fruit_teleport",
@@ -4221,6 +4812,28 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(target, [14.0, 12.0, 13.0]);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_chorus_fruit_teleport_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_chorus_fruit_teleport_nocancel",
+            "horizon.on(\"chorus_fruit_teleport\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.target.x == 4.0, \"target\")\n    assert(event.target.y == 2.0, \"target\")\n    assert(event.target.z == 3.0, \"target\")\n    event.target = { x = 14.0, y = 12.0, z = 13.0 }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut target = [4.0, 2.0, 3.0];
+        let mut cancel = false;
+        dispatch_chorus_fruit_teleport(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            [3.0, 2.0, 3.0],
+            &mut target,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -4341,6 +4954,25 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_dragon_egg_form_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_dragon_egg_form_nocancel",
+            "horizon.on(\"dragon_egg_form\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_dragon_egg_form(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_enchant_item() {
         let (m, id, _dir) = loaded(
             "gen_enchant_item",
@@ -4388,6 +5020,31 @@ mod generated_tests {
         assert!(cancel, "cancel not cancelled");
         assert_eq!(target, [15.0, 12.0, 13.0]);
         assert_eq!(damage, 20.5);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_ender_pearl_teleport_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_ender_pearl_teleport_nocancel",
+            "horizon.on(\"ender_pearl_teleport\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pearl == 9, \"pearl\")\n    assert(event.from.x == 4, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.target.x == 5.0, \"target\")\n    assert(event.target.y == 2.0, \"target\")\n    assert(event.target.z == 3.0, \"target\")\n    event.target = { x = 15.0, y = 12.0, z = 13.0 }\n    assert(event.damage == 6.5, \"damage\")\n    event.damage = 20.5\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut target = [5.0, 2.0, 3.0];
+        let mut damage = 6.5;
+        let mut cancel = false;
+        dispatch_ender_pearl_teleport(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            [4.0, 2.0, 3.0],
+            &mut target,
+            &mut damage,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -4878,6 +5535,30 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_experience_orb_pickup_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_experience_orb_pickup_nocancel",
+            "horizon.on(\"experience_orb_pickup\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.orb == 9, \"orb\")\n    assert(event.value == 10, \"value\")\n    event.value = 53\n    assert(event.count == 11, \"count\")\n    event.count = 54\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut value = 10;
+        let mut count = 11;
+        let mut canceled = false;
+        dispatch_experience_orb_pickup(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:dimension",
+            9,
+            &mut value,
+            &mut count,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_mending_repair() {
         let (m, id, _dir) = loaded(
             "gen_mending_repair",
@@ -4991,6 +5672,28 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_fluid_level_change_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_fluid_level_change_nocancel",
+            "horizon.on(\"fluid_level_change\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\n    assert(event.from == 10, \"from\")\n    assert(event.to == 11, \"to\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_fluid_level_change(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            "test:fluid",
+            10,
+            11,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -5149,10 +5852,31 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_hopper_pickup_item_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_hopper_pickup_item_nocancel",
+            "horizon.on(\"hopper_pickup_item\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 10, \"count\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_hopper_pickup_item(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            "test:item",
+            10,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_ingredient() {
         let (m, id, _dir) = loaded(
             "gen_ingredient",
-            "horizon.on(\"ingredient\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.items[1] == \"test:seed\", \"items\")\n    assert(event.items[2] == \"test:seed2\", \"items\")\n    event.items[1] = \"test:edited\"; table.insert(event.items, \"test:added\")\nend)",
+            "horizon.on(\"ingredient\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.data.testkey == 8, \"data\")\n    assert(event.items[1] == \"test:seed\", \"items\")\n    assert(event.items[2] == \"test:seed2\", \"items\")\n    event.items[1] = \"test:edited\"; table.insert(event.items, \"test:added\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut items = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
@@ -5196,6 +5920,26 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_inventory_block_start_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_inventory_block_start_nocancel",
+            "horizon.on(\"inventory_block_start\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_inventory_block_start(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            [3, 4, 5],
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_inventory_move_item() {
         let (m, id, _dir) = loaded(
             "gen_inventory_move_item",
@@ -5212,6 +5956,26 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_inventory_move_item_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_inventory_move_item_nocancel",
+            "horizon.on(\"inventory_move_item\", function(event)\n    assert(event.source.x == 1, \"source\")\n    assert(event.source.y == 2, \"source\")\n    assert(event.source.z == 3, \"source\")\n    assert(event.destination.x == 2, \"destination\")\n    assert(event.destination.y == 3, \"destination\")\n    assert(event.destination.z == 4, \"destination\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_inventory_move_item(
+            &FakeHost::empty(),
+            &firing_mods,
+            [1, 2, 3],
+            [2, 3, 4],
+            "test:item",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -5397,6 +6161,25 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_leaves_decay_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_leaves_decay_nocancel",
+            "horizon.on(\"leaves_decay\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_leaves_decay(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_lightning_strike() {
         let (m, id, _dir) = loaded(
             "gen_lightning_strike",
@@ -5413,6 +6196,26 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_lightning_strike_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_lightning_strike_nocancel",
+            "horizon.on(\"lightning_strike\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_lightning_strike(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            Some(7),
+            [2, 3, 4],
+            "test:cause",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -5438,10 +6241,31 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_moisture_change_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_moisture_change_nocancel",
+            "horizon.on(\"moisture_change\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_moisture_change(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            9,
+            10,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_anvil_craft_post() {
         let (m, id, _dir) = loaded(
             "gen_anvil_craft_post",
-            "horizon.on(\"anvil_craft_post\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend)",
+            "horizon.on(\"anvil_craft_post\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.craft.output.id == \"test:craft\", \"craft\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_anvil_craft_post(
@@ -5473,7 +6297,7 @@ mod generated_tests {
     fn generated_anvil_craft_pre() {
         let (m, id, _dir) = loaded(
             "gen_anvil_craft_pre",
-            "horizon.on(\"anvil_craft_pre\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"anvil_craft_pre\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.craft.output.id == \"test:craft\", \"craft\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -5505,6 +6329,41 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_anvil_craft_pre_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_anvil_craft_pre_nocancel",
+            "horizon.on(\"anvil_craft_pre\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.craft.output.id == \"test:craft\", \"craft\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_anvil_craft_pre(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            [3, 4, 5],
+            &AnvilCraft {
+                left: Some(ItemStack {
+                    item: "test:craft".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                }),
+                right: None,
+                output: ItemStack {
+                    item: "test:craft".into(),
+                    count: 2,
+                    damage: 0,
+                    extra: None,
+                },
+            },
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_armor_stand_manipulate() {
         let (m, id, _dir) = loaded(
             "gen_armor_stand_manipulate",
@@ -5522,6 +6381,27 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_armor_stand_manipulate_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_armor_stand_manipulate_nocancel",
+            "horizon.on(\"armor_stand_manipulate\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stand_id == 9, \"stand_id\")\n    assert(event.slot == \"test:slot\", \"slot\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_armor_stand_manipulate(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            "test:slot",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -5547,6 +6427,27 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_bucket_empty_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_bucket_empty_nocancel",
+            "horizon.on(\"bucket_empty\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_bucket_empty(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            [3, 4, 5],
+            "test:fluid",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_container_opened() {
         let (m, id, _dir) = loaded(
             "gen_container_opened",
@@ -5564,6 +6465,27 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_container_opened_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_container_opened_nocancel",
+            "horizon.on(\"container_opened\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_container_opened(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:kind",
+            Some([4, 5, 6]),
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -5590,6 +6512,28 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_creative_slot_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_creative_slot_nocancel",
+            "horizon.on(\"creative_slot\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 11, \"count\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_creative_slot(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            "test:item",
+            11,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_food_level_changed() {
         let (m, id, _dir) = loaded(
             "gen_food_level_changed",
@@ -5609,6 +6553,28 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(to, 53);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_food_level_changed_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_food_level_changed_nocancel",
+            "horizon.on(\"food_level_changed\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\n    event.to = 53\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut to = 10;
+        let mut cancel = false;
+        dispatch_food_level_changed(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            &mut to,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -5642,6 +6608,26 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_hanging_break_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_hanging_break_nocancel",
+            "horizon.on(\"hanging_break\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_hanging_break(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            Some(7),
+            "minecraft:zombie",
+            [3, 4, 5],
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -5681,6 +6667,27 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_hanging_place_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_hanging_place_nocancel",
+            "horizon.on(\"hanging_place\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_hanging_place(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "minecraft:zombie",
+            [4, 5, 6],
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_item_damaged() {
         let (m, id, _dir) = loaded(
             "gen_item_damaged",
@@ -5700,6 +6707,28 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(amount, 53);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_item_damaged_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_item_damaged_nocancel",
+            "horizon.on(\"item_damaged\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.amount == 10, \"amount\")\n    event.amount = 53\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut amount = 10;
+        let mut cancel = false;
+        dispatch_item_damaged(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:item",
+            &mut amount,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -5779,6 +6808,26 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_fish_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_fish_nocancel",
+            "horizon.on(\"player_fish\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.state == 9, \"state\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_fish(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_player_flower_pot_manipulate() {
         let (m, id, _dir) = loaded(
             "gen_player_flower_pot_manipulate",
@@ -5814,6 +6863,27 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_game_mode_changed_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_game_mode_changed_nocancel",
+            "horizon.on(\"player_game_mode_changed\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_game_mode_changed(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            10,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -5960,6 +7030,27 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_login_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_login_nocancel",
+            "horizon.on(\"player_login\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.reason == \"test:reason\", \"reason\")\n    assert(event.reason_component.text == \"test:reason\", \"reason\")\n    event.reason = nil; event.reason_component = nil\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut reason = Some(Text::literal("test:reason"));
+        let mut cancel = false;
+        dispatch_player_login(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &mut reason,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_player_save_to_file() {
         let (m, id, _dir) = loaded(
             "gen_player_save_to_file",
@@ -6003,6 +7094,25 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_swap_hands_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_swap_hands_nocancel",
+            "horizon.on(\"player_swap_hands\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_swap_hands(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -6096,6 +7206,25 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_tnt_primed_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_tnt_primed_nocancel",
+            "horizon.on(\"tnt_primed\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_tnt_primed(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            Some(7),
+            [2, 3, 4],
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_vehicle_create() {
         let (m, id, _dir) = loaded(
             "gen_vehicle_create",
@@ -6152,6 +7281,26 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(damage, 16.5);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_vehicle_damage_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_vehicle_damage_nocancel",
+            "horizon.on(\"vehicle_damage\", function(event)\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage == 2.5, \"damage\")\n    event.damage = 16.5\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut damage = 2.5;
+        let mut cancel = false;
+        dispatch_vehicle_damage(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "minecraft:zombie",
+            &mut damage,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -6270,6 +7419,28 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_note_play_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_note_play_nocancel",
+            "horizon.on(\"note_play\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.instrument == \"test:instrument\", \"instrument\")\n    assert(event.note == 11, \"note\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_note_play(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            None,
+            BlockPos::new(3, 4, 5),
+            "test:instrument",
+            11,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -6512,6 +7683,27 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_edit_book_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_edit_book_nocancel",
+            "horizon.on(\"player_edit_book\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pages == 9, \"pages\")\n    assert(event.signing == false, \"signing\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_edit_book(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            false,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_player_egg_throw() {
         let (m, id, _dir) = loaded(
             "gen_player_egg_throw",
@@ -6562,6 +7754,27 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_item_held_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_item_held_nocancel",
+            "horizon.on(\"player_item_held\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_slot == 9, \"from_slot\")\n    assert(event.to_slot == 10, \"to_slot\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_item_held(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            10,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -6779,6 +7992,28 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_pick_item_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_pick_item_nocancel",
+            "horizon.on(\"player_pick_item\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_entity == true, \"from_entity\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.entity_id == 11, \"kind\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_pick_item(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            true,
+            [4, 5, 6],
+            11,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_player_pickup_arrow() {
         let (m, id, _dir) = loaded(
             "gen_player_pickup_arrow",
@@ -6839,6 +8074,28 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_portal_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_portal_nocancel",
+            "horizon.on(\"player_portal\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.cause == \"test:cause\", \"cause\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_portal(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:from_dimension",
+            "test:to_dimension",
+            "test:cause",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -6917,6 +8174,26 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_recipe_discovered_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_recipe_discovered_nocancel",
+            "horizon.on(\"player_recipe_discovered\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.recipe == \"test:recipe\", \"recipe\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_recipe_discovered(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:recipe",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_player_riptide() {
         let (m, id, _dir) = loaded(
             "gen_player_riptide",
@@ -6977,6 +8254,27 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_shear_entity_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_shear_entity_nocancel",
+            "horizon.on(\"player_shear_entity\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.off_hand == false, \"off_hand\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_shear_entity(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            11,
+            false,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_player_spawn_point_set() {
         let (m, id, _dir) = loaded(
             "gen_player_spawn_point_set",
@@ -6999,6 +8297,28 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_spawn_point_set_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_spawn_point_set_nocancel",
+            "horizon.on(\"player_spawn_point_set\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_spawn_point_set(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:dimension",
+            [4, 5, 6],
+            "test:cause",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_player_stat_award() {
         let (m, id, _dir) = loaded(
             "gen_player_stat_award",
@@ -7017,6 +8337,28 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_stat_award_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_stat_award_nocancel",
+            "horizon.on(\"player_stat_award\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stat_type == \"test:stat_type\", \"stat_type\")\n    assert(event.stat == \"test:stat\", \"stat\")\n    assert(event.value == 11, \"value\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_stat_award(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:stat_type",
+            "test:stat",
+            11,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -7121,6 +8463,26 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_teleport_end_gateway_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_teleport_end_gateway_nocancel",
+            "horizon.on(\"player_teleport_end_gateway\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.gateway.x == 3, \"gateway\")\n    assert(event.gateway.y == 4, \"gateway\")\n    assert(event.gateway.z == 5, \"gateway\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_teleport_end_gateway(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            [3, 4, 5],
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -7538,6 +8900,25 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_thunder_change_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_thunder_change_nocancel",
+            "horizon.on(\"thunder_change\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.thundering == false, \"thundering\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_thunder_change(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            false,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_time_skip() {
         let (m, id, _dir) = loaded(
             "gen_time_skip",
@@ -7555,6 +8936,27 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_time_skip_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_time_skip_nocancel",
+            "horizon.on(\"time_skip\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.from == 8, \"from\")\n    assert(event.to == 9, \"to\")\n    assert(event.cause == \"test:cause\", \"cause\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_time_skip(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            8,
+            9,
+            "test:cause",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -7580,7 +8982,7 @@ mod generated_tests {
     fn generated_trade_with_villager() {
         let (m, id, _dir) = loaded(
             "gen_trade_with_villager",
-            "horizon.on(\"trade_with_villager\", function(event)\n    assert(event.merchant == 7, \"merchant\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"trade_with_villager\", function(event)\n    assert(event.merchant == 7, \"merchant\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.offer.uses == 2, \"offer\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -7699,6 +9101,26 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_weather_change_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_weather_change_nocancel",
+            "horizon.on(\"weather_change\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.raining == false, \"raining\")\n    assert(event.thundering == true, \"thundering\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_weather_change(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            false,
+            true,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_whitelist_state_update() {
         let (m, id, _dir) = loaded(
             "gen_whitelist_state_update",
@@ -7773,6 +9195,29 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_drown_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_living_drown_nocancel",
+            "horizon.on(\"living_drown\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.is_drowning == true, \"is_drowning\")\n    event.is_drowning = false\n    assert(event.damage_amount == 4.5, \"damage_amount\")\n    event.damage_amount = 18.5\n    assert(event.bubble_count == 11, \"bubble_count\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut is_drowning = true;
+        let mut damage_amount = 4.5;
+        let mut cancel = false;
+        dispatch_living_drown(
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            &mut is_drowning,
+            &mut damage_amount,
+            11,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_living_jump() {
         let (m, id, _dir) = loaded(
             "gen_living_jump",
@@ -7792,7 +9237,7 @@ mod generated_tests {
     fn generated_arrow_nock() {
         let (m, id, _dir) = loaded(
             "gen_arrow_nock",
-            "horizon.on(\"arrow_nock\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.bow.id == \"test:bow\", \"bow\")\n    assert(event.has_ammo == true, \"has_ammo\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"arrow_nock\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.bow.id == \"test:bow\", \"bow\")\n    assert(event.hand == \"off\", \"hand\")\n    assert(event.has_ammo == true, \"has_ammo\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -7812,6 +9257,33 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_arrow_nock_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_arrow_nock_nocancel",
+            "horizon.on(\"arrow_nock\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.bow.id == \"test:bow\", \"bow\")\n    assert(event.hand == \"off\", \"hand\")\n    assert(event.has_ammo == true, \"has_ammo\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_arrow_nock(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &ItemStack {
+                item: "test:bow".into(),
+                count: 3,
+                damage: 2,
+                extra: None,
+            },
+            Hand::Off,
+            true,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -7847,6 +9319,27 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_baby_entity_spawn_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_baby_entity_spawn_nocancel",
+            "horizon.on(\"baby_entity_spawn\", function(event)\n    assert(event.parent == 7, \"parent\")\n    assert(event.partner == 8, \"partner\")\n    assert(event.player == 9, \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_baby_entity_spawn(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            8,
+            9,
+            "minecraft:zombie",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -7923,7 +9416,7 @@ mod generated_tests {
     fn generated_ingredient_test() {
         let (m, id, _dir) = loaded(
             "gen_ingredient_test",
-            "horizon.on(\"ingredient_test\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.accept == false, \"accept\")\n    event.accept = true\nend)",
+            "horizon.on(\"ingredient_test\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.data.testkey == 8, \"data\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.accept == false, \"accept\")\n    event.accept = true\nend)",
         );
         let firing_mods = boxed(m);
         let mut accept = false;
@@ -8022,6 +9515,26 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_conversion_pre_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_living_conversion_pre_nocancel",
+            "horizon.on(\"living_conversion_pre\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.outcome == \"test:outcome\", \"outcome\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_living_conversion_pre(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            "test:outcome",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_living_death() {
         let (m, id, _dir) = loaded(
             "gen_living_death",
@@ -8053,6 +9566,27 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_death_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_living_death_nocancel",
+            "horizon.on(\"living_death\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.attacker == 10, \"attacker\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_living_death(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            "test:damage_type",
+            10,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -8162,6 +9696,33 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_incoming_damage_v2_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_living_incoming_damage_v2_nocancel",
+            "horizon.on(\"living_incoming_damage_v2\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.source_position.x == 5.0, \"source_position\")\n    assert(event.source_position.y == 2.0, \"source_position\")\n    assert(event.source_position.z == 3.0, \"source_position\")\n    assert(event.victim_position.x == 6, \"victim_position\")\n    assert(event.victim_position.y == 2.0, \"victim_position\")\n    assert(event.victim_position.z == 3.0, \"victim_position\")\n    assert(event.victim_view.x == 7, \"victim_view\")\n    assert(event.victim_view.y == 2.0, \"victim_view\")\n    assert(event.victim_view.z == 3.0, \"victim_view\")\n    assert(event.weapon == nil, \"weapon\")\n    assert(event.amount == 9.5, \"amount\")\n    event.amount = 23.5\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut amount = 9.5;
+        let mut canceled = false;
+        dispatch_living_incoming_damage_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            "test:damage_type",
+            10,
+            Some([5.0, 2.0, 3.0]),
+            [6.0, 2.0, 3.0],
+            [7.0, 2.0, 3.0],
+            None,
+            &mut amount,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_living_knockback_v2() {
         let (m, id, _dir) = loaded(
             "gen_living_knockback_v2",
@@ -8222,6 +9783,38 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_knockback_v2_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_living_knockback_v2_nocancel",
+            "horizon.on(\"living_knockback_v2\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.attacker == 9, \"attacker\")\n    assert(event.attacker_main == nil, \"attacker_main\")\n    assert(event.attacker_off.id == \"test:attacker_off\", \"attacker_off\")\n    assert(event.strength == 6.5, \"strength\")\n    event.strength = 20.5\n    assert(event.x == 7.5, \"x\")\n    event.x = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut strength = 6.5;
+        let mut x = 7.5;
+        let mut z = 8.5;
+        let mut canceled = false;
+        dispatch_living_knockback_v2(
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            9,
+            None,
+            Some(&ItemStack {
+                item: "test:attacker_off".into(),
+                count: 1,
+                damage: 0,
+                extra: None,
+            }),
+            &mut strength,
+            &mut x,
+            &mut z,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_mob_split() {
         let (m, id, _dir) = loaded(
             "gen_mob_split",
@@ -8258,6 +9851,29 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(count, 54);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_mob_split_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_mob_split_nocancel",
+            "horizon.on(\"mob_split\", function(event)\n    assert(event.parent == 7, \"parent\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.size == 9, \"size\")\n    assert(event.child_size == 10, \"child_size\")\n    assert(event.count == 11, \"count\")\n    event.count = 54\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut count = 11;
+        let mut cancel = false;
+        dispatch_mob_split(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            9,
+            10,
+            &mut count,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -8351,6 +9967,31 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_note_block_change_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_note_block_change_nocancel",
+            "horizon.on(\"note_block_change\", function(event)\n    assert(event.context.old_note == 7, \"context\")\n    assert(event.new_note == 8, \"new_note\")\n    event.new_note = 51\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut new_note = 8;
+        let mut cancel = false;
+        dispatch_note_block_change(
+            &FakeLevel,
+            &firing_mods,
+            &NativeNoteBlockChange {
+                dimension: LevelDimension::Overworld,
+                pos: BlockPos::new(1, 2, 3),
+                instrument: "test:instrument0",
+                old_note: 7,
+            },
+            &mut new_note,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_potential_spawns() {
         let (m, id, _dir) = loaded(
             "gen_potential_spawns",
@@ -8401,6 +10042,43 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_potential_spawns_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_potential_spawns_nocancel",
+            "horizon.on(\"potential_spawns\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.category == \"test:category\", \"category\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.entries[1].entity == \"test:entity3\", \"entries\")\n    assert(event.entries[2].entity == \"test:entity4\", \"entries\")\n    event.entries = { { entity = \"test:entity53\", weight = 60, min = 1, max = 2, constant = false } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut entries = vec![
+            SpawnEntry {
+                entity: "test:entity3".into(),
+                weight: 10,
+                min: 1,
+                max: 2,
+                constant: false,
+            },
+            SpawnEntry {
+                entity: "test:entity4".into(),
+                weight: 11,
+                min: 1,
+                max: 2,
+                constant: true,
+            },
+        ];
+        let mut canceled = false;
+        dispatch_potential_spawns(
+            &FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            "test:category",
+            [3, 4, 5],
+            &mut entries,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_village_siege() {
         let (m, id, _dir) = loaded(
             "gen_village_siege",
@@ -8417,6 +10095,26 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_village_siege_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_village_siege_nocancel",
+            "horizon.on(\"village_siege\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.player == 8, \"player\")\n    assert(event.attempted_pos.x == 3, \"attempted_pos\")\n    assert(event.attempted_pos.y == 2.0, \"attempted_pos\")\n    assert(event.attempted_pos.z == 3.0, \"attempted_pos\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_village_siege(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            8,
+            [3.0, 2.0, 3.0],
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
@@ -8439,6 +10137,27 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(amount, 52);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_xp_change_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_xp_change_nocancel",
+            "horizon.on(\"player_xp_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.amount == 9, \"amount\")\n    event.amount = 52\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut amount = 9;
+        let mut cancel = false;
+        dispatch_player_xp_change(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &mut amount,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -8480,7 +10199,7 @@ mod generated_tests {
     fn generated_render_hand_pose() {
         let (m, id, _dir) = loaded(
             "gen_render_hand_pose",
-            "horizon.on(\"render_hand_pose\", function(event)\n    assert(event.stack == nil, \"stack\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(event.swing == 4.5, \"swing\")\n    assert(event.equip == 5.5, \"equip\")\n    assert(event.x == 6.5, \"x\")\n    event.x = 20.5\n    assert(event.y == 7.5, \"y\")\n    event.y = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\n    assert(event.pitch == 9.5, \"pitch\")\n    event.pitch = 23.5\n    assert(event.yaw == 10.5, \"yaw\")\n    event.yaw = 24.5\n    assert(event.roll == 11.5, \"roll\")\n    event.roll = 25.5\n    assert(event.scale == 12.5, \"scale\")\n    event.scale = 26.5\nend)",
+            "horizon.on(\"render_hand_pose\", function(event)\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack == nil, \"stack\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(event.swing == 4.5, \"swing\")\n    assert(event.equip == 5.5, \"equip\")\n    assert(event.x == 6.5, \"x\")\n    event.x = 20.5\n    assert(event.y == 7.5, \"y\")\n    event.y = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\n    assert(event.pitch == 9.5, \"pitch\")\n    event.pitch = 23.5\n    assert(event.yaw == 10.5, \"yaw\")\n    event.yaw = 24.5\n    assert(event.roll == 11.5, \"roll\")\n    event.roll = 25.5\n    assert(event.scale == 12.5, \"scale\")\n    event.scale = 26.5\nend)",
         );
         let firing_mods = boxed(m);
         let mut x = 6.5;
@@ -8574,6 +10293,31 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_render_item_in_frame_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_render_item_in_frame_nocancel",
+            "horizon.on(\"render_item_in_frame\", function(event)\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_render_item_in_frame(
+            &FakeHost::empty(),
+            &firing_mods,
+            11,
+            [2, 3, 4],
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 3,
+                damage: 2,
+                extra: None,
+            },
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
@@ -8693,6 +10437,29 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_client_chat_received_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_client_chat_received_nocancel",
+            "horizon.on(\"client_chat_received\", function(event)\n    assert(event.system == true, \"system\")\n    assert(event.overlay == false, \"overlay\")\n    assert(event.sender == 9, \"sender\")\n    assert(event.chat_type == nil, \"chat_type\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.message_component.text == \"test:message\", \"message\")\n    event.message = \"test:message:edited\"\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut message = Text::literal("test:message");
+        let mut cancel = false;
+        dispatch_client_chat_received(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            true,
+            false,
+            9,
+            None,
+            &mut message,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_menu_extra_data() {
         let (m, id, _dir) = loaded(
             "gen_menu_extra_data",
@@ -8717,7 +10484,7 @@ mod generated_tests {
     fn generated_merchant_offer_traded() {
         let (m, id, _dir) = loaded(
             "gen_merchant_offer_traded",
-            "horizon.on(\"merchant_offer_traded\", function(event)\n    assert(event.merchant == 7, \"merchant\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    event.offer = { base_cost_a = { stack = { id = \"test:offer\", count = 1, damage = 0 } }, result = { id = \"test:offer\", count = 1, damage = 0 }, uses = 52, max_uses = 1, reward_exp = true, special_price_diff = 0, demand = 0, price_multiplier = 1.0, xp = 1 }\nend, \"minecraft:zombie\")",
+            "horizon.on(\"merchant_offer_traded\", function(event)\n    assert(event.merchant == 7, \"merchant\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.offer.uses == 2, \"offer\")\n    event.offer = { base_cost_a = { stack = { id = \"test:offer\", count = 1, damage = 0 } }, result = { id = \"test:offer\", count = 1, damage = 0 }, uses = 52, max_uses = 1, reward_exp = true, special_price_diff = 0, demand = 0, price_multiplier = 1.0, xp = 1 }\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -8948,6 +10715,47 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_anvil_update_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_anvil_update_nocancel",
+            "horizon.on(\"anvil_update\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.left.id == \"test:left\", \"left\")\n    assert(event.right == nil, \"right\")\n    assert(event.item_name == \"test:item_name\", \"item_name\")\n    assert(event.vanilla_output == nil, \"vanilla_output\")\n    assert(event.vanilla_xp_cost == 13, \"vanilla_xp_cost\")\n    assert(event.vanilla_material_cost == 14, \"vanilla_material_cost\")\n    assert(event.output.id == \"test:output\", \"output\")\n    event.output = nil\n    assert(event.xp_cost == 16, \"xp_cost\")\n    event.xp_cost = 59\n    assert(event.material_cost == 17, \"material_cost\")\n    event.material_cost = 60\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut output = Some(ItemStack {
+            item: "test:output".into(),
+            count: 9,
+            damage: 8,
+            extra: None,
+        });
+        let mut xp_cost = 16;
+        let mut material_cost = 17;
+        let mut canceled = false;
+        dispatch_anvil_update(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &ItemStack {
+                item: "test:left".into(),
+                count: 3,
+                damage: 2,
+                extra: None,
+            },
+            None,
+            Some("test:item_name"),
+            None,
+            13,
+            14,
+            &mut output,
+            &mut xp_cost,
+            &mut material_cost,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_block_clone_item() {
         let (m, id, _dir) = loaded(
             "gen_block_clone_item",
@@ -8990,6 +10798,26 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_entity_accepts_fluid_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_block_entity_accepts_fluid_nocancel",
+            "horizon.on(\"block_entity_accepts_fluid\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.tank == 8, \"tank\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_block_entity_accepts_fluid(
+            &FakeHost::empty(),
+            &firing_mods,
+            "test:block",
+            8,
+            "test:fluid",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_block_place() {
         let (m, id, _dir) = loaded(
             "gen_block_place",
@@ -9013,6 +10841,33 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_place_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_block_place_nocancel",
+            "horizon.on(\"block_place\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.state == \"test:state12\", \"state\")\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_block_place(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 3,
+                damage: 2,
+                extra: None,
+            },
+            [4, 5, 6],
+            BlockStateId(12),
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -9169,6 +11024,27 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_console_line_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_console_line_nocancel",
+            "horizon.on(\"console_line\", function(event)\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.replies[1].text == \"test:line2\", \"replies\")\n    assert(event.replies[2].text == \"test:line3\", \"replies\")\n    event.replies = { { text = \"test:line52\", component = { text = \"test:line52\" } } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut replies = vec![Text::literal("test:line2"), Text::literal("test:line3")];
+        let mut cancel = false;
+        dispatch_console_line(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:source",
+            "test:line",
+            &mut replies,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_creative_slot_v2() {
         let (m, id, _dir) = loaded(
             "gen_creative_slot_v2",
@@ -9190,6 +11066,27 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_creative_slot_v2_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_creative_slot_v2_nocancel",
+            "horizon.on(\"creative_slot_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.stack == nil, \"stack\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_creative_slot_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            None,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_custom_block_fluids() {
         let (m, id, _dir) = loaded(
             "gen_custom_block_fluids",
@@ -9206,7 +11103,7 @@ mod generated_tests {
     fn generated_custom_fluid_tanks() {
         let (m, id, _dir) = loaded(
             "gen_custom_fluid_tanks",
-            "horizon.on(\"custom_fluid_tanks\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.out == nil, \"replace seed\")\n    event.out = { { tank = 0, content = { fluid = \"test:fluid0\", amount = 7, components = {} }, capacity = 1000, can_fill = true, can_drain = false } }\nend)",
+            "horizon.on(\"custom_fluid_tanks\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.side == \"up\", \"side\")\n    assert(event.out == nil, \"replace seed\")\n    event.out = { { tank = 0, content = { fluid = \"test:fluid0\", amount = 7, components = {} }, capacity = 1000, can_fill = true, can_drain = false } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut out: Option<Vec<NativeFluidTankView>> = None;
@@ -9238,7 +11135,7 @@ mod generated_tests {
     fn generated_custom_fluid_fill() {
         let (m, id, _dir) = loaded(
             "gen_custom_fluid_fill",
-            "horizon.on(\"custom_fluid_fill\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.resource.fluid == \"test:fluid2\", \"resource\")\n    assert(event.out == nil, \"replace seed\")\n    event.out = 81000\nend)",
+            "horizon.on(\"custom_fluid_fill\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.side == \"up\", \"side\")\n    assert(event.resource.fluid == \"test:fluid2\", \"resource\")\n    assert(event.action == \"execute\", \"action\")\n    assert(event.out == nil, \"replace seed\")\n    event.out = 81000\nend)",
         );
         let firing_mods = boxed(m);
         let mut out: Option<i32> = None;
@@ -9263,7 +11160,7 @@ mod generated_tests {
     fn generated_custom_fluid_drain() {
         let (m, id, _dir) = loaded(
             "gen_custom_fluid_drain",
-            "horizon.on(\"custom_fluid_drain\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.request.kind == \"any\", \"request\")\n    assert(event.out == nil, \"replace seed\")\n    event.out = { fluid = \"test:fluid0\", amount = 7, components = {} }\nend)",
+            "horizon.on(\"custom_fluid_drain\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.side == \"up\", \"side\")\n    assert(event.request.kind == \"any\", \"request\")\n    assert(event.action == \"execute\", \"action\")\n    assert(event.out == nil, \"replace seed\")\n    event.out = { fluid = \"test:fluid0\", amount = 7, components = {} }\nend)",
         );
         let firing_mods = boxed(m);
         let mut out: Option<NativeFluidStack> = None;
@@ -9344,6 +11241,29 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_change_block_v2_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_entity_change_block_v2_nocancel",
+            "horizon.on(\"entity_change_block_v2\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.entity == nil, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_entity_change_block_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            Some(7),
+            None,
+            "minecraft:zombie",
+            [4, 5, 6],
+            "test:from",
+            "test:to",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_entity_interact_specific() {
         let (m, id, _dir) = loaded(
             "gen_entity_interact_specific",
@@ -9385,6 +11305,32 @@ mod generated_tests {
             &mut claimed,
         );
         assert!(claimed, "claimed not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_entity_interact_specific_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_entity_interact_specific_nocancel",
+            "horizon.on(\"entity_interact_specific\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.location.x == 4, \"location\")\n    assert(event.location.y == 2.0, \"location\")\n    assert(event.location.z == 3.0, \"location\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut claimed = false;
+        dispatch_entity_interact_specific(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            Some(&ItemStack {
+                item: "test:stack".into(),
+                count: 1,
+                damage: 0,
+                extra: None,
+            }),
+            [4.0, 2.0, 3.0],
+            &mut claimed,
+        );
+        assert!(!claimed, "claimed set with no cancel");
         no_error(&id);
     }
 
@@ -9442,7 +11388,7 @@ mod generated_tests {
     fn generated_handshake() {
         let (m, id, _dir) = loaded(
             "gen_handshake",
-            "horizon.on(\"handshake\", function(event)\n    assert(event.host == \"test:host\", \"host\")\n    event.host = \"test:host:edited\"\n    assert(event.intent == 9, \"intent\")\n    assert(event.reason == nil, \"reason\")\n    assert(event.reason_component == nil, \"reason\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"handshake\", function(event)\n    assert(event.address == \"127.0.0.1:25565\", \"address\")\n    assert(event.host == \"test:host\", \"host\")\n    event.host = \"test:host:edited\"\n    assert(event.intent == 9, \"intent\")\n    assert(event.reason == nil, \"reason\")\n    assert(event.reason_component == nil, \"reason\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut host = "test:host".to_owned();
@@ -9462,10 +11408,32 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_handshake_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_handshake_nocancel",
+            "horizon.on(\"handshake\", function(event)\n    assert(event.address == \"127.0.0.1:25565\", \"address\")\n    assert(event.host == \"test:host\", \"host\")\n    event.host = \"test:host:edited\"\n    assert(event.intent == 9, \"intent\")\n    assert(event.reason == nil, \"reason\")\n    assert(event.reason_component == nil, \"reason\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut host = "test:host".to_owned();
+        let mut reason = None;
+        let mut cancel = false;
+        dispatch_handshake(
+            &firing_mods,
+            "127.0.0.1:25565".parse().unwrap(),
+            &mut host,
+            9,
+            &mut reason,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_interact_entity_v2() {
         let (m, id, _dir) = loaded(
             "gen_interact_entity_v2",
-            "horizon.on(\"interact_entity_v2\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack == nil, \"stack\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"interact_entity_v2\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack == nil, \"stack\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -9497,6 +11465,27 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_interact_entity_v2_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_interact_entity_v2_nocancel",
+            "horizon.on(\"interact_entity_v2\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack == nil, \"stack\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_interact_entity_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            Hand::Main,
+            None,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_inventory_click() {
         let (m, id, _dir) = loaded(
             "gen_inventory_click",
@@ -9520,6 +11509,29 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_inventory_click_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_inventory_click_nocancel",
+            "horizon.on(\"inventory_click\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.window == 9, \"window\")\n    assert(event.slot == 10, \"slot\")\n    assert(event.button == 11, \"button\")\n    assert(event.mode == 12, \"mode\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_inventory_click(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            10,
+            11,
+            12,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_inventory_drag() {
         let (m, id, _dir) = loaded(
             "gen_inventory_drag",
@@ -9538,6 +11550,28 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_inventory_drag_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_inventory_drag_nocancel",
+            "horizon.on(\"inventory_drag\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.window == 9, \"window\")\n    assert(event.kind == 10, \"kind\")\n    assert(event.slots[1] == 8 and event.slots[2] == 13, \"slots\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_inventory_drag(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            10,
+            &[8, 13],
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -9627,6 +11661,36 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_item_after_vertical_collision_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_item_after_vertical_collision_nocancel",
+            "horizon.on(\"item_after_vertical_collision\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.client == false, \"client\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.state == \"test:state11\", \"state\")\n    assert(event.block_pos.x == 5, \"block_pos\")\n    assert(event.block_pos.y == 6, \"block_pos\")\n    assert(event.block_pos.z == 7, \"block_pos\")\n    assert(event.item_pos.x == 6, \"item_pos\")\n    assert(event.item_pos.y == 2.0, \"item_pos\")\n    assert(event.item_pos.z == 3.0, \"item_pos\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    event.stack = { id = \"test:stack\", count = 56, damage = 6 }\n    assert(next(event.state_props) == nil, \"state_props\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut stack = ItemStack {
+            item: "test:stack".into(),
+            count: 7,
+            damage: 6,
+            extra: None,
+        };
+        let mut discard = false;
+        dispatch_item_after_vertical_collision(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            false,
+            11,
+            BlockStateId(11),
+            [5, 6, 7],
+            [6.0, 2.0, 3.0],
+            &mut stack,
+            &mut discard,
+        );
+        assert!(!discard, "discard set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_item_dropped_v2() {
         let (m, id, _dir) = loaded(
             "gen_item_dropped_v2",
@@ -9647,6 +11711,30 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_item_dropped_v2_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_item_dropped_v2_nocancel",
+            "horizon.on(\"item_dropped_v2\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_item_dropped_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 2,
+                damage: 1,
+                extra: None,
+            },
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -9720,6 +11808,32 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_item_picked_up_v2_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_item_picked_up_v2_nocancel",
+            "horizon.on(\"item_picked_up_v2\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.thrower == \"00000000-0000-0000-0000-000000000009\", \"thrower\")\n    assert(event.position.x == 4, \"position\")\n    assert(event.position.y == 2.0, \"position\")\n    assert(event.position.z == 3.0, \"position\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_item_picked_up_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 2,
+                damage: 1,
+                extra: None,
+            },
+            Some(9),
+            [4.0, 2.0, 3.0],
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_living_change_target() {
         let (m, id, _dir) = loaded(
             "gen_living_change_target",
@@ -9751,6 +11865,27 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_change_target_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_living_change_target_nocancel",
+            "horizon.on(\"living_change_target\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.target == nil, \"target\")\n    assert(event.target_mob == 11, \"target_mob\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_living_change_target(
+            &firing_mods,
+            "test:dimension",
+            8,
+            "minecraft:zombie",
+            None,
+            Some(11),
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -9862,6 +11997,31 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(amount, 22.5);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_incoming_damage_v3_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_living_incoming_damage_v3_nocancel",
+            "horizon.on(\"living_incoming_damage_v3\", function(event)\n    assert(event.victim == 7, \"victim\")\n    assert(event.victim_uuid == nil, \"victim_uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.attacker == nil, \"attacker\")\n    assert(event.attacker_uuid == \"00000000-0000-0000-0000-00000000000b\", \"attacker_uuid\")\n    assert(event.direct == nil, \"direct\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 8.5, \"amount\")\n    event.amount = 22.5\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut amount = 8.5;
+        let mut cancel = false;
+        dispatch_living_incoming_damage_v3(
+            &firing_mods,
+            7,
+            None,
+            "minecraft:zombie",
+            None,
+            Some(11),
+            None,
+            "test:damage_type",
+            &mut amount,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -10037,7 +12197,7 @@ mod generated_tests {
     fn generated_player_fish_v2() {
         let (m, id, _dir) = loaded(
             "gen_player_fish_v2",
-            "horizon.on(\"player_fish_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.state == 9, \"state\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_fish_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.state == 9, \"state\")\n    assert(event.hand == \"off\", \"hand\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -10051,6 +12211,27 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_fish_v2_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_fish_v2_nocancel",
+            "horizon.on(\"player_fish_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.state == 9, \"state\")\n    assert(event.hand == \"off\", \"hand\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_fish_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            Hand::Off,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -10080,6 +12261,30 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_hurt_by_player_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_hurt_by_player_nocancel",
+            "horizon.on(\"player_hurt_by_player\", function(event)\n    assert(event.attacker == 7, \"attacker\")\n    assert(event.attacker_entity == 8, \"attacker_entity\")\n    assert(event.victim == 9, \"victim\")\n    assert(event.victim_entity == 10, \"victim_entity\")\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 7.5, \"amount\")\n    event.amount = 21.5\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut amount = 7.5;
+        let mut canceled = false;
+        dispatch_player_hurt_by_player(
+            &firing_mods,
+            7,
+            8,
+            9,
+            10,
+            "test:source",
+            "test:damage_type",
+            &mut amount,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_player_launch_projectile_v2() {
         let (m, id, _dir) = loaded(
             "gen_player_launch_projectile_v2",
@@ -10101,6 +12306,31 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_launch_projectile_v2_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_launch_projectile_v2_nocancel",
+            "horizon.on(\"player_launch_projectile_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_launch_projectile_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &ItemStack {
+                item: "test:stack".into(),
+                count: 3,
+                damage: 2,
+                extra: None,
+            },
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -10141,10 +12371,34 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_move_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_move_nocancel",
+            "horizon.on(\"player_move\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 4.0, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    event.to = { x = 14.0, y = 12.0, z = 13.0 }\n    assert(event.yaw == 5.5, \"yaw\")\n    assert(event.pitch == 6.5, \"pitch\")\n    assert(event.on_ground == true, \"on_ground\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut to = [4.0, 2.0, 3.0];
+        let mut cancel = false;
+        dispatch_player_move(
+            &firing_mods,
+            7,
+            "test:name",
+            [3.0, 2.0, 3.0],
+            &mut to,
+            5.5,
+            6.5,
+            true,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_player_pre_login() {
         let (m, id, _dir) = loaded(
             "gen_player_pre_login",
-            "horizon.on(\"player_pre_login\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.defer.count == 0, \"defer\")\n    event.defer = { refuse = \"test:refused\" }\nend)",
+            "horizon.on(\"player_pre_login\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.address == \"127.0.0.1:25567\", \"address\")\n    assert(event.defer.count == 0, \"defer\")\n    event.defer = { refuse = \"test:refused\" }\nend)",
         );
         let firing_mods = boxed(m);
         let mut defer = Vec::new();
@@ -10237,6 +12491,32 @@ mod generated_tests {
         assert!(cancel, "cancel not cancelled");
         assert_eq!(to, [17.0, 12.0, 13.0]);
         assert_eq!(relative, 57);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_teleport_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_player_teleport_nocancel",
+            "horizon.on(\"player_teleport\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.from.x == 5, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.to.x == 7.0, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    event.to = { x = 17.0, y = 12.0, z = 13.0 }\n    assert(event.relative == 14, \"relative\")\n    event.relative = 57\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut to = [7.0, 2.0, 3.0];
+        let mut relative = 14;
+        let mut cancel = false;
+        dispatch_player_teleport(
+            &firing_mods,
+            7,
+            "test:name",
+            "test:cause",
+            "test:from_dimension",
+            [5.0, 2.0, 3.0],
+            "test:to_dimension",
+            &mut to,
+            &mut relative,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -10337,7 +12617,7 @@ mod generated_tests {
     fn generated_right_click_block_v2() {
         let (m, id, _dir) = loaded(
             "gen_right_click_block_v2",
-            "horizon.on(\"right_click_block_v2\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.face.x == 2, \"face\")\n    assert(event.face.y == 3, \"face\")\n    assert(event.face.z == 4, \"face\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"right_click_block_v2\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.face.x == 2, \"face\")\n    assert(event.face.y == 3, \"face\")\n    assert(event.face.z == 4, \"face\")\n    assert(event.hand == \"main\", \"hand\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -10350,6 +12630,26 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_right_click_block_v2_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_right_click_block_v2_nocancel",
+            "horizon.on(\"right_click_block_v2\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.face.x == 2, \"face\")\n    assert(event.face.y == 3, \"face\")\n    assert(event.face.z == 4, \"face\")\n    assert(event.hand == \"main\", \"hand\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_right_click_block_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            [1, 2, 3],
+            [2, 3, 4],
+            Hand::Main,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -10376,6 +12676,28 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_screen_mouse_dragged_pre_v2_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_screen_mouse_dragged_pre_v2_nocancel",
+            "horizon.on(\"screen_mouse_dragged_pre_v2\", function(event)\n    assert(event.screen == \"test:screen\", \"screen\")\n    assert(event.mouse.x == 2.5, \"mouse\")\n    assert(event.mouse.y == 3.5, \"mouse\")\n    assert(event.button == 9, \"button\")\n    assert(event.delta.x == 4.5, \"delta\")\n    assert(event.delta.y == 5.5, \"delta\")\n    assert(event.modifiers == 11, \"modifiers\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_mouse_dragged_pre_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:screen",
+            [2.5, 3.5],
+            9,
+            [4.5, 5.5],
+            11,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_screen_mouse_scrolled_pre_v2() {
         let (m, id, _dir) = loaded(
             "gen_screen_mouse_scrolled_pre_v2",
@@ -10393,6 +12715,27 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_mouse_scrolled_pre_v2_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_screen_mouse_scrolled_pre_v2_nocancel",
+            "horizon.on(\"screen_mouse_scrolled_pre_v2\", function(event)\n    assert(event.screen == \"test:screen\", \"screen\")\n    assert(event.mouse.x == 2.5, \"mouse\")\n    assert(event.mouse.y == 3.5, \"mouse\")\n    assert(event.scroll.x == 3.5, \"scroll\")\n    assert(event.scroll.y == 4.5, \"scroll\")\n    assert(event.modifiers == 10, \"modifiers\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_mouse_scrolled_pre_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:screen",
+            [2.5, 3.5],
+            [3.5, 4.5],
+            10,
+            &mut canceled,
+        );
+        assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
@@ -10448,7 +12791,7 @@ mod generated_tests {
     fn generated_block_entity_from_state() {
         let (m, id, _dir) = loaded(
             "gen_block_entity_from_state",
-            "horizon.on(\"block_entity_from_state\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.entity == nil, \"replace seed\")\n    event.entity = { name = \"test:entity0\", tag = { testkey = 7 } }\nend)",
+            "horizon.on(\"block_entity_from_state\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(next(event.properties) == nil, \"properties\")\n    assert(event.entity == nil, \"replace seed\")\n    event.entity = { name = \"test:entity0\", tag = { testkey = 7 } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut entity: Option<(String, Compound)> = None;
@@ -10534,6 +12877,25 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_toast_add_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_toast_add_nocancel",
+            "horizon.on(\"toast_add\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.id == \"test:id\", \"id\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_toast_add(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:kind",
+            "test:id",
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_trample() {
         let (m, id, _dir) = loaded(
             "gen_trample",
@@ -10565,6 +12927,27 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_trample_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_trample_nocancel",
+            "horizon.on(\"trample\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.fall_distance == 5.5, \"fall_distance\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_trample(
+            &firing_mods,
+            "test:dimension",
+            8,
+            "minecraft:zombie",
+            [4, 5, 6],
+            5.5,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
@@ -10607,6 +12990,30 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(to, [16.0, 12.0, 13.0]);
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_vehicle_moved_v2_no_cancel() {
+        let (m, id, _dir) = loaded(
+            "gen_vehicle_moved_v2_nocancel",
+            "horizon.on(\"vehicle_moved_v2\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.vehicle == 9, \"vehicle\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.from.x == 5, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 6.0, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    event.to = { x = 16.0, y = 12.0, z = 13.0 }\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut to = [6.0, 2.0, 3.0];
+        let mut cancel = false;
+        dispatch_vehicle_moved_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            Some(7),
+            "test:dimension",
+            9,
+            "minecraft:zombie",
+            [5.0, 2.0, 3.0],
+            &mut to,
+            &mut cancel,
+        );
+        assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 

@@ -1449,24 +1449,32 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             format!("{{ testkey = {} }}", 7 + n as i32),
             vec![leaf("testkey", format!("{}", 7 + n as i32))],
         ),
-        "Value" => mutable(
-            format!("serde_json::json!({{ \"testkey\": {} }})", 7 + n as i32),
-            format!("{{ testkey = {} }}", 7 + n as i32),
-            format!("serde_json::json!({{ \"testkey\": {} }})", 50 + n as i32),
-            format!("{{ testkey = {} }}", 50 + n as i32),
-        ),
-        "Map" => mutable(
-            format!(
-                "[(\"testkey\".to_owned(), serde_json::json!({}))].into_iter().collect()",
-                7 + n as i32
-            ),
-            format!("{{ testkey = {} }}", 7 + n as i32),
-            format!(
-                "[(\"testkey\".to_owned(), serde_json::json!({}))].into_iter().collect()",
-                50 + n as i32
-            ),
-            format!("{{ testkey = {} }}", 50 + n as i32),
-        ),
+        "Value" => {
+            let mut s = mutable(
+                format!("serde_json::json!({{ \"testkey\": {} }})", 7 + n as i32),
+                format!("{{ testkey = {} }}", 7 + n as i32),
+                format!("serde_json::json!({{ \"testkey\": {} }})", 50 + n as i32),
+                format!("{{ testkey = {} }}", 50 + n as i32),
+            );
+            s.leaves = vec![leaf("testkey", format!("{}", 7 + n as i32))];
+            s
+        }
+        "Map" => {
+            let mut s = mutable(
+                format!(
+                    "[(\"testkey\".to_owned(), serde_json::json!({}))].into_iter().collect()",
+                    7 + n as i32
+                ),
+                format!("{{ testkey = {} }}", 7 + n as i32),
+                format!(
+                    "[(\"testkey\".to_owned(), serde_json::json!({}))].into_iter().collect()",
+                    50 + n as i32
+                ),
+                format!("{{ testkey = {} }}", 50 + n as i32),
+            );
+            s.leaves = vec![leaf("testkey", format!("{}", 7 + n as i32))];
+            s
+        }
         "ItemStack" => {
             let mut s = mutable(
                 item(1 + n as i32, n as i32),
@@ -1580,7 +1588,7 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                     .collect::<Vec<_>>()
                     .join("; ")
             );
-            mutable(
+            let mut s = mutable(
                 format!("[[{:?}, 2.5, 3.5, 4.5]; 8]", 1.5 + n as f32),
                 format!(
                     "{{ {}; {}; {}; {}; {}; {}; {}; {} }}",
@@ -1596,7 +1604,12 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 .replace("1.5", &format!("{:?}", 1.5 + n as f32)),
                 write_rust,
                 write_lua,
-            )
+            );
+            s.leaves = vec![
+                ("[1].x".into(), format!("{:?}", 1.5 + n as f32)),
+                ("[8].x".into(), format!("{:?}", 1.5 + n as f32)),
+            ];
+            s
         }
         "[i32;3]" => {
             let mut s = mutable(
@@ -1918,27 +1931,31 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             ),
             vec![leaf("text", format!("\"test:suggestion{n}\""))],
         ),
-        "MerchantOffer" => mutable(
-            format!(
-                "MerchantOffer {{ base_cost_a: ItemCost {{ stack: {} }}, cost_b: None, result: {}, uses: {}, max_uses: 1, reward_exp: true, special_price_diff: 0, demand: 0, price_multiplier: 1.0, xp: 1 }}",
-                item(1, 0),
-                item(1, 0),
-                n as i32
-            ),
-            format!(
-                "{{ base_cost_a = {{ stack = {{ id = \"test:{field}\", count = 1, damage = 0 }} }}, result = {{ id = \"test:{field}\", count = 1, damage = 0 }}, uses = {n}, max_uses = 1, reward_exp = true, special_price_diff = 0, demand = 0, price_multiplier = 1.0, xp = 1 }}"
-            ),
-            format!(
-                "MerchantOffer {{ base_cost_a: ItemCost {{ stack: {} }}, cost_b: None, result: {}, uses: {}, max_uses: 1, reward_exp: true, special_price_diff: 0, demand: 0, price_multiplier: 1.0, xp: 1 }}",
-                item(1, 0),
-                item(1, 0),
-                50 + n as i32
-            ),
-            format!(
-                "{{ base_cost_a = {{ stack = {{ id = \"test:{field}\", count = 1, damage = 0 }} }}, result = {{ id = \"test:{field}\", count = 1, damage = 0 }}, uses = {}, max_uses = 1, reward_exp = true, special_price_diff = 0, demand = 0, price_multiplier = 1.0, xp = 1 }}",
-                50 + n as i32
-            ),
-        ),
+        "MerchantOffer" => {
+            let mut s = mutable(
+                format!(
+                    "MerchantOffer {{ base_cost_a: ItemCost {{ stack: {} }}, cost_b: None, result: {}, uses: {}, max_uses: 1, reward_exp: true, special_price_diff: 0, demand: 0, price_multiplier: 1.0, xp: 1 }}",
+                    item(1, 0),
+                    item(1, 0),
+                    n as i32
+                ),
+                format!(
+                    "{{ base_cost_a = {{ stack = {{ id = \"test:{field}\", count = 1, damage = 0 }} }}, result = {{ id = \"test:{field}\", count = 1, damage = 0 }}, uses = {n}, max_uses = 1, reward_exp = true, special_price_diff = 0, demand = 0, price_multiplier = 1.0, xp = 1 }}"
+                ),
+                format!(
+                    "MerchantOffer {{ base_cost_a: ItemCost {{ stack: {} }}, cost_b: None, result: {}, uses: {}, max_uses: 1, reward_exp: true, special_price_diff: 0, demand: 0, price_multiplier: 1.0, xp: 1 }}",
+                    item(1, 0),
+                    item(1, 0),
+                    50 + n as i32
+                ),
+                format!(
+                    "{{ base_cost_a = {{ stack = {{ id = \"test:{field}\", count = 1, damage = 0 }} }}, result = {{ id = \"test:{field}\", count = 1, damage = 0 }}, uses = {}, max_uses = 1, reward_exp = true, special_price_diff = 0, demand = 0, price_multiplier = 1.0, xp = 1 }}",
+                    50 + n as i32
+                ),
+            );
+            s.leaves = vec![leaf("uses", format!("{n}"))];
+            s
+        }
         "AnvilCraft" => fixed(
             format!(
                 "AnvilCraft {{ left: Some({}), right: None, output: {} }}",
@@ -1948,7 +1965,7 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             format!(
                 "{{ left = {{ id = \"test:{field}\", count = 1, damage = 0 }}, output = {{ id = \"test:{field}\", count = 2, damage = 0 }} }}"
             ),
-            vec![],
+            vec![leaf("output.id", format!("\"test:{field}\""))],
         ),
         "NativeNoteBlockChange" => fixed(
             format!(
@@ -2004,22 +2021,26 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             ),
             vec![leaf("tank", format!("{n}"))],
         ),
-        "Music" => mutable(
-            format!(
-                "Music {{ sound: \"test:sound{n}\".into(), min_delay: {}, max_delay: {}, replace_current_music: {} }}",
-                1 + n as i32,
-                2 + n as i32,
-                n.is_multiple_of(2)
-            ),
-            format!(
-                "{{ sound = \"test:sound{n}\", min_delay = {}, max_delay = {}, replace_current_music = {} }}",
-                1 + n as i32,
-                2 + n as i32,
-                n.is_multiple_of(2)
-            ),
-            "None".into(),
-            "nil".into(),
-        ),
+        "Music" => {
+            let mut s = mutable(
+                format!(
+                    "Music {{ sound: \"test:sound{n}\".into(), min_delay: {}, max_delay: {}, replace_current_music: {} }}",
+                    1 + n as i32,
+                    2 + n as i32,
+                    n.is_multiple_of(2)
+                ),
+                format!(
+                    "{{ sound = \"test:sound{n}\", min_delay = {}, max_delay = {}, replace_current_music = {} }}",
+                    1 + n as i32,
+                    2 + n as i32,
+                    n.is_multiple_of(2)
+                ),
+                "None".into(),
+                "nil".into(),
+            );
+            s.leaves = vec![leaf("sound", format!("\"test:sound{n}\""))];
+            s
+        }
         "Option<Music>" => mutable(
             format!(
                 "Some(Music {{ sound: \"test:sound{n}\".into(), min_delay: {}, max_delay: {}, replace_current_music: {} }})",
@@ -2901,6 +2922,21 @@ pub fn assert_lines(
             let key = key.unwrap_or("");
             let s = struct_sample(key, field, n)
                 .unwrap_or_else(|| panic!("no struct asserts for {key}"));
+            if key == "BlockProperties" {
+                // The sample is always empty (`BlockProperties::new()`); the
+                // delivery is the empty table, asserted like a `_props` note.
+                return vec![a(&format!("next({e}) == nil"))];
+            }
+            if s.leaves.is_empty() {
+                // A scalar-shaped struct (a duration's seconds, an address,
+                // a one-word enum): the seed compares as one value. A table
+                // seed compares by identity, so table seeds need leaves;
+                // an empty return marks the field uncovered.
+                if s.lua.trim_start().starts_with('{') {
+                    return Vec::new();
+                }
+                return vec![a(&format!("{e} == {}", s.lua))];
+            }
             s.leaves
                 .iter()
                 .map(|(suffix, value)| a(&format!("{e}{suffix} == {value}")))

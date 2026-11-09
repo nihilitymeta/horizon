@@ -16,8 +16,8 @@
 //! an unsupported field fails the check naming it.
 
 use crate::lua_model::{
-    Class, Conv, Host, Kind, Model, ReplaceRead, assert_lines, classify, lua_read, mutate_line,
-    replace_sample, sample,
+    Class, Conv, Field, Host, Kind, Model, ReplaceRead, assert_lines, classify, lua_read,
+    mutate_line, replace_sample, sample,
 };
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -481,9 +481,79 @@ fn kind_values(model: &Model) -> Option<KindPlan> {
     }
 }
 
+/// A dispatch field no generated test can assert deterministically: the
+/// hook, the field, and the one-line reason. Anything missing from here
+/// fails the generator (see `uncovered_fields`): a silent skip is a stale
+/// test, not a passing one.
+const FIELD_ALLOWLIST: &[(&str, &str, &str)] = &[];
+
+fn allowlisted(hook: &str, field: &str) -> bool {
+    FIELD_ALLOWLIST
+        .iter()
+        .any(|(h, f, _)| *h == hook && *f == field)
+}
+
+/// One dispatch parameter's Lua asserts: the kind line for the filtered
+/// field, the converter's asserts otherwise. Empty means the field is
+/// uncovered (see `uncovered_fields`).
+fn param_asserts(
+    model: &Model,
+    field: &Field,
+    ty: &str,
+    n: usize,
+    kind_lua: Option<&str>,
+) -> Vec<String> {
+    if Some(field.name.as_str()) == model.kind_field()
+        && let Some(kind) = kind_lua
+    {
+        return vec![format!(
+            "    assert({} == {kind}, \"kind\")",
+            lua_read(&field.name)
+        )];
+    }
+    let s = sample(&field.conv, ty, &field.name, n);
+    assert_lines(&field.conv, &field.name, &s.lua, field.key.as_deref(), n)
+}
+
+/// The dispatch fields of `model` no assert covers: a parameter with no
+/// field entry, or one whose Lua asserts are empty and which is not
+/// allowlisted. The player `name` a player table stands in for is covered
+/// by that table's asserts.
+fn uncovered_fields(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String> {
+    let kind_lua = kind_values(model)
+        .as_ref()
+        .and_then(|plan| plan.assert_kind.clone());
+    let mut out = Vec::new();
+    // Param order, so the samples match the dispatch call's: the `name`
+    // a player table stands in for still takes its index.
+    for (n, param) in model.dispatch_params.iter().enumerate() {
+        if model.skipped.contains(&param.name) {
+            continue;
+        }
+        let Some(field) = model.fields.iter().find(|f| f.name == param.name) else {
+            if !allowlisted(&model.name, &param.name) {
+                out.push(param.name.clone());
+            }
+            continue;
+        };
+        let ty = tys.get(&field.name).map(String::as_str).unwrap_or("?");
+        if param_asserts(model, field, ty, n, kind_lua.as_deref()).is_empty()
+            && !allowlisted(&model.name, &field.name)
+        {
+            out.push(field.name.clone());
+        }
+    }
+    out
+}
+
 /// The handler body: an assert per field, the write-back edits, and the
 /// cancel/replace answers.
-fn handler_body(model: &Model, tys: &BTreeMap<String, String>, kind_lua: Option<&str>) -> String {
+fn handler_body(
+    model: &Model,
+    tys: &BTreeMap<String, String>,
+    kind_lua: Option<&str>,
+    cancel: bool,
+) -> String {
     let mut lines = Vec::new();
     // Param order, so the samples match the dispatch call's: the `name`
     // a player table stands in for still takes its index.
@@ -492,23 +562,8 @@ fn handler_body(model: &Model, tys: &BTreeMap<String, String>, kind_lua: Option<
             continue;
         };
         let ty = tys.get(&field.name).map(String::as_str).unwrap_or("?");
+        lines.extend(param_asserts(model, field, ty, n, kind_lua));
         let s = sample(&field.conv, ty, &field.name, n);
-        if Some(field.name.as_str()) == model.kind_field()
-            && let Some(kind) = kind_lua
-        {
-            lines.push(format!(
-                "    assert({} == {kind}, \"kind\")",
-                lua_read(&field.name)
-            ));
-        } else {
-            lines.extend(assert_lines(
-                &field.conv,
-                &field.name,
-                &s.lua,
-                field.key.as_deref(),
-                n,
-            ));
-        }
         if let Some(write) = s.write_lua {
             lines.push(mutate_line(&field.conv, &field.name, &write));
         }
@@ -517,7 +572,7 @@ fn handler_body(model: &Model, tys: &BTreeMap<String, String>, kind_lua: Option<
         // A handler with nothing to check still proves the event exists.
         lines.push("    assert(event ~= nil, \"event\")".to_owned());
     }
-    if model.contract == "cancel" {
+    if cancel && model.contract == "cancel" {
         lines.push("    horizon.cancel()".to_owned());
     }
     if let Some(out) = &model.out {
@@ -635,11 +690,42 @@ const SPIKE_HOOKS: &[&str] = &[
     "prepare_anvil",
 ];
 
+/// The bindings and dispatch call of one firing, without the Rust-side
+/// asserts (the quiet K2/gone blocks and the non-cancel test use this).
+fn emit_call(
+    out: &mut String,
+    model: &Model,
+    tys: &BTreeMap<String, String>,
+    kind_rust: Option<String>,
+) {
+    let call = dispatch_call(model, tys, kind_rust);
+    for binding in &call.bindings {
+        out.push_str(binding);
+        out.push('\n');
+    }
+    out.push_str(&call.call);
+    out.push('\n');
+}
+
+/// The bindings, dispatch call and Rust asserts of one firing.
+fn emit_firing(
+    out: &mut String,
+    model: &Model,
+    tys: &BTreeMap<String, String>,
+    kind_rust: Option<String>,
+) {
+    emit_call(out, model, tys, kind_rust);
+    for assert in rust_asserts(model, tys) {
+        out.push_str(&assert);
+        out.push('\n');
+    }
+}
+
 fn test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
     let mut out = format!("#[test]\nfn generated_{}() {{\n", model.name);
     match kind_values(model) {
         None => {
-            let body = handler_body(model, tys, None);
+            let body = handler_body(model, tys, None, true);
             let lua = format!(
                 "horizon.on(\"{}\", function(event)\n{body}\nend)",
                 model.name
@@ -649,21 +735,11 @@ fn test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
                 model.name
             ));
             out.push_str("    let firing_mods = boxed(m);\n");
-            let call = dispatch_call(model, tys, None);
-            for binding in &call.bindings {
-                out.push_str(binding);
-                out.push('\n');
-            }
-            out.push_str(&call.call);
-            out.push('\n');
-            for assert in rust_asserts(model, tys) {
-                out.push_str(&assert);
-                out.push('\n');
-            }
+            emit_firing(&mut out, model, tys, None);
             out.push_str("    no_error(&id);\n");
         }
         Some(plan) => {
-            let body = handler_body(model, tys, plan.assert_kind.as_deref());
+            let body = handler_body(model, tys, plan.assert_kind.as_deref(), true);
             let lua = format!(
                 "horizon.on(\"{}\", function(event)\n{body}\nend, \"{}\")",
                 model.name, plan.register
@@ -681,27 +757,58 @@ fn test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
             {
                 out.push_str(&format!("    // {label} event: the handler stays quiet.\n"));
                 out.push_str("    {\n");
-                let call = dispatch_call(model, tys, Some(kind_arg));
-                for binding in &call.bindings {
-                    out.push_str(binding);
-                    out.push('\n');
-                }
-                out.push_str(&call.call);
-                out.push('\n');
+                emit_call(&mut out, model, tys, Some(kind_arg));
                 out.push_str("    }\n");
                 out.push_str("    no_error(&id);\n");
             }
-            let call = dispatch_call(model, tys, Some(plan.k1));
-            for binding in &call.bindings {
-                out.push_str(binding);
-                out.push('\n');
-            }
-            out.push_str(&call.call);
-            out.push('\n');
-            for assert in rust_asserts(model, tys) {
-                out.push_str(&assert);
-                out.push('\n');
-            }
+            emit_firing(&mut out, model, tys, Some(plan.k1));
+            out.push_str("    no_error(&id);\n");
+        }
+    }
+    out.push_str("}\n");
+    out
+}
+
+/// A cancel hook's second test: a registered handler that asserts every
+/// field but returns without cancelling leaves the flag unset. The shared
+/// asserts (not silence) prove the handler ran, so `no_error` plus the
+/// unset flag is a real non-cancel proof.
+fn no_cancel_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
+    let flag = model.cancel_flag.as_deref().unwrap_or("<cancel flag>");
+    let mut out = format!("#[test]\nfn generated_{}_no_cancel() {{\n", model.name);
+    match kind_values(model) {
+        None => {
+            let body = handler_body(model, tys, None, false);
+            let lua = format!(
+                "horizon.on(\"{}\", function(event)\n{body}\nend)",
+                model.name
+            );
+            out.push_str(&format!(
+                "    let (m, id, _dir) = loaded(\"gen_{}_nocancel\", {lua:?});\n",
+                model.name
+            ));
+            out.push_str("    let firing_mods = boxed(m);\n");
+            emit_call(&mut out, model, tys, None);
+            out.push_str(&format!(
+                "    assert!(!{flag}, \"{flag} set with no cancel\");\n"
+            ));
+            out.push_str("    no_error(&id);\n");
+        }
+        Some(plan) => {
+            let body = handler_body(model, tys, plan.assert_kind.as_deref(), false);
+            let lua = format!(
+                "horizon.on(\"{}\", function(event)\n{body}\nend, \"{}\")",
+                model.name, plan.register
+            );
+            out.push_str(&format!(
+                "    let (m, id, _dir) = loaded(\"gen_{}_nocancel\", {lua:?});\n",
+                model.name
+            ));
+            out.push_str("    let firing_mods = boxed(m);\n");
+            emit_call(&mut out, model, tys, Some(plan.k1));
+            out.push_str(&format!(
+                "    assert!(!{flag}, \"{flag} set with no cancel\");\n"
+            ));
             out.push_str("    no_error(&id);\n");
         }
     }
@@ -713,13 +820,7 @@ fn test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
 fn quiet_block(model: &Model, tys: &BTreeMap<String, String>) -> String {
     let mut out = format!("    // {}: unregistered, nothing runs.\n", model.name);
     out.push_str("    {\n");
-    let call = dispatch_call(model, tys, None);
-    for binding in &call.bindings {
-        out.push_str(binding);
-        out.push('\n');
-    }
-    out.push_str(&call.call);
-    out.push('\n');
+    emit_call(&mut out, model, tys, None);
     if model.contract == "cancel"
         && let Some(flag) = &model.cancel_flag
     {
@@ -801,6 +902,10 @@ pub fn run(check: bool) -> Result<(), String> {
     let mut invocations = Vec::new();
     let mut tests = Vec::new();
     let mut quiet = Vec::new();
+    // Every visible field is asserted, or the generator fails naming the
+    // hook and field. Spike hooks are hand-covered, except their generated
+    // non-cancel test, which needs the same asserts.
+    let mut uncovered = Vec::new();
     for hc in &classes {
         let Class::Generated(model) = &hc.class else {
             continue;
@@ -815,10 +920,31 @@ pub fn run(check: bool) -> Result<(), String> {
             kind_names.push(model.name.clone());
         }
         invocations.push(invocation(model, &tys));
-        if !SPIKE_HOOKS.contains(&model.name.as_str()) {
+        let spike = SPIKE_HOOKS.contains(&model.name.as_str());
+        if !spike {
             tests.push(test_fn(model, &tys));
         }
+        if model.contract == "cancel" {
+            if model.cancel_flag.is_none() {
+                uncovered.push(format!("{}: no cancel flag", model.name));
+            } else {
+                for field in uncovered_fields(model, &tys) {
+                    uncovered.push(format!("{}: {field}", model.name));
+                }
+            }
+            tests.push(no_cancel_test_fn(model, &tys));
+        } else if !spike {
+            for field in uncovered_fields(model, &tys) {
+                uncovered.push(format!("{}: {field}", model.name));
+            }
+        }
         quiet.push(quiet_block(model, &tys));
+    }
+    if !uncovered.is_empty() {
+        return Err(format!(
+            "lua-hooks: no assertion for dispatch field(s): {} (assert every visible field, or allowlist it with a reason)",
+            uncovered.join(", ")
+        ));
     }
 
     let mut text = String::new();
