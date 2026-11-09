@@ -149,6 +149,11 @@ fn seed_tag(conv: &Conv, ty: &str, key: Option<&str>) -> String {
         // Documentary tag only: the bespoke mob arm seeds the event's
         // `mob` table from the registering mob's view inline.
         Conv::Mob => "mob_view",
+        // Documentary tags only: the bespoke frame arm seeds the scoped
+        // batch/corners tables inline (like the mob arm's view), so no
+        // `gen_seed` arm expands them.
+        Conv::HudBatch => "hud_batch",
+        Conv::Corners => "corners",
         Conv::MutScalar => {
             if owned_mut_scalar(ty) {
                 "copy"
@@ -365,7 +370,10 @@ fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
     // never invoke handlers (their field tags only document the parameters).
     // A mob hook seeds the event's `mob` table from the registering mob's
     // view and runs the queued goal/body actions on the mob after a
-    // successful call; its field tag only documents the parameter.
+    // successful call; its field tag only documents the parameter. A frame
+    // hook seeds its scoped batch/corners tables inline and runs the frame
+    // path (`Reader::Shared`, `FRAME_BUDGET`, `finish`); its field tags
+    // only document the parameters too.
     let bespoke = match model.name.as_str() {
         "server_tick" => Some("gen_server_tick"),
         "loot_drops" => Some("gen_loot_drops"),
@@ -389,6 +397,11 @@ fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
             Some("gen_block_entity_tick")
         } else if matches!(model.kind, Kind::Mob { .. }) {
             Some("gen_mob_ai_register")
+        } else if model.frame {
+            // Gated on the model flag (a `HudBatch` parameter), not the
+            // hook's name: the next frame hook classifies into this arm
+            // without an emitter edit.
+            Some("gen_frame")
         } else {
             None
         }

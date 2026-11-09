@@ -192,8 +192,14 @@ const LUA_HOOKS: &[(&str, &str)] = &[
         "living_entity_use_item_start",
         "`item_use_start(item, player, hand, duration)`, by item",
     ),
-    ("hud", "`hud(event)`"),
-    ("gui_layer_post", "`gui_layer_post(event)`"),
+    (
+        "hud",
+        "an event table with `batch` and `corners`, under the frame budget",
+    ),
+    (
+        "gui_layer_post",
+        "an event table with `layer` and `batch`, under the frame budget",
+    ),
 ];
 
 /// The host helpers the Lua runtime calls, and the `horizon.*` function or

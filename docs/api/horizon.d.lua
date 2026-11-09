@@ -36,8 +36,6 @@ export type Inventory = { [number]: Item }
 export type Carried = { [string]: number }
 export type HudBatch = { fill: (x: number, y: number, w: number, h: number, argb: number) -> (), text: (text: string, x: number, y: number, rgb: number, shadow: boolean) -> (), sprite: (name: string, sx: number, sy: number, sw: number, sh: number, dx: number, dy: number, dw: number, dh: number) -> boolean, item: (id: string, x: number, y: number, size: number) -> boolean, item_stack: (stack: Item, x: number, y: number, size: number) -> boolean, item_model: (item: string, model: string, x: number, y: number, size: number) -> boolean, quad: (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, x4: number, y4: number, argb: number) -> (), text_width: (text: string) -> number }
 export type HudCorners = { place: (corner: string, w: number, h: number) -> (number, number), shown: (corner: string) -> boolean }
-export type HudEvent = { batch: HudBatch, corners: HudCorners }
-export type GuiLayerPostEvent = { layer: string, batch: HudBatch }
 
 -- The event tables of the generated hooks: one table per hook,
 -- holding the struct's fields by name.
@@ -200,12 +198,14 @@ export type FurnaceExtractEvent = { player: PlayerRef, pos: Vec3, item: string, 
 export type FurnaceSmeltEvent = { pos: Vec3, item: string, result: string }
 export type FurnaceStartSmeltEvent = { pos: Vec3, item: string }
 export type GameEventEvent = { event: string, pos: Vec3 }
+export type GuiLayerPostEvent = { layer: string, batch: HudBatch }
 export type HandshakeEvent = { address: string, host: string, intent: number, reason: string?, reason_component: Component? }
 export type HangingBreakEvent = { player: string?, kind: string, pos: Vec3 }
 export type HangingPlaceEvent = { player: PlayerRef, kind: string, pos: Vec3 }
 export type HasAnalogOutputEvent = { state: string, output: boolean, state_props: Props }
 export type HopperInventorySearchEvent = { hopper: Vec3, container: Vec3?, entity: number? }
 export type HopperPickupItemEvent = { dimension: string, pos: Vec3, item: string, count: number }
+export type HudEvent = { batch: HudBatch, corners: HudCorners }
 export type IngredientEvent = { kind: string, data: Data, items: { string } }
 export type IngredientTestEvent = { kind: string, data: Data, stack: Item, accept: boolean }
 export type InteractEntityV2Event = { entity: number, kind: string, hand: "main" | "off", stack: Item? }
@@ -510,8 +510,6 @@ export type HorizonOn =
     ((name: "player_container_open", fn: (player: PlayerRef, menu: string, pos: Vec3?) -> (), kind: string?) -> ()) &
     ((name: "block_broken", fn: (x: number, y: number, z: number, block: string, player: Player) -> (), kind: string?) -> ()) &
     ((name: "block_placed", fn: (x: number, y: number, z: number, block: string, player: Player, item: Item) -> (), kind: string?) -> ()) &
-    ((name: "hud", fn: (event: HudEvent) -> (), kind: string?) -> ()) &
-    ((name: "gui_layer_post", fn: (event: GuiLayerPostEvent) -> (), kind: string?) -> ()) &
     ((name: "add_server_reload_listeners", fn: (event: AddServerReloadListenersEvent) -> ()) -> ()) &
     ((name: "analog_output", fn: (event: AnalogOutputEvent) -> ()) -> ()) &
     ((name: "anvil_craft_post", fn: (event: AnvilCraftPostEvent) -> ()) -> ()) &
@@ -650,12 +648,14 @@ export type HorizonOn =
     ((name: "furnace_smelt", fn: (event: FurnaceSmeltEvent) -> ()) -> ()) &
     ((name: "furnace_start_smelt", fn: (event: FurnaceStartSmeltEvent) -> ()) -> ()) &
     ((name: "game_event", fn: (event: GameEventEvent) -> ()) -> ()) &
+    ((name: "gui_layer_post", fn: (event: GuiLayerPostEvent) -> ()) -> ()) &
     ((name: "handshake", fn: (event: HandshakeEvent) -> ()) -> ()) &
     ((name: "hanging_break", fn: (event: HangingBreakEvent) -> (), kind: string?) -> ()) &
     ((name: "hanging_place", fn: (event: HangingPlaceEvent) -> (), kind: string?) -> ()) &
     ((name: "has_analog_output", fn: (event: HasAnalogOutputEvent) -> ()) -> ()) &
     ((name: "hopper_inventory_search", fn: (event: HopperInventorySearchEvent) -> (), kind: string?) -> ()) &
     ((name: "hopper_pickup_item", fn: (event: HopperPickupItemEvent) -> ()) -> ()) &
+    ((name: "hud", fn: (event: HudEvent) -> ()) -> ()) &
     ((name: "ingredient", fn: (event: IngredientEvent) -> ()) -> ()) &
     ((name: "ingredient_test", fn: (event: IngredientTestEvent) -> ()) -> ()) &
     ((name: "interact_entity_v2", fn: (event: InteractEntityV2Event) -> (), kind: string?) -> ()) &

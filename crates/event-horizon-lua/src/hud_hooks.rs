@@ -31,10 +31,8 @@
 //! positions are separate numbers (like the positions elsewhere), corners
 //! are the `Corner` names (`top_left`, `top_right`, `bottom_left`,
 //! `bottom_right`).
-use crate::lua_mods::{FRAME_BUDGET, LuaMod, Reader, qualify};
-use horizon_client::mod_api::{
-    Corner, Corners, GuiLayerPostEvent, Host, HudBatch, HudEvent, ItemStack,
-};
+use crate::lua_mods::{LuaMod, qualify};
+use horizon_client::mod_api::{Corner, Corners, Host, HudBatch, ItemStack};
 use mlua::{Error, Lua, Table};
 use std::cell::RefCell;
 
@@ -69,7 +67,7 @@ fn stack_of(table: &Table) -> mlua::Result<ItemStack> {
 }
 
 /// `batch.fill(x, y, w, h, argb)`: a rectangle in GUI pixels.
-fn fill_fn<'a>(
+pub(crate) fn fill_fn<'a>(
     host: &'a dyn Host,
     batch: &'a RefCell<&mut HudBatch>,
 ) -> impl Fn(&Lua, (f32, f32, f32, f32, u32)) -> mlua::Result<()> + 'a {
@@ -83,7 +81,7 @@ fn fill_fn<'a>(
 }
 
 /// `batch.text(text, x, y, rgb, shadow)`: a line in GUI pixels.
-fn text_fn<'a>(
+pub(crate) fn text_fn<'a>(
     host: &'a dyn Host,
     batch: &'a RefCell<&mut HudBatch>,
 ) -> impl Fn(&Lua, (String, f32, f32, u32, bool)) -> mlua::Result<()> + 'a {
@@ -99,7 +97,7 @@ fn text_fn<'a>(
 /// `batch.sprite(name, sx, sy, sw, sh, dx, dy, dw, dh)`: part `[sx, sy, sw,
 /// sh]` of vanilla's `gui/...` sprite (or a content mod's `mymod:gui/...`
 /// texture) drawn stretched into `[dx, dy, dw, dh]`. Whether it drew.
-fn sprite_fn<'a>(
+pub(crate) fn sprite_fn<'a>(
     host: &'a dyn Host,
     batch: &'a RefCell<&mut HudBatch>,
 ) -> impl Fn(&Lua, (String, f32, f32, f32, f32, f32, f32, f32, f32)) -> mlua::Result<bool> + 'a {
@@ -113,7 +111,7 @@ fn sprite_fn<'a>(
 
 /// `batch.item(id, x, y, size)`: the item `id` (`diamond_sword`...), drawn
 /// `size` GUI pixels square at (`x`, `y`). Whether it drew.
-fn item_fn<'a>(
+pub(crate) fn item_fn<'a>(
     host: &'a dyn Host,
     batch: &'a RefCell<&mut HudBatch>,
 ) -> impl Fn(&Lua, (String, f32, f32, f32)) -> mlua::Result<bool> + 'a {
@@ -127,7 +125,7 @@ fn item_fn<'a>(
 
 /// `batch.item_stack(stack, x, y, size)`: the stack (`{id, count, damage}`
 /// as the hooks hand them out) at (`x`, `y`). Whether it drew.
-fn item_stack_fn<'a>(
+pub(crate) fn item_stack_fn<'a>(
     host: &'a dyn Host,
     batch: &'a RefCell<&mut HudBatch>,
 ) -> impl Fn(&Lua, (Table, f32, f32, f32)) -> mlua::Result<bool> + 'a {
@@ -142,7 +140,7 @@ fn item_stack_fn<'a>(
 
 /// `batch.item_model(item, model, x, y, size)`: `item` drawn with `model`.
 /// Whether it drew.
-fn item_model_fn<'a>(
+pub(crate) fn item_model_fn<'a>(
     host: &'a dyn Host,
     batch: &'a RefCell<&mut HudBatch>,
 ) -> impl Fn(&Lua, (String, String, f32, f32, f32)) -> mlua::Result<bool> + 'a {
@@ -155,7 +153,7 @@ fn item_model_fn<'a>(
 }
 
 /// `batch.quad(x1, y1, x2, y2, x3, y3, x4, y4, argb)`: a filled quad.
-fn quad_fn<'a>(
+pub(crate) fn quad_fn<'a>(
     host: &'a dyn Host,
     batch: &'a RefCell<&mut HudBatch>,
 ) -> impl Fn(&Lua, (f32, f32, f32, f32, f32, f32, f32, f32, u32)) -> mlua::Result<()> + 'a {
@@ -173,13 +171,15 @@ fn quad_fn<'a>(
 }
 
 /// `batch.text_width(text)`: the width of `text` in GUI pixels.
-fn text_width_fn<'a>(host: &'a dyn Host) -> impl Fn(&Lua, String) -> mlua::Result<f32> + 'a {
+pub(crate) fn text_width_fn<'a>(
+    host: &'a dyn Host,
+) -> impl Fn(&Lua, String) -> mlua::Result<f32> + 'a {
     move |_, text| Ok(host.text_width(&text))
 }
 
 /// `corners.place(corner, w, h)`: the top-left position of a `w` x `h` box
 /// in `corner`, below (or above) what the corner already holds, as `x, y`.
-fn place_fn<'a>(
+pub(crate) fn place_fn<'a>(
     corners: &'a RefCell<&mut Corners>,
 ) -> impl Fn(&Lua, (String, f32, f32)) -> mlua::Result<(f32, f32)> + 'a {
     move |_, (name, w, h)| {
@@ -192,19 +192,19 @@ fn place_fn<'a>(
 
 /// `corners.shown(corner)`: whether the corner is not taken (by a debug
 /// overlay...): skip it when one `shown` denies.
-fn shown_fn<'a>(host: &'a dyn Host) -> impl Fn(&Lua, String) -> mlua::Result<bool> + 'a {
+pub(crate) fn shown_fn<'a>(host: &'a dyn Host) -> impl Fn(&Lua, String) -> mlua::Result<bool> + 'a {
     move |_, name| Ok(host.corner_shown(corner(&name)?))
 }
 
 /// The outcome of a frame hook's handler call: what the handlers queued
 /// (nothing when they failed), for the hook to run with its `&mut` host.
-type Queued = mlua::Result<Vec<(String, Table)>>;
+pub(crate) type Queued = mlua::Result<Vec<(String, Table)>>;
 
 /// Runs a frame hook's handlers, with the budget and the bookkeeping every
 /// frame hook shares: a miss counts toward disabling (until `/reload`), a
 /// clean run or a handler's own error resets the count. Handlers without a
 /// registered handler cost nothing: no scope, no tables.
-fn finish(mod_: &LuaMod, host: &mut dyn Host, hook: &str, outcome: Queued) {
+pub(crate) fn finish(mod_: &LuaMod, host: &mut dyn Host, hook: &str, outcome: Queued) {
     match outcome {
         Ok(actions) => {
             mod_.note_frame_outcome(hook, false);
@@ -222,84 +222,6 @@ fn finish(mod_: &LuaMod, host: &mut dyn Host, hook: &str, outcome: Queued) {
     }
 }
 
-/// The HUD (not drawn under F1), after the minimap: `hud(event)`, with
-/// `event.batch` to draw on and `event.corners` to stack boxes in.
-pub(crate) fn hud(mod_: &LuaMod, host: &mut dyn Host, event: &mut HudEvent<'_>) {
-    let hook = "hud";
-    if !mod_.has_handlers(hook) {
-        mod_.note_frame_outcome(hook, false);
-        return;
-    }
-    let lua = &mod_.lua;
-    let batch = RefCell::new(&mut *event.batch);
-    let corners = RefCell::new(&mut *event.corners);
-    let shared: &dyn Host = &*host;
-    let outcome = lua.scope(|scope| {
-        let table = lua.create_table()?;
-        let batch_table = lua.create_table()?;
-        batch_table.set("fill", scope.create_function(fill_fn(shared, &batch))?)?;
-        batch_table.set("text", scope.create_function(text_fn(shared, &batch))?)?;
-        batch_table.set("sprite", scope.create_function(sprite_fn(shared, &batch))?)?;
-        batch_table.set("item", scope.create_function(item_fn(shared, &batch))?)?;
-        batch_table.set(
-            "item_stack",
-            scope.create_function(item_stack_fn(shared, &batch))?,
-        )?;
-        batch_table.set(
-            "item_model",
-            scope.create_function(item_model_fn(shared, &batch))?,
-        )?;
-        batch_table.set("quad", scope.create_function(quad_fn(shared, &batch))?)?;
-        batch_table.set("text_width", scope.create_function(text_width_fn(shared))?)?;
-        table.set("batch", batch_table)?;
-        let corners_table = lua.create_table()?;
-        corners_table.set("place", scope.create_function(place_fn(&corners))?)?;
-        corners_table.set("shown", scope.create_function(shown_fn(shared))?)?;
-        table.set("corners", corners_table)?;
-        mod_.run_handlers_with(hook, None, Reader::Shared(shared), table, FRAME_BUDGET)
-    });
-    finish(mod_, host, hook, outcome);
-}
-
-/// After one of vanilla's GUI layers: `gui_layer_post(event)`, with
-/// `event.layer` and `event.batch` to draw above it.
-pub(crate) fn gui_layer_post(
-    mod_: &LuaMod,
-    host: &mut dyn Host,
-    event: &mut GuiLayerPostEvent<'_>,
-) {
-    let hook = "gui_layer_post";
-    if !mod_.has_handlers(hook) {
-        mod_.note_frame_outcome(hook, false);
-        return;
-    }
-    let lua = &mod_.lua;
-    let batch = RefCell::new(&mut *event.batch);
-    let shared: &dyn Host = &*host;
-    let outcome = lua.scope(|scope| {
-        let table = lua.create_table()?;
-        table.set("layer", event.layer)?;
-        let batch_table = lua.create_table()?;
-        batch_table.set("fill", scope.create_function(fill_fn(shared, &batch))?)?;
-        batch_table.set("text", scope.create_function(text_fn(shared, &batch))?)?;
-        batch_table.set("sprite", scope.create_function(sprite_fn(shared, &batch))?)?;
-        batch_table.set("item", scope.create_function(item_fn(shared, &batch))?)?;
-        batch_table.set(
-            "item_stack",
-            scope.create_function(item_stack_fn(shared, &batch))?,
-        )?;
-        batch_table.set(
-            "item_model",
-            scope.create_function(item_model_fn(shared, &batch))?,
-        )?;
-        batch_table.set("quad", scope.create_function(quad_fn(shared, &batch))?)?;
-        batch_table.set("text_width", scope.create_function(text_width_fn(shared))?)?;
-        table.set("batch", batch_table)?;
-        mod_.run_handlers_with(hook, None, Reader::Shared(shared), table, FRAME_BUDGET)
-    });
-    finish(mod_, host, hook, outcome);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -307,7 +229,7 @@ mod tests {
     use horizon_client::dev_input::mods::{ModStatus, set_status, status};
     use horizon_client::mobs::{Mob, MobType};
     use horizon_client::mod_api::{
-        BlockStateId, EntityRef, Hooks, ItemStack, MobView, NativeHeightmap, NativeHit,
+        BlockStateId, EntityRef, Hooks, HudEvent, ItemStack, MobView, NativeHeightmap, NativeHit,
         NativeServerPlayer, NativeWorldEpoch, Text, dispatch_gui_layer_post, dispatch_hud,
         dispatch_mob_spawned,
     };

@@ -34,12 +34,12 @@ use horizon_client::mod_api::{
     PlayerLoggedInEvent, PlayerLoggedOutEvent, PlayerRespawnedEvent, UseItemEvent, UseItemOnEvent,
 };
 use horizon_client::mod_api::{
-    EntityJoinLevelEvent, ExplosionDetonateEvent, GuiLayerPostEvent, HearsProjectileImpactsEvent,
-    HudEvent, HurtEnemyEvent, ItemCraftedEvent, ItemDroppedEvent, LivingEntityUseItemStartEvent,
-    LivingEquipmentChangeEvent, LivingEquipmentListenedEvent, LivingFallEvent, LivingHealEvent,
-    LivingKnockbackEvent, PlayerBedEnterEvent, PlayerChangedDimensionEvent, PlayerChatEvent,
-    PlayerCommandEvent, PlayerContainerOpenEvent, PlayerExpChangeEvent, PlayerTickEvent,
-    ProjectileImpactEvent, ProjectileLaunchEvent,
+    EntityJoinLevelEvent, ExplosionDetonateEvent, HearsProjectileImpactsEvent, HurtEnemyEvent,
+    ItemCraftedEvent, ItemDroppedEvent, LivingEntityUseItemStartEvent, LivingEquipmentChangeEvent,
+    LivingEquipmentListenedEvent, LivingFallEvent, LivingHealEvent, LivingKnockbackEvent,
+    PlayerBedEnterEvent, PlayerChangedDimensionEvent, PlayerChatEvent, PlayerCommandEvent,
+    PlayerContainerOpenEvent, PlayerExpChangeEvent, PlayerTickEvent, ProjectileImpactEvent,
+    ProjectileLaunchEvent,
 };
 use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
@@ -173,8 +173,6 @@ pub const LUA_HOOK_NAMES: &[&str] = &[
     "player_container_open",
     "block_broken",
     "block_placed",
-    "hud",
-    "gui_layer_post",
 ];
 
 /// The content mod's manifest, which names the mod.
@@ -4270,18 +4268,6 @@ impl Hooks for LuaMod {
     // The generated hooks (`generated_hooks.rs`): one method per hook above,
     // wired the same way, with one event table each.
     impl_generated_hooks!();
-    /// The HUD (not drawn under F1), after the minimap: `hud(event)`, with
-    /// `event.batch` to draw on and `event.corners` to stack boxes in. The
-    /// batch lives for the call only (see `hud_hooks`).
-    fn hud(&self, host: &mut dyn Host, event: &mut HudEvent<'_>) {
-        crate::hud_hooks::hud(self, host, event);
-    }
-    /// After one of vanilla's GUI layers: `gui_layer_post(event)`, with
-    /// `event.layer` and `event.batch` to draw above it. The batch lives
-    /// for the call only (see `hud_hooks`).
-    fn gui_layer_post(&self, host: &mut dyn Host, event: &mut GuiLayerPostEvent<'_>) {
-        crate::hud_hooks::gui_layer_post(self, host, event);
-    }
 }
 
 /// The table at `key` in `table`, made when there is none.

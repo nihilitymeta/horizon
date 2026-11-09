@@ -219,6 +219,20 @@ pub enum Conv {
     /// classify a live `&mut Mob` (no other native hook takes one: the
     /// survey is in the H4 report), so the stock arms must never see it.
     Mob,
+    /// A draw hook's `batch`: the event table carries it as a table of
+    /// scoped draw functions (`event.batch.fill`...), built from the
+    /// borrowed batch by the bespoke frame arm calling the `hud_hooks`
+    /// builders inline. A documentary tag: only `hud` and
+    /// `gui_layer_post` classify a live `&mut HudBatch` (every other
+    /// holder, like `screen_draw`'s or `item_decorations`', stays a
+    /// cannot), so the stock arms must never see it.
+    HudBatch,
+    /// A draw hook's `corners`: the event table carries it as a table of
+    /// scoped stacking functions (`event.corners.place`...), built from
+    /// the borrowed corners by the bespoke frame arm. A documentary tag:
+    /// only `hud` classifies a live `&mut Corners`, so the stock arms
+    /// must never see it.
+    Corners,
 }
 
 /// How a `replace` out value reads back: nil stays `None`, a table or value
@@ -307,6 +321,12 @@ pub struct Model {
     /// A cancel hook's flag parameter: removed from the table, set through
     /// `horizon.cancel()`, asserted on the native side.
     pub cancel_flag: Option<String>,
+    /// A frame hook draws through a borrowed `HudBatch` every frame: the
+    /// emitter gives it the bespoke frame arm (`Reader::Shared`,
+    /// `FRAME_BUDGET`, `finish`/`note_frame_outcome`) instead of the stock
+    /// shell. Derived from the parameter shape (any `HudBatch` parameter),
+    /// never from the hook's name.
+    pub frame: bool,
     pub kind: Kind,
     /// The event's elided lifetimes (`""`, `"<'_>"`, `"<'_, '_>"`).
     pub lifetimes: String,
@@ -1014,6 +1034,21 @@ fn mut_of(
     // so the shape alone gates this: the stock arms must never see it.
     if is_path(elem, "Mob") {
         return FieldOutcome::Conv(Conv::Mob, "MobView".into());
+    }
+    // A draw hook's borrowed handles: the event table carries them as
+    // scoped-function tables, seeded inline by the bespoke frame arm
+    // calling the `hud_hooks` builders. Name-gated, not shape-gated:
+    // half a dozen other hooks hold a `&mut HudBatch` (`screen_draw`,
+    // `gui_layer_pre`, `item_decorations`, `gui_render_post`,
+    // `screen_render_post`, `tooltip_component_draw`) with no frame
+    // design of their own, and a shape gate would flip them all to
+    // generated. They keep the `cannot_id` reason below; `cannot_id`
+    // keeps its entries for them.
+    if (hook == "hud" || hook == "gui_layer_post") && is_path(elem, "HudBatch") {
+        return FieldOutcome::Conv(Conv::HudBatch, "HudBatch".into());
+    }
+    if hook == "hud" && is_path(elem, "Corners") {
+        return FieldOutcome::Conv(Conv::Corners, "HudCorners".into());
     }
     opaque_of(hook, elem, adapter, cannot)
 }
@@ -3457,10 +3492,19 @@ fn model_of(
     }) {
         return Err(Class::Adapter(vec![format!("{name}: adapter: {what}")]));
     }
+    // A frame hook draws through a borrowed `HudBatch` every frame, so
+    // its arm runs the frame path, never the stock shell. Shape-gated
+    // (any `HudBatch` parameter), not name-matched: only the hooks whose
+    // batch classifies reach generation with one.
+    let frame = params.iter().any(|(_, t)| {
+        let (inner, _) = deref(t);
+        last_ident(inner).as_deref() == Some("HudBatch")
+    });
     Ok(Model {
         event: event_name(name),
         contract: contract.to_owned(),
         host,
+        frame,
         fields,
         extras,
         skipped,
@@ -3595,6 +3639,26 @@ pub fn assert_lines(
         // always filter, so the kind line above carries this): the sample
         // mob's kind, like the kind line pins it.
         Conv::Mob => vec![a(&format!("{e}.kind == {lua}"))],
+        // A draw hook's batch: a table of the draw functions (dot-call
+        // only), one assert per function; what each draws is the bespoke
+        // draw tests' job. A corners table likewise.
+        Conv::HudBatch => [
+            "fill",
+            "text",
+            "sprite",
+            "item",
+            "item_stack",
+            "item_model",
+            "quad",
+            "text_width",
+        ]
+        .iter()
+        .map(|f| a(&format!("type({e}.{f}) == \"function\"")))
+        .collect(),
+        Conv::Corners => ["place", "shown"]
+            .iter()
+            .map(|f| a(&format!("type({e}.{f}) == \"function\"")))
+            .collect(),
         Conv::Bytes | Conv::PathStr => vec![a(&format!("{e} == {lua}"))],
         Conv::Player | Conv::PlayerOpt => vec![
             a(&format!("{e}.uuid == {lua}")),
@@ -4108,6 +4172,15 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
         Conv::Mob => plain(
             format!("test_mob(\"test:mob{n}\")"),
             format!("\"test:mob{n}\""),
+        ),
+        // A draw hook's borrowed batch: a window-sized batch, dispatched
+        // as `&mut`; the asserts pin the seeded functions, so the Lua
+        // side carries no literal.
+        Conv::HudBatch => plain("HudBatch::new([800, 600])".into(), "\"hud_batch\"".into()),
+        // A draw hook's corners: a fresh stack at a zero offset.
+        Conv::Corners => plain(
+            "Corners::new(800.0, 600.0, 0.0)".into(),
+            "\"corners\"".into(),
         ),
         // A block-entity tick's dimension seeds inline in the bespoke arm
         // (its tag only documents the seed): sampling one is a model bug.
@@ -4699,6 +4772,64 @@ mod tests {
                 }
                 class => panic!("{name} should generate, got {class:?}"),
             }
+        }
+        // H5: the two draw hooks generate through the game host with no
+        // kind, carrying their borrowed handles as scoped-function
+        // tables, on the frame path (shape-gated, not name-matched).
+        for name in ["hud", "gui_layer_post"] {
+            match class_of(name) {
+                Class::Generated(model) => {
+                    assert_eq!(model.host, Host::GameMut, "{name} host");
+                    assert_eq!(model.contract, "listen", "{name} contract");
+                    assert!(matches!(model.kind, Kind::None), "{name} takes no kind");
+                    assert!(model.frame, "{name} runs the frame path");
+                    assert!(
+                        model.fields.iter().any(|f| f.conv == Conv::HudBatch),
+                        "{name} seeds its batch"
+                    );
+                }
+                class => panic!("{name} should generate, got {class:?}"),
+            }
+        }
+        match class_of("hud") {
+            Class::Generated(model) => {
+                assert!(
+                    model.fields.iter().any(|f| f.conv == Conv::Corners),
+                    "hud seeds its corners"
+                );
+            }
+            class => panic!("hud should generate, got {class:?}"),
+        }
+        match class_of("gui_layer_post") {
+            Class::Generated(model) => {
+                assert!(
+                    model
+                        .fields
+                        .iter()
+                        .any(|f| f.name == "layer" && f.conv == Conv::Plain),
+                    "gui_layer_post seeds its layer"
+                );
+                assert!(
+                    model.fields.iter().all(|f| f.conv != Conv::Corners),
+                    "gui_layer_post has no corners"
+                );
+            }
+            class => panic!("gui_layer_post should generate, got {class:?}"),
+        }
+        // The other draw-handle holders keep no frame design: their batch
+        // still cannot enter the Lua state, so they stay cannot.
+        for name in [
+            "screen_draw",
+            "gui_layer_pre",
+            "item_decorations",
+            "gui_render_post",
+            "screen_render_post",
+            "tooltip_component_draw",
+        ] {
+            assert!(
+                matches!(class_of(name), Class::Cannot(_)),
+                "{name} stays cannot with its borrowed batch"
+            );
         }
         // A plain `ticks` number never meant the level-tick host.
         match class_of("player_item_cooldown") {

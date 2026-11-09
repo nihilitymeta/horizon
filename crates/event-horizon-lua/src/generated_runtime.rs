@@ -1569,6 +1569,144 @@ macro_rules! gen_mob_ai_register {
     };
 }
 
+/// A frame hook (`hud`, `gui_layer_post`): like a `game_mut` listen hook,
+/// but the event carries borrowed draw handles as tables of scoped
+/// functions, the handlers read through the hook's shared host, and the
+/// call runs under the frame budget with the disable counting every frame
+/// hook shares. The field list only documents the parameters; each arm
+/// seeds inline through the `hud_hooks` builders (reused, not rewritten),
+/// over the hand-written bodies the arms replace.
+///
+/// The two arms match on the field shape, not the hook's name: the `hud`
+/// arm seeds `batch` and `corners`, the `gui_layer_post` arm seeds the
+/// layer string and `batch`. Both copy the `hud` early-out verbatim
+/// (`has_handlers`, then `note_frame_outcome` on the empty path), so an
+/// unheard frame hook does no Lua work: no scope, no tables. A kept
+/// handle (or one used from another hook) is a Lua error once the scope
+/// closes, never undefined behaviour; a handler error resets the overrun
+/// count through `finish`, while a budget miss counts toward disabling
+/// until `/reload` registers the hook again.
+macro_rules! gen_frame {
+    ($name:ident, game_mut, $event:ty, $kind:tt, [batch : hud_batch, corners : corners $(,)?]) => {
+        fn $name(&self, host: &mut dyn horizon_client::mod_api::Host, _event: &mut $event) {
+            let hook = stringify!($name);
+            if !self.has_handlers(hook) {
+                self.note_frame_outcome(hook, false);
+                return;
+            }
+            let lua = &self.lua;
+            let batch = std::cell::RefCell::new(&mut *_event.batch);
+            let corners = std::cell::RefCell::new(&mut *_event.corners);
+            let shared: &dyn horizon_client::mod_api::Host = &*host;
+            let outcome = lua.scope(|scope| {
+                let table = lua.create_table()?;
+                #[cfg(test)]
+                crate::generated_runtime::note_event_table();
+                let batch_table = lua.create_table()?;
+                batch_table.set(
+                    "fill",
+                    scope.create_function(crate::hud_hooks::fill_fn(shared, &batch))?,
+                )?;
+                batch_table.set(
+                    "text",
+                    scope.create_function(crate::hud_hooks::text_fn(shared, &batch))?,
+                )?;
+                batch_table.set(
+                    "sprite",
+                    scope.create_function(crate::hud_hooks::sprite_fn(shared, &batch))?,
+                )?;
+                batch_table.set(
+                    "item",
+                    scope.create_function(crate::hud_hooks::item_fn(shared, &batch))?,
+                )?;
+                batch_table.set(
+                    "item_stack",
+                    scope.create_function(crate::hud_hooks::item_stack_fn(shared, &batch))?,
+                )?;
+                batch_table.set(
+                    "item_model",
+                    scope.create_function(crate::hud_hooks::item_model_fn(shared, &batch))?,
+                )?;
+                batch_table.set(
+                    "quad",
+                    scope.create_function(crate::hud_hooks::quad_fn(shared, &batch))?,
+                )?;
+                batch_table.set(
+                    "text_width",
+                    scope.create_function(crate::hud_hooks::text_width_fn(shared))?,
+                )?;
+                table.set("batch", batch_table)?;
+                let corners_table = lua.create_table()?;
+                corners_table.set(
+                    "place",
+                    scope.create_function(crate::hud_hooks::place_fn(&corners))?,
+                )?;
+                corners_table.set(
+                    "shown",
+                    scope.create_function(crate::hud_hooks::shown_fn(shared))?,
+                )?;
+                table.set("corners", corners_table)?;
+                self.run_handlers_with(hook, None, Reader::Shared(shared), table, FRAME_BUDGET)
+            });
+            crate::hud_hooks::finish(self, host, hook, outcome);
+        }
+    };
+    ($name:ident, game_mut, $event:ty, $kind:tt, [layer : cloned, batch : hud_batch $(,)?]) => {
+        fn $name(&self, host: &mut dyn horizon_client::mod_api::Host, _event: &mut $event) {
+            let hook = stringify!($name);
+            if !self.has_handlers(hook) {
+                self.note_frame_outcome(hook, false);
+                return;
+            }
+            let lua = &self.lua;
+            let batch = std::cell::RefCell::new(&mut *_event.batch);
+            let shared: &dyn horizon_client::mod_api::Host = &*host;
+            let outcome = lua.scope(|scope| {
+                let table = lua.create_table()?;
+                #[cfg(test)]
+                crate::generated_runtime::note_event_table();
+                table.set("layer", _event.layer)?;
+                let batch_table = lua.create_table()?;
+                batch_table.set(
+                    "fill",
+                    scope.create_function(crate::hud_hooks::fill_fn(shared, &batch))?,
+                )?;
+                batch_table.set(
+                    "text",
+                    scope.create_function(crate::hud_hooks::text_fn(shared, &batch))?,
+                )?;
+                batch_table.set(
+                    "sprite",
+                    scope.create_function(crate::hud_hooks::sprite_fn(shared, &batch))?,
+                )?;
+                batch_table.set(
+                    "item",
+                    scope.create_function(crate::hud_hooks::item_fn(shared, &batch))?,
+                )?;
+                batch_table.set(
+                    "item_stack",
+                    scope.create_function(crate::hud_hooks::item_stack_fn(shared, &batch))?,
+                )?;
+                batch_table.set(
+                    "item_model",
+                    scope.create_function(crate::hud_hooks::item_model_fn(shared, &batch))?,
+                )?;
+                batch_table.set(
+                    "quad",
+                    scope.create_function(crate::hud_hooks::quad_fn(shared, &batch))?,
+                )?;
+                batch_table.set(
+                    "text_width",
+                    scope.create_function(crate::hud_hooks::text_width_fn(shared))?,
+                )?;
+                table.set("batch", batch_table)?;
+                self.run_handlers_with(hook, None, Reader::Shared(shared), table, FRAME_BUDGET)
+            });
+            crate::hud_hooks::finish(self, host, hook, outcome);
+        }
+    };
+}
+
 /// The data-pack files: like a `game_ref` collect hook, but the collect
 /// runs on every call including the first. The first load only logs (the
 /// logger is up now); from the second on, the scripts are read and run
