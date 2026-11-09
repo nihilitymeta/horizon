@@ -5691,6 +5691,71 @@ experimental = ["scripts"]
     }
 
     #[test]
+    fn timers_fire_only_on_the_end_phase_of_a_running_world() {
+        let (dir, path) = hmod(
+            "timers-gate",
+            &[(
+                "scripts/init.lua",
+                br#"
+                N = 0
+                horizon.after(1, function() N = N + 1 end)
+                horizon.every(1, function() N = N + 1 end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let context = test_events::native_lifecycle_context(
+            horizon_client::mod_api::NativeAuthority::IntegratedServer,
+            horizon_client::mod_api::NativeWorldEpoch::new(1),
+            horizon_client::mod_api::NativeTickId::new(1),
+        );
+        // A start tick while the world runs: not the timers' phase.
+        m.server_tick(
+            &mut host,
+            &mut test_events::server_tick_event(
+                &context,
+                ServerTickPhase::ServerTickStart {
+                    world_running: true,
+                },
+            ),
+        );
+        assert_eq!(m.lua.globals().get::<i32>("N").unwrap(), 0);
+        // The end of a tick while the world is stopped: not the timers'
+        // world.
+        m.server_tick(
+            &mut host,
+            &mut test_events::server_tick_event(
+                &context,
+                ServerTickPhase::ServerTickEnd {
+                    world_running: false,
+                },
+            ),
+        );
+        assert_eq!(m.lua.globals().get::<i32>("N").unwrap(), 0);
+        // The end of a running tick fires both timers once.
+        m.server_tick(
+            &mut host,
+            &mut test_events::server_tick_event(
+                &context,
+                ServerTickPhase::ServerTickEnd {
+                    world_running: true,
+                },
+            ),
+        );
+        assert_eq!(m.lua.globals().get::<i32>("N").unwrap(), 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn commands_feedback_titles_sounds_and_particles_reach_the_host() {
         let (dir, path) = hmod(
             "commands",
@@ -6892,8 +6957,10 @@ experimental = ["scripts"]
                   event.drops[1].count = 5
                   -- A different id replaces the stack wholesale (plain).
                   event.drops[2] = { id = "minecraft:diamond", count = 2 }
-                  -- Nil stops the list: the third seed stack drops out.
-                  event.drops[3] = nil
+                  -- A zero count drops the stack, nil or not.
+                  event.drops[3].count = 0
+                  -- Nil stops the list: the fourth seed stack drops out.
+                  event.drops[4] = nil
                   -- And a new stack joins at the end.
                   event.drops[#event.drops + 1] = { id = "minecraft:stick", count = 3 }
                 end, "minecraft:stone")
@@ -6912,7 +6979,8 @@ experimental = ["scripts"]
         };
         let steve = host.acting_player().unwrap();
         let pick = wand();
-        // Cobble carries components, dirt and gold are plain.
+        // Cobble and dirt carry components (dirt also damage), gold and
+        // the feather are plain.
         let mut drops = vec![
             ItemStack {
                 item: "minecraft:cobblestone".into(),
@@ -6926,11 +6994,20 @@ experimental = ["scripts"]
             ItemStack {
                 item: "minecraft:dirt".into(),
                 count: 1,
+                damage: 5,
+                extra: Some(Box::new(horizon_client::item_data::StackData {
+                    repair_cost: 9,
+                    ..Default::default()
+                })),
+            },
+            ItemStack {
+                item: "minecraft:gold_ingot".into(),
+                count: 1,
                 damage: 0,
                 extra: None,
             },
             ItemStack {
-                item: "minecraft:gold_ingot".into(),
+                item: "minecraft:feather".into(),
                 count: 1,
                 damage: 0,
                 extra: None,
@@ -6959,12 +7036,14 @@ experimental = ["scripts"]
         assert_eq!(drops[0].item.to_string(), "minecraft:cobblestone");
         assert_eq!(drops[0].count, 5);
         assert_eq!(drops[0].extra.as_ref().unwrap().repair_cost, 7);
-        // Different id: a plain new stack.
+        // Different id: a plain new stack, without the dirt's damage or
+        // repair cost.
         assert_eq!(drops[1].item.to_string(), "minecraft:diamond");
         assert_eq!(drops[1].count, 2);
         assert_eq!(drops[1].damage, 0);
         assert!(drops[1].extra.is_none());
-        // The nil cut the gold out; the stick joined after the diamond.
+        // The zero count cut the gold out, the nil the feather; the stick
+        // joined after the diamond.
         assert_eq!(drops[2].item.to_string(), "minecraft:stick");
         assert_eq!(drops[2].count, 3);
         // Neither a break nor a death: the handler stays quiet and the
@@ -6995,6 +7074,64 @@ experimental = ["scripts"]
         assert_eq!(m.lua.globals().get::<i64>("RAN").unwrap(), 1);
         assert_eq!(drops.len(), 1);
         assert_eq!(drops[0].count, 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn loot_drops_absent_both_stays_silent_for_unfiltered_handlers() {
+        let (dir, path) = hmod(
+            "loot-absent-both",
+            &[(
+                "scripts/init.lua",
+                br#"
+                RAN = 0
+                horizon.on("loot_drops", function(event)
+                  RAN = RAN + 1
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        // Neither a break nor a death: no block and no entity names a kind,
+        // so even a handler with no kind stays quiet and the drops stand.
+        let mut drops = vec![ItemStack {
+            item: "minecraft:cobblestone".into(),
+            count: 2,
+            damage: 1,
+            extra: None,
+        }];
+        m.loot_drops(
+            &mut host,
+            &mut test_events::loot_drops_event(
+                &test_events::native_loot_drops(
+                    "test:empty",
+                    "minecraft:overworld",
+                    [0.0, 64.0, 0.0],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                ),
+                &mut drops,
+            ),
+        );
+        assert_eq!(m.lua.globals().get::<i64>("RAN").unwrap(), 0);
+        assert_eq!(drops.len(), 1);
+        assert_eq!(drops[0].item.to_string(), "minecraft:cobblestone");
+        assert_eq!(drops[0].count, 2);
+        assert_eq!(drops[0].damage, 1);
+        assert!(drops[0].extra.is_none());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

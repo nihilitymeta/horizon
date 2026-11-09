@@ -861,8 +861,8 @@ fn mut_of(
         return FieldOutcome::Conv(Conv::TextOpt, "string?".into());
     }
     if let Some(key) = struct_key_of(elem) {
-        let ts = struct_ts(&key);
-        return FieldOutcome::Conv(Conv::Struct, ts.into());
+        let ts = struct_ts_owned(&key);
+        return FieldOutcome::Conv(Conv::Struct, ts);
     }
     if let Some(why) = wrapped_reason(elem) {
         return adapter(why);

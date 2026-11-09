@@ -403,6 +403,7 @@ A handler receives the hook's arguments. Some hooks let it change the event, wit
 |---|---|
 | `server_tick(event)` | a server tick starts (`event.phase == "start"`) or ends (`"end"`), each with `event.world_running` and the context (`event.authority`, `event.epoch`, `event.tick`) |
 | `world_lifecycle(event)` | the world opens or closes; `event.phase` names the phase, `event.error_text` carries a failure's text (empty otherwise), with the context |
+| `data_pack_files(event)` | the data packs load, the first load included: `event.files` is the packs' files in load order, a sequence of `{path, data}` byte strings. Append entries and they join the load. From the second load on (such as `/reload`), the mod's scripts run again first, so an edited script is live for the load |
 | `explosion(dimension, center, blocks)` | an explosion is about to break *blocks*, a sequence of `{x, y, z}`. Remove entries to spare those blocks: they keep their block and get no fire |
 | `entity_joined(dimension, id, kind, x, y, z, loaded)` | any entity joins the level, such as `minecraft:item`, `minecraft:arrow` or a mob; *loaded* is true for one that comes back with its chunk. By kind. `cancel()` keeps it out. `mob_spawned` stays for mobs |
 | `projectile_launched(projectile, kind, player)` | a projectile is added to the level; *player* is the shooter's table, or nil for a mob's or a dispenser's. By projectile kind. It only listens |

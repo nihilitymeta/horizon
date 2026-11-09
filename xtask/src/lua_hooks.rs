@@ -324,8 +324,7 @@ fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
     // phases and reloads on request, loot filters by its context's block or
     // entity with the absent-both early-out, and the data-pack collect runs
     // on every load including the first. Their fields still seed and write
-    // back through the shared arms; only the dispatch shell is bespoke, so
-    // no kind token travels with them.
+    // back through the shared arms; only the dispatch shell is bespoke.
     let bespoke = match model.name.as_str() {
         "server_tick" => Some("gen_server_tick"),
         "loot_drops" => Some("gen_loot_drops"),

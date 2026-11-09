@@ -286,7 +286,7 @@ const LUA_HELPERS: &[(&str, &str)] = &[
         "state_named",
         "the block id and properties of `horizon.set_block` and `horizon.falling_block`",
     ),
-    ("state_name", "`source.block` of `loot_drops`"),
+    ("state_name", "`event.block` of `loot_drops`"),
     (
         "summon",
         "`horizon.summon(dimension, kind, x, y, z)`, `horizon.drop_item(x, y, z, id[, count])`",
