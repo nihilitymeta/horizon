@@ -347,7 +347,9 @@ function for yet, such as the time, the weather, `/tp` of a player and game rule
 ### Commands
 
 `horizon.command(usage, level, fn)` adds a command of the mod's to the server's command tree. The chat box completes
-it as vanilla's commands. Call it at load, as goals are defined.
+it as vanilla's commands. Call it at load, as goals are defined. Only commands declared this way are performed:
+a `table.insert` into `event.commands` in a `register_commands` handler only edits the tree the server lists, and
+a line for such an inserted command is answered as an unknown command.
 
 - *usage*: the command's words, then its arguments, such as `"parasite count [kind:word]"`. `<name:kind>` is
   required: when it is missing, or an `integer` or `number` is not one, the player gets a usage line and the handler
@@ -359,6 +361,12 @@ it as vanilla's commands. Call it at load, as goals are defined.
   A command that matches no usage is left alone: the next handler still sees it, and nothing is cancelled.
   `horizon.on("perform_command", fn, "words")` hears the commands whose words are *words*, the same handlers
   `horizon.command` registers
+
+`horizon.on("command", fn)` is the client hook: it fires for every slash line the player types, before the line
+reaches the server. `horizon.cancel()` there drops the line, so the server never sees it and no `perform_command`
+handler runs for it. Scripts written for the old server-side `"command"` hook now bind this client hook instead;
+that break is deliberate. Hearing and stopping every typed line is a client power, separate from performing mod
+commands, which is what `horizon.command` declares and `perform_command` hears.
 
 ### Timers and saved data
 

@@ -5073,6 +5073,37 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_register_commands_declarations_follow_prefix() {
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_register_commands_deco_a",
+            "horizon.command(\"test:deca\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_register_commands_deco_b",
+            "horizon.command(\"test:decb\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut commands = vec![NativeCommand::op("test:native0", 0)];
+            dispatch_register_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
+            assert_eq!(
+                commands
+                    .iter()
+                    .map(|c| c.usage.as_str())
+                    .collect::<Vec<_>>(),
+                ["test:native0", "test:deca", "test:decb"],
+                "declarations follow the native prefix in load order"
+            );
+        }
+        assert_eq!(witness(&a_lua), 0, "declaring runs no handler");
+        assert_eq!(witness(&b_lua), 0, "declaring runs no handler");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_perform_command() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_perform_command",
@@ -5255,10 +5286,136 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_perform_command_boolean_words() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_perform_command_boolean",
+            "horizon.command(\"test:is_true <flag:boolean>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(args.flag == true, \"true parses to true\")\nend)\nhorizon.command(\"test:is_false <flag:boolean>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(args.flag == false, \"false parses to false\")\nend)\nhorizon.command(\"test:is_other <flag:boolean>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(args.flag == false, \"another word parses to false\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let player = &horizon_client::test_events::native_server_player(
+            7u128,
+            "test:player0".to_owned(),
+            0,
+            "minecraft:overworld".to_owned(),
+            [1.0, 2.0, 3.0],
+            0,
+            20.0,
+            4.5,
+            5.5,
+            0,
+            "".to_owned(),
+        );
+        {
+            let mut ran = false;
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                player,
+                "test:is_true true",
+                &mut ran,
+            );
+            assert!(ran, "ran for test:is_true true");
+            assert_eq!(witness(&lua), 1, "the handler ran");
+        }
+        {
+            let mut ran = false;
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                player,
+                "test:is_false false",
+                &mut ran,
+            );
+            assert!(ran, "ran for test:is_false false");
+            assert_eq!(witness(&lua), 2, "the handler ran");
+        }
+        {
+            let mut ran = false;
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                player,
+                "test:is_other maybe",
+                &mut ran,
+            );
+            assert!(ran, "ran for test:is_other maybe");
+            assert_eq!(witness(&lua), 3, "the handler ran");
+        }
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_perform_command_tie_keeps_declaration_order() {
+        // Same word count: the tie order is the declaration order, so the
+        // later usage parses the line (`args.a` is a word, not a number).
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_perform_command_tie",
+            "horizon.command(\"test:tie <a:integer>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)\nhorizon.command(\"test:tie <a:word>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(type(args.a) == \"string\", \"the later usage parses the line\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let player = &horizon_client::test_events::native_server_player(
+            7u128,
+            "test:player0".to_owned(),
+            0,
+            "minecraft:overworld".to_owned(),
+            [1.0, 2.0, 3.0],
+            0,
+            20.0,
+            4.5,
+            5.5,
+            0,
+            "".to_owned(),
+        );
+        {
+            let mut ran = false;
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                player,
+                "test:tie 5",
+                &mut ran,
+            );
+            assert!(ran, "ran for test:tie 5");
+            assert_eq!(witness(&lua), 2, "both handlers ran");
+        }
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_perform_command_held_reaches_player() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_perform_command_held",
+            "horizon.command(\"test:held\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(player.held.item == \"ruby:wand\", \"held item\")\n    assert(player.held.count == 1, \"held count\")\n    assert(player.held.plain == true, \"held plain\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let player = &horizon_client::test_events::native_server_player(
+            7u128,
+            "test:player0".to_owned(),
+            0,
+            "minecraft:overworld".to_owned(),
+            [1.0, 2.0, 3.0],
+            0,
+            20.0,
+            4.5,
+            5.5,
+            0,
+            "".to_owned(),
+        );
+        let mut host = FakeHost::holding("ruby:wand", 1, true);
+        {
+            let mut ran = false;
+            dispatch_perform_command(&mut host, &firing_mods, player, "test:held", &mut ran);
+            assert!(ran, "ran for test:held");
+            assert_eq!(witness(&lua), 1, "the handler ran");
+        }
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_perform_command_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_perform_command_nocancel",
-            "horizon.command(\"test:req <a:integer>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)",
+            "horizon.command(\"test:req <a:integer>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)\nhorizon.command(\"test:num <b:number>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)",
         );
         let firing_mods = boxed(m);
         let player = &horizon_client::test_events::native_server_player(
@@ -5275,39 +5432,104 @@ mod generated_tests {
             "".to_owned(),
         );
         let mut host = FakeHost::empty();
-        {
-            let mut ran = false;
-            dispatch_perform_command(&mut host, &firing_mods, player, "test:req x", &mut ran);
-            assert!(ran, "ran for test:req x");
-            assert_eq!(witness(&lua), 0, "the handler ran");
-            assert_eq!(
-                host.feedback_lines().len(),
-                1,
-                "the refusal answered the player"
-            );
-        }
-        {
-            let mut ran = false;
-            dispatch_perform_command(&mut host, &firing_mods, player, "test:req", &mut ran);
-            assert!(ran, "ran for test:req");
-            assert_eq!(witness(&lua), 0, "the handler ran");
-            assert_eq!(
-                host.feedback_lines().len(),
-                2,
-                "the refusal answered the player"
-            );
-        }
-        {
-            let mut ran = false;
-            dispatch_perform_command(&mut host, &firing_mods, player, "test:other", &mut ran);
-            assert!(!ran, "ran for test:other");
-            assert_eq!(witness(&lua), 0, "the handler ran");
-            assert_eq!(
-                host.feedback_lines().len(),
-                2,
-                "nothing answered a command nobody ran"
-            );
-        }
+        // Refusals are translated: the bundled English is scoped, as in the
+        // hand-written command test, so the asserts pin the words players read.
+        let (_, missed) = horizon_client::lang::scoped(
+            horizon_client::lang::Language::load(&[], "en_us"),
+            || {
+                {
+                    let mut ran = false;
+                    dispatch_perform_command(
+                        &mut host,
+                        &firing_mods,
+                        player,
+                        "test:req x",
+                        &mut ran,
+                    );
+                    assert!(ran, "ran for test:req x");
+                    assert_eq!(witness(&lua), 0, "the handler ran");
+                    assert_eq!(
+                        host.feedback_lines(),
+                        ["a needs an integer, not \"x\""],
+                        "the refusal answered the player"
+                    );
+                }
+                {
+                    let mut ran = false;
+                    dispatch_perform_command(&mut host, &firing_mods, player, "test:req", &mut ran);
+                    assert!(ran, "ran for test:req");
+                    assert_eq!(witness(&lua), 0, "the handler ran");
+                    assert_eq!(
+                        host.feedback_lines(),
+                        [
+                            "a needs an integer, not \"x\"",
+                            "Usage: /test:req <a:integer>"
+                        ],
+                        "the refusal answered the player"
+                    );
+                }
+                {
+                    let mut ran = false;
+                    dispatch_perform_command(
+                        &mut host,
+                        &firing_mods,
+                        player,
+                        "test:num x",
+                        &mut ran,
+                    );
+                    assert!(ran, "ran for test:num x");
+                    assert_eq!(witness(&lua), 0, "the handler ran");
+                    assert_eq!(
+                        host.feedback_lines(),
+                        [
+                            "a needs an integer, not \"x\"",
+                            "Usage: /test:req <a:integer>",
+                            "b needs a number, not \"x\""
+                        ],
+                        "the refusal answered the player"
+                    );
+                }
+                {
+                    let mut ran = false;
+                    dispatch_perform_command(&mut host, &firing_mods, player, "test:num", &mut ran);
+                    assert!(ran, "ran for test:num");
+                    assert_eq!(witness(&lua), 0, "the handler ran");
+                    assert_eq!(
+                        host.feedback_lines(),
+                        [
+                            "a needs an integer, not \"x\"",
+                            "Usage: /test:req <a:integer>",
+                            "b needs a number, not \"x\"",
+                            "Usage: /test:num <b:number>"
+                        ],
+                        "the refusal answered the player"
+                    );
+                }
+                {
+                    let mut ran = false;
+                    dispatch_perform_command(
+                        &mut host,
+                        &firing_mods,
+                        player,
+                        "test:other",
+                        &mut ran,
+                    );
+                    assert!(!ran, "ran for test:other");
+                    assert_eq!(witness(&lua), 0, "the handler ran");
+                    assert_eq!(
+                        host.feedback_lines(),
+                        [
+                            "a needs an integer, not \"x\"",
+                            "Usage: /test:req <a:integer>",
+                            "b needs a number, not \"x\"",
+                            "Usage: /test:num <b:number>"
+                        ],
+                        "nothing answered a command nobody ran"
+                    );
+                }
+            },
+        );
+        assert!(missed.is_empty(), "every refusal key resolved");
         no_error(&id);
     }
 

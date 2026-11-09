@@ -129,7 +129,10 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     // server sees it): named like the other generated hooks, with no
     // `name(` handler spelling (that spelling feeds the registerable-names
     // test, which covers the hand-written registry only).
-    ("command", "an event table with `command`"),
+    (
+        "command",
+        "an event table with `command`; `horizon.cancel()` drops the line",
+    ),
     (
         "item_crafted",
         "`item_crafted(player, recipe, item)`, by item",

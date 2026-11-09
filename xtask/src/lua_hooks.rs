@@ -1352,49 +1352,126 @@ fn perform_command_tests(_model: &Model, _tys: &BTreeMap<String, String>) -> Vec
     out.push_str(&format!(
         "#[test]\nfn generated_perform_command_two_mods_hear_their_own() {{\n    let (a, a_id, _a_dir, a_lua) = loaded_tracked(\"gen_perform_command_duo_a\", {lua_a:?});\n    let (b, b_id, _b_dir, b_lua) = loaded_tracked(\"gen_perform_command_duo_b\", {lua_b:?});\n    let firing_mods = duo_boxed(a, b);\n    let player = {player};\n    {{\n        let mut ran = false;\n        dispatch_perform_command(&mut FakeHost::empty(), &firing_mods, player, \"test:alpha\", &mut ran);\n        assert!(ran, \"ran for test:alpha\");\n        assert_eq!(witness(&a_lua), 1, \"mod A ran\");\n        assert_eq!(witness(&b_lua), 0, \"mod B stayed quiet\");\n    }}\n    {{\n        let mut ran = false;\n        dispatch_perform_command(&mut FakeHost::empty(), &firing_mods, player, \"test:beta\", &mut ran);\n        assert!(ran, \"ran for test:beta\");\n        assert_eq!(witness(&a_lua), 1, \"mod A stayed quiet\");\n        assert_eq!(witness(&b_lua), 1, \"mod B ran\");\n    }}\n    no_error(&a_id);\n    no_error(&b_id);\n}}\n"
     ));
-    vec![out]
+    vec![
+        out,
+        perform_command_boolean_test(&player),
+        perform_command_tie_test(&player),
+        perform_command_held_test(&player),
+    ]
+}
+
+/// `boolean` is one: `true` reads true, `false` reads false, and any other
+/// word reads false (`command_args` stores `word == "true"`).
+fn perform_command_boolean_test(player: &str) -> String {
+    let lua = "horizon.command(\"test:is_true <flag:boolean>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(args.flag == true, \"true parses to true\")\nend)\nhorizon.command(\"test:is_false <flag:boolean>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(args.flag == false, \"false parses to false\")\nend)\nhorizon.command(\"test:is_other <flag:boolean>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(args.flag == false, \"another word parses to false\")\nend)";
+    let mut test = format!(
+        "#[test]\nfn generated_perform_command_boolean_words() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_perform_command_boolean\", {lua:?});\n    let firing_mods = boxed(m);\n    let player = {player};\n"
+    );
+    for (line, count) in [
+        ("test:is_true true", 1),
+        ("test:is_false false", 2),
+        ("test:is_other maybe", 3),
+    ] {
+        test.push_str("    {\n        let mut ran = false;\n");
+        test.push_str(&perform_command_fire(
+            "&mut FakeHost::empty()",
+            "player",
+            line,
+            true,
+            &format!("    assert_eq!(witness(&lua), {count}, \"the handler ran\");\n"),
+        ));
+        test.push_str("    }\n");
+    }
+    test.push_str("    no_error(&id);\n}\n");
+    test
+}
+
+/// Two usages with the same word count: the longest match ties, and the tie
+/// order is the declaration order (`max_by_key` keeps the later one), so the
+/// later usage parses the line.
+fn perform_command_tie_test(player: &str) -> String {
+    let lua = "horizon.command(\"test:tie <a:integer>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)\nhorizon.command(\"test:tie <a:word>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(type(args.a) == \"string\", \"the later usage parses the line\")\nend)";
+    let mut test = format!(
+        "#[test]\nfn generated_perform_command_tie_keeps_declaration_order() {{\n    // Same word count: the tie order is the declaration order, so the\n    // later usage parses the line (`args.a` is a word, not a number).\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_perform_command_tie\", {lua:?});\n    let firing_mods = boxed(m);\n    let player = {player};\n    {{\n        let mut ran = false;\n"
+    );
+    test.push_str(&perform_command_fire(
+        "&mut FakeHost::empty()",
+        "player",
+        "test:tie 5",
+        true,
+        "    assert_eq!(witness(&lua), 2, \"both handlers ran\");\n",
+    ));
+    test.push_str("    }\n    no_error(&id);\n}\n");
+    test
+}
+
+/// `player.held` is set from the host's hand: deleting the
+/// `player.set("held", ..)` arm leaves it nil and the asserts fail.
+fn perform_command_held_test(player: &str) -> String {
+    let lua = "horizon.command(\"test:held\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(player.held.item == \"ruby:wand\", \"held item\")\n    assert(player.held.count == 1, \"held count\")\n    assert(player.held.plain == true, \"held plain\")\nend)";
+    let mut test = format!(
+        "#[test]\nfn generated_perform_command_held_reaches_player() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_perform_command_held\", {lua:?});\n    let firing_mods = boxed(m);\n    let player = {player};\n    let mut host = FakeHost::holding(\"ruby:wand\", 1, true);\n    {{\n        let mut ran = false;\n"
+    );
+    test.push_str(&perform_command_fire(
+        "&mut host",
+        "player",
+        "test:held",
+        true,
+        "    assert_eq!(witness(&lua), 1, \"the handler ran\");\n",
+    ));
+    test.push_str("    }\n    no_error(&id);\n}\n");
+    test
 }
 
 /// The refusal test: an argument that does not parse, or a missing required
 /// argument, still cancels and answers the player, without calling the
 /// handler. A non-matching command is not cancelled and runs no handler.
+/// Every refusal asserts the feedback text, not only its count.
 fn perform_command_no_cancel_test(_model: &Model, _tys: &BTreeMap<String, String>) -> String {
     let player = perform_command_player();
-    let lua = "horizon.command(\"test:req <a:integer>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)";
+    let lua = "horizon.command(\"test:req <a:integer>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)\nhorizon.command(\"test:num <b:number>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)";
     let mut out = format!(
-        "#[test]\nfn generated_perform_command_no_cancel() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_perform_command_nocancel\", {lua:?});\n    let firing_mods = boxed(m);\n    let player = {player};\n    let mut host = FakeHost::empty();\n"
+        "#[test]\nfn generated_perform_command_no_cancel() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_perform_command_nocancel\", {lua:?});\n    let firing_mods = boxed(m);\n    let player = {player};\n    let mut host = FakeHost::empty();\n    // Refusals are translated: the bundled English is scoped, as in the\n    // hand-written command test, so the asserts pin the words players read.\n    let (_, missed) = horizon_client::lang::scoped(horizon_client::lang::Language::load(&[], \"en_us\"), || {{\n"
     );
-    // A bad integer is refused with usage, and the handler is not called.
-    // The refusal still answers the player.
-    out.push_str("    {\n        let mut ran = false;\n");
-    out.push_str(&perform_command_fire(
-        "&mut host",
-        "player",
-        "test:req x",
-        true,
-        "    assert_eq!(witness(&lua), 0, \"the handler ran\");\n    assert_eq!(host.feedback_lines().len(), 1, \"the refusal answered the player\");\n",
-    ));
-    out.push_str("    }\n");
-    // A missing required argument is refused the same way.
-    out.push_str("    {\n        let mut ran = false;\n");
-    out.push_str(&perform_command_fire(
-        "&mut host",
-        "player",
-        "test:req",
-        true,
-        "    assert_eq!(witness(&lua), 0, \"the handler ran\");\n    assert_eq!(host.feedback_lines().len(), 2, \"the refusal answered the player\");\n",
-    ));
-    out.push_str("    }\n");
-    // A non-matching command is not cancelled and runs no handler.
+    // A bad integer is refused, and the handler is not called. The refusal
+    // still answers the player, naming the argument and the word.
+    let mut lines: Vec<String> = Vec::new();
+    let mut refusal = |line: &str, feedback: &str| {
+        lines.push(feedback.to_owned());
+        let mut firing = String::from("    {\n        let mut ran = false;\n");
+        firing.push_str(&perform_command_fire(
+            "&mut host",
+            "player",
+            line,
+            true,
+            &format!(
+                "    assert_eq!(witness(&lua), 0, \"the handler ran\");\n    assert_eq!(host.feedback_lines(), {lines:?}, \"the refusal answered the player\");\n"
+            ),
+        ));
+        firing.push_str("    }\n");
+        firing
+    };
+    out.push_str(&refusal("test:req x", "a needs an integer, not \"x\""));
+    // A missing required argument is refused with the usage line.
+    out.push_str(&refusal("test:req", "Usage: /test:req <a:integer>"));
+    // A bad number is refused the same way, naming the argument and word.
+    out.push_str(&refusal("test:num x", "b needs a number, not \"x\""));
+    out.push_str(&refusal("test:num", "Usage: /test:num <b:number>"));
+    // A non-matching command is not cancelled and runs no handler: the
+    // refusals above are still the only answers.
     out.push_str("    {\n        let mut ran = false;\n");
     out.push_str(&perform_command_fire(
         "&mut host",
         "player",
         "test:other",
         false,
-        "    assert_eq!(witness(&lua), 0, \"the handler ran\");\n    assert_eq!(host.feedback_lines().len(), 2, \"nothing answered a command nobody ran\");\n",
+        &format!(
+            "    assert_eq!(witness(&lua), 0, \"the handler ran\");\n    assert_eq!(host.feedback_lines(), {lines:?}, \"nothing answered a command nobody ran\");\n"
+        ),
     ));
-    out.push_str("    }\n    no_error(&id);\n}\n");
+    out.push_str(
+        "    }\n    });\n    assert!(missed.is_empty(), \"every refusal key resolved\");\n    no_error(&id);\n}\n",
+    );
     out
 }
 
@@ -1764,6 +1841,17 @@ fn duo_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
     out.push_str(&firing("3", &a_src, &b_src, &rust_eb, wit.4, wit.5, true));
     out.push_str("}\n");
     out
+}
+
+/// Declared commands (`horizon.command`) land after the native prefix, in
+/// load order: the collect extends the incoming tree before the handlers
+/// run, so the mods' commands follow what the server already had.
+fn register_commands_declaration_order_test() -> String {
+    let lua_a = "horizon.command(\"test:deca\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)";
+    let lua_b = "horizon.command(\"test:decb\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)";
+    format!(
+        "#[test]\nfn generated_register_commands_declarations_follow_prefix() {{\n    let (a, a_id, a_dir, a_lua) = loaded_tracked(\"gen_register_commands_deco_a\", {lua_a:?});\n    let (b, b_id, b_dir, b_lua) = loaded_tracked(\"gen_register_commands_deco_b\", {lua_b:?});\n    let firing_mods = duo_boxed(a, b);\n    {{\n        let mut commands = vec![NativeCommand::op(\"test:native0\", 0)];\n        dispatch_register_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);\n        assert_eq!(\n            commands.iter().map(|c| c.usage.as_str()).collect::<Vec<_>>(),\n            [\"test:native0\", \"test:deca\", \"test:decb\"],\n            \"declarations follow the native prefix in load order\"\n        );\n    }}\n    assert_eq!(witness(&a_lua), 0, \"declaring runs no handler\");\n    assert_eq!(witness(&b_lua), 0, \"declaring runs no handler\");\n    no_error(&a_id);\n    no_error(&b_id);\n    drop_dir(a_dir);\n    drop_dir(b_dir);\n}}\n"
+    )
 }
 
 /// One collect sequence both duo mods append to: each mod inserts its own
@@ -2675,6 +2763,9 @@ pub fn run(check: bool) -> Result<(), String> {
         }
         if model.contract == "collect" || model.contract == "replace" {
             tests.push(duo_test_fn(model, &tys));
+        }
+        if model.name == "register_commands" {
+            tests.push(register_commands_declaration_order_test());
         }
     }
     if !uncovered.is_empty() {

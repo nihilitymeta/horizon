@@ -1755,7 +1755,16 @@ impl LuaMod {
                             table_in(lua, &handlers, &name)?
                         }
                         Some(kind) => {
-                            let kind = qualify(&kind);
+                            // Command words are not registry ids: a
+                            // `perform_command` kind is stored as given
+                            // (`parasite count`, not
+                            // `minecraft:parasite count`), like
+                            // `horizon.command` stores it.
+                            let kind = if name == "perform_command" {
+                                kind
+                            } else {
+                                qualify(&kind)
+                            };
                             let all: Table = lua.named_registry_value(KIND_HANDLERS)?;
                             let by_kind = table_in(lua, &all, &name)?;
                             kinds
@@ -4387,9 +4396,9 @@ impl Hooks for LuaMod {
         if cancel { Flow::Cancel } else { Flow::Continue }
     }
     // `register_commands` and `perform_command` are generated
-    // (`generated_hooks`, `gen_collect` and `gen_perform_command`): the
-    // collect appends the declared commands, and the command arm
-    // longest-match dispatches to `fn(player, args)`.
+    // (`generated_hooks`, `gen_register_commands` and
+    // `gen_perform_command`): the collect appends the declared commands,
+    // and the command arm longest-match dispatches to `fn(player, args)`.
     /// A mob is about to take damage: `mob_hurt(mob, damage_type, causing,
     /// direct, amount)`, `mob` just `{id, kind}` (the game is mid-hit: no
     /// host, so no view, no data, and the host actions are dropped),
@@ -5819,6 +5828,58 @@ experimental = ["scripts"]
                 "feedback Usage: /probeadd <a:integer> <b:number> [label:word]",
             ]
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn horizon_on_hears_colonless_command_words() {
+        // `horizon.on("perform_command", fn, words)` hears the commands whose
+        // words are `words`: command words are not registry ids, so the kind
+        // is stored as given (`parasite count`, not
+        // `minecraft:parasite count`), like `horizon.command` stores it.
+        let (dir, path) = hmod(
+            "on-hears-words",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.command("parasite count [kind:word]", 0, function(player, args)
+                  COUNT = (COUNT or 0) + 1
+                end)
+                horizon.on("perform_command", function(player, args)
+                  ON_COUNT = (ON_COUNT or 0) + 1
+                end, "parasite count")
+                horizon.command("test:probe [kind:word]", 0, function(player, args)
+                  COLON_COUNT = (COLON_COUNT or 0) + 1
+                end)
+                horizon.on("perform_command", function(player, args)
+                  COLON_ON = (COLON_ON or 0) + 1
+                end, "test:probe")
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let steve = host.acting_player().unwrap();
+        let run = |m: &LuaMod, host: &mut MobHost, line: &str| {
+            m.perform_command(host, &mut test_events::perform_command_event(&steve, line))
+        };
+        // Words without a colon hear the declaration's handler and the
+        // `horizon.on` one; a colon word still hears both.
+        assert_eq!(run(&m, &mut host, "parasite count zombie"), Flow::Cancel);
+        assert_eq!(run(&m, &mut host, "test:probe zombie"), Flow::Cancel);
+        let g = m.lua.globals();
+        assert_eq!(g.get::<i64>("COUNT").unwrap(), 1);
+        assert_eq!(g.get::<i64>("ON_COUNT").unwrap(), 1);
+        assert_eq!(g.get::<i64>("COLON_COUNT").unwrap(), 1);
+        assert_eq!(g.get::<i64>("COLON_ON").unwrap(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

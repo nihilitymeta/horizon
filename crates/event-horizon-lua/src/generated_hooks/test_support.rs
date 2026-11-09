@@ -138,6 +138,9 @@ pub struct FakeHost {
     /// back. Uncounted: the command cost tests pin the heard dispatch at
     /// zero host reads.
     feedback: std::sync::Mutex<Vec<String>>,
+    /// The acting player's held item (`host.held`): `None` is an empty
+    /// hand, `Some` what one held test seeds. Uncounted, like `feedback`.
+    held: Option<(String, u32, bool)>,
 }
 thread_local! {
     static ENTITY_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -185,6 +188,16 @@ impl FakeHost {
     pub fn empty() -> Self {
         Self {
             feedback: Default::default(),
+            held: None,
+        }
+    }
+
+    /// A host whose acting player holds `item` (`count` of it): the held
+    /// test seeds this, so `player.held` is set.
+    pub fn holding(item: &str, count: u32, plain: bool) -> Self {
+        Self {
+            feedback: Default::default(),
+            held: Some((item.to_owned(), count, plain)),
         }
     }
 
@@ -218,11 +231,11 @@ impl Host for FakeHost {
         }
     }
 
-    /// The acting player's empty hand: this host holds no players, and the
-    /// command tests assert the seeded `held` is nil. Uncounted: the
-    /// command cost tests pin the heard dispatch at zero host reads.
+    /// The acting player's held item, or an empty hand: most tests seed
+    /// none, and assert the seeded `held` is nil. Uncounted: the command
+    /// cost tests pin the heard dispatch at zero host reads.
     fn held(&self) -> Option<(String, u32, bool)> {
-        None
+        self.held.clone()
     }
 
     /// A command answer: kept for the tests to read back, like the mob
