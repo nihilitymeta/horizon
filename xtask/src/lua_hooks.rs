@@ -16,8 +16,8 @@
 //! an unsupported field fails the check naming it.
 
 use crate::lua_model::{
-    Class, Conv, Field, Host, Kind, Model, ReplaceRead, assert_lines, classify, dup_leaf, lua_read,
-    mutate_line, replace_sample, sample, table_leaves,
+    Class, Conv, Field, HookClass, Host, Kind, Model, ReplaceRead, assert_lines, classify,
+    dup_leaf, lua_read, mutate_line, replace_sample, sample, table_leaves,
 };
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -553,6 +553,51 @@ fn uncovered_fields(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String
     {
         out.push("name".to_owned());
     }
+    // The table asserts the name only when its own `.name` line fires: a
+    // player assert without it still passes a renamed dispatch, so every
+    // player table must carry the name assert, whatever else it checks.
+    for (n, param) in model.dispatch_params.iter().enumerate() {
+        let Some(field) = model.fields.iter().find(|f| f.name == param.name) else {
+            continue;
+        };
+        if !matches!(field.conv, Conv::Player | Conv::PlayerOpt) {
+            continue;
+        }
+        let ty = tys.get(&field.name).map(String::as_str).unwrap_or("?");
+        if !param_asserts(model, field, ty, n, kind_lua.as_deref())
+            .iter()
+            .any(|a| a.contains(".name =="))
+        {
+            out.push(format!("{}.name", field.name));
+        }
+    }
+    out
+}
+
+/// A table leaf the emitted handler never asserts: the seed varies it, but
+/// nothing fails when the runtime drops or changes it. `table_leaves` is the
+/// model's own claim of what the handler checks, so every entry must appear
+/// in the emitted asserts; a silent leaf is a stale test, not a passing one.
+fn unasserted_leaves(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String> {
+    let kind_lua = kind_values(model)
+        .as_ref()
+        .and_then(|plan| plan.assert_kind.clone());
+    let mut out = Vec::new();
+    for (n, param) in model.dispatch_params.iter().enumerate() {
+        let Some(field) = model.fields.iter().find(|f| f.name == param.name) else {
+            continue;
+        };
+        let ty = tys.get(&field.name).map(String::as_str).unwrap_or("?");
+        let asserts = param_asserts(model, field, ty, n, kind_lua.as_deref());
+        let lua = sample(&field.conv, ty, &field.name, n).lua;
+        for (suffix, value) in table_leaves(&field.conv, &field.name, &lua, field.key.as_deref(), n)
+        {
+            let want = format!("{}{suffix} == {value}", lua_read(&field.name));
+            if !asserts.iter().any(|a| a.contains(&want)) {
+                out.push(format!("{}{suffix}", field.name));
+            }
+        }
+    }
     out
 }
 
@@ -930,6 +975,41 @@ fn quiet_block(model: &Model, tys: &BTreeMap<String, String>) -> String {
     out
 }
 
+/// Strip the `{name}: {kind}: ` prefix the classifier adds to a reason, so
+/// the exposure doc (which has its own hook column) shows the reason itself.
+fn exposure_reason(name: &str, kind: &str, reason: &str) -> String {
+    let prefix = format!("{name}: {kind}: ");
+    reason.strip_prefix(&prefix).unwrap_or(reason).to_owned()
+}
+
+/// The exposure-doc group of a cannot detail: deferred names kept by a
+/// hand-written hook first, then the borrow kinds, then anything else.
+fn cannot_group(detail: &str) -> &'static str {
+    if detail.contains("hand-written hook keeps this name") {
+        "deferred"
+    } else if detail.contains("borrowed loot state") {
+        "loot"
+    } else if detail.contains("generating chunk") {
+        "worldgen"
+    } else if detail.contains("render state (render thread)") {
+        "render"
+    } else {
+        "other"
+    }
+}
+
+/// One exposure-doc section: the heading with its count, the section prose,
+/// then one table row per hook, names sorted.
+fn exposure_section(out: &mut String, heading: &str, prose: &str, rows: &mut [(String, String)]) {
+    rows.sort();
+    out.push_str(&format!("## {heading} ({})\n\n{prose}\n\n", rows.len()));
+    out.push_str("| Hook | Reason |\n| --- | --- |\n");
+    for (name, reason) in rows {
+        out.push_str(&format!("| `{name}` | {reason} |\n"));
+    }
+    out.push('\n');
+}
+
 /// One classification line of the checked-in record: every hook in exactly
 /// one class, so `--check` fails when a hook is in no class or classified
 /// differently from what the model says now.
@@ -943,6 +1023,124 @@ fn class_line(name: &str, class: &Class) -> String {
         Class::Protocol => format!("protocol: {name}: raw packets need their own design"),
     };
     format!("    (\"{name}\", \"{detail}\"),")
+}
+
+/// The generated `docs/api/hook-exposure.md`: every non-generated native
+/// hook with its name, class and reason, grouped so a reader can tell a
+/// deferral (#44) from a real exposure reason. Generated hooks are omitted:
+/// they are the zero-hand-work event tables, one per native name.
+fn exposure_doc(classes: &[HookClass]) -> String {
+    let mut deferred = Vec::new();
+    let mut render = Vec::new();
+    let mut worldgen = Vec::new();
+    let mut loot = Vec::new();
+    let mut other = Vec::new();
+    let mut adapter = Vec::new();
+    let mut handle = Vec::new();
+    let mut protocol = Vec::new();
+    let mut tick = Vec::new();
+    let mut generated = 0;
+    for hc in classes {
+        match &hc.class {
+            Class::Generated(_) => generated += 1,
+            Class::Adapter(whys) => {
+                let mut reasons: Vec<String> = whys
+                    .iter()
+                    .map(|w| exposure_reason(&hc.name, "adapter", w))
+                    .collect();
+                reasons.sort();
+                reasons.dedup();
+                adapter.push((hc.name.clone(), reasons.join("; ")));
+            }
+            Class::Tick => tick.push((
+                hc.name.clone(),
+                "a `ticks` parameter (level-tick host)".to_owned(),
+            )),
+            Class::Cannot(why) => {
+                let reasons: Vec<String> = why
+                    .split("; ")
+                    .map(|w| exposure_reason(&hc.name, "unsupported", w))
+                    .collect();
+                let row = (hc.name.clone(), reasons.join("; "));
+                match cannot_group(why) {
+                    "deferred" => deferred.push(row),
+                    "loot" => loot.push(row),
+                    "worldgen" => worldgen.push(row),
+                    "render" => render.push(row),
+                    _ => other.push(row),
+                }
+            }
+            Class::Handle(ty) => handle.push((
+                hc.name.clone(),
+                format!("a {ty} handle needs its own design"),
+            )),
+            Class::Protocol => protocol.push((
+                hc.name.clone(),
+                "raw packets need their own design".to_owned(),
+            )),
+        }
+    }
+    let mut out = String::from(
+        "# Hook exposure\n\n<!-- GENERATED by `cargo run -p xtask -- lua-hooks`; do not edit. `--check` fails when this file is not what the classifier says. -->\n\nEvery native hook lands in exactly one class: `generated` (a zero-hand-work event table under the native name), `adapter` (a hand-written converter would unblock it), `handle` or `protocol` (a live handle or raw packets, each needing its own design), `tick` (the level-tick host the Lua runtime does not implement), or `cannot` (no event-table mapping exists, with the reason). `HOOK_CLASSIFICATION` in `crates/event-horizon-lua/src/generated_hooks/mod.rs` is the machine-readable record; this page is its human-readable form, so a hook is never silently missing from Lua: it is either generated or listed here with its reason.\n\n",
+    );
+    out.push_str(&format!(
+        "{generated} hooks are generated and omitted below. The rest:\n\n"
+    ));
+    exposure_section(
+        &mut out,
+        "Deferred to #44 (name kept by a hand-written hook)",
+        "These names stay with the hand-written hooks for now; removing the old hook is #44. This is a deferral, not an exposure reason.",
+        &mut deferred,
+    );
+    exposure_section(
+        &mut out,
+        "Borrows render state (render thread)",
+        "No event-table mapping exists: the argument is a render-thread borrow, and Lua runs on the game thread with no drawing API.",
+        &mut render,
+    );
+    exposure_section(
+        &mut out,
+        "Borrows the generating chunk (worldgen)",
+        "No event-table mapping exists: the argument borrows the chunk being generated.",
+        &mut worldgen,
+    );
+    exposure_section(
+        &mut out,
+        "Borrowed loot state",
+        "No event-table mapping exists: the argument is borrowed loot state.",
+        &mut loot,
+    );
+    exposure_section(
+        &mut out,
+        "Borrowed client input",
+        "No event-table mapping exists: the argument cannot enter the Lua state.",
+        &mut other,
+    );
+    exposure_section(
+        &mut out,
+        "Adapter hooks",
+        "Not event tables yet: a hand-written converter would unblock these.",
+        &mut adapter,
+    );
+    exposure_section(
+        &mut out,
+        "Handle hooks",
+        "Not event tables: a live handle only a design of its own can expose.",
+        &mut handle,
+    );
+    exposure_section(
+        &mut out,
+        "Protocol hooks",
+        "Not event tables: raw packets need their own design.",
+        &mut protocol,
+    );
+    exposure_section(
+        &mut out,
+        "Tick-host hooks",
+        "Not event tables: the Lua runtime does not implement the level-tick host.",
+        &mut tick,
+    );
+    out
 }
 
 /// `rustfmt` over generated text, as a string: what write mode leaves in
@@ -1004,6 +1202,7 @@ pub fn run(check: bool) -> Result<(), String> {
     // hook and field. Spike hooks are hand-covered, except their generated
     // non-cancel test, which needs the same asserts.
     let mut uncovered = Vec::new();
+    let mut unasserted = Vec::new();
     let mut dups = Vec::new();
     for hc in &classes {
         let Class::Generated(model) = &hc.class else {
@@ -1030,12 +1229,18 @@ pub fn run(check: bool) -> Result<(), String> {
                 for field in uncovered_fields(model, &tys) {
                     uncovered.push(format!("{}: {field}", model.name));
                 }
+                for leaf in unasserted_leaves(model, &tys) {
+                    unasserted.push(format!("{}: {leaf}", model.name));
+                }
                 dups.extend(dup_values(model, &tys));
             }
             tests.push(no_cancel_test_fn(model, &tys));
         } else if !spike {
             for field in uncovered_fields(model, &tys) {
                 uncovered.push(format!("{}: {field}", model.name));
+            }
+            for leaf in unasserted_leaves(model, &tys) {
+                unasserted.push(format!("{}: {leaf}", model.name));
             }
             dups.extend(dup_values(model, &tys));
         }
@@ -1045,6 +1250,15 @@ pub fn run(check: bool) -> Result<(), String> {
         return Err(format!(
             "lua-hooks: no assertion for dispatch field(s): {} (assert every visible field, or allowlist it with a reason)",
             uncovered.join(", ")
+        ));
+    }
+    // Every seeded leaf is asserted, or the generator fails naming the hook,
+    // field and leaf: a seed the handler never checks still passes a runtime
+    // that drops or renames it.
+    if !unasserted.is_empty() {
+        return Err(format!(
+            "lua-hooks: table leaves with no assertion: {} (assert every seeded leaf)",
+            unasserted.join(", ")
         ));
     }
     // Every asserted leaf carries its own value, or the generator fails
@@ -1101,6 +1315,7 @@ pub fn run(check: bool) -> Result<(), String> {
     );
     text.push_str("    use super::test_support::*;\n");
     text.push_str("    use horizon_client::mod_api::*;\n");
+    text.push_str("    use horizon_client::item_data::StackData;\n");
     text.push_str("    use horizon_client::menu::AnvilCraft;\n");
     text.push_str("    use horizon_client::merchant::ItemCost;\n");
     text.push_str("    use horizon_world::consumable::UseAnimation;\n");
@@ -1150,6 +1365,8 @@ pub fn run(check: bool) -> Result<(), String> {
     text.push_str("}\n");
 
     let path = root.join("crates/event-horizon-lua/src/generated_hooks/mod.rs");
+    let doc_path = root.join("docs/api/hook-exposure.md");
+    let doc = exposure_doc(&classes);
     if check {
         let current = fs::read_to_string(&path).map_err(|e| e.to_string())?;
         // Write mode formats after writing, so the check formats too:
@@ -1160,8 +1377,16 @@ pub fn run(check: bool) -> Result<(), String> {
                 "generated_hooks/mod.rs is stale: re-run `cargo run -p xtask -- lua-hooks`".into(),
             );
         }
+        let current_doc = fs::read_to_string(&doc_path).map_err(|e| e.to_string())?;
+        if current_doc != doc {
+            return Err(
+                "docs/api/hook-exposure.md is stale: re-run `cargo run -p xtask -- lua-hooks`"
+                    .into(),
+            );
+        }
         return Ok(());
     }
+    fs::write(&doc_path, doc).map_err(|e| e.to_string())?;
     fs::write(&path, text).map_err(|e| e.to_string())?;
     // Format like the rest of the tree; failure here is loud, not silent.
     let status = std::process::Command::new("cargo")

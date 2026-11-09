@@ -1346,10 +1346,6 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             "ItemStack {{ item: \"test:{field}\".into(), count: {count}, damage: {damage}, extra: None }}"
         )
     };
-    let item_lua = format!(
-        "{{ id = \"test:{field}\", count = {}, damage = {n} }}",
-        1 + n as i32
-    );
     let text_lua =
         |plain: &str| format!("{{ text = \"{plain}\", component = {{ text = \"{plain}\" }} }}",);
     let s = match key {
@@ -1481,23 +1477,38 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             s
         }
         "ItemStack" => {
+            // The struct seed carries components (a repair cost), so `extra`
+            // and the derived `plain` both assert non-default values: a
+            // dropped `extra` key and a wrong `plain` each fail. The
+            // borrowed `Conv::Item` seeds below stay plain (`extra` nil,
+            // `plain` true), pinning the other direction. The write-back
+            // still replaces the whole table with a plain stack, so the
+            // write pair keeps `extra: None`.
+            let repair = 20 + n as i32;
             let mut s = mutable(
-                item(1 + n as i32, n as i32),
-                item_lua.clone(),
+                format!(
+                    "ItemStack {{ item: \"test:{field}\".into(), count: {}, damage: {n}, extra: Some(Box::new(StackData {{ repair_cost: {repair}, ..Default::default() }})) }}",
+                    1 + n as i32
+                ),
+                format!(
+                    "{{ id = \"test:{field}\", count = {}, damage = {n}, extra = {{ [\"minecraft:repair_cost\"] = {repair} }}, plain = false }}",
+                    1 + n as i32
+                ),
                 item(50 + n as i32, n as i32),
                 format!(
                     "{{ id = \"test:{field}\", count = {}, damage = {n} }}",
                     50 + n as i32
                 ),
             );
-            // `extra` is `None` in every seed (nil on the Lua side; the
-            // NBT round-trip itself is pinned by the round-3 tests), `plain`
-            // is derived from it, so neither carries a seed value to vary.
             s.leaves = vec![
                 leaf("id", format!("\"test:{field}\"")),
                 leaf("count", format!("{}", 1 + n as i32)),
                 leaf("damage", format!("{n}")),
-                leaf("extra", "nil".into()),
+                (
+                    ".extra[\"minecraft:repair_cost\"]".into(),
+                    format!("{repair}"),
+                ),
+                leaf("plain", "false".into()),
             ];
             s
         }
@@ -2087,19 +2098,28 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             ],
         ),
         "Suggestion" => fixed(
+            // `tooltip` and `int_value` seed non-default values (the runtime
+            // writes both): a dropped key and a wrong value each fail.
+            // `int_value` sits far above the range numbers for every `n`, so
+            // swapping or zeroing any leaf changes an asserted value.
             format!(
-                "Suggestion {{ range: ({} + {n}, {} + {n}), text: \"test:suggestion{n}\".into(), tooltip: None, int_value: None }}",
-                7, 12
+                "Suggestion {{ range: ({} + {n}, {} + {n}), text: \"test:suggestion{n}\".into(), tooltip: Some(\"test:tooltip{n}\".into()), int_value: Some({}) }}",
+                7,
+                12,
+                30 + n as i32
             ),
             format!(
-                "{{ range = {{ start = {}, [\"end\"] = {} }}, text = \"test:suggestion{n}\" }}",
+                "{{ range = {{ start = {}, [\"end\"] = {} }}, text = \"test:suggestion{n}\", tooltip = \"test:tooltip{n}\", int_value = {} }}",
                 7 + n,
-                12 + n
+                12 + n,
+                30 + n as i32
             ),
             vec![
                 leaf("range.start", format!("{}", 7 + n)),
                 (".range[\"end\"]".into(), format!("{}", 12 + n)),
                 leaf("text", format!("\"test:suggestion{n}\"")),
+                leaf("tooltip", format!("\"test:tooltip{n}\"")),
+                leaf("int_value", format!("{}", 30 + n as i32)),
             ],
         ),
         "MerchantOffer" => {
@@ -2137,10 +2157,14 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 (".base_cost_a.stack.id".into(), format!("\"test:{field}\"")),
                 (".base_cost_a.stack.count".into(), "1".into()),
                 (".base_cost_a.stack.damage".into(), "0".into()),
+                (".base_cost_a.stack.extra".into(), "nil".into()),
+                (".base_cost_a.stack.plain".into(), "true".into()),
                 (".cost_b".into(), "nil".into()),
                 (".result.id".into(), format!("\"test:{field}:out\"")),
                 (".result.count".into(), "2".into()),
                 (".result.damage".into(), "3".into()),
+                (".result.extra".into(), "nil".into()),
+                (".result.plain".into(), "true".into()),
                 leaf("uses", format!("{}", 10 + n as i32)),
                 leaf("max_uses", "4".into()),
                 leaf("reward_exp", "true".into()),
@@ -2166,10 +2190,14 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 leaf("left.id", format!("\"test:{field}\"")),
                 leaf("left.count", "1".into()),
                 leaf("left.damage", "0".into()),
+                leaf("left.extra", "nil".into()),
+                leaf("left.plain", "true".into()),
                 leaf("right", "nil".into()),
                 (".output.id".into(), format!("\"test:{field}:out\"")),
                 (".output.count".into(), "2".into()),
                 (".output.damage".into(), "3".into()),
+                (".output.extra".into(), "nil".into()),
+                (".output.plain".into(), "true".into()),
             ],
         ),
         "NativeNoteBlockChange" => fixed(
@@ -3270,25 +3298,29 @@ pub fn assert_lines(
             ]
         }
         Conv::Item => {
-            // The stack's value-carrying leaves: `extra` is `None` in every
-            // seed (see the `ItemStack` sample), `plain` is derived from it.
+            // The borrowed seeds stay plain (`extra` is `None` in every one;
+            // the struct `ItemStack` seeds carry components instead): `plain`
+            // asserts the derived leaf the runtime writes, so a wrong or
+            // missing `plain` fails.
             vec![
                 a(&format!("{e}.id == {lua}")),
                 a(&format!("{e}.count == {}", 1 + n)),
                 a(&format!("{e}.damage == {n}")),
                 a(&format!("{e}.extra == nil")),
+                a(&format!("{e}.plain == true")),
             ]
         }
         Conv::OptItem => {
             if lua == "nil" {
                 vec![a(&format!("{e} == nil"))]
             } else {
-                // Same varying stack as `Conv::Item` (see `sample`).
+                // Same plain stack as `Conv::Item` (see `sample`).
                 vec![
                     a(&format!("{e}.id == {lua}")),
                     a(&format!("{e}.count == {}", 1 + n)),
                     a(&format!("{e}.damage == {n}")),
                     a(&format!("{e}.extra == nil")),
+                    a(&format!("{e}.plain == true")),
                 ]
             }
         }
@@ -3346,23 +3378,26 @@ pub fn table_leaves(
                 .unwrap_or_else(|| panic!("no struct asserts for {key}"))
                 .leaves
         }
-        // The varying stack of `sample`: `extra` is `None` in every seed.
+        // The plain stack of `sample`: `extra` is `None` in every borrowed
+        // seed, `plain` the derived leaf the asserts pin.
         Conv::Item => vec![
             (".id".into(), lua.to_owned()),
             (".count".into(), format!("{}", 1 + n)),
             (".damage".into(), format!("{n}")),
             (".extra".into(), "nil".into()),
+            (".plain".into(), "true".into()),
         ],
         Conv::OptItem => {
             if lua == "nil" {
                 Vec::new()
             } else {
-                // Same varying stack as `Conv::Item` (see `sample`).
+                // Same plain stack as `Conv::Item` (see `sample`).
                 vec![
                     (".id".into(), lua.to_owned()),
                     (".count".into(), format!("{}", 1 + n)),
                     (".damage".into(), format!("{n}")),
                     (".extra".into(), "nil".into()),
+                    (".plain".into(), "true".into()),
                 ]
             }
         }
