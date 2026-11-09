@@ -69,6 +69,7 @@ export type ApplyEffectTickEvent = { effect: string, dimension: string, entity: 
 export type ArmorStandManipulateEvent = { player: PlayerRef, stand_id: number, slot: string }
 export type ArrowLooseEvent = { stack: Item, has_ammo: boolean, charge: number }
 export type ArrowNockEvent = { player: PlayerRef, bow: Item, hand: "main" | "off", has_ammo: boolean }
+export type AttackEntityEvent = { entity: number, kind: string, pos: Vec3 }
 export type BabyEntitySpawnEvent = { parent: number, partner: number, player: string, kind: string }
 export type BeaconStateChangeEvent = { dimension: string, pos: Vec3, active: boolean }
 export type BellRingEvent = { dimension: string, player: string?, pos: Vec3, block: string }
@@ -148,6 +149,7 @@ export type CustomPayloadFromClientEvent = { player: string, channel: string, da
 export type DataMapTypesEvent = { types: { { id: string, registry: string } } }
 export type DataPackFilesEvent = { files: { { path: string, data: string } } }
 export type DatapackSyncEvent = { recipe_types: { string } }
+export type DestroyBlockEvent = { pos: Vec3, state: string, state_props: Props }
 export type DifficultyChangedEvent = { from: string, to: string }
 export type DispenseItemEvent = { dimension: string, pos: Vec3, facing: "down" | "up" | "north" | "south" | "west" | "east", stack: Item, answer: { remainder: Item?, event: number }?? }
 export type DragonEggFormEvent = { dimension: string, pos: Vec3 }
@@ -184,6 +186,7 @@ export type ExperienceOrbCanMergeEvent = { dimension: string, into: number, from
 export type ExperienceOrbMergeEvent = { dimension: string, into: number, from: number, from_value: number }
 export type ExperienceOrbPickupEvent = { player: string, dimension: string, orb: number, value: number, count: number }
 export type ExperienceOrbPickupListenedEvent = { listened: boolean }
+export type ExplosionDetonateEvent = { dimension: string, center: Vec3, blocks: { Vec3 } }
 export type ExplosionKnockbackEvent = { dimension: string, center: Vec3, blocks: { Vec3 }, entity: number?, knockback_velocity: Vec3 }
 export type ExplosionPrimeEvent = { center: Vec3, radius: number }
 export type FillBucketEvent = { stack: Item, pos: Vec3 }
@@ -207,6 +210,7 @@ export type HasAnalogOutputEvent = { state: string, output: boolean, state_props
 export type HopperInventorySearchEvent = { hopper: Vec3, container: Vec3?, entity: number? }
 export type HopperPickupItemEvent = { dimension: string, pos: Vec3, item: string, count: number }
 export type HudEvent = { batch: HudBatch, corners: HudCorners }
+export type HurtEnemyEvent = { stack: Item, entity: number, kind: string }
 export type IngredientEvent = { kind: string, data: Data, items: { string } }
 export type IngredientTestEvent = { kind: string, data: Data, stack: Item, accept: boolean }
 export type InteractEntityEvent = { entity: number, kind: string, stack: Item? }
@@ -216,19 +220,23 @@ export type InventoryBlockStartEvent = { player: PlayerRef, pos: Vec3 }
 export type InventoryClickEvent = { player: PlayerRef, window: number, slot: number, button: number, mode: number }
 export type InventoryDragEvent = { player: PlayerRef, window: number, kind: number, slots: { number } }
 export type InventoryMoveItemEvent = { source: Vec3, destination: Vec3, item: string }
+export type InventoryTickEvent = { slot: number, selected: boolean }
 export type IsBonemealSuccessEvent = { dimension: string, pos: Vec3, success: boolean, block: string }
 export type IsSignalSourceEvent = { state: string, source: boolean, state_props: Props }
 export type IsValidBonemealTargetEvent = { dimension: string, pos: Vec3, state: string, state_props: Props, valid: boolean? }
 export type ItemAfterVerticalCollisionEvent = { dimension: string, client: boolean, entity: number, state: string, block_pos: Vec3, item_pos: Vec3, stack: Item, state_props: Props }
 export type ItemBarEvent = { stack: Item, bar: { value: number, max: number }? }
 export type ItemContainerEvent = { item: string, slots: number? }
+export type ItemCraftedEvent = { player: string, recipe: string, stack: Item }
 export type ItemDamagedEvent = { player: PlayerRef, item: string, amount: number }
 export type ItemDespawnEvent = { entity: number, item: string, count: number, pos: Vec3 }
+export type ItemDroppedEvent = { player: string, item: string, count: number }
 export type ItemDroppedV2Event = { player: string, stack: Item }
 export type ItemEnergyBufferEvent = { item: string, buffer: { capacity: number, max_insert: number, max_extract: number }?? }
 export type ItemExpireEvent = { entity: number, stack: Item, extra_life: number }
 export type ItemFluidTankEvent = { item: string, capacity: number? }
 export type ItemInteractMobEvent = { entity: number, kind: string, stack: Item?, swing: boolean? }
+export type ItemPickedUpEvent = { player: string, item: string, count: number }
 export type ItemPickedUpV2Event = { player: string, stack: Item, thrower: string?, position: Vec3 }
 export type ItemSpawnEvent = { entity: number, item: string, count: number, pos: Vec3 }
 export type KeyEvent = { key: string, pressed: boolean }
@@ -247,6 +255,8 @@ export type LivingDamagePostEvent = { entity: number, kind: string, damage_type:
 export type LivingDamagePreEvent = { entity: number, kind: string, damage_type: string, causing: number, direct: number, amount: number }
 export type LivingDeathEvent = { entity: number, kind: string, damage_type: string, attacker: number }
 export type LivingDrownEvent = { entity: number, kind: string, is_drowning: boolean, damage_amount: number, bubble_count: number }
+export type LivingEntityUseItemFinishEvent = { stack: Item, entity: number?, hand: "main" | "off", duration: number, result: Item? }
+export type LivingEntityUseItemStartEvent = { stack: Item, entity: number?, hand: "main" | "off", duration: number }
 export type LivingEntityUseItemStopEvent = { stack: Item, entity: number?, hand: "main" | "off", duration: number }
 export type LivingEntityUseItemTickEvent = { stack: Item, entity: number?, hand: "main" | "off", duration: number }
 export type LivingEquipmentChangeEvent = { entity: number, kind: string, slot: string, from: Item?, to: Item? }
@@ -301,6 +311,7 @@ export type PerformCommandEvent = { player: Player, command: string }
 export type PerformConsoleCommandEvent = { command: string }
 export type PermissionCheckEvent = { player: string, node: string, default_level: number, result: boolean? }
 export type PistonMoveEvent = { dimension: string, piston: Vec3, direction: Vec3, push: { Vec3 }, destroy: { Vec3 } }
+export type PlaceBlockEvent = { stack: Item, pos: Vec3, state: string, state_props: Props }
 export type PlayerAdvancementCriterionGrantEvent = { player: PlayerRef, advancement: string, criterion: string }
 export type PlayerAdvancementDoneEvent = { player: PlayerRef, advancement: string }
 export type PlayerAdvancementProgressEvent = { player: PlayerRef, advancement: string, criterion: string, granted: boolean }
@@ -397,6 +408,8 @@ export type PrepareHopperTransferEvent = { pos: Vec3 }
 export type PrepareItemCraftEvent = { player: PlayerRef, pos: Vec3?, result: Item? }
 export type PrepareItemEnchantEvent = { player: PlayerRef, pos: Vec3, costs: Vec3 }
 export type PrepareSmithingEvent = { player: PlayerRef, pos: Vec3, result: Item? }
+export type ProjectileImpactEvent = { dimension: string, projectile: number, kind: string, owner: number, entity: number?, entity_kind: string, block: Vec3, face: Vec3, at: Vec3 }
+export type ProjectileLaunchEvent = { player: PlayerRef?, entity: number, kind: string }
 export type ProjectileWorldBorderEvent = { dimension: string, entity: number, kind: string, pos: Vec3, velocity: Vec3, collide: boolean }
 export type RaidSpawnWaveEvent = { raid: number, pos: Vec3, wave: number, raiders: number }
 export type RaidStateChangeEvent = { raid: number, pos: Vec3, state: string }
@@ -414,6 +427,7 @@ export type RenderItemInFrameEvent = { entity_id: number, pos: Vec3, stack: Item
 export type RenderNameTagEvent = { entity_id: number, kind: string, vanilla_visible: boolean, visible: boolean, text: string? }
 export type ResourcePackStatusEvent = { player: PlayerRef, status: number }
 export type ResourcePackStatusV2Event = { player: PlayerRef, pack: string, status: number }
+export type RightClickBlockEvent = { pos: Vec3, face: Vec3 }
 export type RightClickBlockV2Event = { pos: Vec3, face: Vec3, hand: "main" | "off" }
 export type ScreenEvent = { block: string, screen: { width: number, height: number, slots: {{ x: number, y: number }?}, inventory_y: number, inventory_x: number, own_labels: boolean, own_background: boolean }?? }
 export type ScreenClickEvent = { block: string, data: { number }, at: Vec2, right: boolean, button: number? }
@@ -456,6 +470,8 @@ export type TradeWithVillagerEvent = { merchant: number, kind: string, offer: { 
 export type TrampleEvent = { dimension: string, entity: number, kind: string, pos: Vec3, fall_distance: number }
 export type UseAnimationEvent = { stack: Item, animation: "none" | "eat" | "drink" | "block" | "bow" | "trident" | "crossbow" | "spyglass" | "toot_horn" | "brush" | "bundle" | "spear" }
 export type UseDurationEvent = { stack: Item, duration: number }
+export type UseItemEvent = { stack: Item }
+export type UseItemOnEvent = { stack: Item, pos: Vec3, face: Vec3 }
 export type VaultChangeStateEvent = { dimension: string, pos: Vec3, state: string }
 export type VaultLootEvent = { pos: Vec3, item: string }
 export type VehicleCreateEvent = { kind: string, pos: Vec3 }
@@ -478,20 +494,6 @@ export type ZoomEvent = { zoom: { factor: number, smooth: boolean, turn: number 
 
 -- `horizon.on(name, fn[, kind])`: one overload per hook, with its handler's signature.
 export type HorizonOn =
-    ((name: "right_click_block", fn: (x: number, y: number, z: number, block: string, face: Vec3, player: Player, held: Held?, data: Data?) -> (), kind: string?) -> ()) &
-    ((name: "item_use", fn: (item: Item, player: Player) -> (), kind: string?) -> ()) &
-    ((name: "item_use_on", fn: (item: Item, player: Player, block: Block, face: Vec3) -> (), kind: string?) -> ()) &
-    ((name: "item_hit", fn: (item: HitItem, player: Player, target: Target) -> (), kind: string?) -> ()) &
-    ((name: "item_hurt_enemy", fn: (item: Item, player: Player, target: IdKind) -> (), kind: string?) -> ()) &
-    ((name: "item_use_start", fn: (item: Item, player: Player, hand: string, duration: number) -> (), kind: string?) -> ()) &
-    ((name: "item_finished", fn: (item: Item, player: Player) -> (), kind: string?) -> ()) &
-    ((name: "item_tick", fn: (item: Item, player: Player, slot: number, selected: boolean) -> (), kind: string?) -> ()) &
-    ((name: "item_picked_up", fn: (player: PlayerRef, item: string, count: number) -> (), kind: string?) -> ()) &
-    ((name: "item_crafted", fn: (player: PlayerRef, recipe: string, item: Item) -> (), kind: string?) -> ()) &
-    ((name: "item_dropped", fn: (player: PlayerRef, item: string, count: number) -> (), kind: string?) -> ()) &
-    ((name: "projectile_impact", fn: (projectile: number, kind: string, owner: number, hit: Hit) -> (), kind: string?) -> ()) &
-    ((name: "projectile_launched", fn: (projectile: number, kind: string, player: PlayerRef?) -> (), kind: string?) -> ()) &
-    ((name: "explosion", fn: (dimension: string, center: Vec3, blocks: { Vec3 }) -> (), kind: string?) -> ()) &
     ((name: "player_joined", fn: (player: PlayerRef) -> (), kind: string?) -> ()) &
     ((name: "player_left", fn: (player: PlayerRef) -> (), kind: string?) -> ()) &
     ((name: "player_respawned", fn: (player: PlayerRef) -> (), kind: string?) -> ()) &
@@ -503,8 +505,6 @@ export type HorizonOn =
     ((name: "player_bed_enter", fn: (player: PlayerRef, x: number, y: number, z: number) -> (), kind: string?) -> ()) &
     ((name: "player_exp_change", fn: (player: PlayerRef, amount: number) -> (), kind: string?) -> ()) &
     ((name: "player_container_open", fn: (player: PlayerRef, menu: string, pos: Vec3?) -> (), kind: string?) -> ()) &
-    ((name: "block_broken", fn: (x: number, y: number, z: number, block: string, player: Player) -> (), kind: string?) -> ()) &
-    ((name: "block_placed", fn: (x: number, y: number, z: number, block: string, player: Player, item: Item) -> (), kind: string?) -> ()) &
     ((name: "add_server_reload_listeners", fn: (event: AddServerReloadListenersEvent) -> ()) -> ()) &
     ((name: "analog_output", fn: (event: AnalogOutputEvent) -> ()) -> ()) &
     ((name: "anvil_craft_post", fn: (event: AnvilCraftPostEvent) -> ()) -> ()) &
@@ -515,6 +515,7 @@ export type HorizonOn =
     ((name: "armor_stand_manipulate", fn: (event: ArmorStandManipulateEvent) -> ()) -> ()) &
     ((name: "arrow_loose", fn: (event: ArrowLooseEvent) -> ()) -> ()) &
     ((name: "arrow_nock", fn: (event: ArrowNockEvent) -> ()) -> ()) &
+    ((name: "attack_entity", fn: (event: AttackEntityEvent) -> (), kind: string?) -> ()) &
     ((name: "baby_entity_spawn", fn: (event: BabyEntitySpawnEvent) -> (), kind: string?) -> ()) &
     ((name: "beacon_state_change", fn: (event: BeaconStateChangeEvent) -> ()) -> ()) &
     ((name: "bell_ring", fn: (event: BellRingEvent) -> ()) -> ()) &
@@ -594,6 +595,7 @@ export type HorizonOn =
     ((name: "data_map_types", fn: (event: DataMapTypesEvent) -> ()) -> ()) &
     ((name: "data_pack_files", fn: (event: DataPackFilesEvent) -> ()) -> ()) &
     ((name: "datapack_sync", fn: (event: DatapackSyncEvent) -> ()) -> ()) &
+    ((name: "destroy_block", fn: (event: DestroyBlockEvent) -> ()) -> ()) &
     ((name: "difficulty_changed", fn: (event: DifficultyChangedEvent) -> ()) -> ()) &
     ((name: "dispense_item", fn: (event: DispenseItemEvent) -> ()) -> ()) &
     ((name: "dragon_egg_form", fn: (event: DragonEggFormEvent) -> ()) -> ()) &
@@ -630,6 +632,7 @@ export type HorizonOn =
     ((name: "experience_orb_merge", fn: (event: ExperienceOrbMergeEvent) -> ()) -> ()) &
     ((name: "experience_orb_pickup", fn: (event: ExperienceOrbPickupEvent) -> ()) -> ()) &
     ((name: "experience_orb_pickup_listened", fn: (event: ExperienceOrbPickupListenedEvent) -> ()) -> ()) &
+    ((name: "explosion_detonate", fn: (event: ExplosionDetonateEvent) -> ()) -> ()) &
     ((name: "explosion_knockback", fn: (event: ExplosionKnockbackEvent) -> (), kind: string?) -> ()) &
     ((name: "explosion_prime", fn: (event: ExplosionPrimeEvent) -> ()) -> ()) &
     ((name: "fill_bucket", fn: (event: FillBucketEvent) -> ()) -> ()) &
@@ -653,6 +656,7 @@ export type HorizonOn =
     ((name: "hopper_inventory_search", fn: (event: HopperInventorySearchEvent) -> (), kind: string?) -> ()) &
     ((name: "hopper_pickup_item", fn: (event: HopperPickupItemEvent) -> ()) -> ()) &
     ((name: "hud", fn: (event: HudEvent) -> ()) -> ()) &
+    ((name: "hurt_enemy", fn: (event: HurtEnemyEvent) -> (), kind: string?) -> ()) &
     ((name: "ingredient", fn: (event: IngredientEvent) -> ()) -> ()) &
     ((name: "ingredient_test", fn: (event: IngredientTestEvent) -> ()) -> ()) &
     ((name: "interact_entity", fn: (event: InteractEntityEvent) -> (), kind: string?) -> ()) &
@@ -662,19 +666,23 @@ export type HorizonOn =
     ((name: "inventory_click", fn: (event: InventoryClickEvent) -> ()) -> ()) &
     ((name: "inventory_drag", fn: (event: InventoryDragEvent) -> ()) -> ()) &
     ((name: "inventory_move_item", fn: (event: InventoryMoveItemEvent) -> ()) -> ()) &
+    ((name: "inventory_tick", fn: (event: InventoryTickEvent) -> ()) -> ()) &
     ((name: "is_bonemeal_success", fn: (event: IsBonemealSuccessEvent) -> ()) -> ()) &
     ((name: "is_signal_source", fn: (event: IsSignalSourceEvent) -> ()) -> ()) &
     ((name: "is_valid_bonemeal_target", fn: (event: IsValidBonemealTargetEvent) -> ()) -> ()) &
     ((name: "item_after_vertical_collision", fn: (event: ItemAfterVerticalCollisionEvent) -> (), kind: string?) -> ()) &
     ((name: "item_bar", fn: (event: ItemBarEvent) -> ()) -> ()) &
     ((name: "item_container", fn: (event: ItemContainerEvent) -> ()) -> ()) &
+    ((name: "item_crafted", fn: (event: ItemCraftedEvent) -> ()) -> ()) &
     ((name: "item_damaged", fn: (event: ItemDamagedEvent) -> ()) -> ()) &
     ((name: "item_despawn", fn: (event: ItemDespawnEvent) -> (), kind: string?) -> ()) &
+    ((name: "item_dropped", fn: (event: ItemDroppedEvent) -> ()) -> ()) &
     ((name: "item_dropped_v2", fn: (event: ItemDroppedV2Event) -> ()) -> ()) &
     ((name: "item_energy_buffer", fn: (event: ItemEnergyBufferEvent) -> ()) -> ()) &
     ((name: "item_expire", fn: (event: ItemExpireEvent) -> (), kind: string?) -> ()) &
     ((name: "item_fluid_tank", fn: (event: ItemFluidTankEvent) -> ()) -> ()) &
     ((name: "item_interact_mob", fn: (event: ItemInteractMobEvent) -> (), kind: string?) -> ()) &
+    ((name: "item_picked_up", fn: (event: ItemPickedUpEvent) -> ()) -> ()) &
     ((name: "item_picked_up_v2", fn: (event: ItemPickedUpV2Event) -> ()) -> ()) &
     ((name: "item_spawn", fn: (event: ItemSpawnEvent) -> (), kind: string?) -> ()) &
     ((name: "key", fn: (event: KeyEvent) -> ()) -> ()) &
@@ -693,6 +701,8 @@ export type HorizonOn =
     ((name: "living_damage_pre", fn: (event: LivingDamagePreEvent) -> (), kind: string?) -> ()) &
     ((name: "living_death", fn: (event: LivingDeathEvent) -> (), kind: string?) -> ()) &
     ((name: "living_drown", fn: (event: LivingDrownEvent) -> (), kind: string?) -> ()) &
+    ((name: "living_entity_use_item_finish", fn: (event: LivingEntityUseItemFinishEvent) -> (), kind: string?) -> ()) &
+    ((name: "living_entity_use_item_start", fn: (event: LivingEntityUseItemStartEvent) -> (), kind: string?) -> ()) &
     ((name: "living_entity_use_item_stop", fn: (event: LivingEntityUseItemStopEvent) -> (), kind: string?) -> ()) &
     ((name: "living_entity_use_item_tick", fn: (event: LivingEntityUseItemTickEvent) -> (), kind: string?) -> ()) &
     ((name: "living_equipment_change", fn: (event: LivingEquipmentChangeEvent) -> (), kind: string?) -> ()) &
@@ -747,6 +757,7 @@ export type HorizonOn =
     ((name: "perform_console_command", fn: (event: PerformConsoleCommandEvent) -> ()) -> ()) &
     ((name: "permission_check", fn: (event: PermissionCheckEvent) -> ()) -> ()) &
     ((name: "piston_move", fn: (event: PistonMoveEvent) -> ()) -> ()) &
+    ((name: "place_block", fn: (event: PlaceBlockEvent) -> ()) -> ()) &
     ((name: "player_advancement_criterion_grant", fn: (event: PlayerAdvancementCriterionGrantEvent) -> ()) -> ()) &
     ((name: "player_advancement_done", fn: (event: PlayerAdvancementDoneEvent) -> ()) -> ()) &
     ((name: "player_advancement_progress", fn: (event: PlayerAdvancementProgressEvent) -> ()) -> ()) &
@@ -843,6 +854,8 @@ export type HorizonOn =
     ((name: "prepare_item_craft", fn: (event: PrepareItemCraftEvent) -> ()) -> ()) &
     ((name: "prepare_item_enchant", fn: (event: PrepareItemEnchantEvent) -> ()) -> ()) &
     ((name: "prepare_smithing", fn: (event: PrepareSmithingEvent) -> ()) -> ()) &
+    ((name: "projectile_impact", fn: (event: ProjectileImpactEvent) -> (), kind: string?) -> ()) &
+    ((name: "projectile_launch", fn: (event: ProjectileLaunchEvent) -> (), kind: string?) -> ()) &
     ((name: "projectile_world_border", fn: (event: ProjectileWorldBorderEvent) -> (), kind: string?) -> ()) &
     ((name: "raid_spawn_wave", fn: (event: RaidSpawnWaveEvent) -> ()) -> ()) &
     ((name: "raid_state_change", fn: (event: RaidStateChangeEvent) -> ()) -> ()) &
@@ -860,6 +873,7 @@ export type HorizonOn =
     ((name: "render_name_tag", fn: (event: RenderNameTagEvent) -> (), kind: string?) -> ()) &
     ((name: "resource_pack_status", fn: (event: ResourcePackStatusEvent) -> ()) -> ()) &
     ((name: "resource_pack_status_v2", fn: (event: ResourcePackStatusV2Event) -> ()) -> ()) &
+    ((name: "right_click_block", fn: (event: RightClickBlockEvent) -> ()) -> ()) &
     ((name: "right_click_block_v2", fn: (event: RightClickBlockV2Event) -> ()) -> ()) &
     ((name: "screen", fn: (event: ScreenEvent) -> ()) -> ()) &
     ((name: "screen_click", fn: (event: ScreenClickEvent) -> ()) -> ()) &
@@ -902,6 +916,8 @@ export type HorizonOn =
     ((name: "trample", fn: (event: TrampleEvent) -> (), kind: string?) -> ()) &
     ((name: "use_animation", fn: (event: UseAnimationEvent) -> ()) -> ()) &
     ((name: "use_duration", fn: (event: UseDurationEvent) -> ()) -> ()) &
+    ((name: "use_item", fn: (event: UseItemEvent) -> ()) -> ()) &
+    ((name: "use_item_on", fn: (event: UseItemOnEvent) -> ()) -> ()) &
     ((name: "vault_change_state", fn: (event: VaultChangeStateEvent) -> ()) -> ()) &
     ((name: "vault_loot", fn: (event: VaultLootEvent) -> ()) -> ()) &
     ((name: "vehicle_create", fn: (event: VehicleCreateEvent) -> (), kind: string?) -> ()) &

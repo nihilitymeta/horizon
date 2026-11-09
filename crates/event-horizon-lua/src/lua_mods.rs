@@ -24,18 +24,14 @@ use horizon_client::dev_input::mods::{
 use horizon_client::mod_api::NativeCommand;
 use horizon_client::mod_api::{
     AttachmentCodec, AttachmentType, BlockStateId, Compound, Flow, Holder, Hooks, Host,
-    LevelDimension, LevelHost, LevelWriteHost, MobView, RightClickBlockEvent,
+    LevelDimension, LevelHost, LevelWriteHost, MobView,
 };
 use horizon_client::mod_api::{
-    AttackEntityEvent, DestroyBlockEvent, InventoryTickEvent, ItemPickedUpEvent, ItemStack,
-    LivingEntityUseItemFinishEvent, PlaceBlockEvent, PlayerDiedEvent, PlayerLoggedInEvent,
-    PlayerLoggedOutEvent, PlayerRespawnedEvent, UseItemEvent, UseItemOnEvent,
+    ItemStack, PlayerDiedEvent, PlayerLoggedInEvent, PlayerLoggedOutEvent, PlayerRespawnedEvent,
 };
 use horizon_client::mod_api::{
-    ExplosionDetonateEvent, HearsProjectileImpactsEvent, HurtEnemyEvent, ItemCraftedEvent,
-    ItemDroppedEvent, LivingEntityUseItemStartEvent, PlayerBedEnterEvent,
-    PlayerChangedDimensionEvent, PlayerChatEvent, PlayerCommandEvent, PlayerContainerOpenEvent,
-    PlayerExpChangeEvent, PlayerTickEvent, ProjectileImpactEvent, ProjectileLaunchEvent,
+    PlayerBedEnterEvent, PlayerChangedDimensionEvent, PlayerChatEvent, PlayerCommandEvent,
+    PlayerContainerOpenEvent, PlayerExpChangeEvent, PlayerTickEvent,
 };
 use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
@@ -127,20 +123,6 @@ pub const ENTRY: &str = horizon_mods::content::SCRIPT_ENTRY;
 /// (`generated_hooks::GENERATED_HOOK_NAMES`) register too; the script
 /// commands' own hook is `perform_command` (`horizon.command` declares).
 pub const LUA_HOOK_NAMES: &[&str] = &[
-    "right_click_block",
-    "item_use",
-    "item_use_on",
-    "item_hit",
-    "item_hurt_enemy",
-    "item_use_start",
-    "item_finished",
-    "item_tick",
-    "item_picked_up",
-    "item_crafted",
-    "item_dropped",
-    "projectile_impact",
-    "projectile_launched",
-    "explosion",
     "player_joined",
     "player_left",
     "player_respawned",
@@ -152,8 +134,6 @@ pub const LUA_HOOK_NAMES: &[&str] = &[
     "player_bed_enter",
     "player_exp_change",
     "player_container_open",
-    "block_broken",
-    "block_placed",
 ];
 
 /// The content mod's manifest, which names the mod.
@@ -2064,6 +2044,14 @@ impl LuaMod {
         Ok(out)
     }
 
+    /// `{id, kind}` of an entity, for a hook without a host or a view.
+    fn id_kind_table(&self, id: u32, kind: &str) -> mlua::Result<Table> {
+        let t = self.lua.create_table()?;
+        t.set("id", id)?;
+        t.set("kind", kind)?;
+        Ok(t)
+    }
+
     /// The acting player as a table (`uuid`, `name`, `dimension`, `position`,
     /// `game_mode`, `health`), or nil when no player acts.
     fn player_table(&self, host: &dyn Host) -> mlua::Result<Value> {
@@ -2092,14 +2080,6 @@ impl LuaMod {
             }
             None => Value::Nil,
         })
-    }
-
-    /// `{id, kind}` of an entity, for a hook without a host or a view.
-    fn id_kind_table(&self, id: u32, kind: &str) -> mlua::Result<Table> {
-        let t = self.lua.create_table()?;
-        t.set("id", id)?;
-        t.set("kind", kind)?;
-        Ok(t)
     }
 
     /// The player `uuid` as a table: the world's record when they are on,
@@ -2164,29 +2144,6 @@ impl LuaMod {
         })();
         if let Err(e) = r {
             self.hook_error(hook, e);
-        }
-    }
-
-    /// Writes a block entity's data table back through `host` when the
-    /// handlers changed it.
-    fn store_data(
-        &self,
-        host: &mut dyn Host,
-        hook: &str,
-        pos: [i32; 3],
-        before: Option<Compound>,
-        data: Option<Table>,
-    ) {
-        if let (Some(before), Some(data)) = (before, data) {
-            match nbt::table_to_compound(&data, Some(&before)) {
-                Ok(after) if after != before => {
-                    host.set_mod_block_entity_data(pos, after);
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    self.hook_error(hook, e);
-                }
-            }
         }
     }
 
@@ -2764,297 +2721,6 @@ pub(crate) fn dimension_id(dimension: LevelDimension) -> &'static str {
 }
 
 impl Hooks for LuaMod {
-    /// A player right-clicks a block: `right_click_block(x, y, z, block, face,
-    /// player, held)`, `face` and `player.position` as `{x, y, z}`, `player`
-    /// with `name`, `dimension` and `game_mode`, `held` with `item`, `count`
-    /// and `plain`. Handlers may queue `set_block_property(key, value)`,
-    /// `cancel()` (neither the block nor the item acts) and the host actions.
-    fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
-        let hook = "right_click_block";
-        if !self.has_handlers(hook) {
-            return Flow::Continue;
-        }
-        let lua = &self.lua;
-        let [x, y, z] = event.pos;
-        let block = host.block(event.pos);
-        let tables = (|| -> mlua::Result<(Table, Value, Value)> {
-            let face = goals::vec3(
-                lua,
-                [
-                    event.face[0] as f64,
-                    event.face[1] as f64,
-                    event.face[2] as f64,
-                ],
-            )?;
-            let player = self.player_table(host)?;
-            let held = self.held_table(host)?;
-            Ok((face, player, held))
-        })();
-        let (face, player, held) = match tables {
-            Ok(t) => t,
-            Err(e) => return self.hook_error(hook, e),
-        };
-        let before = host.mod_block_entity_data(event.pos);
-        let data = match before
-            .as_ref()
-            .map(|c| nbt::compound_to_table(lua, c))
-            .transpose()
-        {
-            Ok(t) => t,
-            Err(e) => return self.hook_error(hook, e),
-        };
-        let mut cancel = false;
-        let r = self.call_kind(
-            hook,
-            None,
-            host,
-            (x, y, z, block.as_str(), face, player, held, data.clone()),
-            &mut |host, action, args| {
-                match action {
-                    "set_block_property" => {
-                        let (key, value): (String, String) = (args.get(1)?, args.get(2)?);
-                        host.set_block_property(event.pos, &key, &value);
-                    }
-                    "cancel" => cancel = true,
-                    other => self.run_action(host, other, args)?,
-                }
-                Ok(())
-            },
-        );
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        self.store_data(host, hook, event.pos, before, data);
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-
-    /// A player right-clicks with an item, in the air or on a block the block
-    /// let through: `item_use(item, player)`, `item` `{id, count, damage,
-    /// plain}`; `horizon.cancel()` takes the use (the hand swings, the item's
-    /// own use does not run). Register by item id to hear one item.
-    fn use_item(&self, host: &mut dyn Host, event: &mut UseItemEvent<'_>) -> Flow {
-        let hook = "item_use";
-        let id = qualify(&event.stack.item);
-        if !self.watches(hook, &id) {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let r = (|| -> mlua::Result<()> {
-            let item = item_table_of(&self.lua, event.stack)?;
-            let player = self.player_table(host)?;
-            self.call_kind(
-                hook,
-                Some(&id),
-                host,
-                (item, player),
-                &mut |host, action, args| {
-                    match action {
-                        "cancel" => cancel = true,
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )
-        })();
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-    /// A player right-clicks a block with an item, once the block let the
-    /// click through: `item_use_on(item, player, block, face)`, `block`
-    /// `{x, y, z, id}`, `face` `{x, y, z}` (`{0, 1, 0}` the top);
-    /// `horizon.cancel()` takes the use.
-    fn use_item_on(&self, host: &mut dyn Host, event: &mut UseItemOnEvent<'_>) -> Flow {
-        let hook = "item_use_on";
-        let id = qualify(&event.stack.item);
-        if !self.watches(hook, &id) {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let r = (|| -> mlua::Result<()> {
-            let lua = &self.lua;
-            let item = item_table_of(lua, event.stack)?;
-            let player = self.player_table(host)?;
-            let block = lua.create_table()?;
-            block.set("x", event.pos[0])?;
-            block.set("y", event.pos[1])?;
-            block.set("z", event.pos[2])?;
-            block.set("id", host.block(event.pos))?;
-            let face = goals::vec3(
-                lua,
-                [
-                    event.face[0] as f64,
-                    event.face[1] as f64,
-                    event.face[2] as f64,
-                ],
-            )?;
-            self.call_kind(
-                hook,
-                Some(&id),
-                host,
-                (item, player, block, face),
-                &mut |host, action, args| {
-                    match action {
-                        "cancel" => cancel = true,
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )
-        })();
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-    /// A player attacks an entity with what they hold: `item_hit(item,
-    /// player, target)`, `target` `{id, kind, position}`; `horizon.cancel()`
-    /// and the blow does nothing. Register by the held item's id (an empty
-    /// hand is `minecraft:air`).
-    fn attack_entity(&self, host: &mut dyn Host, event: &mut AttackEntityEvent<'_>) -> Flow {
-        let hook = "item_hit";
-        let held = host.held();
-        let id = match &held {
-            Some((item, _, _)) => qualify(item),
-            None => "minecraft:air".to_owned(),
-        };
-        if !self.watches(hook, &id) {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let r = (|| -> mlua::Result<()> {
-            let lua = &self.lua;
-            let item = lua.create_table()?;
-            match &held {
-                Some((item_id, count, plain)) => {
-                    item.set("id", item_id.as_str())?;
-                    item.set("count", *count)?;
-                    item.set("plain", *plain)?;
-                }
-                None => {
-                    item.set("id", "minecraft:air")?;
-                    item.set("count", 0)?;
-                    item.set("plain", true)?;
-                }
-            }
-            let player = self.player_table(host)?;
-            let target = lua.create_table()?;
-            target.set("id", event.entity)?;
-            target.set("kind", qualify(event.kind))?;
-            target.set("position", goals::vec3(lua, event.pos)?)?;
-            self.call_kind(
-                hook,
-                Some(&id),
-                host,
-                (item, player, target),
-                &mut |host, action, args| {
-                    match action {
-                        "cancel" => cancel = true,
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )
-        })();
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-    /// A player finished using an item over time (ate it, drank it, used a
-    /// mod item for its duration): `item_finished(item, player)`. Handlers
-    /// may queue `horizon.set_result(id, count)` for what stays in the hand
-    /// (`set_result()` for nothing) and the host actions.
-    fn living_entity_use_item_finish(
-        &self,
-        host: &mut dyn Host,
-        event: &mut LivingEntityUseItemFinishEvent<'_>,
-    ) {
-        let hook = "item_finished";
-        let id = qualify(&event.stack.item);
-        if !self.watches(hook, &id) {
-            return;
-        }
-        let mut result: Option<Option<ItemStack>> = None;
-        let r = (|| -> mlua::Result<()> {
-            let item = item_table_of(&self.lua, event.stack)?;
-            let player = self.player_table(host)?;
-            self.call_kind(
-                hook,
-                Some(&id),
-                host,
-                (item, player),
-                &mut |host, action, args| {
-                    match action {
-                        "set_result" => {
-                            result = Some(match args.get::<Option<String>>(1)? {
-                                Some(item) => Some(ItemStack {
-                                    item: qualify(&item).into(),
-                                    count: args.get::<Option<u32>>(2)?.unwrap_or(1),
-                                    damage: 0,
-                                    extra: None,
-                                }),
-                                None => None,
-                            });
-                        }
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-            return;
-        }
-        if let Some(result) = result {
-            *event.result = result;
-        }
-    }
-    /// A server tick of a stack a player carries: `item_tick(item, player,
-    /// slot, selected)`, `slot` as the inventory saves it (0 to 35, 100 to
-    /// 103 armour, -106 the off hand), `selected` when it is the held one.
-    /// Handlers may queue `horizon.set_count(n)` on that stack (0 empties the
-    /// slot) and the host actions. It runs for every stack of every player
-    /// each tick: register by item id.
-    fn inventory_tick(&self, host: &mut dyn Host, event: &mut InventoryTickEvent) {
-        let hook = "item_tick";
-        let Some(stack) = host.carried_stack(event.slot).map(|s| s.clone()) else {
-            return;
-        };
-        let id = qualify(&stack.item);
-        if !self.watches(hook, &id) {
-            return;
-        }
-        let slot = event.slot;
-        let r = (|| -> mlua::Result<()> {
-            let item = item_table_of(&self.lua, &stack)?;
-            let player = self.player_table(host)?;
-            self.call_kind(
-                hook,
-                Some(&id),
-                host,
-                (item, player, slot, event.selected),
-                &mut |host, action, args| {
-                    match action {
-                        "set_count" => {
-                            let count: u32 = args.get(1)?;
-                            if let Some(s) = host.carried_stack(slot) {
-                                s.count = count;
-                            }
-                        }
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
-    }
-
     /// A player joined the game: `player_joined(player)`.
     fn player_logged_in(&self, host: &mut dyn Host, event: &mut PlayerLoggedInEvent<'_>) {
         self.player_hook(host, "player_joined", event.player, event.name, None);
@@ -3071,94 +2737,6 @@ impl Hooks for LuaMod {
     /// message's key (`death.attack.lava`) when the game knows it, else nil.
     fn player_died(&self, host: &mut dyn Host, event: &mut PlayerDiedEvent<'_>) {
         self.player_hook(host, "player_died", event.player, "", Some(event.cause));
-    }
-    /// A player breaks a block, once the game allowed it: `block_broken(x,
-    /// y, z, block, player)`; `horizon.cancel()` keeps the block (nothing
-    /// breaks or drops). Register by block id.
-    fn destroy_block(&self, host: &mut dyn Host, event: &mut DestroyBlockEvent) -> Flow {
-        let hook = "block_broken";
-        let block = host.block(event.pos);
-        if !self.watches(hook, &block) {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let [x, y, z] = event.pos;
-        let r = (|| -> mlua::Result<()> {
-            let player = self.player_table(host)?;
-            self.call_kind(
-                hook,
-                Some(&block),
-                host,
-                (x, y, z, block.as_str(), player),
-                &mut |host, action, args| {
-                    match action {
-                        "cancel" => cancel = true,
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )
-        })();
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-    /// A player placed a block: `block_placed(x, y, z, block, player, item)`,
-    /// `item` the stack placed. It only hears (a use hook stops a placement
-    /// before it). Register by block id.
-    fn place_block(&self, host: &mut dyn Host, event: &mut PlaceBlockEvent<'_>) {
-        let hook = "block_placed";
-        let block = host.block(event.pos);
-        if !self.watches(hook, &block) {
-            return;
-        }
-        let [x, y, z] = event.pos;
-        let r = (|| -> mlua::Result<()> {
-            let player = self.player_table(host)?;
-            let item = item_table_of(&self.lua, event.stack)?;
-            self.call_kind(
-                hook,
-                Some(&block),
-                host,
-                (x, y, z, block.as_str(), player, item),
-                &mut |host, action, args| self.run_action(host, action, args),
-            )
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
-    }
-    /// A player is about to pick up items from the ground:
-    /// `item_picked_up(player, item, count)`; `horizon.cancel()` leaves them
-    /// there. Register by item id.
-    fn item_picked_up(&self, host: &mut dyn Host, event: &mut ItemPickedUpEvent<'_>) -> Flow {
-        let hook = "item_picked_up";
-        let id = qualify(event.item);
-        if !self.watches(hook, &id) {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let r = (|| -> mlua::Result<()> {
-            let player = self.player_by_uuid(host, event.player, None)?;
-            self.call_kind(
-                hook,
-                Some(&id),
-                host,
-                (player, id.as_str(), event.count),
-                &mut |host, action, args| {
-                    match action {
-                        "cancel" => cancel = true,
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )
-        })();
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
     }
     /// A living player's server tick ends: `player_tick(player)`, the
     /// acting player's table; the host actions and the reads work. Every
@@ -3257,189 +2835,6 @@ impl Hooks for LuaMod {
                 .push(horizon_client::mod_api::Text::literal(line));
         }
         if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-    /// A player took a crafting grid's result: `item_crafted(player, recipe,
-    /// item)`, by the result's item id. It only hears.
-    fn item_crafted(&self, host: &mut dyn Host, event: &mut ItemCraftedEvent<'_>) {
-        let hook = "item_crafted";
-        let id = qualify(&event.stack.item);
-        if !self.watches(hook, &id) {
-            return;
-        }
-        let r = (|| -> mlua::Result<()> {
-            let player = self.player_by_uuid(host, event.player, None)?;
-            let item = item_table_of(&self.lua, event.stack)?;
-            self.call_kind(
-                hook,
-                Some(&id),
-                host,
-                (player, event.recipe, item),
-                &mut |host, action, args| self.run_action(host, action, args),
-            )
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
-    }
-    /// A player threw an item (the drop key, a menu's throw):
-    /// `item_dropped(player, item, count)`, by item id. It only hears.
-    fn item_dropped(&self, host: &mut dyn Host, event: &mut ItemDroppedEvent<'_>) {
-        let hook = "item_dropped";
-        let id = qualify(event.item);
-        if !self.watches(hook, &id) {
-            return;
-        }
-        let r = (|| -> mlua::Result<()> {
-            let player = self.player_by_uuid(host, event.player, None)?;
-            self.call_kind(
-                hook,
-                Some(&id),
-                host,
-                (player, id.as_str(), event.count),
-                &mut |host, action, args| self.run_action(host, action, args),
-            )
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
-    }
-    /// Projectile impacts are heard when a script watches one
-    /// (`projectile_impact` by projectile kind).
-    fn hears_projectile_impacts(&self, _host: &dyn Host, event: &mut HearsProjectileImpactsEvent) {
-        if self
-            .kinds
-            .lock()
-            .is_ok_and(|k| k.get("projectile_impact").is_some_and(|s| !s.is_empty()))
-        {
-            event.hears = true;
-        }
-    }
-    /// A projectile hit something, before the hit acts:
-    /// `projectile_impact(projectile, kind, owner, hit)` by projectile kind;
-    /// `hit` has `x`, `y`, `z` and either `entity` and `entity_kind` or
-    /// `block` (`{x, y, z, id}`) and `face`. `horizon.cancel()` and the
-    /// projectile flies on.
-    fn projectile_impact(
-        &self,
-        host: &mut dyn Host,
-        event: &mut ProjectileImpactEvent<'_>,
-    ) -> Flow {
-        let hook = "projectile_impact";
-        let kind = qualify(event.kind);
-        if !self.watches(hook, &kind) {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let r = (|| -> mlua::Result<()> {
-            let lua = &self.lua;
-            let hit = lua.create_table()?;
-            hit.set("x", event.at[0])?;
-            hit.set("y", event.at[1])?;
-            hit.set("z", event.at[2])?;
-            match event.entity {
-                Some(id) => {
-                    hit.set("entity", id)?;
-                    hit.set("entity_kind", qualify(event.entity_kind))?;
-                }
-                None => {
-                    let block = lua.create_table()?;
-                    block.set("x", event.block[0])?;
-                    block.set("y", event.block[1])?;
-                    block.set("z", event.block[2])?;
-                    block.set("id", host.block(event.block))?;
-                    hit.set("block", block)?;
-                    let face = lua.create_table()?;
-                    face.set("x", event.face[0])?;
-                    face.set("y", event.face[1])?;
-                    face.set("z", event.face[2])?;
-                    hit.set("face", face)?;
-                }
-            }
-            self.call_kind(
-                hook,
-                Some(&kind),
-                host,
-                (event.projectile, kind.as_str(), event.owner, hit),
-                &mut |host, action, args| {
-                    match action {
-                        "cancel" => cancel = true,
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )
-        })();
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-    /// A projectile was launched: `projectile_launched(projectile, kind,
-    /// player)` by projectile kind, `player` the launcher's table or nil
-    /// (a mob's, a dispenser's). It only hears.
-    fn projectile_launch(&self, host: &mut dyn Host, event: &mut ProjectileLaunchEvent<'_>) {
-        let hook = "projectile_launched";
-        let kind = qualify(event.kind);
-        if !self.watches(hook, &kind) {
-            return;
-        }
-        let r = (|| -> mlua::Result<()> {
-            let player = match event.player {
-                Some(uuid) => Value::Table(self.player_by_uuid(host, uuid, Some(event.name))?),
-                None => Value::Nil,
-            };
-            self.call_kind(
-                hook,
-                Some(&kind),
-                host,
-                (event.entity, kind.as_str(), player),
-                &mut |host, action, args| self.run_action(host, action, args),
-            )
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
-    }
-    /// An explosion is about to break blocks: `explosion(dimension, center,
-    /// blocks)`, `blocks` a sequence of `{x, y, z}` the handler changes in
-    /// place (take entries out to spare them), written back after the call.
-    fn explosion_detonate(&self, host: &mut dyn Host, event: &mut ExplosionDetonateEvent<'_>) {
-        let hook = "explosion";
-        if !self.has_handlers(hook) {
-            return;
-        }
-        let r = (|| -> mlua::Result<()> {
-            let lua = &self.lua;
-            let blocks = lua.create_table()?;
-            for (i, pos) in event.blocks.iter().enumerate() {
-                let t = lua.create_table()?;
-                t.set("x", pos[0])?;
-                t.set("y", pos[1])?;
-                t.set("z", pos[2])?;
-                blocks.set(i + 1, t)?;
-            }
-            self.call_kind(
-                hook,
-                None,
-                host,
-                (
-                    event.dimension,
-                    goals::vec3(lua, event.center)?,
-                    blocks.clone(),
-                ),
-                &mut |host, action, args| self.run_action(host, action, args),
-            )?;
-            let mut out = Vec::new();
-            for t in blocks.sequence_values::<Table>() {
-                let t = t?;
-                out.push([t.get::<i32>("x")?, t.get::<i32>("y")?, t.get::<i32>("z")?]);
-            }
-            *event.blocks = out;
-            Ok(())
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
     }
     /// A player's move to another level has ended:
     /// `player_changed_dimension(player, from, to)`.
@@ -3558,72 +2953,6 @@ impl Hooks for LuaMod {
         if let Err(e) = r {
             self.hook_error(hook, e);
         }
-    }
-    /// A player's blow landed on a mob: `item_hurt_enemy(item, player,
-    /// target)` by the held item's id (`item_hit` is before the blow). It
-    /// only hears.
-    fn hurt_enemy(&self, host: &mut dyn Host, event: &mut HurtEnemyEvent<'_>) {
-        let hook = "item_hurt_enemy";
-        let id = qualify(&event.stack.item);
-        if !self.watches(hook, &id) {
-            return;
-        }
-        let r = (|| -> mlua::Result<()> {
-            let item = item_table_of(&self.lua, event.stack)?;
-            let player = self.player_table(host)?;
-            let target = self.id_kind_table(event.entity, &qualify(event.kind))?;
-            self.call_kind(
-                hook,
-                Some(&id),
-                host,
-                (item, player, target),
-                &mut |host, action, args| self.run_action(host, action, args),
-            )
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
-    }
-    /// A player starts using an item over time (eating, drawing a bow):
-    /// `item_use_start(item, player, hand, duration)` by item id, `hand`
-    /// `"main"` or `"off"`. Handlers may queue `set_duration(ticks)` and
-    /// `cancel()` (the use does not start).
-    fn living_entity_use_item_start(
-        &self,
-        host: &mut dyn Host,
-        event: &mut LivingEntityUseItemStartEvent<'_>,
-    ) -> Flow {
-        let hook = "item_use_start";
-        let id = qualify(&event.stack.item);
-        if event.entity.is_some() || !self.watches(hook, &id) {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let mut duration = event.duration;
-        let r = (|| -> mlua::Result<()> {
-            let item = item_table_of(&self.lua, event.stack)?;
-            let player = self.player_table(host)?;
-            let hand = format!("{:?}", event.hand).to_lowercase();
-            self.call_kind(
-                hook,
-                Some(&id),
-                host,
-                (item, player, hand, event.duration),
-                &mut |host, action, args| {
-                    match action {
-                        "set_duration" => duration = args.get::<i32>(1)?,
-                        "cancel" => cancel = true,
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )
-        })();
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        event.duration = duration.max(0);
-        if cancel { Flow::Cancel } else { Flow::Continue }
     }
     // `register_commands` and `perform_command` are generated
     // (`generated_hooks`, `gen_register_commands` and
@@ -4567,27 +3896,41 @@ experimental = ["scripts"]
                 br#"
                 LOG = {}
                 local function log(s) LOG[#LOG + 1] = s end
-                horizon.on("item_use", function(item, player)
-                  log("use " .. item.id .. " x" .. item.count .. " by " .. player.name)
-                  horizon.take_items(item.id, 1)
+                -- No kind filter any more: every use wakes the handler, which
+                -- keeps its own item, and the player comes from the host read.
+                horizon.on("use_item", function(event)
+                  if event.stack.id ~= "ruby:wand" then return end
+                  __witness = (__witness or 0) + 1
+                  local player = horizon.players()[1]
+                  log("use " .. event.stack.id .. " x" .. event.stack.count .. " by " .. player.name)
+                  horizon.take_items(event.stack.id, 1)
                   horizon.cancel()
-                end, "ruby:wand")
-                horizon.on("item_use_on", function(item, player, block, face)
-                  log("use_on " .. block.id .. " at " .. block.x .. "," .. block.y .. "," .. block.z .. " face " .. face.y)
-                end, "wand")
-                horizon.on("item_hit", function(item, player, target)
-                  log("hit " .. target.kind .. " " .. target.id .. " with " .. item.id .. " at " .. target.position.x)
+                end)
+                horizon.on("use_item_on", function(event)
+                  if event.stack.id ~= "ruby:wand" then return end
+                  __witness = (__witness or 0) + 1
+                  local id = horizon.block(event.pos.x, event.pos.y, event.pos.z)
+                  log("use_on " .. id .. " at " .. event.pos.x .. "," .. event.pos.y .. "," .. event.pos.z .. " face " .. event.face.y)
+                end)
+                -- The blow's entity kind filters, but the held item neither
+                -- filters nor arrives: the handler reads the event only.
+                horizon.on("attack_entity", function(event)
+                  __witness = (__witness or 0) + 1
+                  log("hit " .. event.kind .. " " .. event.entity .. " at " .. event.pos.x)
                   horizon.cancel()
-                end, "ruby:wand")
-                horizon.on("item_finished", function(item, player)
-                  log("finished " .. item.id)
-                  horizon.set_result("minecraft:stick", 2)
-                end, "ruby:wand")
-                horizon.on("item_tick", function(item, player, slot, selected)
-                  log("tick " .. item.id .. " slot " .. slot .. " " .. tostring(selected))
-                  horizon.set_count(item.count - 1)
-                end, "ruby:wand")
-                horizon.on("item_use", function(item) error("not for apples") end, "minecraft:apple")
+                end, "minecraft:cow")
+                horizon.on("living_entity_use_item_finish", function(event)
+                  if event.stack.id ~= "ruby:wand" then return end
+                  __witness = (__witness or 0) + 1
+                  log("finished " .. event.stack.id .. " in " .. event.hand)
+                  event.result = { id = "minecraft:stick", count = 2 }
+                end)
+                -- The tick names no item at all: the slot and its selection.
+                horizon.on("inventory_tick", function(event)
+                  __witness = (__witness or 0) + 1
+                  log("tick slot " .. event.slot .. " " .. tostring(event.selected))
+                  horizon.broadcast("ticked")
+                end)
                 "#,
             )],
         );
@@ -4602,20 +3945,38 @@ experimental = ["scripts"]
             player: Default::default(),
         };
         let wand = wand();
-        // The wand's use is taken, and one is consumed; the registered name
-        // without a namespace is minecraft's, so "wand" hears nothing.
+        // The wand's use is taken, and one is consumed; an apple's use wakes
+        // the handler too, and its in-Lua filter keeps it quiet.
         assert_eq!(
             m.use_item(&mut host, &mut test_events::use_item_event(&wand)),
             Flow::Cancel
+        );
+        let apple = ItemStack {
+            item: "minecraft:apple".into(),
+            count: 1,
+            damage: 0,
+            extra: None,
+        };
+        assert_eq!(
+            m.use_item(&mut host, &mut test_events::use_item_event(&apple)),
+            Flow::Continue
         );
         let mut stone = test_events::use_item_on_event(&wand, [1, 2, 3], [0, 1, 0]);
         assert_eq!(m.use_item_on(&mut host, &mut stone), Flow::Continue);
         assert_eq!(
             m.attack_entity(
                 &mut host,
-                &mut test_events::attack_entity_event(7, "cow", [2.0, 64.0, 3.0])
+                &mut test_events::attack_entity_event(7, "minecraft:cow", [2.0, 64.0, 3.0])
             ),
             Flow::Cancel
+        );
+        // A skeleton's blow wakes nobody: the entity kind filters.
+        assert_eq!(
+            m.attack_entity(
+                &mut host,
+                &mut test_events::attack_entity_event(9, "minecraft:skeleton", [5.0, 64.0, 5.0])
+            ),
+            Flow::Continue
         );
         let mut result = Some(wand.clone());
         m.living_entity_use_item_finish(
@@ -4634,7 +3995,6 @@ experimental = ["scripts"]
         );
         m.inventory_tick(&mut host, &mut test_events::inventory_tick_event(3, true));
         m.inventory_tick(&mut host, &mut test_events::inventory_tick_event(4, false));
-        assert_eq!(host.carried.count, 2);
         let log: Vec<String> = m
             .lua
             .globals()
@@ -4647,17 +4007,23 @@ experimental = ["scripts"]
             log,
             [
                 "use ruby:wand x3 by steve",
-                "hit minecraft:cow 7 with ruby:wand at 2",
-                "finished ruby:wand",
-                "tick ruby:wand slot 3 true",
+                "use_on minecraft:stone at 1,2,3 face 1",
+                "hit minecraft:cow 7 at 2",
+                "finished ruby:wand in main",
+                "tick slot 3 true",
+                "tick slot 4 false",
             ]
         );
-        assert_eq!(*host.lines.lock().unwrap(), ["took 1 ruby:wand"]);
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            ["took 1 ruby:wand", "ticked", "ticked"]
+        );
+        assert_eq!(m.lua.globals().get::<f64>("__witness").unwrap(), 6.0);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
-    fn the_world_hooks_tell_of_deaths_players_blocks_and_pickups() {
+    fn the_player_hooks_tell_of_joins_leaves_respawns_and_deaths() {
         let (dir, path) = hmod(
             "world-hooks",
             &[(
@@ -4669,17 +4035,6 @@ experimental = ["scripts"]
                 horizon.on("player_left", function(player) log("left " .. player.name) end)
                 horizon.on("player_respawned", function(player) log("respawned " .. player.name) end)
                 horizon.on("player_died", function(player, cause) log("player died " .. player.name .. " " .. tostring(cause)) end)
-                horizon.on("block_broken", function(x, y, z, block, player)
-                  log("broke " .. block .. " at " .. x .. "," .. y .. "," .. z .. " by " .. player.name)
-                  horizon.cancel()
-                end, "minecraft:stone")
-                horizon.on("block_placed", function(x, y, z, block, player, item)
-                  log("placed " .. block .. " with " .. item.id .. " x" .. item.count)
-                end, "minecraft:stone")
-                horizon.on("item_picked_up", function(player, item, count)
-                  log("pickup " .. item .. " x" .. count .. " by " .. player.name)
-                  horizon.cancel()
-                end, "ruby:wand")
                 "#,
             )],
         );
@@ -4713,6 +4068,72 @@ experimental = ["scripts"]
         // A death names no one and the host has no record of alex any more:
         // the name the logout told is kept.
         m.player_died(&mut host, &mut test_events::player_died_event(5, None));
+        let log: Vec<String> = m
+            .lua
+            .globals()
+            .get::<Table>("LOG")
+            .unwrap()
+            .sequence_values()
+            .map(|v| v.unwrap())
+            .collect();
+        assert_eq!(
+            log,
+            [
+                "joined steve hp 20",
+                "left alex",
+                "respawned steve",
+                "player died steve death.attack.lava",
+                "player died alex nil",
+            ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn destroy_place_and_pickup_reach_their_handlers() {
+        let (dir, path) = hmod(
+            "break-place-pickup",
+            &[(
+                "scripts/init.lua",
+                br#"
+                LOG = {}
+                local function log(s) LOG[#LOG + 1] = s end
+                -- No kind filter any more: every break wakes the handler,
+                -- which keeps its own block, and the player comes from the
+                -- host read.
+                horizon.on("destroy_block", function(event)
+                  if event.state ~= "minecraft:stone" then return end
+                  __witness = (__witness or 0) + 1
+                  local player = horizon.players()[1]
+                  log("broke " .. event.state .. " at " .. event.pos.x .. "," .. event.pos.y .. "," .. event.pos.z .. " by " .. player.name)
+                  horizon.cancel()
+                end)
+                horizon.on("place_block", function(event)
+                  if event.state ~= "minecraft:stone" then return end
+                  __witness = (__witness or 0) + 1
+                  log("placed " .. event.state .. " x" .. event.stack.count .. " with " .. event.stack.id)
+                end)
+                horizon.on("item_picked_up", function(event)
+                  if event.item ~= "ruby:wand" then return end
+                  __witness = (__witness or 0) + 1
+                  local player = horizon.player(event.player)
+                  log("pickup " .. event.item .. " x" .. event.count .. " by " .. player.name)
+                  horizon.cancel()
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let steve = 0x123e4567_e89b_12d3_a456_426614174000;
         assert_eq!(
             m.destroy_block(
                 &mut host,
@@ -4720,6 +4141,7 @@ experimental = ["scripts"]
             ),
             Flow::Cancel
         );
+        // Air breaks nothing: the handler's own filter keeps it quiet.
         assert_eq!(
             m.destroy_block(
                 &mut host,
@@ -4757,16 +4179,12 @@ experimental = ["scripts"]
         assert_eq!(
             log,
             [
-                "joined steve hp 20",
-                "left alex",
-                "respawned steve",
-                "player died steve death.attack.lava",
-                "player died alex nil",
                 "broke minecraft:stone at 1,2,3 by steve",
-                "placed minecraft:stone with ruby:wand x3",
+                "placed minecraft:stone x3 with ruby:wand",
                 "pickup ruby:wand x2 by steve",
             ]
         );
+        assert_eq!(m.lua.globals().get::<f64>("__witness").unwrap(), 3.0);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -5537,7 +4955,7 @@ experimental = ["scripts"]
     }
 
     #[test]
-    fn the_loot_projectile_and_menu_hooks_reach_their_handlers() {
+    fn the_loot_player_and_menu_hooks_reach_their_handlers() {
         let (dir, path) = hmod(
             "events",
             &[(
@@ -5556,8 +4974,6 @@ experimental = ["scripts"]
                   say("command " .. player.name .. " " .. line)
                   if line == "secret" then horizon.reply("not here"); horizon.cancel() end
                 end)
-                horizon.on("item_crafted", function(player, recipe, item) say(("crafted %s %s x%d"):format(recipe, item.id, item.count)) end, "minecraft:oak_planks")
-                horizon.on("item_dropped", function(player, item, count) say("dropped " .. item .. " x" .. count) end, "stick")
                 horizon.on("loot_drops", function(event)
                   say(("loot %s %s at %d,%d,%d by %s tool %s"):format(event.table, event.block.id, event.block.x, event.block.y, event.block.z, event.player and event.player.name or "nobody", event.tool and event.tool.id or "hand"))
                   event.drops[1].count = 2
@@ -5567,23 +4983,10 @@ experimental = ["scripts"]
                   say(("loot %s mob %d %s"):format(event.table, event.entity.id, event.entity.kind))
                   event.drops[1] = nil
                 end, "minecraft:cow")
-                horizon.on("projectile_impact", function(projectile, kind, owner, hit)
-                  say(("impact %d %s by %d on %s"):format(projectile, kind, owner, hit.entity and ("entity " .. hit.entity .. " " .. hit.entity_kind) or ("block " .. hit.block.id .. " face " .. hit.face.y)))
-                  if hit.entity then horizon.cancel() end
-                end, "minecraft:snowball")
-                horizon.on("projectile_launched", function(projectile, kind, player) say(("launched %d %s by %s"):format(projectile, kind, player and player.name or "nobody")) end, "minecraft:snowball")
-                horizon.on("explosion", function(dimension, center, blocks)
-                  say(("explosion at %.0f,%.0f,%.0f breaking %d"):format(center.x, center.y, center.z, #blocks))
-                  table.remove(blocks, 1)
-                end)
                 horizon.on("player_changed_dimension", function(player, from, to) say("moved " .. player.name .. " " .. from .. " > " .. to) end)
                 horizon.on("player_bed_enter", function(player, x, y, z) say(("bed %s %d,%d,%d"):format(player.name, x, y, z)); horizon.cancel() end)
                 horizon.on("player_exp_change", function(player, amount) say("exp " .. amount); horizon.set_amount(amount * 2) end)
                 horizon.on("player_container_open", function(player, menu, pos) say("menu " .. menu .. " " .. (pos and pos.x or "nowhere")) end)
-                horizon.on("item_hurt_enemy", function(item, player, target) say(("landed %s on %d %s by %s"):format(item.id, target.id, target.kind, player.name)) end, "ruby:wand")
-                horizon.on("item_use_start", function(item, player, hand, duration)
-                  say(("use start %s %s %d"):format(item.id, hand, duration)); horizon.set_duration(10)
-                end, "ruby:wand")
                 "#,
             )],
         );
@@ -5634,20 +5037,6 @@ experimental = ["scripts"]
         let mut cmd =
             test_events::player_command_event(steve.uuid, "steve", "time set day", &mut replies);
         assert_eq!(m.player_command(&mut host, &mut cmd), Flow::Continue);
-        let planks = ItemStack {
-            item: "minecraft:oak_planks".into(),
-            count: 4,
-            damage: 0,
-            extra: None,
-        };
-        m.item_crafted(
-            &mut host,
-            &mut test_events::item_crafted_event(steve.uuid, "minecraft:oak_planks", &planks),
-        );
-        m.item_dropped(
-            &mut host,
-            &mut test_events::item_dropped_event(steve.uuid, "minecraft:stick", 2),
-        );
         // A block's loot, changed in place: the count, and a diamond added.
         let mut drops = vec![ItemStack {
             item: "minecraft:cobblestone".into(),
@@ -5708,44 +5097,6 @@ experimental = ["scripts"]
             ),
         );
         assert!(drops.is_empty());
-        let mut hears = test_events::hears_projectile_impacts_event(false);
-        m.hears_projectile_impacts(&host, &mut hears);
-        assert!(hears.hears);
-        let mut impact = test_events::projectile_impact_event(
-            "minecraft:overworld",
-            30,
-            "minecraft:snowball",
-            5,
-            Some(7),
-            "minecraft:cow",
-            [0, 0, 0],
-            [0, 0, 0],
-            [2.0, 64.5, 3.0],
-        );
-        assert_eq!(m.projectile_impact(&mut host, &mut impact), Flow::Cancel);
-        impact.entity = None;
-        impact.block = [1, 2, 3];
-        impact.face = [0, 1, 0];
-        assert_eq!(m.projectile_impact(&mut host, &mut impact), Flow::Continue);
-        m.projectile_launch(
-            &mut host,
-            &mut test_events::projectile_launch_event(
-                Some(steve.uuid),
-                "steve",
-                30,
-                "minecraft:snowball",
-            ),
-        );
-        let mut blocks = vec![[1, 2, 3], [1, 3, 3]];
-        m.explosion_detonate(
-            &mut host,
-            &mut test_events::explosion_detonate_event(
-                "minecraft:overworld",
-                [1.0, 2.0, 3.0],
-                &mut blocks,
-            ),
-        );
-        assert_eq!(blocks, [[1, 3, 3]]);
         m.player_changed_dimension(
             &mut host,
             &mut test_events::player_changed_dimension_event(
@@ -5775,6 +5126,159 @@ experimental = ["scripts"]
                 Some([7, 8, 9]),
             ),
         );
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            [
+                "tick steve ruby:wand",
+                "command steve secret",
+                "command steve time set day",
+                "loot minecraft:blocks/stone minecraft:stone at 1,2,3 by steve tool ruby:wand",
+                "loot minecraft:entities/cow mob 7 minecraft:cow",
+                "moved steve minecraft:overworld > minecraft:the_nether",
+                "bed steve 4,5,6",
+                "exp 3",
+                "menu minecraft:generic_9x3 7",
+            ]
+        );
+        assert_eq!(
+            m.lua.globals().get::<Vec<String>>("NOTES").unwrap(),
+            ["chat steve hello all", "chat steve shh"]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn crafted_dropped_hurt_start_impact_launch_and_detonation_reach_their_handlers() {
+        let (dir, path) = hmod(
+            "item-projectile-explosion",
+            &[(
+                "scripts/init.lua",
+                br#"
+                LOG = {}
+                local function log(s) LOG[#LOG + 1] = s end
+                local function say(line) horizon.broadcast(line) end
+                -- No kind filter any more: every craft wakes the handler, which
+                -- keeps its own recipe, and the player is uuid text resolved
+                -- through the host read.
+                horizon.on("item_crafted", function(event)
+                  if event.recipe ~= "minecraft:oak_planks" then return end
+                  __witness = (__witness or 0) + 1
+                  local player = horizon.player(event.player)
+                  log(("crafted %s %s x%d by %s"):format(event.recipe, event.stack.id, event.stack.count, player.name))
+                end)
+                horizon.on("item_dropped", function(event)
+                  if event.item ~= "minecraft:stick" then return end
+                  __witness = (__witness or 0) + 1
+                  local player = horizon.player(event.player)
+                  log("dropped " .. event.item .. " x" .. event.count .. " by " .. player.name)
+                end)
+                -- The projectile kind still filters; the hit's block id comes
+                -- from the host read, as before.
+                horizon.on("projectile_impact", function(event)
+                  __witness = (__witness or 0) + 1
+                  local where = event.entity and ("entity " .. event.entity .. " " .. event.entity_kind) or ("block " .. horizon.block(event.block.x, event.block.y, event.block.z) .. " face " .. event.face.y)
+                  say(("impact %d %s by %d on %s"):format(event.projectile, event.kind, event.owner, where))
+                  if event.entity then horizon.cancel() end
+                end, "minecraft:snowball")
+                horizon.on("projectile_launch", function(event)
+                  __witness = (__witness or 0) + 1
+                  say(("launched %d %s by %s in %s"):format(event.entity, event.kind, event.player and event.player.name or "nobody", horizon.time().dimension))
+                end, "minecraft:snowball")
+                -- The detonation gains the dimension; the blocks write back.
+                horizon.on("explosion_detonate", function(event)
+                  __witness = (__witness or 0) + 1
+                  say(("explosion at %.0f,%.0f,%.0f breaking %d in %s"):format(event.center.x, event.center.y, event.center.z, #event.blocks, event.dimension))
+                  table.remove(event.blocks, 1)
+                end)
+                -- The foe's entity kind filters; the held stack arrives, and
+                -- the player comes from the host read.
+                horizon.on("hurt_enemy", function(event)
+                  if event.stack.id ~= "ruby:wand" then return end
+                  __witness = (__witness or 0) + 1
+                  local player = horizon.players()[1]
+                  say(("landed %s on %d %s by %s"):format(event.stack.id, event.entity, event.kind, player.name))
+                end, "minecraft:cow")
+                -- A player alone starts this use: a bare handler, an in-Lua
+                -- item filter, and the duration writes back.
+                horizon.on("living_entity_use_item_start", function(event)
+                  if event.stack.id ~= "ruby:wand" then return end
+                  __witness = (__witness or 0) + 1
+                  say(("use start %s %s %d"):format(event.stack.id, event.hand, event.duration))
+                  event.duration = 10
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let steve = host.acting_player().unwrap();
+        let planks = ItemStack {
+            item: "minecraft:oak_planks".into(),
+            count: 4,
+            damage: 0,
+            extra: None,
+        };
+        m.item_crafted(
+            &mut host,
+            &mut test_events::item_crafted_event(steve.uuid, "minecraft:oak_planks", &planks),
+        );
+        m.item_dropped(
+            &mut host,
+            &mut test_events::item_dropped_event(steve.uuid, "minecraft:stick", 2),
+        );
+        // The flag answers from the sibling's registry: a snowball handler
+        // hears impacts.
+        let mut hears = test_events::hears_projectile_impacts_event(false);
+        m.hears_projectile_impacts(&host, &mut hears);
+        assert!(hears.hears);
+        let mut impact = test_events::projectile_impact_event(
+            "minecraft:overworld",
+            30,
+            "minecraft:snowball",
+            5,
+            Some(7),
+            "minecraft:cow",
+            [0, 0, 0],
+            [0, 0, 0],
+            [2.0, 64.5, 3.0],
+        );
+        assert_eq!(m.projectile_impact(&mut host, &mut impact), Flow::Cancel);
+        impact.entity = None;
+        impact.block = [1, 2, 3];
+        impact.face = [0, 1, 0];
+        assert_eq!(m.projectile_impact(&mut host, &mut impact), Flow::Continue);
+        m.projectile_launch(
+            &mut host,
+            &mut test_events::projectile_launch_event(
+                Some(steve.uuid),
+                "steve",
+                30,
+                "minecraft:snowball",
+            ),
+        );
+        // A dispenser's launch names nobody.
+        m.projectile_launch(
+            &mut host,
+            &mut test_events::projectile_launch_event(None, "", 31, "minecraft:snowball"),
+        );
+        let mut blocks = vec![[1, 2, 3], [1, 3, 3]];
+        m.explosion_detonate(
+            &mut host,
+            &mut test_events::explosion_detonate_event(
+                "minecraft:overworld",
+                [1.0, 2.0, 3.0],
+                &mut blocks,
+            ),
+        );
+        assert_eq!(blocks, [[1, 3, 3]]);
         m.hurt_enemy(
             &mut host,
             &mut test_events::hurt_enemy_event(&wand(), 7, "minecraft:cow"),
@@ -5791,32 +5295,34 @@ experimental = ["scripts"]
             Flow::Continue
         );
         assert_eq!(start.duration, 10);
+        let log: Vec<String> = m
+            .lua
+            .globals()
+            .get::<Table>("LOG")
+            .unwrap()
+            .sequence_values()
+            .map(|v| v.unwrap())
+            .collect();
+        assert_eq!(
+            log,
+            [
+                "crafted minecraft:oak_planks minecraft:oak_planks x4 by steve",
+                "dropped minecraft:stick x2 by steve",
+            ]
+        );
         assert_eq!(
             *host.lines.lock().unwrap(),
             [
-                "tick steve ruby:wand",
-                "command steve secret",
-                "command steve time set day",
-                "crafted minecraft:oak_planks minecraft:oak_planks x4",
-                "dropped minecraft:stick x2",
-                "loot minecraft:blocks/stone minecraft:stone at 1,2,3 by steve tool ruby:wand",
-                "loot minecraft:entities/cow mob 7 minecraft:cow",
                 "impact 30 minecraft:snowball by 5 on entity 7 minecraft:cow",
                 "impact 30 minecraft:snowball by 5 on block minecraft:stone face 1",
-                "launched 30 minecraft:snowball by steve",
-                "explosion at 1,2,3 breaking 2",
-                "moved steve minecraft:overworld > minecraft:the_nether",
-                "bed steve 4,5,6",
-                "exp 3",
-                "menu minecraft:generic_9x3 7",
+                "launched 30 minecraft:snowball by steve in minecraft:overworld",
+                "launched 31 minecraft:snowball by nobody in minecraft:overworld",
+                "explosion at 1,2,3 breaking 2 in minecraft:overworld",
                 "landed ruby:wand on 7 minecraft:cow by steve",
                 "use start ruby:wand off 32",
             ]
         );
-        assert_eq!(
-            m.lua.globals().get::<Vec<String>>("NOTES").unwrap(),
-            ["chat steve hello all", "chat steve shh"]
-        );
+        assert_eq!(m.lua.globals().get::<f64>("__witness").unwrap(), 9.0);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -7209,8 +6715,9 @@ experimental = ["scripts"]
                     horizon.cancel()
                   end
                 end)
-                horizon.on("right_click_block", function(x, y, z, block, face, player, held)
-                  if horizon.dev.inspect(player, { x = x, y = y, z = z, face = face }) then horizon.cancel() end
+                horizon.on("right_click_block", function(event)
+                  -- No player table any more: the acting player's uuid text.
+                  if horizon.dev.inspect("123e4567-e89b-12d3-a456-426614174000", { x = event.pos.x, y = event.pos.y, z = event.pos.z, face = event.face }) then horizon.cancel() end
                 end)
                 "#,
             )],

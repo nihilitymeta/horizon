@@ -114,58 +114,15 @@ const HOOKS: &[(&str, &str)] = &[
     // `tick_block`, `block_entity_tick`, `mob_ai_register`,
     // `register_goals`, `hud` and `gui_layer_post` are generated now (an
     // event table each): their overloads come from the model below. The
-    // declaration-served `block_entity` and `block_entity_ticks` take no
-    // `horizon.on` registration, so they have no overload.
-    (
-        "right_click_block",
-        "(x: number, y: number, z: number, block: string, face: Vec3, player: Player, held: Held?, data: Data?) -> ()",
-    ),
-    ("item_use", "(item: Item, player: Player) -> ()"),
-    (
-        "item_use_on",
-        "(item: Item, player: Player, block: Block, face: Vec3) -> ()",
-    ),
-    (
-        "item_hit",
-        "(item: HitItem, player: Player, target: Target) -> ()",
-    ),
-    (
-        "item_hurt_enemy",
-        "(item: Item, player: Player, target: IdKind) -> ()",
-    ),
-    (
-        "item_use_start",
-        "(item: Item, player: Player, hand: string, duration: number) -> ()",
-    ),
-    ("item_finished", "(item: Item, player: Player) -> ()"),
-    (
-        "item_tick",
-        "(item: Item, player: Player, slot: number, selected: boolean) -> ()",
-    ),
-    (
-        "item_picked_up",
-        "(player: PlayerRef, item: string, count: number) -> ()",
-    ),
-    (
-        "item_crafted",
-        "(player: PlayerRef, recipe: string, item: Item) -> ()",
-    ),
-    (
-        "item_dropped",
-        "(player: PlayerRef, item: string, count: number) -> ()",
-    ),
-    (
-        "projectile_impact",
-        "(projectile: number, kind: string, owner: number, hit: Hit) -> ()",
-    ),
-    (
-        "projectile_launched",
-        "(projectile: number, kind: string, player: PlayerRef?) -> ()",
-    ),
-    (
-        "explosion",
-        "(dimension: string, center: Vec3, blocks: { Vec3 }) -> ()",
-    ),
+    // item, block and projectile hooks went the same way in K2
+    // (`right_click_block`, `use_item`, `use_item_on`, `attack_entity`,
+    // `living_entity_use_item_finish`, `living_entity_use_item_start`,
+    // `inventory_tick`, `hurt_enemy`, `item_crafted`, `item_picked_up`,
+    // `item_dropped`, `destroy_block`, `place_block`, `projectile_impact`,
+    // `hears_projectile_impacts`, `projectile_launch`,
+    // `explosion_detonate`). The declaration-served `block_entity` and
+    // `block_entity_ticks` take no `horizon.on` registration, so they have
+    // no overload.
     ("player_joined", "(player: PlayerRef) -> ()"),
     ("player_left", "(player: PlayerRef) -> ()"),
     ("player_respawned", "(player: PlayerRef) -> ()"),
@@ -188,14 +145,6 @@ const HOOKS: &[(&str, &str)] = &[
     (
         "player_container_open",
         "(player: PlayerRef, menu: string, pos: Vec3?) -> ()",
-    ),
-    (
-        "block_broken",
-        "(x: number, y: number, z: number, block: string, player: Player) -> ()",
-    ),
-    (
-        "block_placed",
-        "(x: number, y: number, z: number, block: string, player: Player, item: Item) -> ()",
     ),
 ];
 

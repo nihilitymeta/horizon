@@ -128,7 +128,8 @@ The modkit's item `horizon_modkit:inspect_stick` opens these windows on what it 
 changes block states. It copies the debug stick, so it is listed only with the operator items; `/give @s
 horizon_modkit:inspect_stick` gets one. The modkit's scripts call `horizon.dev.inspect` from `interact_entity` and
 `right_click_block`, and cancel the click, both hands' turns of it, so nothing else happens: no trade, no chest, no
-button.
+button. The `right_click_block` handler reads the clicked block from the event table (`event.pos`, `event.face`)
+and names the acting player by uuid text.
 
 | Used on | Opens |
 |---|---|

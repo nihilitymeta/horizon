@@ -310,10 +310,25 @@ pub fn declaration_served(name: &str) -> bool {
 /// and `entity_tick_post` (`native_tick_round` skips the pair when the flag
 /// is false), while `living_equipment_listened` gates only
 /// `living_equipment_change` (both equipment scans dispatch just that one).
+/// `hears_projectile_impacts` gates `projectile_impact`: the game keeps the
+/// copy a canceled impact flies on from only while the flag is set, once a
+/// server tick before the projectiles fly.
 pub fn listened_flag(name: &str) -> Option<&'static [&'static str]> {
     match name {
         "entity_tick_listened" => Some(&["entity_tick_pre", "entity_tick_post"]),
         "living_equipment_listened" => Some(&["living_equipment_change"]),
+        "hears_projectile_impacts" => Some(&["projectile_impact"]),
+        _ => None,
+    }
+}
+
+/// The event field a listened game query sets: `listened` on the tick and
+/// equipment queries, `hears` on the projectile one (the native event names
+/// the field after the question it answers).
+pub fn listened_flag_field(name: &str) -> Option<&'static str> {
+    match name {
+        "entity_tick_listened" | "living_equipment_listened" => Some("listened"),
+        "hears_projectile_impacts" => Some("hears"),
         _ => None,
     }
 }

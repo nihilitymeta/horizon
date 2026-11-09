@@ -1097,16 +1097,25 @@ macro_rules! gen_collect {
     };
 }
 
-/// A `<hook>_listened` game query: no event table, no handlers of its own.
-/// The game asks whether to keep the firing list; the answer comes from the
-/// sibling hooks' registries (bare or kind-filtered), so a script that only
-/// registers for a sibling still fires. On any Err there is nothing to
-/// do: the flag stays unset, exactly as the hand-written listened hooks did.
+/// A `<hook>_listened` (or `hears_*`) game query: no event table, no handlers
+/// of its own. The game asks whether to keep the firing list; the answer
+/// comes from the sibling hooks' registries (bare or kind-filtered), so a
+/// script that only registers for a sibling still fires. On any Err there is
+/// nothing to do: the flag stays unset, exactly as the hand-written listened
+/// hooks did. The host token mirrors the native receiver (`game_mut` for
+/// `&mut self`, `game_ref` for `&self`), as in the firing arms.
 macro_rules! gen_listened_flag {
-    ($name:ident, $event:ty, [$($sibling:expr),* $(,)?]) => {
+    ($name:ident, game_mut, $event:ty, $field:ident, [$($sibling:expr),* $(,)?]) => {
         fn $name(&self, _host: &mut dyn horizon_client::mod_api::Host, _event: &mut $event) {
             if false $(|| self.has_any_handlers($sibling))* {
-                _event.listened = true;
+                _event.$field = true;
+            }
+        }
+    };
+    ($name:ident, game_ref, $event:ty, $field:ident, [$($sibling:expr),* $(,)?]) => {
+        fn $name(&self, _host: &dyn horizon_client::mod_api::Host, _event: &mut $event) {
+            if false $(|| self.has_any_handlers($sibling))* {
+                _event.$field = true;
             }
         }
     };

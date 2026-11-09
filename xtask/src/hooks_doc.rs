@@ -65,7 +65,7 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "right_click_block",
-        "`right_click_block(x, y, z, block, face, player, held, data)`",
+        "an event table with `pos` and `face`; `horizon.cancel()` takes the click for that hand",
     ),
     (
         "block_entity",
@@ -81,32 +81,35 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "destroy_block",
-        "`block_broken(x, y, z, block, player)`, by block",
+        "an event table with `pos`, `state` (the id) and `state_props`; `horizon.cancel()` keeps the block",
     ),
     (
         "place_block",
-        "`block_placed(x, y, z, block, player, item)`, by block",
+        "an event table with `stack`, `pos`, `state` (the id) and `state_props`; it only hears",
     ),
-    ("use_item", "`item_use(item, player)`, by item"),
+    (
+        "use_item",
+        "an event table with `stack`; `horizon.cancel()` takes the use",
+    ),
     (
         "use_item_on",
-        "`item_use_on(item, player, block, face)`, by item",
+        "an event table with `stack`, `pos` and `face`; `horizon.cancel()` takes the use",
     ),
     (
         "attack_entity",
-        "`item_hit(item, player, target)`, by held item",
+        "an event table with `entity`, `kind` and `pos`, by kind; `horizon.cancel()` voids the blow",
     ),
     (
         "living_entity_use_item_finish",
-        "`item_finished(item, player)`, by item",
+        "an event table with `stack`, `entity`, `hand`, `duration` and `result`, by kind; set `event.result` for what stays in the hand",
     ),
     (
         "inventory_tick",
-        "`item_tick(item, player, slot, selected)`, by item",
+        "an event table with `slot` and `selected`",
     ),
     (
         "item_picked_up",
-        "`item_picked_up(player, item, count)`, by item",
+        "an event table with `player` (uuid text), `item` and `count`; `horizon.cancel()` leaves them there",
     ),
     ("player_logged_in", "`player_joined(player)`"),
     ("player_logged_out", "`player_left(player)`"),
@@ -136,11 +139,11 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "item_crafted",
-        "`item_crafted(player, recipe, item)`, by item",
+        "an event table with `player` (uuid text), `recipe` and `stack`",
     ),
     (
         "item_dropped",
-        "`item_dropped(player, item, count)`, by item",
+        "an event table with `player` (uuid text), `item` and `count`",
     ),
     (
         "loot_drops",
@@ -152,15 +155,15 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "projectile_impact",
-        "`projectile_impact(projectile, kind, owner, hit)`, by projectile kind",
+        "an event table with `dimension`, `projectile`, `kind`, `owner`, `entity`, `entity_kind`, `block`, `face` and `at`, by kind; `horizon.cancel()` and it flies on",
     ),
     (
         "projectile_launch",
-        "`projectile_launched(projectile, kind, player)`, by projectile kind",
+        "an event table with `player` (the table, or nil), `entity` and `kind`, by kind",
     ),
     (
         "explosion_detonate",
-        "`explosion(dimension, center, blocks)`",
+        "an event table with `dimension`, `center` and `blocks`; change `blocks` to spare",
     ),
     (
         "player_changed_dimension",
@@ -186,11 +189,11 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "hurt_enemy",
-        "`item_hurt_enemy(item, player, target)`, by item",
+        "an event table with `stack`, `entity` and `kind`, by kind",
     ),
     (
         "living_entity_use_item_start",
-        "`item_use_start(item, player, hand, duration)`, by item",
+        "an event table with `stack`, `entity`, `hand` and `duration`, by kind; set `event.duration`, or `horizon.cancel()`",
     ),
     (
         "hud",
@@ -218,7 +221,7 @@ const LUA_HELPERS: &[(&str, &str)] = &[
     ("broadcast", "`horizon.broadcast(text)`"),
     (
         "carried_stack",
-        "`horizon.inventory(player)` for the acting player, `horizon.set_count(n)` in `item_tick`",
+        "the acting player's own slots behind `horizon.inventory(player)`",
     ),
     (
         "config_dir",
@@ -242,7 +245,7 @@ const LUA_HELPERS: &[(&str, &str)] = &[
     ("give_items", "`horizon.give_items(id, count)`"),
     ("give_levels", "`horizon.give_levels(player, levels)`"),
     ("give_stack", "`horizon.give_items(player, id, count)`"),
-    ("held", "`held` in the hooks, `player.held`"),
+    ("held", "`player.held` in `player_tick`"),
     ("kill_mob", "`horizon.kill_mob(dimension, id)`"),
     (
         "level_players",
@@ -282,7 +285,7 @@ const LUA_HELPERS: &[(&str, &str)] = &[
     ),
     (
         "set_block_property",
-        "`horizon.set_block_property(key, value[, flags])`",
+        "`horizon.set_block_property(key, value[, flags])` in the level hooks",
     ),
     (
         "set_mob_health",
@@ -328,11 +331,19 @@ const LUA_HELPERS: &[(&str, &str)] = &[
     ("weather", "`horizon.time().rain` and `.thunder`"),
 ];
 
-/// The helpers `LUA_HELPERS` names that the runtime reaches without a call
-/// on the host: the attachments through the attachment types, the config
-/// folder computed as the host does.
+/// The helpers `LUA_HELPERS` names that the runtime reaches without a textual
+/// call on the host in the scanned files: the attachments through the
+/// attachment types, the config folder computed as the host does, and the
+/// block-hook helpers the generated level arms call through the level host
+/// (the visitor only sees the `host` and `h` receivers).
 #[cfg(test)]
-const LUA_HELPERS_INDIRECT: &[&str] = &["attachments", "config_dir"];
+const LUA_HELPERS_INDIRECT: &[&str] = &[
+    "attachments",
+    "config_dir",
+    "mod_block_entity_data",
+    "set_block_property",
+    "set_mod_block_entity_data",
+];
 
 /// The helpers listed by the pending hook fragments, in file order.
 fn fragment_helpers(root: &Path) -> Result<Vec<serde_json::Value>, String> {

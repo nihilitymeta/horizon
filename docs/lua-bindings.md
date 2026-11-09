@@ -404,7 +404,7 @@ with `horizon.on` for them: `horizon.on("block_entity", ...)` and `horizon.on("b
 Some actions work only in the block hooks:
 
 - `horizon.set_block_property(key, value[, flags])`: sets a state property of the block; *flags* are 2 by default,
-  which tells the clients. In `random_tick`, `tick_block`, `right_click_block` and `block_entity_tick`
+  which tells the clients. In `random_tick`, `tick_block` and `block_entity_tick`
 - `horizon.schedule_tick(delay)`: asks for a scheduled tick. In `random_tick` and `tick_block`
 - `horizon.handled()`: skips the block's own random tick. In `random_tick` and `tick_block`
 
@@ -421,10 +421,10 @@ A handler receives the hook's arguments. Some hooks let it change the event, wit
 | `server_tick(event)` | a server tick starts (`event.phase == "start"`) or ends (`"end"`), each with `event.world_running` and the context (`event.authority`, `event.epoch`, `event.tick`) |
 | `world_lifecycle(event)` | the world opens or closes; `event.phase` names the phase, `event.error_text` carries a failure's text (empty otherwise), with the context |
 | `data_pack_files(event)` | the data packs load, the first load included: `event.files` is the packs' files in load order, a sequence of `{path, data}` byte strings. Append entries and they join the load. From the second load on (such as `/reload`), the mod's scripts run again first, so an edited script is live for the load |
-| `explosion(dimension, center, blocks)` | an explosion is about to break *blocks*, a sequence of `{x, y, z}`. Remove entries to spare those blocks: they keep their block and get no fire |
+| `explosion_detonate(event)` | an explosion is about to break `event.blocks`, a sequence of `{x, y, z}`. Remove entries to spare those blocks: they keep their block and get no fire. The event holds `dimension` and `center` (`{x, y, z}`) |
 | `entity_join_level(event)` | any entity joins the level, such as `minecraft:item`, `minecraft:arrow` or a mob. The event holds `dimension`, `entity` (its id), `kind`, `pos` (`{x, y, z}`) and `loaded_from_disk`, true for one that comes back with its chunk. `mob_spawned` fires for mobs too. `horizon.cancel()` keeps it out. Register it by kind |
-| `projectile_launched(projectile, kind, player)` | a projectile is added to the level; *player* is the shooter's table, or nil for a mob's or a dispenser's. By projectile kind. It only listens |
-| `projectile_impact(projectile, kind, owner, hit)` | a projectile, such as an arrow, a snowball, an egg, a potion or a fireball, hits something, before the hit acts. *owner* is the shooter's entity id, or 0. *hit* has `x`, `y`, `z`, and either `entity` and `entity_kind`, or `block` (`{x, y, z, id}`) and `face`. By projectile kind. `cancel()` and it flies on. The engine keeps the copy each impact needs only while a script listens |
+| `projectile_launch(event)` | a projectile is added to the level. The event holds `entity` (its id), `kind` and `player` (the shooter's table, or nil for a mob's or a dispenser's). Register it by kind. It only listens |
+| `projectile_impact(event)` | a projectile, such as an arrow, a snowball, an egg, a potion or a fireball, hits something, before the hit acts. The event holds `dimension`, `projectile` (its id), `kind`, `owner` (the shooter's entity id, or 0), `entity` and `entity_kind` for an entity hit, or `block` (`{x, y, z}`) and `face` for a block hit (the block's id comes from the `horizon.block` read), and `at` (the point, `{x, y, z}`). Register it by kind. `horizon.cancel()` and it flies on. The engine keeps the copy each impact needs only while a script listens |
 
 ### Mobs
 
@@ -450,29 +450,29 @@ A handler receives the hook's arguments. Some hooks let it change the event, wit
 |---|---|
 | `random_tick(event)` | a block that ticks randomly does: a mod's block as its template does, or one with `random_ticks`. Register it by block id: a handler for every block hears every random tick of the level, hundreds a tick. The event holds `dimension`, `state` (the id, as the other level hooks name it), `pos` (`{x, y, z}`), `state_props` (the state's properties by name) and `data` (the block entity's saved table, or nil without one, written back after the call); there is no state-string field, only the id and its properties. `set_block_property`, `schedule_tick` and `summon` run on the level; `handled()` skips the block's own tick |
 | `tick_block(event)` | a scheduled tick of the block is due. Register it by block id. The event and the actions are as in `random_tick` |
-| `right_click_block(x, y, z, block, face, player, held, data)` | a player right-clicks a block, before the block and the item act. *face* and `player.position` are `{x, y, z}`; *held* has `item`, `count` and `plain`. `cancel()` skips the block and the item's use on it for that hand, with no swing. See the note below |
+| `right_click_block(event)` | a player right-clicks a block, before the block and the item act. The event holds `pos` and `face` (`{x, y, z}`). The block's id comes from the `horizon.block` read, and the acting player from the host reads; the event names no held stack and no block-entity data. `horizon.cancel()` skips the block and the item's use on it for that hand, with no swing. See the note below |
 | `block_entity_tick(event)` | a server tick of a block entity declared with `ticks`. Register it by block id. The event holds `dimension` (the host's level), `pos` (`{x, y, z}`) and `entity` (`{id, data}`): `id` is the entity's block id, and `data` is its saved table, written back after the call; replacing `event.entity` or `event.entity.data` writes nothing (only edits to the seeded data table are written back). The host actions and `set_block_property` work |
-| `block_broken(x, y, z, block, player)` | a player breaks a block, once the game has allowed it. `cancel()` keeps the block, so nothing breaks or drops. By block id |
-| `block_placed(x, y, z, block, player, item)` | a player has placed a block from *item*, the stack as it was. It only listens; to stop a placement, take the click in `item_use_on`. By block id |
+| `destroy_block(event)` | a player breaks a block, once the game has allowed it. The event holds `pos` (`{x, y, z}`), `state` (the id) and `state_props`. `horizon.cancel()` keeps the block, so nothing breaks or drops. The acting player comes from the host reads. Every break wakes the handler: keep the block ids it cares about in Lua |
+| `place_block(event)` | a player has placed a block. The event holds `stack` (the stack placed), `pos`, `state` (the id) and `state_props`. It only listens; to stop a placement, take the click in `use_item_on` |
 
-`right_click_block` runs once for each hand, the main hand and then the off hand, as the game tries both. NeoForge's
-`RightClickBlock` fires for each hand too. *held* is the main hand's stack both times. Make a handler do something
+`right_click_block` runs once for each hand, the main hand and then the off hand, as the game tries both (NeoForge's
+`RightClickBlock` fires for each hand too). The event names no hand and no stack. Make a handler do something
 that is the same when done twice, such as lighting a lamp rather than toggling it, or read the block's state first.
 
 ### Items
 
 | Hook | Called when |
 |---|---|
-| `item_use(item, player)` | a player right-clicks with an item in the air, or on a block that lets the click through, before the item's own use. *item* is `{id, count, damage, plain}`. `cancel()` takes the use: the hand swings, and nothing else runs. By item id |
-| `item_use_on(item, player, block, face)` | the same, on a block. *block* is `{x, y, z, id}`, and *face* `{x, y, z}`, with `{0, 1, 0}` the top. By item id |
-| `item_hit(item, player, target)` | a player attacks *target* (`{id, kind, position}`) holding *item*, before the blow. An empty hand is `minecraft:air`. `cancel()` and the blow does nothing. By item id |
-| `item_hurt_enemy(item, player, target)` | a player's blow has landed on *target* (`{id, kind}`) holding *item*, after the damage. By item id. It only listens |
-| `item_use_start(item, player, hand, duration)` | a player starts to use an item over time: eating, drinking, drawing a bow, or a mod item with a `use_duration`. *hand* is `"main"` or `"off"`, and *duration* the ticks it takes. `set_duration(ticks)` changes it, and `cancel()` stops the use. By item id |
-| `item_finished(item, player)` | a player has finished using an item over time: eaten or drunk it, or held a mod item for its `use_duration`. `set_result(id, count)` sets what stays in the hand; `set_result()` leaves nothing |
-| `item_tick(item, player, slot, selected)` | a server tick of a stack that a player carries. *slot* is as the inventory saves it: 0 to 35, armour 100 to 103, the off hand -106. *selected* is true for the held stack. `set_count(n)` changes the stack; 0 empties the slot. Every stack of every player ticks, so register it by item id |
-| `item_crafted(player, recipe, item)` | a player takes a crafting grid's result. *recipe* is its id, and *item* the stack. By the result's item id. It only listens |
-| `item_dropped(player, item, count)` | a player throws an item, with the drop key or from a menu; items scattered at death do not count. By item id. It only listens |
-| `item_picked_up(player, item, count)` | a player is about to pick up *count* of *item* (an id) from the ground. `cancel()` leaves them there. By item id |
+| `use_item(event)` | a player right-clicks with an item in the air, or on a block that lets the click through, before the item's own use. The event holds `stack` (`{id, count, damage, plain}`). `horizon.cancel()` takes the use: the hand swings, and nothing else runs. The acting player comes from the host reads. Every use wakes the handler: keep the item ids it cares about in Lua |
+| `use_item_on(event)` | the same, on a block. The event holds `stack`, `pos` (`{x, y, z}`) and `face` (`{x, y, z}`, with `{0, 1, 0}` the top). The block's id comes from the `horizon.block` read. `horizon.cancel()` takes the use |
+| `attack_entity(event)` | a player attacks an entity, before the blow. The event holds `entity` (its id), `kind` and `pos` (`{x, y, z}`). Register it by entity kind. `horizon.cancel()` and the blow does nothing. The event names no stack: the handler cannot tell what the hand holds |
+| `hurt_enemy(event)` | a player's blow has landed on an entity, after the damage. The event holds `stack` (the weapon, `{id, count, damage, plain}`), `entity` and `kind`. Register it by entity kind. It only listens |
+| `living_entity_use_item_start(event)` | a player starts to use an item over time: eating, drinking, drawing a bow, or a mod item with a `use_duration`. The event holds `stack`, `entity` (nil for the player's own use), `hand` (`"main"` or `"off"`) and `duration`, the ticks it takes. Set `event.duration` to change it, or `horizon.cancel()` to stop the use. Mob uses filter by kind; the player's own use reaches bare handlers |
+| `living_entity_use_item_finish(event)` | a player has finished using an item over time: eaten or drunk it, or held a mod item for its `use_duration`. The event holds `stack`, `entity` (nil for the player's own use), `hand` and `duration`. Set `event.result` to an item table for what stays in the hand, or nil for nothing |
+| `inventory_tick(event)` | a server tick of a stack that a player carries. The event holds `slot` (as the inventory saves it: 0 to 35, armour 100 to 103, the off hand -106) and `selected`, true for the held stack. The ticking stack is not on the event. Every stack of every player ticks, so keep it light |
+| `item_crafted(event)` | a player takes a crafting grid's result. The event holds `player` (their uuid text: `horizon.player(event.player)` reads their table), `recipe` (its id) and `stack` (the result). Every craft wakes the handler: keep the recipes it cares about in Lua. It only listens |
+| `item_dropped(event)` | a player throws an item, with the drop key or from a menu; items scattered at death do not count. The event holds `player` (their uuid text), `item` (the id) and `count`. It only listens |
+| `item_picked_up(event)` | a player is about to pick up `event.count` of `event.item` (an id) from the ground. The event holds `player` (their uuid text). `horizon.cancel()` leaves them there |
 
 ### Players
 
@@ -502,8 +502,8 @@ The `player` table in the hooks has these fields:
 - `dimension`, and `position` as `{x, y, z}`
 - `game_mode`: 0 survival, 1 creative, 2 adventure, 3 spectator
 - `health`
-- `held`, for the player whose action the hook reports, such as a click, a command or a break: the main hand's
-  `{item, count, plain}`, or nil when it is empty
+- `held`, on the `player_tick` player's table only: the main hand's `{item, count, plain}`, or nil when it is
+  empty. No other hook's player table carries it
 
 A player that the world has no record of at that moment, such as one who is dying, has `uuid`, and the `name` that
 an earlier player hook reported.

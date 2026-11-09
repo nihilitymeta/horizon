@@ -17,8 +17,8 @@
 
 use crate::lua_model::{
     Class, Conv, Field, HookClass, Host, Kind, Model, ReplaceRead, assert_lines, canonical_elem,
-    classify, declaration_served, deferred_outcomes, dup_leaf, listened_flag, lua_read,
-    mutate_line, replace_sample, sample, table_leaves,
+    classify, declaration_served, deferred_outcomes, dup_leaf, listened_flag, listened_flag_field,
+    lua_read, mutate_line, replace_sample, sample, table_leaves,
 };
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -359,9 +359,11 @@ fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
             .map(|s| format!("{s:?}"))
             .collect::<Vec<_>>()
             .join(", ");
+        let field = listened_flag_field(&model.name).unwrap_or("listened");
         return format!(
-            "    gen_listened_flag!({}, {}, [{list}]);",
+            "    gen_listened_flag!({}, {}, {}, {field}, [{list}]);",
             model.name,
+            host_ident(model.host),
             event_ty(model),
         );
     }
@@ -487,13 +489,10 @@ struct Call {
     call: String,
 }
 
-fn dispatch_call(
-    model: &Model,
-    tys: &BTreeMap<String, String>,
-    kind_rust: Option<String>,
-    flip_opt: bool,
-) -> Call {
-    let host_arg = match model.host {
+/// The dispatch call's host argument for a model host: the same borrow the
+/// trait method takes, so a shared-host query does not pass `&mut`.
+fn host_arg(host: Host) -> String {
+    match host {
         Host::None => String::new(),
         Host::GameMut => "&mut FakeHost::empty(), ".to_owned(),
         Host::GameRef => "&FakeHost::empty(), ".to_owned(),
@@ -501,7 +500,16 @@ fn dispatch_call(
         Host::LevelMut => "&mut FakeLevel, ".to_owned(),
         Host::LevelWrite => "&mut FakeLevel, ".to_owned(),
         Host::LevelTicks => "&mut FakeLevel, ".to_owned(),
-    };
+    }
+}
+
+fn dispatch_call(
+    model: &Model,
+    tys: &BTreeMap<String, String>,
+    kind_rust: Option<String>,
+    flip_opt: bool,
+) -> Call {
+    let host_arg = host_arg(model.host);
     let mut bindings = Vec::new();
     let mut args = Vec::new();
     // Every native parameter in order; a non-collect out travels last.
@@ -2085,6 +2093,7 @@ fn listened_flag_tests(model: &Model) -> Vec<String> {
         ));
     }
     let mut out = format!("#[test]\nfn generated_{name}_answers_from_sibling_handlers() {{\n");
+    let host = host_arg(model.host);
     for (case, lua_src, heard, msg) in &cases {
         let assertion = if *heard {
             format!("    assert!(listened, \"{msg}\");")
@@ -2092,7 +2101,7 @@ fn listened_flag_tests(model: &Model) -> Vec<String> {
             format!("    assert!(!listened, \"{msg}\");")
         };
         out.push_str(&format!(
-            "    let (m, id, dir, lua) = loaded_tracked(\"gen_{name}_{case}\", {lua_src:?});\n    let firing_mods = boxed(m);\n    {{\n    let mut listened = false;\n    reset_entity_reads();\n    reset_host_reads();\n    reset_level_reads();\n    reset_event_tables();\n    dispatch_{name}(&mut FakeHost::empty(), &firing_mods, &mut listened);\n{assertion}\n    assert_eq!(witness(&lua), 0, \"the query ran no handler\");\n    assert_eq!(event_tables(), 0, \"the query built no event table\");\n    assert_eq!(entity_reads(), 0, \"{name} read no entity unheard\");\n    assert_eq!(host_reads(), 0, \"{name} read the host unheard\");\n    assert_eq!(level_reads(), 0, \"{name} read the level unheard\");\n    }}\n    no_error(&id);\n    drop_dir(dir);\n"
+            "    let (m, id, dir, lua) = loaded_tracked(\"gen_{name}_{case}\", {lua_src:?});\n    let firing_mods = boxed(m);\n    {{\n    let mut listened = false;\n    reset_entity_reads();\n    reset_host_reads();\n    reset_level_reads();\n    reset_event_tables();\n    dispatch_{name}({host}&firing_mods, &mut listened);\n{assertion}\n    assert_eq!(witness(&lua), 0, \"the query ran no handler\");\n    assert_eq!(event_tables(), 0, \"the query built no event table\");\n    assert_eq!(entity_reads(), 0, \"{name} read no entity unheard\");\n    assert_eq!(host_reads(), 0, \"{name} read the host unheard\");\n    assert_eq!(level_reads(), 0, \"{name} read the level unheard\");\n    }}\n    no_error(&id);\n    drop_dir(dir);\n"
         ));
     }
     out.push_str("}\n");
