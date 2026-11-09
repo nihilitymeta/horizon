@@ -75,6 +75,10 @@ pub enum Conv {
     Player,
     /// `(player: Option<u128>, name)` on a game host.
     PlayerOpt,
+    /// `&NativeServerPlayer`: `player_table_of`, with `held` set from
+    /// `held_table`. The bespoke `perform_command` arm seeds it; no
+    /// `gen_seed` arm names it, so stock emission would fail loudly.
+    ServerPlayer,
     /// `LevelDimension`: `dimension_id`.
     Dim,
     /// `[i32; 3]`: `{x, y, z}`.
@@ -702,6 +706,9 @@ fn field_of(hook: &str, param: &str, ty: &syn::Type, host: Host, is_out: bool) -
         Some("ServerTickPhase") if !borrowed => FieldOutcome::Conv(Conv::TickPhase, "any".into()),
         Some("WorldPhase") if !borrowed => FieldOutcome::Conv(Conv::WorldPhaseName, "any".into()),
         Some("NativeLootDrops") if borrowed => FieldOutcome::Conv(Conv::LootCtx, "any".into()),
+        Some("NativeServerPlayer") if borrowed => {
+            FieldOutcome::Conv(Conv::ServerPlayer, "Player".into())
+        }
         Some("ModBlockEntity" | "Mob") => FieldOutcome::Adapter(format!(
             "{}: handle: a {} handle needs its own design",
             hook,
@@ -1047,6 +1054,7 @@ fn struct_key_of(ty: &syn::Type) -> Option<String> {
         "SpawnEntry",
         "RecipeBookCategory",
         "NativeReloadListener",
+        "NativeCommand",
         "Suggestion",
         "ItemCost",
         "MerchantOffer",
@@ -1226,6 +1234,7 @@ fn struct_ts(key: &str) -> &'static str {
         }
         "RecipeBookCategory" => "{ id: string, recipe_type: string, icon: string }",
         "NativeReloadListener" => "{ id: string, folder: string }",
+        "NativeCommand" => "{ usage: string, level: number, permission: string? }",
         "Suggestion" => {
             "{ range: { start: number, end: number }, text: string, tooltip: string?, int_value: number? }"
         }
@@ -2168,6 +2177,32 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 leaf("folder", format!("\"test:folder{n}\"")),
             ],
         ),
+        // A registered command: its usage, the level that sees it, and the
+        // permission node when one decides instead of the level. The write
+        // pair carries `n` (a constant would collide the duo's two appends).
+        "NativeCommand" => {
+            // `#[non_exhaustive]`: the samples go through `op`/`permission`.
+            let mut s = mutable(
+                format!(
+                    "NativeCommand::op(\"test:register{n}\", {n}).permission(\"test:permission{n}\")"
+                ),
+                format!(
+                    "{{ usage = \"test:register{n}\", level = {n}, permission = \"test:permission{n}\" }}"
+                ),
+                format!(
+                    "NativeCommand::op(\"test:register{n}:edited\", 4).permission(\"test:permission{n}:edited\")"
+                ),
+                format!(
+                    "{{ usage = \"test:register{n}:edited\", level = 4, permission = \"test:permission{n}:edited\" }}"
+                ),
+            );
+            s.leaves = vec![
+                leaf("usage", format!("\"test:register{n}\"")),
+                leaf("level", format!("{n}")),
+                leaf("permission", format!("\"test:permission{n}\"")),
+            ];
+            s
+        }
         "Suggestion" => fixed(
             // `tooltip` and `int_value` seed non-default values (the runtime
             // writes both): a dropped key and a wrong value each fail.
@@ -3369,6 +3404,27 @@ pub fn assert_lines(
             a(&format!("{e}.uuid == {lua}")),
             a(&format!("{e}.name == \"test:name\"")),
         ],
+        // The command's player table (`player_table_of` plus `held`): one
+        // assert per seeded key, each with the sample's independent value.
+        // (`lua` is unused: the sample builds the native struct, and these
+        // lines recompute the Lua side from `n`, like the position arms do.)
+        Conv::ServerPlayer => {
+            let (x, y, z) = (1.0 + n as f64, 2.0 + n as f64, 3.0 + n as f64);
+            let uuid = uuid_sample((7 + n) as u128);
+            vec![
+                a(&format!("{e}.uuid == \"{uuid}\"")),
+                a(&format!("{e}.name == \"test:player{n}\"")),
+                a(&format!("{e}.dimension == \"minecraft:overworld\"")),
+                a(&format!("{e}.position.x == {x:?}")),
+                a(&format!("{e}.position.y == {y:?}")),
+                a(&format!("{e}.position.z == {z:?}")),
+                a(&format!("{e}.game_mode == {n}")),
+                a(&format!("{e}.health == 20.0")),
+                a(&format!("{e}.yaw == {:?}", 4.5 + n as f64)),
+                a(&format!("{e}.pitch == {:?}", 5.5 + n as f64)),
+                a(&format!("{e}.held == nil")),
+            ]
+        }
         Conv::Pos | Conv::PosStruct | Conv::MutPos => {
             let (x, y, z) = (1 + n as i32, 2 + n as i32, 3 + n as i32);
             vec![
@@ -3578,6 +3634,27 @@ pub fn table_leaves(
             (".uuid".into(), lua.to_owned()),
             (".name".into(), "\"test:name\"".into()),
         ],
+        // The command's player table: the same leaves the asserts emit, as
+        // data, so the distinct-values check cannot drift from the asserts.
+        Conv::ServerPlayer => {
+            let (x, y, z) = (1.0 + n as f64, 2.0 + n as f64, 3.0 + n as f64);
+            vec![
+                (
+                    ".uuid".into(),
+                    format!("\"{}\"", uuid_sample((7 + n) as u128)),
+                ),
+                (".name".into(), format!("\"test:player{n}\"")),
+                (".dimension".into(), "\"minecraft:overworld\"".into()),
+                (".position.x".into(), format!("{x:?}")),
+                (".position.y".into(), format!("{y:?}")),
+                (".position.z".into(), format!("{z:?}")),
+                (".game_mode".into(), format!("{n}")),
+                (".health".into(), "20.0".into()),
+                (".yaw".into(), format!("{:?}", 4.5 + n as f64)),
+                (".pitch".into(), format!("{:?}", 5.5 + n as f64)),
+                (".held".into(), "nil".into()),
+            ]
+        }
         Conv::Pos | Conv::PosStruct | Conv::MutPos => vec![
             (".x".into(), format!("{}", 1 + n as i32)),
             (".y".into(), format!("{}", 2 + n as i32)),
@@ -3926,6 +4003,21 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
             format!("Some({})", 7 + n),
             format!("\"{}\"", uuid_sample((7 + n) as u128)),
         ),
+        // The command's player: `test_events::native_server_player` builds
+        // the `#[non_exhaustive]` struct; the Lua side is a player table
+        // with `held` (the fake host holds nothing, so nil).
+        Conv::ServerPlayer => {
+            let (x, y, z) = (1.0 + n as f64, 2.0 + n as f64, 3.0 + n as f64);
+            plain(
+                format!(
+                    "&horizon_client::test_events::native_server_player({}u128, \"test:player{n}\".to_owned(), 0, \"minecraft:overworld\".to_owned(), [{x:?}, {y:?}, {z:?}], {n}, 20.0, {:?}, {:?}, 0, \"\".to_owned())",
+                    7 + n,
+                    4.5 + n as f64,
+                    5.5 + n as f64,
+                ),
+                format!("\"{}\"", uuid_sample((7 + n) as u128)),
+            )
+        }
         Conv::Dim => plain(
             "LevelDimension::Overworld".into(),
             "\"minecraft:overworld\"".into(),

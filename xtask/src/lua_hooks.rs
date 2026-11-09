@@ -102,6 +102,10 @@ fn seed_tag(conv: &Conv, ty: &str, key: Option<&str>) -> String {
         Conv::OptUuid => "opt_uuid",
         Conv::Player => "player",
         Conv::PlayerOpt => "player_opt",
+        // Only the bespoke `perform_command` arm names this seed: the stock
+        // arms never emit it, and there is no `gen_seed` arm for it (naming
+        // one from stock emission would fail to expand, loudly).
+        Conv::ServerPlayer => "server_player",
         Conv::Dim => "dim",
         Conv::Pos => "pos",
         Conv::PosStruct => "pos_struct",
@@ -322,13 +326,20 @@ fn extra_tags(model: &Model) -> Vec<String> {
 fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
     // Three hooks run bespoke arms: the server tick suppresses unknown
     // phases and reloads on request, loot filters by its context's block or
-    // entity with the absent-both early-out, and the data-pack collect runs
-    // on every load including the first. Their fields still seed and write
-    // back through the shared arms; only the dispatch shell is bespoke.
+    // entity with the absent-both early-out, the data-pack collect runs
+    // on every load including the first, perform_command dispatches by
+    // longest usage match and answers `(player, args)`, and
+    // register_commands joins the declared commands before the handlers
+    // run. The loot, tick and pack arms still seed and write back through
+    // the shared arms; only the dispatch shell is bespoke. The perform arm
+    // seeds nothing through the shared arms (its fields only document the
+    // parameters); it dispatches, parses and cancels itself.
     let bespoke = match model.name.as_str() {
         "server_tick" => Some("gen_server_tick"),
         "loot_drops" => Some("gen_loot_drops"),
         "data_pack_files" => Some("gen_data_pack_files"),
+        "perform_command" => Some("gen_perform_command"),
+        "register_commands" => Some("gen_register_commands"),
         _ => None,
     };
     let contract = match model.contract.as_str() {
@@ -1231,6 +1242,183 @@ fn no_cancel_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
         }
     }
     out.push_str("}\n");
+    out
+}
+
+/// `perform_command` answers `(player, args)`, not an event table, and its
+/// kind is the dispatched command words: the stock emitters (an `event`
+/// handler, a kind plan) do not fit, so these bespoke tests pin the same
+/// contract. The model gates (`uncovered_fields`, `unasserted_leaves`,
+/// `dup_values`) still run on the model through the shared asserts; the
+/// Lua below mirrors those asserts with the handler's true receivers
+/// (`player.*`, `args.*`), at the same sample values.
+///
+/// The dispatch player is always the index-0 `ServerPlayer` sample: every
+/// firing below names the one-line sample, so a seed change breaks the
+/// tests loudly rather than silently.
+fn perform_command_player() -> String {
+    sample(&Conv::ServerPlayer, "&NativeServerPlayer", "player", 0).rust
+}
+
+/// One command firing: `dispatch_perform_command` with the test player and
+/// `line`, asserting the `ran` flag the firing must leave.
+fn perform_command_fire(host: &str, player: &str, line: &str, ran: bool, witness: &str) -> String {
+    let ran_assert = if ran {
+        format!("    assert!(ran, \"ran for {line}\");\n")
+    } else {
+        format!("    assert!(!ran, \"ran for {line}\");\n")
+    };
+    format!(
+        "    dispatch_perform_command({host}, &firing_mods, {player}, \"{line}\", &mut ran);\n{ran_assert}{witness}"
+    )
+}
+
+/// The player-table asserts every command handler below opens with: the
+/// model's `ServerPlayer` asserts with the handler's true receiver, at the
+/// index-0 sample values.
+fn perform_command_player_asserts() -> String {
+    let uuid = crate::lua_model::uuid_sample(7);
+    format!(
+        "    assert(player.uuid == \"{uuid}\", \"player uuid\")\n    assert(player.name == \"test:player0\", \"player name\")\n    assert(player.dimension == \"minecraft:overworld\", \"player dimension\")\n    assert(player.position.x == 1.0, \"player position x\")\n    assert(player.position.y == 2.0, \"player position y\")\n    assert(player.position.z == 3.0, \"player position z\")\n    assert(player.game_mode == 0, \"player game_mode\")\n    assert(player.health == 20.0, \"player health\")\n    assert(player.yaw == 4.5, \"player yaw\")\n    assert(player.pitch == 5.5, \"player pitch\")\n    assert(player.held == nil, \"player held\")"
+    )
+}
+
+/// The firing tests: longest-match dispatch, every argument kind (word,
+/// text, integer, number, boolean and the word-stored catch-alls), `raw`,
+/// and two mods hearing their own commands. Each firing asserts its `ran`
+/// flag and the exact witness count, so a dispatch that matches the wrong
+/// usage, calls the wrong handler, or cancels what it should not fails.
+fn perform_command_tests(_model: &Model, _tys: &BTreeMap<String, String>) -> Vec<String> {
+    let player = perform_command_player();
+    let asserts = perform_command_player_asserts();
+    let lua = format!(
+        "horizon.command(\"test:probe <n:integer> [label:word]\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n{asserts}\n    assert(args.n == 5, \"n\")\n    assert(args.label == \"hi\", \"label\")\n    assert(args.raw == \"test:probe 5 hi\", \"raw\")\nend)\n\
+        horizon.command(\"test:probe deep <flag:boolean>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(args.flag == true, \"flag\")\n    assert(args.raw == \"test:probe deep true\", \"raw\")\nend)\n\
+        horizon.command(\"test:misc <what:text>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(args.what == \"hello there world\", \"text\")\n    assert(args.raw == \"test:misc hello there world\", \"raw\")\nend)\n\
+        horizon.command(\"test:calc <a:number>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(args.a == 2.5, \"number\")\nend)\n\
+        horizon.command(\"test:give <who:player> <at:block_pos> <team:entities> <tool:item>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(args.who == \"steve\", \"catch-all player\")\n    assert(args.at == \"1,2,3\", \"catch-all block_pos\")\n    assert(args.team == \"@e\", \"catch-all entities\")\n    assert(args.tool == \"diamond\", \"catch-all item\")\nend)"
+    );
+    let mut out = format!(
+        "#[test]\nfn generated_perform_command() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_perform_command\", {lua:?});\n    let firing_mods = boxed(m);\n    let player = {player};\n"
+    );
+    // No usage matches: the command is left alone, and no handler runs.
+    out.push_str("    {\n        let mut ran = false;\n");
+    out.push_str(&perform_command_fire(
+        "&mut FakeHost::empty()",
+        "player",
+        "test:unknown command",
+        false,
+        "    assert_eq!(witness(&lua), 0, \"the handler ran\");\n",
+    ));
+    out.push_str("    }\n");
+    // The longest usage wins: `test:probe deep` (two words) answers, not
+    // `test:probe` (whose integer parse would refuse `deep`).
+    for (line, count) in [
+        ("test:probe deep true", 1),
+        ("test:probe 5 hi", 2),
+        ("test:misc hello there world", 3),
+        ("test:calc 2.5", 4),
+        ("test:give steve 1,2,3 @e diamond", 5),
+    ] {
+        out.push_str("    {\n        let mut ran = false;\n");
+        out.push_str(&perform_command_fire(
+            "&mut FakeHost::empty()",
+            "player",
+            line,
+            true,
+            &format!("    assert_eq!(witness(&lua), {count}, \"the handler ran\");\n"),
+        ));
+        out.push_str("    }\n");
+    }
+    out.push_str("    no_error(&id);\n}\n");
+    // A handler that errors still cancels: the command is the scripts', and
+    // nobody else runs it after a failed answer.
+    let error_lua = "horizon.command(\"test:boom\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    error(\"boom\")\nend)";
+    out.push_str(&format!(
+        "#[test]\nfn generated_perform_command_handler_error_cancels() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_perform_command_error\", {error_lua:?});\n    let firing_mods = boxed(m);\n    let player = {player};\n    {{\n        let mut ran = false;\n"
+    ));
+    out.push_str(&perform_command_fire(
+        "&mut FakeHost::empty()",
+        "player",
+        "test:boom",
+        true,
+        "    assert_eq!(witness(&lua), 1, \"the handler ran\");\n",
+    ));
+    out.push_str("    }\n    has_error(&id);\n}\n");
+    // Two mods registering commands: each hears its own, and neither hears
+    // the other's.
+    let lua_a = "horizon.command(\"test:alpha\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)";
+    let lua_b = "horizon.command(\"test:beta\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)";
+    out.push_str(&format!(
+        "#[test]\nfn generated_perform_command_two_mods_hear_their_own() {{\n    let (a, a_id, _a_dir, a_lua) = loaded_tracked(\"gen_perform_command_duo_a\", {lua_a:?});\n    let (b, b_id, _b_dir, b_lua) = loaded_tracked(\"gen_perform_command_duo_b\", {lua_b:?});\n    let firing_mods = duo_boxed(a, b);\n    let player = {player};\n    {{\n        let mut ran = false;\n        dispatch_perform_command(&mut FakeHost::empty(), &firing_mods, player, \"test:alpha\", &mut ran);\n        assert!(ran, \"ran for test:alpha\");\n        assert_eq!(witness(&a_lua), 1, \"mod A ran\");\n        assert_eq!(witness(&b_lua), 0, \"mod B stayed quiet\");\n    }}\n    {{\n        let mut ran = false;\n        dispatch_perform_command(&mut FakeHost::empty(), &firing_mods, player, \"test:beta\", &mut ran);\n        assert!(ran, \"ran for test:beta\");\n        assert_eq!(witness(&a_lua), 1, \"mod A stayed quiet\");\n        assert_eq!(witness(&b_lua), 1, \"mod B ran\");\n    }}\n    no_error(&a_id);\n    no_error(&b_id);\n}}\n"
+    ));
+    vec![out]
+}
+
+/// The refusal test: an argument that does not parse, or a missing required
+/// argument, still cancels and answers the player, without calling the
+/// handler. A non-matching command is not cancelled and runs no handler.
+fn perform_command_no_cancel_test(_model: &Model, _tys: &BTreeMap<String, String>) -> String {
+    let player = perform_command_player();
+    let lua = "horizon.command(\"test:req <a:integer>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)";
+    let mut out = format!(
+        "#[test]\nfn generated_perform_command_no_cancel() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_perform_command_nocancel\", {lua:?});\n    let firing_mods = boxed(m);\n    let player = {player};\n    let mut host = FakeHost::empty();\n"
+    );
+    // A bad integer is refused with usage, and the handler is not called.
+    // The refusal still answers the player.
+    out.push_str("    {\n        let mut ran = false;\n");
+    out.push_str(&perform_command_fire(
+        "&mut host",
+        "player",
+        "test:req x",
+        true,
+        "    assert_eq!(witness(&lua), 0, \"the handler ran\");\n    assert_eq!(host.feedback_lines().len(), 1, \"the refusal answered the player\");\n",
+    ));
+    out.push_str("    }\n");
+    // A missing required argument is refused the same way.
+    out.push_str("    {\n        let mut ran = false;\n");
+    out.push_str(&perform_command_fire(
+        "&mut host",
+        "player",
+        "test:req",
+        true,
+        "    assert_eq!(witness(&lua), 0, \"the handler ran\");\n    assert_eq!(host.feedback_lines().len(), 2, \"the refusal answered the player\");\n",
+    ));
+    out.push_str("    }\n");
+    // A non-matching command is not cancelled and runs no handler.
+    out.push_str("    {\n        let mut ran = false;\n");
+    out.push_str(&perform_command_fire(
+        "&mut host",
+        "player",
+        "test:other",
+        false,
+        "    assert_eq!(witness(&lua), 0, \"the handler ran\");\n    assert_eq!(host.feedback_lines().len(), 2, \"nothing answered a command nobody ran\");\n",
+    ));
+    out.push_str("    }\n    no_error(&id);\n}\n");
+    out
+}
+
+/// The cost test: an unheard dispatch builds no table and reads nothing;
+/// a heard one runs the handler and builds the player and args tables.
+/// There is no watched-away-kind part: a declared usage always watches its
+/// words, and a line no usage matches never reaches the kind check.
+fn perform_command_cost_test(_model: &Model, _tys: &BTreeMap<String, String>) -> String {
+    let player = perform_command_player();
+    let mut out =
+        "    #[test]\n    fn generated_perform_command_unregistered_costs_nothing() {\n".to_owned();
+    out.push_str(
+        "        let (m, id, dir, lua) = loaded_tracked(\n            \"gen_perform_command_cost\",\n            \"horizon.on(\\\"tick\\\", function(event) end)\",\n        );\n        let firing_mods = boxed(m);\n        {\n",
+    );
+    out.push_str(&format!(
+        "            let player = {player};\n            let mut ran = false;\n            reset_entity_reads();\n            reset_host_reads();\n            reset_level_reads();\n            reset_event_tables();\n            dispatch_perform_command(&mut FakeHost::empty(), &firing_mods, player, \"test:cost 5\", &mut ran);\n"
+    ));
+    out.push_str(
+        "            assert!(!ran, \"ran with no handler\");\n            assert_eq!(witness(&lua), 0, \"no handler ran\");\n            assert_eq!(\n                event_tables(),\n                0,\n                \"no event table was built with no handler\"\n            );\n            assert_eq!(\n                entity_reads(),\n                0,\n                \"perform_command read the host with no handler\"\n            );\n            assert_eq!(\n                host_reads(),\n                0,\n                \"perform_command read the host with no handler\"\n            );\n            assert_eq!(\n                level_reads(),\n                0,\n                \"perform_command read the level with no handler\"\n            );\n            no_error(&id);\n            drop_dir(dir);\n        }\n",
+    );
+    let live = "horizon.command(\"test:cost <n:integer>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)";
+    out.push_str(&format!(
+        "        let (m, id, dir, lua) = loaded_tracked(\n            \"gen_perform_command_cost_live\",\n            {live:?}\n        );\n        let firing_mods = boxed(m);\n        {{\n            let player = {player};\n            let mut ran = false;\n            reset_entity_reads();\n            reset_host_reads();\n            reset_level_reads();\n            reset_event_tables();\n            dispatch_perform_command(&mut FakeHost::empty(), &firing_mods, player, \"test:cost 5\", &mut ran);\n            assert!(ran, \"ran not cancelled\");\n            assert_eq!(witness(&lua), 1, \"the control handler ran\");\n            assert!(\n                event_tables() >= 1,\n                \"perform_command built an event table for a heard dispatch\"\n            );\n            assert_eq!(\n                entity_reads(),\n                0,\n                \"perform_command read the entity for a heard dispatch\"\n            );\n            assert_eq!(\n                host_reads(),\n                0,\n                \"perform_command read the host for a heard dispatch\"\n            );\n            assert_eq!(\n                level_reads(),\n                0,\n                \"perform_command read the level for a heard dispatch\"\n            );\n            no_error(&id);\n            drop_dir(dir);\n        }}\n    }}\n"
+    ));
     out
 }
 
@@ -2403,12 +2591,20 @@ pub fn run(check: bool) -> Result<(), String> {
             .map(|p| (p.name.clone(), p.ty.clone()))
             .collect();
         names.push(model.name.clone());
-        if !matches!(model.kind, Kind::None) {
+        // `perform_command` filters by the dispatched command words (its
+        // kind has no event field, so the model carries `Kind::None`): a
+        // kind through `horizon.on` or `horizon.command` still filters.
+        if !matches!(model.kind, Kind::None) || model.name == "perform_command" {
             kind_names.push(model.name.clone());
         }
         invocations.push(invocation(model, &tys));
         let spike = SPIKE_HOOKS.contains(&model.name.as_str());
-        if !spike {
+        // `perform_command` answers `(player, args)` with a dispatched kind:
+        // bespoke tests pin that contract instead of the stock event-table
+        // firing.
+        if model.name == "perform_command" {
+            tests.extend(perform_command_tests(model, &tys));
+        } else if !spike {
             tests.push(test_fn(model, &tys));
         }
         // The second firing covers the optional-stack state the dispatch
@@ -2456,7 +2652,11 @@ pub fn run(check: bool) -> Result<(), String> {
                     check_firing(true);
                 }
             }
-            tests.push(no_cancel_test_fn(model, &tys));
+            if model.name == "perform_command" {
+                tests.push(perform_command_no_cancel_test(model, &tys));
+            } else {
+                tests.push(no_cancel_test_fn(model, &tys));
+            }
         } else {
             if !spike {
                 check_firing(false);
@@ -2468,7 +2668,11 @@ pub fn run(check: bool) -> Result<(), String> {
         quiet.push(quiet_block(model, &tys));
         // Every hook proves an unregistered dispatch costs nothing; every
         // collect and replace hook proves two mods share the out in order.
-        tests.push(cost_test_fn(model, &tys));
+        if model.name == "perform_command" {
+            tests.push(perform_command_cost_test(model, &tys));
+        } else {
+            tests.push(cost_test_fn(model, &tys));
+        }
         if model.contract == "collect" || model.contract == "replace" {
             tests.push(duo_test_fn(model, &tys));
         }

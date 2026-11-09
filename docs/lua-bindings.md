@@ -355,7 +355,10 @@ it as vanilla's commands. Call it at load, as goals are defined.
   `number`, `boolean`, `player`, `entities` (the multi-entity selector, `@e` or `@a`), `item` and `block_pos`
 - *level*: the operator level a player needs; 0 is everyone, and nil is 0
 - *fn*: called as `fn(player, args)`. *args* holds the arguments by name, numbers as numbers and the rest as words,
-  and `args.raw`, the whole line. `horizon.feedback(text)` answers the player, and the host actions work
+  and `args.raw`, the whole line. `horizon.feedback(text)` answers the player, and the host actions work.
+  A command that matches no usage is left alone: the next handler still sees it, and nothing is cancelled.
+  `horizon.on("perform_command", fn, "words")` hears the commands whose words are *words*, the same handlers
+  `horizon.command` registers
 
 ### Timers and saved data
 

@@ -127,6 +127,7 @@ export type ClientStartEvent = {  }
 export type ClientStoppingEvent = {  }
 export type ClientTickPostEvent = {  }
 export type ClientTickPreEvent = {  }
+export type CommandEvent = { command: string }
 export type CommandsEvent = { commands: { string } }
 export type ComponentTypesEvent = { types: { string } }
 export type CompostItemEvent = { pos: Vec3, item: string }
@@ -283,6 +284,7 @@ export type NotePlayEvent = { dimension: string, player: string?, pos: Vec3, ins
 export type OnEffectAddedEvent = { effect: string, entity: number?, amplifier: number }
 export type OnEquipEvent = { slot: string, new: Item? }
 export type OnUseTickEvent = { stack: Item, entity: number?, remaining: number }
+export type PerformCommandEvent = { player: Player, command: string }
 export type PerformConsoleCommandEvent = { command: string }
 export type PermissionCheckEvent = { player: number, node: string, default_level: number, result: boolean? }
 export type PistonMoveEvent = { dimension: string, piston: Vec3, direction: Vec3, push: { Vec3 }, destroy: { Vec3 } }
@@ -385,6 +387,7 @@ export type RaidStateChangeEvent = { raid: number, pos: Vec3, state: string }
 export type RecipeBookCategoriesEvent = { categories: { { id: string, recipe_type: string, icon: string } } }
 export type RecipeSourcesEvent = { player: number, menu: string, pos: Vec3, sources: { Vec3 } }
 export type RecipesReceivedEvent = { recipe_types: { string } }
+export type RegisterCommandsEvent = { commands: { { usage: string, level: number, permission: string? } } }
 export type RegisterConfigsEvent = { configs: { { mod_id: string, kind: string, file: string, default: string } } }
 export type ReleaseUsingEvent = { stack: Item, entity: number?, time_left: number, used: boolean }
 export type RenderHandEvent = { hand: "main" | "off", stack: Item?, partial: number, swing: number, equip: number }
@@ -570,6 +573,7 @@ export type HorizonOn =
     ((name: "client_stopping", fn: (event: ClientStoppingEvent) -> ()) -> ()) &
     ((name: "client_tick_post", fn: (event: ClientTickPostEvent) -> ()) -> ()) &
     ((name: "client_tick_pre", fn: (event: ClientTickPreEvent) -> ()) -> ()) &
+    ((name: "command", fn: (event: CommandEvent) -> ()) -> ()) &
     ((name: "commands", fn: (event: CommandsEvent) -> ()) -> ()) &
     ((name: "component_types", fn: (event: ComponentTypesEvent) -> ()) -> ()) &
     ((name: "compost_item", fn: (event: CompostItemEvent) -> ()) -> ()) &
@@ -726,6 +730,7 @@ export type HorizonOn =
     ((name: "on_effect_added", fn: (event: OnEffectAddedEvent) -> (), kind: string?) -> ()) &
     ((name: "on_equip", fn: (event: OnEquipEvent) -> ()) -> ()) &
     ((name: "on_use_tick", fn: (event: OnUseTickEvent) -> (), kind: string?) -> ()) &
+    ((name: "perform_command", fn: (player: Player, args: CommandArgs) -> (), kind: string?) -> ()) &
     ((name: "perform_console_command", fn: (event: PerformConsoleCommandEvent) -> ()) -> ()) &
     ((name: "permission_check", fn: (event: PermissionCheckEvent) -> ()) -> ()) &
     ((name: "piston_move", fn: (event: PistonMoveEvent) -> ()) -> ()) &
@@ -828,6 +833,7 @@ export type HorizonOn =
     ((name: "recipe_book_categories", fn: (event: RecipeBookCategoriesEvent) -> ()) -> ()) &
     ((name: "recipe_sources", fn: (event: RecipeSourcesEvent) -> ()) -> ()) &
     ((name: "recipes_received", fn: (event: RecipesReceivedEvent) -> ()) -> ()) &
+    ((name: "register_commands", fn: (event: RegisterCommandsEvent) -> ()) -> ()) &
     ((name: "register_configs", fn: (event: RegisterConfigsEvent) -> ()) -> ()) &
     ((name: "release_using", fn: (event: ReleaseUsingEvent) -> (), kind: string?) -> ()) &
     ((name: "render_hand", fn: (event: RenderHandEvent) -> ()) -> ()) &

@@ -325,12 +325,23 @@ fn generated_hooks() -> Result<Vec<GeneratedHook>, String> {
             // A replace out seeds nil until the handler answers.
             fields.push(format!("{}: {}?", o.name, replace_ts(o.read, &o.ret)));
         }
+        // `perform_command` answers `(player, args)`, not an event table:
+        // the handler keeps the `horizon.command` shape, kind-filtered by
+        // the dispatched command words.
+        let (handler, has_kind) = if model.name == "perform_command" {
+            ("(player: Player, args: CommandArgs) -> ()".to_owned(), true)
+        } else {
+            (
+                format!("(event: {event_ty}) -> ()"),
+                !matches!(model.kind, Kind::None),
+            )
+        };
         out.push(GeneratedHook {
             hook: model.name.clone(),
             event_def: format!("{{ {} }}", fields.join(", ")),
-            handler: format!("(event: {event_ty}) -> ()"),
+            handler,
             event_ty,
-            has_kind: !matches!(model.kind, Kind::None),
+            has_kind,
         });
     }
     out.sort_by(|a, b| a.hook.cmp(&b.hook));

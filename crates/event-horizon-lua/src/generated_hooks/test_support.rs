@@ -7,7 +7,7 @@ use crate::lua_mods::LuaMod;
 use horizon_client::dev_input::mods::{ModStatus, set_status, status};
 use horizon_client::mod_api::{
     AttachmentError, Attachments, BlockStateId, Compound, EntityRef, Holder, Hooks, Host,
-    LegacyRandom, LevelHost, LevelRandomHost, NativeServerPlayer, NativeWorldEpoch,
+    LegacyRandom, LevelHost, LevelRandomHost, NativeServerPlayer, NativeWorldEpoch, Text,
 };
 use horizon_mods::Package;
 use mlua::Lua;
@@ -133,7 +133,12 @@ pub fn no_error(id: &str) {
 // cannot build the full table). Block states name themselves by id, except
 // id 7, which is stone (the spike's sample). Entity 11 is a zombie, 13 a
 // skeleton, anything else resolves to nothing.
-pub struct FakeHost;
+pub struct FakeHost {
+    /// Command answers (`host.feedback`): the command tests read these
+    /// back. Uncounted: the command cost tests pin the heard dispatch at
+    /// zero host reads.
+    feedback: std::sync::Mutex<Vec<String>>,
+}
 thread_local! {
     static ENTITY_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
@@ -178,7 +183,14 @@ fn count_level_read() {
 }
 impl FakeHost {
     pub fn empty() -> Self {
-        Self
+        Self {
+            feedback: Default::default(),
+        }
+    }
+
+    /// The command answers the host was given, in order.
+    pub fn feedback_lines(&self) -> Vec<String> {
+        self.feedback.lock().unwrap().clone()
     }
 }
 impl Host for FakeHost {
@@ -204,6 +216,19 @@ impl Host for FakeHost {
             13 => Some("minecraft:skeleton".to_owned()),
             _ => None,
         }
+    }
+
+    /// The acting player's empty hand: this host holds no players, and the
+    /// command tests assert the seeded `held` is nil. Uncounted: the
+    /// command cost tests pin the heard dispatch at zero host reads.
+    fn held(&self) -> Option<(String, u32, bool)> {
+        None
+    }
+
+    /// A command answer: kept for the tests to read back, like the mob
+    /// host's lines. Uncounted, like `held` above.
+    fn feedback(&mut self, line: Text) {
+        self.feedback.lock().unwrap().push(line.plain());
     }
 }
 

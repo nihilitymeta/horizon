@@ -89,7 +89,7 @@ Every hook point a native mod (`docs/native-mods.md`) or a trait mod (`crates/ho
 | `client_stopping` | — | listen |  | Once before this client's final save/exit. A mod can flush and join its worker here. |
 | `client_tick_post` | — | listen |  | The same client tick ends (`ClientTickEvent.Post`): the world's tick, the chat queue, music and sounds are done. A tick that errors ends before it. Client only. API @API:client_tick@. |
 | `client_tick_pre` | — | listen |  | A client tick of the window starts (NeoForge's `ClientTickEvent.Pre`, at the top of `Minecraft.tick`), before any of its work. The window ticks 20 times a second on the title screen, while paused and in a world alike, and runs the ticks a slow frame owes back to back. Never on a server, single player's own included: it ticks on its own thread. Client only. API @API:client_tick@. |
-| `command` | — | cancel |  | A command typed or clicked in chat, without its slash, before the server and Horizon's commands see it: set `ran` when the mod ran it. |
+| `command` | — | cancel | an event table with `command` | A command typed or clicked in chat, without its slash, before the server and Horizon's commands see it: set `ran` when the mod ran it. |
 | `commands` | 35 | collect |  | The commands `native_command` runs, by name and without their slash: push the ones that are yours. Asked when a connection starts and again when the server sends its own tree, so the chat box colours, completes and lists them as the game's own; a name the game already has keeps that command's behaviour. API 35. |
 | `component_types` | — | collect |  | Register namespaced NBT component types before content loads. |
 | `compost_item` | — | listen |  | A compostable item was added to the composter at `pos`. 204. |
@@ -932,4 +932,4 @@ Every hook point a native mod (`docs/native-mods.md`) or a trait mod (`crates/ho
 | `world_seed` | — |  | The world's seed, as `/seed` prints it (`WorldOptions.seed`, Bukkit's `World.getSeed`): every level of the world generates from it, and `native_chunk_generate` gets the same value. None off a server: a client only knows a hash of its server's seed. API @API:world_seed@. |
 | `world_text` | — |  | Actual styled world font at (0,0), with ARGB default color and optional eight-offset ARGB outline. Returns the text advance in font pixels. The front of outlined text uses POLYGON_OFFSET. API @API:world_canvas@. |
 
-516 hook points, 403 helpers; 55 of the hooks and 49 of the helpers reaching Lua.
+516 hook points, 403 helpers; 56 of the hooks and 49 of the helpers reaching Lua.

@@ -125,6 +125,11 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     ("player_chat", "`player_chat(player, line)`"),
     ("player_command", "`player_command(player, line)`"),
+    // The generated native `command` hook (any typed command, before the
+    // server sees it): named like the other generated hooks, with no
+    // `name(` handler spelling (that spelling feeds the registerable-names
+    // test, which covers the hand-written registry only).
+    ("command", "an event table with `command`"),
     (
         "item_crafted",
         "`item_crafted(player, recipe, item)`, by item",
@@ -696,7 +701,6 @@ mod tests {
                 }
             }
         }
-        named.insert("command".to_owned());
         assert_eq!(runtime, named);
     }
 

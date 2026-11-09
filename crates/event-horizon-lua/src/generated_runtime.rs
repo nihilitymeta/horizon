@@ -1224,6 +1224,128 @@ macro_rules! gen_data_pack_files {
     };
 }
 
+/// A player's command for a command a mod registered: like a `game_mut`
+/// cancel hook, but the usage whose words the line starts with picks the
+/// handler (the longest first), and the handler runs as `fn(player, args)`.
+/// After a usage matched the arm always cancels, even when argument parsing
+/// or the handler fails: the command is the scripts', nobody else's. The
+/// field list only documents the parameters; the arm dispatches, parses and
+/// cancels itself.
+///
+/// The `command_*` helpers live in `lua_mods.rs`: this macro expands inside
+/// that module's `impl Hooks for LuaMod`, so it calls them there, as the
+/// hand-written hook did.
+macro_rules! gen_perform_command {
+    ($name:ident, game_mut, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(($st:ty))? $(=> $write:ident $(($wt:ty))?)?),* $(,)?]) => {
+        fn $name(
+            &self,
+            host: &mut dyn horizon_client::mod_api::Host,
+            _event: &mut $event,
+        ) -> horizon_client::mod_api::Flow {
+            use horizon_client::mod_api::Flow;
+            let hook = stringify!($name);
+            if !self.has_any_handlers(hook) {
+                return Flow::Continue;
+            }
+            let line = _event.command.trim();
+            // The usage whose words the line starts with, the longest first:
+            // `parasite count` before `parasite`.
+            let words: Vec<&str> = line.split_whitespace().collect();
+            let Some(usage) = self.commands.lock().ok().and_then(|c| {
+                c.iter()
+                    .map(|c| c.usage.clone())
+                    .filter(|u| {
+                        let name = command_words(u);
+                        let n = name.split_whitespace().count();
+                        n > 0
+                            && words.len() >= n
+                            && name.split_whitespace().eq(words[..n].iter().copied())
+                    })
+                    .max_by_key(|u| command_words(u).split_whitespace().count())
+            }) else {
+                return Flow::Continue;
+            };
+            let name = command_words(&usage);
+            if !self.watches(hook, &name) {
+                return Flow::Continue;
+            }
+            let outcome = (|| -> mlua::Result<()> {
+                let lua = &self.lua;
+                let player = player_table_of(lua, _event.player)?;
+                player.set("held", self.held_table(host)?)?;
+                let args = lua.create_table()?;
+                #[cfg(test)]
+                crate::generated_runtime::note_event_table();
+                args.set("raw", line)?;
+                if let Some(refusal) = command_args(lua, &usage, line, &args)? {
+                    host.feedback(refusal);
+                    return Ok(());
+                }
+                self.call_kind(
+                    hook,
+                    Some(&name),
+                    host,
+                    (player, args),
+                    &mut |host, action, args| self.apply_command_action(host, action, args),
+                )
+            })();
+            if let Err(e) = outcome {
+                self.hook_error(hook, e);
+            }
+            Flow::Cancel
+        }
+    };
+}
+
+/// The commands the scripts declared (`horizon.command`): like a `game_mut`
+/// collect hook, but the declared commands join the tree whether or not any
+/// handler listens (a declare-only mod registers no handler, and the tree
+/// still needs its commands). Handlers that do listen then see and extend
+/// the same list, declared commands first.
+macro_rules! gen_register_commands {
+    ($name:ident, game_mut, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(($st:ty))? $(=> $write:ident $(($wt:ty))?)?),* $(,)?]) => {
+        fn $name(&self, host: &mut dyn horizon_client::mod_api::Host, _event: &mut $event) {
+            let hook = stringify!($name);
+            if let Ok(commands) = self.commands.lock() {
+                _event.commands.extend(commands.iter().cloned());
+            }
+            if !self.has_any_handlers(hook) {
+                return;
+            }
+            let kind: Option<String> = gen_kind!($kind, host, _event);
+            if let Some(kind) = kind.as_ref() {
+                if !self.watches(hook, kind) {
+                    return;
+                }
+            } else if !self.has_handlers(hook) {
+                return;
+            }
+            let outcome = (|| -> mlua::Result<()> {
+                let lua = &self.lua;
+                let table = lua.create_table()?;
+                #[cfg(test)]
+                crate::generated_runtime::note_event_table();
+                $(gen_seed!(self, table, lua, host, (), _event, $field : $seed $(($st))?);)*
+                self.call_kind(
+                    hook,
+                    kind.as_deref(),
+                    host,
+                    table.clone(),
+                    &mut |host, action, args| {
+                        self.run_action(host, action, args)?;
+                        Ok(())
+                    },
+                )?;
+                $(gen_writeback!(table, lua, _event, (), $field $(, $write $(($wt))?)?);)*
+                Ok(())
+            })();
+            if let Err(e) = outcome {
+                self.error(format!("{hook}: {e}"));
+            }
+        }
+    };
+}
+
 /// A `cancel` hook: `horizon.cancel()` in the handler becomes `Flow::Cancel`.
 macro_rules! gen_cancel {
     ($name:ident, none, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(($st:ty))? $(=> $write:ident $(($wt:ty))?)?),* $(,)?]) => {
@@ -2653,6 +2775,41 @@ impl LuaStruct for NativeReloadListener {
             )),
             other => Err(mlua::Error::runtime(format!(
                 "{field}: expected a listener table, got {}",
+                other.type_name()
+            ))),
+        }
+    }
+}
+
+use horizon_client::mod_api::NativeCommand;
+
+/// A registered command (`{usage, level, permission?}`, in order): what
+/// `register_commands` collects.
+impl LuaStruct for NativeCommand {
+    fn to_value(lua: &Lua, v: &Self) -> mlua::Result<Value> {
+        let t = lua.create_table()?;
+        t.set("usage", v.usage.as_str())?;
+        t.set("level", v.level)?;
+        if let Some(permission) = &v.permission {
+            t.set("permission", permission.as_str())?;
+        }
+        Ok(Value::Table(t))
+    }
+    fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
+        // `NativeCommand` is `#[non_exhaustive]`, so the read-back goes
+        // through its constructors (`op`, `permission`).
+        match v {
+            Value::Table(t) => {
+                let usage = req_key::<String>(&t, "usage", field)?;
+                let level = t.get::<Option<u8>>("level")?.unwrap_or(0);
+                let mut command = NativeCommand::op(&usage, level);
+                if let Some(node) = t.get::<Option<String>>("permission")? {
+                    command = command.permission(&node);
+                }
+                Ok(command)
+            }
+            other => Err(mlua::Error::runtime(format!(
+                "{field}: expected a command table, got {}",
                 other.type_name()
             ))),
         }

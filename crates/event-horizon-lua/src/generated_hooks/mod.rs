@@ -49,10 +49,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ),
     ("key", "generated"),
     ("wheel", "generated"),
-    (
-        "command",
-        "cannot: command: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("command", "generated"),
     ("commands", "generated"),
     ("zoom", "generated"),
     ("minimap", "generated"),
@@ -91,14 +88,8 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "menu_button",
         "handle: menu_button: a ModBlockEntity handle needs its own design",
     ),
-    (
-        "register_commands",
-        "cannot: register_commands: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
-    (
-        "perform_command",
-        "cannot: perform_command: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("register_commands", "generated"),
+    ("perform_command", "generated"),
     ("menu_clicked", "generated"),
     ("menu_closed", "generated"),
     ("tooltip", "generated"),
@@ -926,6 +917,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "block_changed",
     "key",
     "wheel",
+    "command",
     "commands",
     "zoom",
     "minimap",
@@ -936,6 +928,8 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "screen",
     "screen_click",
     "screen_tooltip",
+    "register_commands",
+    "perform_command",
     "menu_clicked",
     "menu_closed",
     "tooltip",
@@ -1311,6 +1305,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
 /// The generated hooks whose `kind` filter runs: `horizon.on` rejects a
 /// kind for every other generated hook.
 pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
+    "perform_command",
     "entity_leave_level",
     "apply_effect_tick",
     "on_effect_added",
@@ -1406,6 +1401,7 @@ macro_rules! impl_generated_hooks {
     gen_listen!(block_changed, level, horizon_client::mod_api::BlockChangedEvent, (none), [dimension: dim, pos: pos_struct, old: state_level, new: state_level, old_props: state_props_note, new_props: state_props_note]);
     gen_listen!(key, game_mut, horizon_client::mod_api::KeyEvent<'_>, (none), [key: cloned, pressed: copy]);
     gen_cancel!(wheel, game_mut, horizon_client::mod_api::WheelEvent, (none), [steps: copy]);
+    gen_cancel!(command, game_mut, horizon_client::mod_api::CommandEvent<'_>, (none), [command: cloned]);
     gen_collect!(commands, game_mut, horizon_client::mod_api::CommandsEvent<'_>, (none), [commands: str_seq => mut_strvec_static]);
     gen_replace!(zoom, game_ref, horizon_client::mod_api::ZoomEvent, (none), [], zoom : struct_out(horizon_client::mod_api::NativeZoom), Option<horizon_client::mod_api::NativeZoom>);
     gen_replace!(minimap, game_ref, horizon_client::mod_api::MinimapEvent, (none), [], minimap : struct_out(horizon_client::mod_api::NativeMinimap), Option<horizon_client::mod_api::NativeMinimap>);
@@ -1416,6 +1412,8 @@ macro_rules! impl_generated_hooks {
     gen_replace!(screen, game_ref, horizon_client::mod_api::ScreenEvent<'_>, (none), [block: cloned], screen : struct_out(horizon_client::mod_api::NativeScreen), Option<horizon_client::mod_api::NativeScreen>);
     gen_replace!(screen_click, game_ref, horizon_client::mod_api::ScreenClickEvent<'_>, (none), [block: cloned, data: int_seq, at: pair, right: copy], button : value, Option<i32>);
     gen_collect!(screen_tooltip, game_ref, horizon_client::mod_api::ScreenTooltipEvent<'_>, (none), [block: cloned, data: int_seq, at: pair, lines: str_seq => mut_strvec]);
+    gen_register_commands!(register_commands, game_mut, horizon_client::mod_api::RegisterCommandsEvent<'_>, (none), [commands: s_vec(horizon_client::mod_api::NativeCommand) => w_vec(horizon_client::mod_api::NativeCommand)]);
+    gen_perform_command!(perform_command, game_mut, horizon_client::mod_api::PerformCommandEvent<'_>, (none), [player: server_player, command: cloned]);
     gen_listen!(menu_clicked, game_mut, horizon_client::mod_api::MenuClickedEvent, (none), [uuid: copy, window: copy, slot: copy, button: copy, mode: copy]);
     gen_listen!(menu_closed, game_mut, horizon_client::mod_api::MenuClosedEvent, (none), [uuid: copy, window: copy]);
     gen_collect!(tooltip, game_ref, horizon_client::mod_api::TooltipEvent<'_>, (none), [stack: item, lines: s_vec((Text,u32)) => w_vec((Text,u32))]);
@@ -2864,6 +2862,112 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "wheel read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_command() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_command",
+            "horizon.on(\"command\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.command == \"test:command\", \"command\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut ran = false;
+        dispatch_command(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:command",
+            &mut ran,
+        );
+        assert!(ran, "ran not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_command_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_command_nocancel",
+            "horizon.on(\"command\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.command == \"test:command\", \"command\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut ran = false;
+        dispatch_command(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:command",
+            &mut ran,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!ran, "ran set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_command_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_command_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut ran = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:command",
+                &mut ran,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(entity_reads(), 0, "command read the host with no handler");
+            assert_eq!(host_reads(), 0, "command read the host with no handler");
+            assert_eq!(level_reads(), 0, "command read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_command_cost_live",
+            "horizon.on(\"command\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut ran = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:command",
+                &mut ran,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "command built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "command read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "command read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -4757,6 +4861,569 @@ mod generated_tests {
         no_error(&b_id);
         drop_dir(e_dir);
         drop_dir(b_dir);
+    }
+
+    #[test]
+    fn generated_register_commands() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_register_commands",
+            "horizon.on(\"register_commands\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.commands[1].usage == \"test:register0\", \"commands\")\n    assert(event.commands[1].level == 0, \"commands\")\n    assert(event.commands[1].permission == \"test:permission0\", \"commands\")\n    assert(event.commands[2].usage == \"test:register1\", \"commands\")\n    assert(event.commands[2].level == 1, \"commands\")\n    assert(event.commands[2].permission == \"test:permission1\", \"commands\")\n    event.commands = { { usage = \"test:register50:edited\", level = 4, permission = \"test:permission50:edited\" } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut commands = vec![
+            NativeCommand::op("test:register0", 0).permission("test:permission0"),
+            NativeCommand::op("test:register1", 1).permission("test:permission1"),
+        ];
+        dispatch_register_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
+        assert_eq!(
+            format!("{:?}", commands),
+            format!(
+                "{:?}",
+                vec![
+                    NativeCommand::op("test:register50:edited", 4)
+                        .permission("test:permission50:edited")
+                ]
+            )
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_register_commands_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_register_commands_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut commands = vec![
+                NativeCommand::op("test:register0", 0).permission("test:permission0"),
+                NativeCommand::op("test:register1", 1).permission("test:permission1"),
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_register_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "register_commands read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "register_commands read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "register_commands read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_register_commands_cost_live",
+            "horizon.on(\"register_commands\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut commands = vec![
+                NativeCommand::op("test:register0", 0).permission("test:permission0"),
+                NativeCommand::op("test:register1", 1).permission("test:permission1"),
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_register_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "register_commands built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "register_commands read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "register_commands read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_register_commands_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_register_commands_duo_a1",
+            "horizon.on(\"register_commands\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.commands, { usage = \"test:register50:edited\", level = 4, permission = \"test:permission50:edited\" })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_register_commands_duo_b1",
+            "horizon.on(\"register_commands\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.commands, { usage = \"test:register51:edited\", level = 4, permission = \"test:permission51:edited\" })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut commands = vec![
+                NativeCommand::op("test:register0", 0).permission("test:permission0"),
+                NativeCommand::op("test:register1", 1).permission("test:permission1"),
+            ];
+            dispatch_register_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
+            assert_eq!(
+                format!("{:?}", &commands[commands.len() - 2..]),
+                format!(
+                    "{:?}",
+                    vec![
+                        NativeCommand::op("test:register50:edited", 4)
+                            .permission("test:permission50:edited"),
+                        NativeCommand::op("test:register51:edited", 4)
+                            .permission("test:permission51:edited")
+                    ]
+                )
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_register_commands_duo_a2",
+            "horizon.on(\"register_commands\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.commands, { usage = \"test:register50:edited\", level = 4, permission = \"test:permission50:edited\" })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_register_commands_duo_b2",
+            "horizon.on(\"register_commands\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.commands, { usage = \"test:register51:edited\", level = 4, permission = \"test:permission51:edited\" })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut commands = vec![
+                NativeCommand::op("test:register0", 0).permission("test:permission0"),
+                NativeCommand::op("test:register1", 1).permission("test:permission1"),
+            ];
+            dispatch_register_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
+            assert_eq!(
+                format!("{:?}", &commands[commands.len() - 2..]),
+                format!(
+                    "{:?}",
+                    vec![
+                        NativeCommand::op("test:register51:edited", 4)
+                            .permission("test:permission51:edited"),
+                        NativeCommand::op("test:register50:edited", 4)
+                            .permission("test:permission50:edited")
+                    ]
+                )
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_register_commands_duo_b3",
+            "horizon.on(\"register_commands\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.commands, { usage = \"test:register51:edited\", level = 4, permission = \"test:permission51:edited\" })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_register_commands_duo_e3",
+            "horizon.on(\"register_commands\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut commands = vec![
+                NativeCommand::op("test:register0", 0).permission("test:permission0"),
+                NativeCommand::op("test:register1", 1).permission("test:permission1"),
+            ];
+            dispatch_register_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
+            assert_eq!(
+                format!("{:?}", &commands[commands.len() - 1..]),
+                format!(
+                    "{:?}",
+                    vec![
+                        NativeCommand::op("test:register51:edited", 4)
+                            .permission("test:permission51:edited")
+                    ]
+                )
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
+    fn generated_perform_command() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_perform_command",
+            "horizon.command(\"test:probe <n:integer> [label:word]\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player uuid\")\n    assert(player.name == \"test:player0\", \"player name\")\n    assert(player.dimension == \"minecraft:overworld\", \"player dimension\")\n    assert(player.position.x == 1.0, \"player position x\")\n    assert(player.position.y == 2.0, \"player position y\")\n    assert(player.position.z == 3.0, \"player position z\")\n    assert(player.game_mode == 0, \"player game_mode\")\n    assert(player.health == 20.0, \"player health\")\n    assert(player.yaw == 4.5, \"player yaw\")\n    assert(player.pitch == 5.5, \"player pitch\")\n    assert(player.held == nil, \"player held\")\n    assert(args.n == 5, \"n\")\n    assert(args.label == \"hi\", \"label\")\n    assert(args.raw == \"test:probe 5 hi\", \"raw\")\nend)\nhorizon.command(\"test:probe deep <flag:boolean>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(args.flag == true, \"flag\")\n    assert(args.raw == \"test:probe deep true\", \"raw\")\nend)\nhorizon.command(\"test:misc <what:text>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(args.what == \"hello there world\", \"text\")\n    assert(args.raw == \"test:misc hello there world\", \"raw\")\nend)\nhorizon.command(\"test:calc <a:number>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(args.a == 2.5, \"number\")\nend)\nhorizon.command(\"test:give <who:player> <at:block_pos> <team:entities> <tool:item>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    assert(args.who == \"steve\", \"catch-all player\")\n    assert(args.at == \"1,2,3\", \"catch-all block_pos\")\n    assert(args.team == \"@e\", \"catch-all entities\")\n    assert(args.tool == \"diamond\", \"catch-all item\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let player = &horizon_client::test_events::native_server_player(
+            7u128,
+            "test:player0".to_owned(),
+            0,
+            "minecraft:overworld".to_owned(),
+            [1.0, 2.0, 3.0],
+            0,
+            20.0,
+            4.5,
+            5.5,
+            0,
+            "".to_owned(),
+        );
+        {
+            let mut ran = false;
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                player,
+                "test:unknown command",
+                &mut ran,
+            );
+            assert!(!ran, "ran for test:unknown command");
+            assert_eq!(witness(&lua), 0, "the handler ran");
+        }
+        {
+            let mut ran = false;
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                player,
+                "test:probe deep true",
+                &mut ran,
+            );
+            assert!(ran, "ran for test:probe deep true");
+            assert_eq!(witness(&lua), 1, "the handler ran");
+        }
+        {
+            let mut ran = false;
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                player,
+                "test:probe 5 hi",
+                &mut ran,
+            );
+            assert!(ran, "ran for test:probe 5 hi");
+            assert_eq!(witness(&lua), 2, "the handler ran");
+        }
+        {
+            let mut ran = false;
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                player,
+                "test:misc hello there world",
+                &mut ran,
+            );
+            assert!(ran, "ran for test:misc hello there world");
+            assert_eq!(witness(&lua), 3, "the handler ran");
+        }
+        {
+            let mut ran = false;
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                player,
+                "test:calc 2.5",
+                &mut ran,
+            );
+            assert!(ran, "ran for test:calc 2.5");
+            assert_eq!(witness(&lua), 4, "the handler ran");
+        }
+        {
+            let mut ran = false;
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                player,
+                "test:give steve 1,2,3 @e diamond",
+                &mut ran,
+            );
+            assert!(ran, "ran for test:give steve 1,2,3 @e diamond");
+            assert_eq!(witness(&lua), 5, "the handler ran");
+        }
+        no_error(&id);
+    }
+    #[test]
+    fn generated_perform_command_handler_error_cancels() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_perform_command_error",
+            "horizon.command(\"test:boom\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\n    error(\"boom\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let player = &horizon_client::test_events::native_server_player(
+            7u128,
+            "test:player0".to_owned(),
+            0,
+            "minecraft:overworld".to_owned(),
+            [1.0, 2.0, 3.0],
+            0,
+            20.0,
+            4.5,
+            5.5,
+            0,
+            "".to_owned(),
+        );
+        {
+            let mut ran = false;
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                player,
+                "test:boom",
+                &mut ran,
+            );
+            assert!(ran, "ran for test:boom");
+            assert_eq!(witness(&lua), 1, "the handler ran");
+        }
+        has_error(&id);
+    }
+    #[test]
+    fn generated_perform_command_two_mods_hear_their_own() {
+        let (a, a_id, _a_dir, a_lua) = loaded_tracked(
+            "gen_perform_command_duo_a",
+            "horizon.command(\"test:alpha\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let (b, b_id, _b_dir, b_lua) = loaded_tracked(
+            "gen_perform_command_duo_b",
+            "horizon.command(\"test:beta\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        let player = &horizon_client::test_events::native_server_player(
+            7u128,
+            "test:player0".to_owned(),
+            0,
+            "minecraft:overworld".to_owned(),
+            [1.0, 2.0, 3.0],
+            0,
+            20.0,
+            4.5,
+            5.5,
+            0,
+            "".to_owned(),
+        );
+        {
+            let mut ran = false;
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                player,
+                "test:alpha",
+                &mut ran,
+            );
+            assert!(ran, "ran for test:alpha");
+            assert_eq!(witness(&a_lua), 1, "mod A ran");
+            assert_eq!(witness(&b_lua), 0, "mod B stayed quiet");
+        }
+        {
+            let mut ran = false;
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                player,
+                "test:beta",
+                &mut ran,
+            );
+            assert!(ran, "ran for test:beta");
+            assert_eq!(witness(&a_lua), 1, "mod A stayed quiet");
+            assert_eq!(witness(&b_lua), 1, "mod B ran");
+        }
+        no_error(&a_id);
+        no_error(&b_id);
+    }
+
+    #[test]
+    fn generated_perform_command_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_perform_command_nocancel",
+            "horizon.command(\"test:req <a:integer>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        let player = &horizon_client::test_events::native_server_player(
+            7u128,
+            "test:player0".to_owned(),
+            0,
+            "minecraft:overworld".to_owned(),
+            [1.0, 2.0, 3.0],
+            0,
+            20.0,
+            4.5,
+            5.5,
+            0,
+            "".to_owned(),
+        );
+        let mut host = FakeHost::empty();
+        {
+            let mut ran = false;
+            dispatch_perform_command(&mut host, &firing_mods, player, "test:req x", &mut ran);
+            assert!(ran, "ran for test:req x");
+            assert_eq!(witness(&lua), 0, "the handler ran");
+            assert_eq!(
+                host.feedback_lines().len(),
+                1,
+                "the refusal answered the player"
+            );
+        }
+        {
+            let mut ran = false;
+            dispatch_perform_command(&mut host, &firing_mods, player, "test:req", &mut ran);
+            assert!(ran, "ran for test:req");
+            assert_eq!(witness(&lua), 0, "the handler ran");
+            assert_eq!(
+                host.feedback_lines().len(),
+                2,
+                "the refusal answered the player"
+            );
+        }
+        {
+            let mut ran = false;
+            dispatch_perform_command(&mut host, &firing_mods, player, "test:other", &mut ran);
+            assert!(!ran, "ran for test:other");
+            assert_eq!(witness(&lua), 0, "the handler ran");
+            assert_eq!(
+                host.feedback_lines().len(),
+                2,
+                "nothing answered a command nobody ran"
+            );
+        }
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_perform_command_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_perform_command_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let player = &horizon_client::test_events::native_server_player(
+                7u128,
+                "test:player0".to_owned(),
+                0,
+                "minecraft:overworld".to_owned(),
+                [1.0, 2.0, 3.0],
+                0,
+                20.0,
+                4.5,
+                5.5,
+                0,
+                "".to_owned(),
+            );
+            let mut ran = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                player,
+                "test:cost 5",
+                &mut ran,
+            );
+            assert!(!ran, "ran with no handler");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "perform_command read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "perform_command read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "perform_command read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_perform_command_cost_live",
+            "horizon.command(\"test:cost <n:integer>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let player = &horizon_client::test_events::native_server_player(
+                7u128,
+                "test:player0".to_owned(),
+                0,
+                "minecraft:overworld".to_owned(),
+                [1.0, 2.0, 3.0],
+                0,
+                20.0,
+                4.5,
+                5.5,
+                0,
+                "".to_owned(),
+            );
+            let mut ran = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                player,
+                "test:cost 5",
+                &mut ran,
+            );
+            assert!(ran, "ran not cancelled");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "perform_command built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "perform_command read the entity for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "perform_command read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "perform_command read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -57113,6 +57780,17 @@ mod generated_tests {
             dispatch_wheel(&mut FakeHost::empty(), &firing_mods, 1.5, &mut claimed);
             assert!(!claimed, "claimed changed with no handler");
         }
+        // command: unregistered, nothing runs.
+        {
+            let mut ran = false;
+            dispatch_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:command",
+                &mut ran,
+            );
+            assert!(!ran, "ran changed with no handler");
+        }
         // commands: unregistered, nothing runs.
         {
             let mut commands = vec!["test:seed", "test:seed2"];
@@ -57207,6 +57885,38 @@ mod generated_tests {
                 [3.5, 4.5],
                 &mut lines,
             );
+        }
+        // register_commands: unregistered, nothing runs.
+        {
+            let mut commands = vec![
+                NativeCommand::op("test:register0", 0).permission("test:permission0"),
+                NativeCommand::op("test:register1", 1).permission("test:permission1"),
+            ];
+            dispatch_register_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
+        }
+        // perform_command: unregistered, nothing runs.
+        {
+            let mut ran = false;
+            dispatch_perform_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_server_player(
+                    7u128,
+                    "test:player0".to_owned(),
+                    0,
+                    "minecraft:overworld".to_owned(),
+                    [1.0, 2.0, 3.0],
+                    0,
+                    20.0,
+                    4.5,
+                    5.5,
+                    0,
+                    "".to_owned(),
+                ),
+                "test:command",
+                &mut ran,
+            );
+            assert!(!ran, "ran changed with no handler");
         }
         // menu_clicked: unregistered, nothing runs.
         {

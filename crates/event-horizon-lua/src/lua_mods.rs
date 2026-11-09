@@ -21,6 +21,7 @@
 use horizon_client::dev_input::mods::{
     ModStatus, reload_asked, reload_generation, set_error, set_status,
 };
+use horizon_client::mod_api::NativeCommand;
 use horizon_client::mod_api::{
     AttachmentCodec, AttachmentType, BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
     BlockPos, BlockStateId, Compound, EntityTickListenedEvent, EntityTickPostEvent, Flow, Holder,
@@ -41,7 +42,6 @@ use horizon_client::mod_api::{
     PlayerCommandEvent, PlayerContainerOpenEvent, PlayerExpChangeEvent, PlayerTickEvent,
     ProjectileImpactEvent, ProjectileLaunchEvent,
 };
-use horizon_client::mod_api::{NativeCommand, PerformCommandEvent, RegisterCommandsEvent};
 use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
 use std::collections::{HashMap, HashSet};
@@ -128,8 +128,9 @@ pub const ENTRY: &str = horizon_mods::content::SCRIPT_ENTRY;
 
 /// The hooks a script may register for with `horizon.on` (`docs/lua-bindings.md`):
 /// a name not here is refused when the script loads, so a misspelling is a
-/// load error with its line, not a handler that never runs. `command` is
-/// `horizon.command`'s own.
+/// load error with its line, not a handler that never runs. Generated hooks
+/// (`generated_hooks::GENERATED_HOOK_NAMES`) register too; the script
+/// commands' own hook is `perform_command` (`horizon.command` declares).
 pub const LUA_HOOK_NAMES: &[&str] = &[
     "mob_spawned",
     "mob_ai_register",
@@ -179,7 +180,6 @@ pub const LUA_HOOK_NAMES: &[&str] = &[
     "block_placed",
     "hud",
     "gui_layer_post",
-    "command",
 ];
 
 /// The content mod's manifest, which names the mod.
@@ -980,7 +980,8 @@ pub struct LuaMod {
     /// The goals the scripts defined (`horizon.goal`), by name.
     goals: Goals,
     /// The commands the scripts declared (`horizon.command`), for the
-    /// server's tree; their handlers are kind handlers of the `command` hook.
+    /// server's tree; their handlers are kind handlers of the
+    /// `perform_command` hook.
     commands: Arc<Mutex<Vec<NativeCommand>>>,
     /// The blocks the scripts gave a block entity (`horizon.block_entity`), by block id.
     block_entities: BlockEntities,
@@ -1773,7 +1774,7 @@ impl LuaMod {
         )?;
         // `horizon.command(usage, level, fn)`: a command of the mod's, in the
         // server's tree for players of `level` and above; `fn(player, args)`
-        // runs it (the `command` hook, by the command's name).
+        // runs it (the `perform_command` hook, by the command's name).
         let commands = self.commands.clone();
         let kinds = self.kinds.clone();
         api.set(
@@ -1794,11 +1795,11 @@ impl LuaMod {
                         list.push(NativeCommand::op(&usage, level.unwrap_or(0)));
                     }
                     let all: Table = lua.named_registry_value(KIND_HANDLERS)?;
-                    let by_kind = table_in(lua, &all, "command")?;
+                    let by_kind = table_in(lua, &all, "perform_command")?;
                     kinds
                         .lock()
                         .map_err(|_| mlua::Error::runtime("kinds"))?
-                        .entry("command".to_owned())
+                        .entry("perform_command".to_owned())
                         .or_default()
                         .insert(name.clone());
                     table_in(lua, &by_kind, &name)?.push(f)?;
@@ -2936,6 +2937,27 @@ impl LuaMod {
                 }
             }
             other => self.warn(format!("unknown action {other}")),
+        }
+        Ok(())
+    }
+
+    /// A command handler's queued action: `horizon.feedback(text)` answers
+    /// the player whose command it is, as vanilla commands' feedback is;
+    /// every other action runs as usual. The generated `perform_command`
+    /// arm calls this (hand-written, so the hooks-doc helper test sees the
+    /// `host.feedback` call the macro bodies hide).
+    fn apply_command_action(
+        &self,
+        host: &mut dyn Host,
+        action: &str,
+        args: &Table,
+    ) -> mlua::Result<()> {
+        match action {
+            "feedback" => {
+                let text: String = args.get(1)?;
+                host.feedback(horizon_client::mod_api::Text::literal(text));
+            }
+            other => self.run_action(host, other, args)?,
         }
         Ok(())
     }
@@ -4364,74 +4386,10 @@ impl Hooks for LuaMod {
         event.duration = duration.max(0);
         if cancel { Flow::Cancel } else { Flow::Continue }
     }
-    /// The commands the scripts declared (`horizon.command`): into the
-    /// server's tree, with their levels.
-    fn register_commands(&self, _host: &mut dyn Host, event: &mut RegisterCommandsEvent<'_>) {
-        if let Ok(commands) = self.commands.lock() {
-            event.commands.extend(commands.iter().cloned());
-        }
-    }
-    /// A player runs a command of the scripts': `command(player, args)` for
-    /// the handler of that command, `args` the usage's arguments by name
-    /// (`<n:integer>` a number, `<who:player>` a name...) plus `args.raw`,
-    /// the line as typed. Handlers may queue `horizon.feedback(text)`, the
-    /// answer to the player, and the host actions.
-    fn perform_command(&self, host: &mut dyn Host, event: &mut PerformCommandEvent<'_>) -> Flow {
-        let hook = "command";
-        let line = event.command.trim();
-        // The usage whose words the line starts with, the longest first:
-        // `parasite count` before `parasite`.
-        let words: Vec<&str> = line.split_whitespace().collect();
-        let Some(usage) = self.commands.lock().ok().and_then(|c| {
-            c.iter()
-                .map(|c| c.usage.clone())
-                .filter(|u| {
-                    let name = command_words(u);
-                    let n = name.split_whitespace().count();
-                    n > 0
-                        && words.len() >= n
-                        && name.split_whitespace().eq(words[..n].iter().copied())
-                })
-                .max_by_key(|u| command_words(u).split_whitespace().count())
-        }) else {
-            return Flow::Continue;
-        };
-        let name = command_words(&usage);
-        if !self.watches(hook, &name) {
-            return Flow::Continue;
-        }
-        let r = (|| -> mlua::Result<()> {
-            let lua = &self.lua;
-            let player = player_table_of(lua, event.player)?;
-            player.set("held", self.held_table(host)?)?;
-            let args = lua.create_table()?;
-            args.set("raw", line)?;
-            if let Some(refusal) = command_args(lua, &usage, line, &args)? {
-                host.feedback(refusal);
-                return Ok(());
-            }
-            self.call_kind(
-                hook,
-                Some(&name),
-                host,
-                (player, args),
-                &mut |host, action, args| {
-                    match action {
-                        "feedback" => {
-                            let text: String = args.get(1)?;
-                            host.feedback(horizon_client::mod_api::Text::literal(text));
-                        }
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
-        Flow::Cancel
-    }
+    // `register_commands` and `perform_command` are generated
+    // (`generated_hooks`, `gen_collect` and `gen_perform_command`): the
+    // collect appends the declared commands, and the command arm
+    // longest-match dispatches to `fn(player, args)`.
     /// A mob is about to take damage: `mob_hurt(mob, damage_type, causing,
     /// direct, amount)`, `mob` just `{id, kind}` (the game is mid-hit: no
     /// host, so no view, no data, and the host actions are dropped),
@@ -5796,16 +5754,18 @@ experimental = ["scripts"]
             &mut host,
             &mut test_events::register_commands_event(&mut commands),
         );
+        // The collect appends the declared defs, with their levels and no
+        // permission node (`horizon.command` takes none).
         assert_eq!(
             commands
                 .iter()
-                .map(|c| (c.usage.as_str(), c.level))
+                .map(|c| (c.usage.as_str(), c.level, c.permission.clone()))
                 .collect::<Vec<_>>(),
             [
-                ("parasite count [kind:word] [n:integer]", 2),
-                ("say <what:text>", 0),
-                ("parasite hives", 2),
-                ("probeadd <a:integer> <b:number> [label:word]", 0)
+                ("parasite count [kind:word] [n:integer]", 2, None::<String>,),
+                ("say <what:text>", 0, None),
+                ("parasite hives", 2, None),
+                ("probeadd <a:integer> <b:number> [label:word]", 0, None)
             ]
         );
         let steve = host.acting_player().unwrap();
