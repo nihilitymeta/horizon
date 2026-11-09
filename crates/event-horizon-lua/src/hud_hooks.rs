@@ -307,12 +307,14 @@ mod tests {
     use horizon_client::dev_input::mods::{ModStatus, set_status, status};
     use horizon_client::mobs::{Mob, MobType};
     use horizon_client::mod_api::{
-        BlockStateId, EntityRef, Hooks, MobView, NativeServerPlayer, NativeWorldEpoch, Text,
-        dispatch_gui_layer_post, dispatch_hud, dispatch_mob_spawned,
+        BlockStateId, EntityRef, Hooks, ItemStack, MobView, NativeHeightmap, NativeHit,
+        NativeServerPlayer, NativeWorldEpoch, Text, dispatch_gui_layer_post, dispatch_hud,
+        dispatch_mob_spawned,
     };
     use horizon_client::test_events;
     use horizon_core::geometry::Vec3;
     use horizon_mods::Package;
+    use std::collections::HashMap;
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
@@ -321,13 +323,15 @@ mod tests {
     /// it: every draw helper appends a line, `broadcast` counts, `text`
     /// is 6 pixels a character, and only `top_left` is shown. The reads a
     /// draw hook may serve come from `players` (the first one acts),
-    /// `day_time`, `weather` and one cow (mob 7); `tell` appends a line.
+    /// `stacks` (a non-acting player's slots, by uuid), `day_time`,
+    /// `weather` and one cow (mob 7); `tell` appends a line.
     #[derive(Default)]
     struct RecordingHost {
         draws: Mutex<Vec<String>>,
         broadcasts: Mutex<u64>,
         tells: Mutex<Vec<String>>,
         players: Vec<NativeServerPlayer>,
+        stacks: HashMap<u128, Vec<Option<ItemStack>>>,
         day_time: i64,
         weather: (f32, f32),
     }
@@ -376,6 +380,10 @@ mod tests {
 
         fn mob_views(&self, dimension: &str) -> Vec<MobView> {
             self.mob_view(dimension, 7).into_iter().collect()
+        }
+
+        fn player_stacks(&self, uuid: u128) -> Option<Vec<Option<ItemStack>>> {
+            self.stacks.get(&uuid).cloned()
         }
 
         fn tell(&mut self, uuid: u128, line: Text) -> bool {
@@ -518,6 +526,108 @@ mod tests {
             0,
             String::new(),
         )
+    }
+
+    /// A second player, never the acting one: the non-acting inventory
+    /// path reads their stacks from the shared host.
+    fn other_player() -> NativeServerPlayer {
+        test_events::native_server_player(
+            0x123e4567_e89b_12d3_a456_426614174002,
+            "alex".into(),
+            0,
+            "minecraft:overworld".into(),
+            [1.5, 65.0, 7.25],
+            0,
+            20.0,
+            0.0,
+            0.0,
+            0,
+            String::new(),
+        )
+    }
+
+    /// The window that draws the hud, as a client sees it (a client even
+    /// in single player): no players listed, no acting player, no mob in
+    /// view, raycasts unanswered, and heightmaps an error; the client's
+    /// own world still answers `dimension`, `day_time`, `weather`,
+    /// `block`, `block_property` and `light`. Characterization of today's
+    /// client behaviour: the native side may change this (#47 follow-up),
+    /// and these tests pin what the Lua crate must keep serving without
+    /// an error or a panic meanwhile.
+    #[derive(Default)]
+    struct ClientWindowHost {
+        draws: Mutex<Vec<String>>,
+        day_time: i64,
+        weather: (f32, f32),
+    }
+
+    impl Host for ClientWindowHost {
+        fn dimension(&self) -> &'static str {
+            "minecraft:overworld"
+        }
+
+        fn level_players(&self) -> Vec<NativeServerPlayer> {
+            Vec::new()
+        }
+
+        fn acting_player(&self) -> Option<NativeServerPlayer> {
+            None
+        }
+
+        fn day_time(&self) -> i64 {
+            self.day_time
+        }
+
+        fn weather(&self) -> (f32, f32) {
+            self.weather
+        }
+
+        fn block(&self, _pos: [i32; 3]) -> String {
+            "minecraft:stone".to_owned()
+        }
+
+        fn block_property(&self, _pos: [i32; 3], _key: &str) -> Option<String> {
+            Some("true".to_owned())
+        }
+
+        fn light(&self, _pos: [i32; 3]) -> (u8, u8) {
+            (12, 15)
+        }
+
+        fn mob_view(&self, _dimension: &str, _id: u32) -> Option<MobView> {
+            None
+        }
+
+        fn mob_views(&self, _dimension: &str) -> Vec<MobView> {
+            Vec::new()
+        }
+
+        fn player_raycast(&self, _uuid: u128, _distance: f32) -> Option<NativeHit> {
+            None
+        }
+
+        fn surface_heights(
+            &self,
+            _dimension: &str,
+            _columns: &[(i32, i32)],
+            _heightmap: NativeHeightmap,
+        ) -> Result<Vec<Option<i32>>, String> {
+            Err("a client window has no heightmap".to_owned())
+        }
+
+        fn fill(&self, _batch: &mut HudBatch, rect: [f32; 4], argb: u32) {
+            self.draws
+                .lock()
+                .unwrap()
+                .push(format!("fill {rect:?} {argb:#010x}"));
+        }
+
+        fn text(&self, _batch: &mut HudBatch, text: &str, at: [f32; 2], rgb: u32, shadow: bool) {
+            self.draws
+                .lock()
+                .unwrap()
+                .push(format!("text {text:?} at {at:?} {rgb:#08x} {shadow}"));
+        }
     }
 
     fn boxed(m: LuaMod) -> Vec<Box<dyn Hooks>> {
@@ -959,9 +1069,160 @@ mod tests {
     }
 
     #[test]
+    fn a_hud_handler_reads_a_non_acting_players_stacks() {
+        // Only the acting player's stacks need `&mut` and fail in a draw
+        // hook: anyone else's come from the shared host (`player_stacks`
+        // takes `&self`). With players [draw_steve, alex] the first acts,
+        // so `alex` reads shared. Before the fix this arm panicked on
+        // `unreachable!()`.
+        let (m, id, dir) = hmod(
+            "sharedstacks",
+            "ruby_hud_sharedstacks",
+            r#"
+            horizon.on("hud", function(event)
+              local inv = horizon.inventory("alex")
+              local n = horizon.count_items("alex", "minecraft:stick")
+              local carried = horizon.carried_items("alex")
+              assert(inv[1].id == "minecraft:stick" and inv[1].count == 3, "inventory slot 1")
+              assert(inv[2].id == "minecraft:bone" and inv[2].count == 5, "inventory slot 2")
+              assert(n == 3, "count_items")
+              assert(carried["minecraft:stick"] == 3, "carried sticks")
+              assert(carried["minecraft:bone"] == 5, "carried bones")
+              event.batch.fill(0, 0, 1, 1, 4278190080)
+            end)
+            "#,
+        );
+        let mods = boxed(m);
+        let alex = other_player();
+        let mut stacks = HashMap::new();
+        stacks.insert(
+            alex.uuid,
+            vec![
+                Some(ItemStack {
+                    item: "minecraft:stick".into(),
+                    count: 3,
+                    damage: 0,
+                    extra: None,
+                }),
+                Some(ItemStack {
+                    item: "minecraft:bone".into(),
+                    count: 5,
+                    damage: 0,
+                    extra: None,
+                }),
+            ],
+        );
+        let mut host = RecordingHost {
+            players: vec![draw_player(), alex],
+            stacks,
+            ..Default::default()
+        };
+        let mut batch = HudBatch::new([800, 600]);
+        let mut corners = Corners::new(800.0, 600.0, 0.0);
+        dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+        no_error(&id);
+        assert_eq!(
+            *host.draws.lock().unwrap(),
+            ["fill [0.0, 0.0, 1.0, 1.0] 0xff000000"]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn on_a_client_window_player_and_mob_reads_are_empty() {
+        // Characterization of today's client behaviour (see
+        // `ClientWindowHost`): player and mob reads need a server and come
+        // back empty on the window that draws the hud, while `time`,
+        // `block`, `block_property` and `light` read the client's world.
+        // The native side may change this (#47 follow-up).
+        let (m, id, dir) = hmod(
+            "clientreads",
+            "ruby_hud_clientreads",
+            r#"
+            horizon.on("hud", function(event)
+              local t = horizon.time()
+              assert(t.dimension == "minecraft:overworld", "dimension")
+              assert(t.day == 1 and t.time_of_day == 6001, "day and time")
+              assert(t.rain == 0.25 and t.thunder == 0.0, "weather")
+              assert(horizon.block(0, 64, 0) == "minecraft:stone", "block")
+              assert(horizon.block_property(0, 64, 0, "snowy") == "true", "block_property")
+              local l = horizon.light(0, 64, 0)
+              assert(l.block == 12 and l.sky == 15, "light")
+              assert(horizon.player("draw_steve") == nil, "player")
+              assert(#horizon.players() == 0, "players")
+              assert(horizon.mob(7) == nil, "mob")
+              assert(#horizon.mobs() == 0, "mobs")
+              assert(horizon.raycast("draw_steve") == nil, "raycast")
+              assert(horizon.surface_height(0, 0) == nil, "surface_height")
+              event.batch.fill(0, 0, 1, 1, 4278190080)
+            end)
+            "#,
+        );
+        let mods = boxed(m);
+        let mut host = ClientWindowHost {
+            day_time: 30001,
+            weather: (0.25, 0.0),
+            ..Default::default()
+        };
+        let mut batch = HudBatch::new([800, 600]);
+        let mut corners = Corners::new(800.0, 600.0, 0.0);
+        dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+        no_error(&id);
+        assert_eq!(
+            *host.draws.lock().unwrap(),
+            ["fill [0.0, 0.0, 1.0, 1.0] 0xff000000"]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn on_a_client_window_gui_layer_post_reads_are_empty() {
+        // The same characterization through `gui_layer_post`: the client
+        // world answers, player and mob reads stay empty. The native side
+        // may change this (#47 follow-up).
+        let (m, id, dir) = hmod(
+            "clientlayerreads",
+            "ruby_hud_clientlayerreads",
+            r#"
+            horizon.on("gui_layer_post", function(event)
+              local t = horizon.time()
+              assert(t.dimension == "minecraft:overworld", "dimension")
+              assert(t.day == 1 and t.time_of_day == 6001, "day and time")
+              assert(horizon.block(0, 64, 0) == "minecraft:stone", "block")
+              local l = horizon.light(0, 64, 0)
+              assert(l.block == 12 and l.sky == 15, "light")
+              assert(horizon.player("draw_steve") == nil, "player")
+              assert(#horizon.players() == 0, "players")
+              assert(horizon.mob(7) == nil, "mob")
+              assert(#horizon.mobs() == 0, "mobs")
+              assert(horizon.raycast("draw_steve") == nil, "raycast")
+              assert(horizon.surface_height(0, 0) == nil, "surface_height")
+              event.batch.fill(0, 0, 1, 1, 4278190080)
+            end)
+            "#,
+        );
+        let mods = boxed(m);
+        let mut host = ClientWindowHost {
+            day_time: 30001,
+            weather: (0.25, 0.0),
+            ..Default::default()
+        };
+        let mut batch = HudBatch::new([800, 600]);
+        dispatch_gui_layer_post(&mut host, &mods, "test:layer", &mut batch);
+        no_error(&id);
+        assert_eq!(
+            *host.draws.lock().unwrap(),
+            ["fill [0.0, 0.0, 1.0, 1.0] 0xff000000"]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn draw_hooks_refuse_mutating_reads() {
         // Every read that needs `&mut`: the Lua call naming it, and what
-        // the handler error must name.
+        // the handler error must say. The exact draw-hook message (not
+        // just the helper name) is what fails the old behaviour, where a
+        // hook without a host errors with the helper's own name too.
         for (helper, call) in [
             ("world_data", "horizon.world_data()"),
             ("player_data", "horizon.player_data(\"draw_steve\")"),
@@ -997,6 +1258,10 @@ mod tests {
                 dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
                 let e = last_error(&id).expect("a &mut-only read failed");
                 assert!(e.contains(helper), "{e}");
+                assert!(
+                    e.contains("not available in draw hooks"),
+                    "the draw-hook refusal names itself: {e}"
+                );
                 assert!(!e.contains("disabled"), "{e}");
                 assert!(!e.contains("ran over its time budget"), "{e}");
             }
@@ -1028,8 +1293,15 @@ mod tests {
             dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
             let e = last_error(&id).expect("the handler failed");
             if n == 1 {
-                // An ordinary failure: named, not an overrun.
+                // An ordinary failure: the draw-hook refusal, not an
+                // overrun. The exact message (not just the helper name)
+                // is what fails the old behaviour, where a hook without
+                // a host errors with the helper's own name too.
                 assert!(e.contains("world_data"), "{e}");
+                assert!(
+                    e.contains("not available in draw hooks"),
+                    "the draw-hook refusal names itself: {e}"
+                );
                 assert!(!e.contains("ran over its time budget"), "{e}");
                 assert!(!e.contains("disabled"), "{e}");
             } else if n < 4 {
@@ -1046,13 +1318,17 @@ mod tests {
 
     #[test]
     fn a_write_queued_from_hud_lands_after_the_call() {
+        // The tell's target comes from a read, so the old behaviour (a
+        // hook without a host, where the read fails) queues nothing and
+        // this test fails there: the write needs the draw hook's reads.
         let (m, id, dir) = hmod(
             "queued",
             "ruby_hud_queued",
             r#"
             horizon.on("hud", function(event)
               event.batch.fill(0, 0, 1, 1, 4278190080)
-              horizon.tell("draw_steve", "hello from hud")
+              local name = horizon.player("draw_steve").name
+              horizon.tell(name, "hello from hud")
             end)
             "#,
         );

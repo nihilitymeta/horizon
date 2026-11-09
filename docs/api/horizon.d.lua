@@ -56,6 +56,12 @@ export type GuiLayerPostEvent = { layer: string, batch: HudBatch }
 -- replaces wholesale reads its own length (use `false` for holes there).
 -- An item's `extra` keeps its NBT types when edited in place; a fresh
 -- table reads with default types.
+--
+-- In hud and gui_layer_post, `horizon.time`, `block`, `block_property`,
+-- `light` read the client's world; `player`, `players`, `mob`, `mobs`,
+-- `raycast`, `surface_height` need a server and read empty on a client
+-- window; `world_data`, `player_data`, the acting player's inventory reads
+-- and `summon` raise an error.
 export type AddServerReloadListenersEvent = { listeners: any }
 export type AnalogOutputEvent = { dimension: string, pos: Vec3, state: string, face: "down" | "up" | "north" | "south" | "west" | "east", output: number, state_props: Props }
 export type AnvilCraftPostEvent = { player: PlayerRef, pos: Vec3, craft: { left: Item?, right: Item?, output: Item } }

@@ -720,11 +720,17 @@ impl LuaMod {
                         if acting && reader.is_draw() {
                             return Err(draw_unavailable());
                         }
-                        let Reader::Host(h) = reader else {
-                            unreachable!()
-                        };
+                        // Another player's stacks read through the shared
+                        // host (`player_stacks` takes `&self`); only the
+                        // acting player's stacks need the `&mut` host,
+                        // which a draw hook cannot lend (refused above).
                         let stacks: Vec<Option<ItemStack>> = if acting {
-                            (0..36).map(|slot| h.carried_stack(slot).cloned()).collect()
+                            let Reader::Host(host) = reader else {
+                                return Err(draw_unavailable());
+                            };
+                            (0..36)
+                                .map(|slot| host.carried_stack(slot).cloned())
+                                .collect()
                         } else {
                             match h.player_stacks(uuid) {
                                 Some(stacks) => stacks,
