@@ -6092,6 +6092,41 @@ mod generated_tests {
             "an assigned table leaves the revision alone"
         );
         no_error(&id);
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_block_entity_tick_nill",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity.data = nil\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        let mut entity = test_block_entity("minecraft:stone");
+        entity.nbt = [(
+            horizon_world::nbt::JavaString::from("charge"),
+            horizon_world::nbt::Tag::Int(0),
+        )]
+        .into_iter()
+        .collect();
+        let rev = entity.revision();
+        {
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut entity,
+            );
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            entity
+                .nbt
+                .get(&horizon_world::nbt::JavaString::from("charge")),
+            Some(&horizon_world::nbt::Tag::Int(0)),
+            "nilling data where the seed was writes nothing"
+        );
+        assert_eq!(
+            entity.revision(),
+            rev,
+            "a nilled table leaves the revision alone"
+        );
+        no_error(&id);
     }
 
     #[test]
@@ -6127,6 +6162,44 @@ mod generated_tests {
                 entity.revision(),
                 rev,
                 "the undeclared dispatch leaves the revision alone"
+            );
+        }
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_tick_declared_but_unwatched_builds_no_table() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_block_entity_tick_watchedaway",
+            "horizon.block_entity(\"ruby:hive\")\nhorizon.block_entity(\"ruby:lamp\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"ruby:hive\")",
+        );
+        let firing_mods = boxed(m);
+        let mut entity = test_block_entity("ruby:lamp");
+        let rev = entity.revision();
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut entity,
+            );
+            assert_eq!(witness(&lua), 0, "the unwatched block runs no handler");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built for an unwatched block"
+            );
+            assert_eq!(entity_reads(), 0, "the unwatched dispatch read no entity");
+            assert_eq!(host_reads(), 0, "the unwatched dispatch read the host");
+            assert_eq!(level_reads(), 0, "the unwatched dispatch read the level");
+            assert_eq!(
+                entity.revision(),
+                rev,
+                "the unwatched dispatch leaves the revision alone"
             );
         }
         no_error(&id);
@@ -6261,7 +6334,7 @@ mod generated_tests {
         }
         let (m, id, dir, lua) = loaded_tracked(
             "gen_block_entity_tick_cost_kind",
-            "horizon.on(\"block_entity_tick\", function(event) end, \"minecraft:skeleton\")",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.block_entity(\"minecraft:skeleton\")\nhorizon.on(\"block_entity_tick\", function(event) end, \"minecraft:skeleton\")",
         );
         let firing_mods = boxed(m);
         {

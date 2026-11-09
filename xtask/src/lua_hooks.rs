@@ -363,11 +363,25 @@ fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
         "data_pack_files" => Some("gen_data_pack_files"),
         "perform_command" => Some("gen_perform_command"),
         "register_commands" => Some("gen_register_commands"),
-        "block_entity" => Some("gen_block_entity"),
-        "block_entity_ticks" => Some("gen_block_entity_ticks"),
-        "block_entity_tick" => Some("gen_block_entity_tick"),
         _ => None,
     };
+    // The declaration-served hooks never invoke handlers (their field tags
+    // only document the parameters): the provider answers from the replace
+    // contract, the ticks from the listen one. A block-entity tick filters
+    // by entity id with the declaration check beside it.
+    let bespoke = bespoke.or_else(|| {
+        if declaration_served(&model.name) {
+            Some(if model.contract == "replace" {
+                "gen_block_entity"
+            } else {
+                "gen_block_entity_ticks"
+            })
+        } else if matches!(model.kind, Kind::BlockEntity { .. }) {
+            Some("gen_block_entity_tick")
+        } else {
+            None
+        }
+    });
     let macro_name = bespoke.unwrap_or_else(|| {
         if model.host == Host::LevelWrite {
             "gen_level_tick"
@@ -1160,7 +1174,7 @@ fn rust_asserts(model: &Model, tys: &BTreeMap<String, String>, flip_opt: bool) -
 /// tests register their handler for stone, so they declare stone first.
 /// Every other hook hears its dispatch as loaded.
 fn on_prelude(model: &Model) -> &'static str {
-    if model.name == "block_entity_tick" {
+    if matches!(model.kind, Kind::BlockEntity { .. }) {
         "horizon.block_entity(\"minecraft:stone\")\n"
     } else {
         ""
@@ -1632,6 +1646,7 @@ fn block_entity_tick_tests(model: &Model, _tys: &BTreeMap<String, String>) -> Ve
         block_entity_tick_apply_error_test(name),
         block_entity_tick_replace_test(name),
         block_entity_tick_undeclared_test(name),
+        block_entity_tick_watched_away_test(name),
         block_entity_tick_two_mods_test(name),
         block_entity_tick_error_spares_other_mods_test(name),
     ]
@@ -1707,9 +1722,9 @@ fn block_entity_tick_apply_error_test(name: &str) -> String {
     )
 }
 
-/// Replacing `event.entity` (or assigning a fresh `entity.data`) writes
-/// nothing back: the arm converts the table it seeded, not the field's
-/// current value.
+/// Replacing `event.entity` (assigning a fresh `entity.data`, or nilling
+/// it) writes nothing back: the arm converts the table it seeded, not the
+/// field's current value.
 fn block_entity_tick_replace_test(name: &str) -> String {
     let replace_lua = format!(
         "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity = {{ id = \"minecraft:stone\", data = {{ charge = 99 }} }}\nend, \"minecraft:stone\")"
@@ -1717,8 +1732,11 @@ fn block_entity_tick_replace_test(name: &str) -> String {
     let assign_lua = format!(
         "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity.data = {{ charge = 1 }}\nend, \"minecraft:stone\")"
     );
+    let nil_lua = format!(
+        "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity.data = nil\nend, \"minecraft:stone\")"
+    );
     format!(
-        "#[test]\nfn generated_{name}_replaced_entity_writes_nothing() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_replace\", {replace_lua:?});\n    let firing_mods = boxed(m);\n    let mut entity = test_block_entity(\"minecraft:stone\");\n    entity.nbt = [(horizon_world::nbt::JavaString::from(\"charge\"), horizon_world::nbt::Tag::Int(0))].into_iter().collect();\n    let rev = entity.revision();\n    {{\n{dispatch}    }}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    assert_eq!(entity.nbt.get(&horizon_world::nbt::JavaString::from(\"charge\")), Some(&horizon_world::nbt::Tag::Int(0)), \"replacing event.entity writes nothing back\");\n    assert_eq!(entity.revision(), rev, \"a replaced table leaves the revision alone\");\n    no_error(&id);\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_assign\", {assign_lua:?});\n    let firing_mods = boxed(m);\n    let mut entity = test_block_entity(\"minecraft:stone\");\n    entity.nbt = [(horizon_world::nbt::JavaString::from(\"charge\"), horizon_world::nbt::Tag::Int(0))].into_iter().collect();\n    let rev = entity.revision();\n    {{\n{dispatch}    }}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    assert_eq!(entity.nbt.get(&horizon_world::nbt::JavaString::from(\"charge\")), Some(&horizon_world::nbt::Tag::Int(0)), \"assigning data where the seed was writes nothing\");\n    assert_eq!(entity.revision(), rev, \"an assigned table leaves the revision alone\");\n    no_error(&id);\n}}\n",
+        "#[test]\nfn generated_{name}_replaced_entity_writes_nothing() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_replace\", {replace_lua:?});\n    let firing_mods = boxed(m);\n    let mut entity = test_block_entity(\"minecraft:stone\");\n    entity.nbt = [(horizon_world::nbt::JavaString::from(\"charge\"), horizon_world::nbt::Tag::Int(0))].into_iter().collect();\n    let rev = entity.revision();\n    {{\n{dispatch}    }}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    assert_eq!(entity.nbt.get(&horizon_world::nbt::JavaString::from(\"charge\")), Some(&horizon_world::nbt::Tag::Int(0)), \"replacing event.entity writes nothing back\");\n    assert_eq!(entity.revision(), rev, \"a replaced table leaves the revision alone\");\n    no_error(&id);\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_assign\", {assign_lua:?});\n    let firing_mods = boxed(m);\n    let mut entity = test_block_entity(\"minecraft:stone\");\n    entity.nbt = [(horizon_world::nbt::JavaString::from(\"charge\"), horizon_world::nbt::Tag::Int(0))].into_iter().collect();\n    let rev = entity.revision();\n    {{\n{dispatch}    }}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    assert_eq!(entity.nbt.get(&horizon_world::nbt::JavaString::from(\"charge\")), Some(&horizon_world::nbt::Tag::Int(0)), \"assigning data where the seed was writes nothing\");\n    assert_eq!(entity.revision(), rev, \"an assigned table leaves the revision alone\");\n    no_error(&id);\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_nill\", {nil_lua:?});\n    let firing_mods = boxed(m);\n    let mut entity = test_block_entity(\"minecraft:stone\");\n    entity.nbt = [(horizon_world::nbt::JavaString::from(\"charge\"), horizon_world::nbt::Tag::Int(0))].into_iter().collect();\n    let rev = entity.revision();\n    {{\n{dispatch}    }}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    assert_eq!(entity.nbt.get(&horizon_world::nbt::JavaString::from(\"charge\")), Some(&horizon_world::nbt::Tag::Int(0)), \"nilling data where the seed was writes nothing\");\n    assert_eq!(entity.revision(), rev, \"a nilled table leaves the revision alone\");\n    no_error(&id);\n}}\n",
         dispatch = block_entity_tick_fire(""),
     )
 }
@@ -1733,6 +1751,20 @@ fn block_entity_tick_undeclared_test(name: &str) -> String {
     );
     format!(
         "#[test]\nfn generated_{name}_undeclared_builds_no_table() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_undeclared\", {lua:?});\n    let firing_mods = boxed(m);\n    let mut entity = test_block_entity(\"ruby:other\");\n    let rev = entity.revision();\n    {{\n    reset_entity_reads();\n    reset_host_reads();\n    reset_level_reads();\n    reset_event_tables();\n    dispatch_block_entity_tick(&mut FakeHost::empty(), &firing_mods, [1, 2, 3], &mut entity);\n    assert_eq!(witness(&lua), 0, \"the undeclared block runs no handler\");\n    assert_eq!(event_tables(), 0, \"no event table was built for an undeclared block\");\n    assert_eq!(entity_reads(), 0, \"the undeclared dispatch read no entity\");\n    assert_eq!(host_reads(), 0, \"the undeclared dispatch read the host\");\n    assert_eq!(level_reads(), 0, \"the undeclared dispatch read the level\");\n    assert_eq!(entity.revision(), rev, \"the undeclared dispatch leaves the revision alone\");\n    }}\n    no_error(&id);\n}}\n",
+    )
+}
+
+/// A declared block the handler does not watch runs no handler and builds
+/// no event table: the dispatched id is declared, so the declaration check
+/// beside the kind filter cannot turn it away. Only the `watches` check
+/// stops it (deleting it builds the table for the declared block, since the
+/// kind filter runs after the seed).
+fn block_entity_tick_watched_away_test(name: &str) -> String {
+    let lua = format!(
+        "horizon.block_entity(\"ruby:hive\")\nhorizon.block_entity(\"ruby:lamp\")\nhorizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"ruby:hive\")"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_declared_but_unwatched_builds_no_table() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_watchedaway\", {lua:?});\n    let firing_mods = boxed(m);\n    let mut entity = test_block_entity(\"ruby:lamp\");\n    let rev = entity.revision();\n    {{\n    reset_entity_reads();\n    reset_host_reads();\n    reset_level_reads();\n    reset_event_tables();\n    dispatch_block_entity_tick(&mut FakeHost::empty(), &firing_mods, [1, 2, 3], &mut entity);\n    assert_eq!(witness(&lua), 0, \"the unwatched block runs no handler\");\n    assert_eq!(event_tables(), 0, \"no event table was built for an unwatched block\");\n    assert_eq!(entity_reads(), 0, \"the unwatched dispatch read no entity\");\n    assert_eq!(host_reads(), 0, \"the unwatched dispatch read the host\");\n    assert_eq!(level_reads(), 0, \"the unwatched dispatch read the level\");\n    assert_eq!(entity.revision(), rev, \"the unwatched dispatch leaves the revision alone\");\n    }}\n    no_error(&id);\n}}\n",
     )
 }
 
@@ -2161,9 +2193,28 @@ fn cost_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
     );
     if kind_values(model).is_some() {
         // A handler watching another kind: the K1 event still builds no table.
+        // A block-entity tick filters by its entity's own id beside the
+        // declaration check: the watched-away mod declares both blocks, so
+        // the dispatched (declared) id reaches the kind filter instead of
+        // stopping at the declaration check. The Lua is Debug-formatted
+        // like the other loads, so the prelude's newline escapes.
+        let kind_lua = if matches!(model.kind, Kind::BlockEntity { .. }) {
+            format!(
+                "{}horizon.block_entity(\"{}\")\nhorizon.on(\"{}\", function(event) end, \"{}\")",
+                on_prelude(model),
+                KIND_TWO,
+                model.name,
+                KIND_TWO
+            )
+        } else {
+            format!(
+                "horizon.on(\"{}\", function(event) end, \"{}\")",
+                model.name, KIND_TWO
+            )
+        };
         let mismatch = format!(
-            "loaded_tracked(\"gen_{}_cost_kind\", \"horizon.on(\\\"{}\\\", function(event) end, \\\"{}\\\")\")",
-            model.name, model.name, KIND_TWO
+            "loaded_tracked(\"gen_{}_cost_kind\", {kind_lua:?})",
+            model.name
         );
         let plan = kind_values(model).unwrap_or_else(|| panic!("no kind plan for {}", model.name));
         // A field kind resolves without the host; an entity kind resolves
@@ -3149,7 +3200,7 @@ fn exposure_doc(classes: &[HookClass], deferred: &[(String, Result<Model, Class>
         }
     }
     let mut out = String::from(
-        "# Hook exposure\n\n<!-- GENERATED by `cargo run -p xtask -- lua-hooks`; do not edit. `--check` fails when this file is not what the classifier says. -->\n\nEvery native hook lands in exactly one class: `generated` (a zero-hand-work event table under the native name), `adapter` (a hand-written converter would unblock it), `handle` or `protocol` (a live handle or raw packets, each needing its own design), `tick` (the level-tick host the Lua runtime does not implement), or `cannot` (no event-table mapping exists, with the reason). `HOOK_CLASSIFICATION` in `crates/event-horizon-lua/src/generated_hooks/mod.rs` is the machine-readable record; this page is its human-readable form, so a hook is never silently missing from Lua: it is either generated or listed here with its reason.\n\n",
+        "# Hook exposure\n\n<!-- GENERATED by `cargo run -p xtask -- lua-hooks`; do not edit. `--check` fails when this file is not what the classifier says. -->\n\nEvery native hook lands in exactly one class: `generated` (a zero-hand-work event table under the native name), `adapter` (a hand-written converter would unblock it), `handle` or `protocol` (a live handle or raw packets, each needing its own design), `tick` (the level-tick host the Lua runtime does not implement), or `cannot` (no event-table mapping exists, with the reason). `HOOK_CLASSIFICATION` in `crates/event-horizon-lua/src/generated_hooks/mod.rs` is the machine-readable record; this page is its human-readable form, so a hook is never silently missing from Lua: it is either generated or listed here with its reason. The two declaration-served hooks (`block_entity` and `block_entity_ticks`) are generated and omitted from the event-table list below: they are served from the `horizon.block_entity` declarations, build no event table, and take no `horizon.on` registration.\n\n",
     );
     out.push_str(&format!(
         "{generated} hooks are generated and omitted below. The rest:\n\n"
@@ -3350,7 +3401,7 @@ pub fn run(check: bool) -> Result<(), String> {
         // back through `entity.nbt`, and filters by entity id with the
         // declaration check beside it: bespoke tests pin that contract
         // beside the stock event-table firing.
-        if model.name == "block_entity_tick" {
+        if matches!(model.kind, Kind::BlockEntity { .. }) {
             tests.extend(block_entity_tick_tests(model, &tys));
         }
         // The second firing covers the optional-stack state the dispatch

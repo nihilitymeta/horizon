@@ -7341,8 +7341,9 @@ experimental = ["scripts"]
                 horizon.block_entity("ruby:hive", { ticks = true, data = { charge = 0, name = "x" } })
                 horizon.block_entity("ruby:lamp")
                 horizon.on("block_entity_tick", function(event)
+                  assert(event.entity.id == "ruby:hive", "id")
                   event.entity.data.charge = event.entity.data.charge + 1
-                  event.entity.data.seen = event.dimension .. ":" .. event.pos.x
+                  event.entity.data.seen = event.dimension .. ":" .. event.pos.x .. "," .. event.pos.y .. "," .. event.pos.z
                   event.entity.data.name = nil
                 end)
                 horizon.on("random_tick", function(event)
@@ -7396,7 +7397,7 @@ experimental = ["scripts"]
         assert_eq!(entity.nbt.get(&key("charge")), Some(&Tag::Int(2)));
         assert_eq!(
             entity.nbt.get(&key("seen")),
-            Some(&Tag::String("minecraft:overworld:1".into()))
+            Some(&Tag::String("minecraft:overworld:1,2,3".into()))
         );
         assert!(!entity.nbt.contains_key(&key("name")));
         // A level hook sees the block entity's data and its changes are stored.
@@ -7435,6 +7436,17 @@ experimental = ["scripts"]
             ),
         );
         assert!(!level.data.contains_key(&[9, 9, 9]));
+        // A second position and the entity's own id are told as dispatched:
+        // a hardcoded pos or id in the arm fails this firing.
+        m.block_entity_tick(
+            &mut host,
+            &mut test_events::block_entity_tick_event([7, 8, 9], &mut entity),
+        );
+        assert_eq!(entity.nbt.get(&key("charge")), Some(&Tag::Int(3)));
+        assert_eq!(
+            entity.nbt.get(&key("seen")),
+            Some(&Tag::String("minecraft:overworld:7,8,9".into()))
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
