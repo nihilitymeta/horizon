@@ -16,9 +16,10 @@ use horizon_client::item_data::StackData;
 use horizon_client::mod_api::{
     BlockStateId, Compound, Corner, Direction, Hand, ItemStack, ModContainer, ModEnergyBuffer,
     NativeConfigKind, NativeFluidAction, NativeScreen, Tag, Text, dispatch_broadcast_message,
-    dispatch_custom_block_fluids, dispatch_item_after_vertical_collision,
+    dispatch_console_line, dispatch_custom_block_fluids, dispatch_item_after_vertical_collision,
     dispatch_menu_input_closed, dispatch_mouse_scrolling, dispatch_net_from_client,
-    dispatch_prepare_anvil, dispatch_screen, dispatch_shader_params, dispatch_state_for_placement,
+    dispatch_player_login, dispatch_prepare_anvil, dispatch_screen, dispatch_shader_params,
+    dispatch_state_for_placement,
 };
 use horizon_world::consumable::UseAnimation;
 use mlua::{Lua, Value};
@@ -472,10 +473,9 @@ fn text_string_and_component_writes() {
     let mut cancel = false;
     dispatch_broadcast_message(&FakeHost::empty(), &mods, &mut line, &mut cancel);
     assert!(cancel, "cancel not cancelled");
-    assert_eq!(
-        line,
-        Text::empty().with_component(serde_json::json!({ "text": "comp" }))
-    );
+    // `Text` equality compares spans only (both empty here), so the
+    // component JSON itself is the assertion.
+    assert_eq!(line.component(), serde_json::json!({ "text": "comp" }));
     no_error(&id);
 
     let (m, id, _dir) = loaded(
@@ -577,52 +577,9 @@ fn item_stack_count_only_keeps_extra() {
     no_error(&id);
 }
 
-/// A `nil` hole or trailing nil in a seeded slot list reads back as `None`
-/// in place: fixed positions, not a dropped tail.
-#[test]
-fn menu_input_closed_none_slot_stays_in_place() {
-    let (m, id, _dir) = loaded(
-        "gen_menu_none",
-        "horizon.on(\"menu_input_closed\", function(event) assert(event.slots[2] == false, \"hole seeds as false\") event.slots[1] = nil event.slots[2] = { id = \"test:new\", count = 1, damage = 0 } event.slots[3] = nil end)",
-    );
-    let mods = boxed(m);
-    let mut slots = vec![
-        Some(ItemStack {
-            item: "test:a".into(),
-            count: 1,
-            damage: 0,
-            extra: None,
-        }),
-        None,
-        Some(ItemStack {
-            item: "test:b".into(),
-            count: 2,
-            damage: 0,
-            extra: None,
-        }),
-    ];
-    dispatch_menu_input_closed(&mut FakeHost::empty(), &mods, 7, 8, &mut slots);
-    assert_eq!(
-        format!("{:?}", slots),
-        format!(
-            "{:?}",
-            vec![
-                None,
-                Some(ItemStack {
-                    item: "test:new".into(),
-                    count: 1,
-                    damage: 0,
-                    extra: None,
-                }),
-                None,
-            ]
-        )
-    );
-    no_error(&id);
-}
-
 /// A replaced screen reads the `false` sentinel as the `None` slot in the
-/// middle: three elements, not one.
+/// middle: three elements, not one. (Seeded holes read as nil instead; see
+/// `menu_input_closed_none_slot_reads_nil`. `false` stays accepted in both.)
 #[test]
 fn screen_none_slot_reads_false_sentinel() {
     let (m, id, _dir) = loaded(
@@ -827,6 +784,249 @@ fn nil_on_required_fields_keeps_native() {
     let mut custom = true;
     dispatch_custom_block_fluids(&FakeHost::empty(), &mods, "test:block", &mut custom);
     assert!(custom, "nil keeps the native value");
+    no_error(&id);
+}
+
+/// Finding 1: editing the seeded component table in place applies. The
+/// snapshot the write-back compares against is a frozen value, not an alias
+/// of the live table, so `line_component.color = "red"` is a change.
+#[test]
+fn text_in_place_component_edit_applies() {
+    let seed = || Text::empty().with_component(serde_json::json!({ "text": "hello" }));
+    let (m, id, _dir) = loaded(
+        "gen_text_in_place",
+        "horizon.on(\"broadcast_message\", function(event) event.line_component.color = \"red\" horizon.cancel() end)",
+    );
+    let mods = boxed(m);
+    let mut line = seed();
+    let mut cancel = false;
+    dispatch_broadcast_message(&FakeHost::empty(), &mods, &mut line, &mut cancel);
+    assert!(cancel, "cancel not cancelled");
+    // `Text` equality compares spans only (both empty here), so the
+    // component JSON itself is the assertion.
+    assert_eq!(
+        line.component(),
+        serde_json::json!({ "text": "hello", "color": "red" })
+    );
+    no_error(&id);
+}
+
+/// Finding 2: setting only the plain side of an optional text to nil clears
+/// it. The seeded component table still sitting there is not a write.
+#[test]
+fn opt_text_plain_nil_clears() {
+    let (m, id, _dir) = loaded(
+        "gen_reason_nil",
+        "horizon.on(\"player_login\", function(event) event.reason = nil horizon.cancel() end)",
+    );
+    let firing_mods = boxed(m);
+    let mut reason = Some(Text::literal("test:reason"));
+    let mut cancel = false;
+    dispatch_player_login(
+        &mut FakeHost::empty(),
+        &firing_mods,
+        7,
+        "test:name",
+        &mut reason,
+        &mut cancel,
+    );
+    assert!(cancel, "cancel not cancelled");
+    assert_eq!(reason, None);
+    no_error(&id);
+}
+
+/// Finding 3: a script-written `__len` is not trusted. It is not read at
+/// all, so even 2^62 (an integer-tagged literal, like the finding's `1e15`)
+/// cannot reserve absurd capacity.
+#[test]
+fn seq_script_len_key_ignored() {
+    let (m, id, _dir) = loaded(
+        "gen_menu_huge_len",
+        "horizon.on(\"menu_input_closed\", function(event) event.slots.__len = 4611686018427387904 end)",
+    );
+    let mods = boxed(m);
+    let mut slots = vec![
+        Some(ItemStack {
+            item: "test:a".into(),
+            count: 1,
+            damage: 0,
+            extra: None,
+        }),
+        None,
+    ];
+    dispatch_menu_input_closed(&mut FakeHost::empty(), &mods, 7, 8, &mut slots);
+    assert_eq!(slots.len(), 2);
+    assert_eq!(slots[0].as_ref().unwrap().count, 1);
+    assert_eq!(slots[1], None);
+    no_error(&id);
+}
+
+/// Finding 3: deleting the last slot in place shrinks the list; `false`
+/// still pins an explicit trailing hole.
+#[test]
+fn seq_trailing_nil_shrinks() {
+    let stack = |item: &str| {
+        Some(ItemStack {
+            item: item.into(),
+            count: 1,
+            damage: 0,
+            extra: None,
+        })
+    };
+    let (m, id, _dir) = loaded(
+        "gen_menu_shrink",
+        "horizon.on(\"menu_input_closed\", function(event) event.slots[3] = nil end)",
+    );
+    let mods = boxed(m);
+    let mut slots = vec![stack("test:a"), stack("test:b"), stack("test:c")];
+    dispatch_menu_input_closed(&mut FakeHost::empty(), &mods, 7, 8, &mut slots);
+    assert_eq!(slots.len(), 2);
+    no_error(&id);
+
+    let (m, id, _dir) = loaded(
+        "gen_menu_false_hole",
+        "horizon.on(\"menu_input_closed\", function(event) event.slots[3] = false end)",
+    );
+    let mods = boxed(m);
+    let mut slots = vec![stack("test:a"), stack("test:b"), stack("test:c")];
+    dispatch_menu_input_closed(&mut FakeHost::empty(), &mods, 7, 8, &mut slots);
+    assert_eq!(slots.len(), 3);
+    assert_eq!(slots[2], None);
+    no_error(&id);
+}
+
+/// Finding 4: the write-back keeps no snapshot keys on the event table, so
+/// `pairs` never sees them, and a forged one cannot confuse the write-back.
+#[test]
+fn text_snapshot_keys_hidden() {
+    let seed = || Text::empty().with_component(serde_json::json!({ "text": "hello" }));
+    let (m, id, _dir) = loaded(
+        "gen_text_hidden_snap",
+        "horizon.on(\"broadcast_message\", function(event) for k, _ in pairs(event) do assert(k ~= \"\\0line#text\" and k ~= \"\\0line#component\", \"snapshot key visible\") end event[\"\\0line#text\"] = \"forged\" event[\"\\0line#component\"] = { text = \"evil\" } event.line = \"bye\" horizon.cancel() end)",
+    );
+    let mods = boxed(m);
+    let mut line = seed();
+    let mut cancel = false;
+    dispatch_broadcast_message(&FakeHost::empty(), &mods, &mut line, &mut cancel);
+    assert!(cancel, "cancel not cancelled");
+    assert_eq!(line, Text::literal("bye"));
+    no_error(&id);
+}
+
+/// Finding 5: a seeded `None` slot reads as nil, and a nil hole or trailing
+/// nil in a seeded list reads back as `None` in place.
+#[test]
+fn menu_input_closed_none_slot_reads_nil() {
+    let (m, id, _dir) = loaded(
+        "gen_menu_nil",
+        "horizon.on(\"menu_input_closed\", function(event) assert(event.slots[2] == nil, \"hole seeds as nil\") event.slots[1] = nil event.slots[2] = { id = \"test:new\", count = 1, damage = 0 } end)",
+    );
+    let mods = boxed(m);
+    let mut slots = vec![
+        Some(ItemStack {
+            item: "test:a".into(),
+            count: 1,
+            damage: 0,
+            extra: None,
+        }),
+        None,
+        Some(ItemStack {
+            item: "test:b".into(),
+            count: 2,
+            damage: 0,
+            extra: None,
+        }),
+    ];
+    dispatch_menu_input_closed(&mut FakeHost::empty(), &mods, 7, 8, &mut slots);
+    assert_eq!(
+        format!("{:?}", slots),
+        format!(
+            "{:?}",
+            vec![
+                None,
+                Some(ItemStack {
+                    item: "test:new".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                }),
+                Some(ItemStack {
+                    item: "test:b".into(),
+                    count: 2,
+                    damage: 0,
+                    extra: None,
+                }),
+            ]
+        )
+    );
+    no_error(&id);
+}
+
+/// Finding 6: unmodelled NBT keeps its types across an in-place round trip:
+/// a byte array stays a byte array, an empty list stays an empty list.
+#[test]
+fn extra_unmodelled_arrays_survive() {
+    let extra = || StackData {
+        other: vec![
+            ("mymod:blob".to_owned(), Tag::ByteArray(vec![1, 2, 3])),
+            ("mymod:empty".to_owned(), Tag::List(vec![])),
+        ],
+        ..Default::default()
+    };
+    let (m, id, _dir) = loaded(
+        "gen_extra_arrays",
+        "horizon.on(\"item_after_vertical_collision\", function(event) event.stack.count = 9 end)",
+    );
+    let mods = boxed(m);
+    let mut stack = ItemStack {
+        item: "test:fall".into(),
+        count: 1,
+        damage: 0,
+        extra: Some(Box::new(extra())),
+    };
+    let mut discard = false;
+    dispatch_item_after_vertical_collision(
+        &mut FakeHost::empty(),
+        &mods,
+        "minecraft:overworld",
+        true,
+        7,
+        BlockStateId(7),
+        [1, 2, 3],
+        [1.0, 2.0, 3.0],
+        &mut stack,
+        &mut discard,
+    );
+    assert_eq!(stack.count, 9);
+    assert_eq!(stack.extra.as_deref(), Some(&extra()));
+    no_error(&id);
+}
+
+/// Finding 1 scope check: nested text (tooltip lines, `console_line`
+/// replies) never went through the snapshot alias: the write-back reads the
+/// live table, so an in-place component edit already applies.
+#[test]
+fn console_line_reply_in_place_edit_applies() {
+    let (m, id, _dir) = loaded(
+        "gen_console_in_place",
+        "horizon.on(\"console_line\", function(event) event.replies[1].component.color = \"red\" horizon.cancel() end)",
+    );
+    let firing_mods = boxed(m);
+    let mut replies = vec![Text::literal("test:line2"), Text::literal("test:line3")];
+    let mut cancel = false;
+    dispatch_console_line(
+        &mut FakeHost::empty(),
+        &firing_mods,
+        "test:source",
+        "test:line",
+        &mut replies,
+        &mut cancel,
+    );
+    assert!(cancel, "cancel not cancelled");
+    assert_eq!(
+        replies[0].component().get("color").and_then(|v| v.as_str()),
+        Some("red")
+    );
     no_error(&id);
 }
 

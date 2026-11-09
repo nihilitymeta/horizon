@@ -41,6 +41,19 @@ export type GuiLayerPostEvent = { layer: string, batch: HudBatch }
 
 -- The event tables of the generated hooks: one table per hook,
 -- holding the struct's fields by name.
+--
+-- A text field reads as its plain string plus a `<field>_component`
+-- table (vanilla JSON). A write is a string, a component table, or both:
+-- the changed side wins; both changed, the component wins; a cleared
+-- component falls back to the string. Setting the plain side to nil leaves
+-- a required text alone and clears an optional one (nil on both sides
+-- clears it too). In-place edits of the seeded component table count.
+--
+-- A sequence field reads its holes as nil. Edits in place keep positions:
+-- a cleared trailing slot shrinks the list (`false` pins an explicit hole
+-- instead), while a table the script replaces wholesale reads its own
+-- length (use `false` for holes there). An item's `extra` keeps its NBT
+-- types when edited in place; a fresh table reads with default types.
 export type AddServerReloadListenersEvent = { listeners: any }
 export type AnalogOutputEvent = { dimension: string, pos: Vec3, state: string, face: "down" | "up" | "north" | "south" | "west" | "east", output: number, state_props: Props }
 export type AnvilCraftPostEvent = { player: PlayerRef, pos: Vec3, craft: { left: Item?, right: Item?, output: Item } }

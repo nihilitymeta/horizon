@@ -101,6 +101,28 @@ pub(crate) fn read_pair(t: &Table) -> mlua::Result<[f32; 2]> {
     Ok([read_number(t, "x")?, read_number(t, "y")?])
 }
 
+/// Per-dispatch hidden state, kept out of the event tables: text
+/// snapshots, seeded sequence lengths, and seeded `extra` compounds. Scripts
+/// see only the documented fields, so nothing here shows up in `pairs`,
+/// can be overwritten, or is saved; a forged key on an event table is just
+/// ignored. Weak keys drop each call's entries when its tables go.
+const HIDDEN_KEY: &str = "event_horizon_hidden";
+
+/// The hidden table, created on first use.
+pub(crate) fn hidden_table(lua: &Lua) -> mlua::Result<Table> {
+    match lua.named_registry_value::<Value>(HIDDEN_KEY)? {
+        Value::Table(t) => Ok(t),
+        _ => {
+            let t = lua.create_table()?;
+            let weak = lua.create_table()?;
+            weak.set("__mode", "k")?;
+            t.set_metatable(Some(weak))?;
+            lua.set_named_registry_value(HIDDEN_KEY, t.clone())?;
+            Ok(t)
+        }
+    }
+}
+
 /// An item stack's components beyond count and damage, as the settled
 /// `{id, count, damage, extra?}` shape: `nil` when the stack is plain, else
 /// the components compound (damage rides its own field, so the seed leaves
@@ -112,21 +134,48 @@ pub(crate) fn extra_seed(lua: &Lua, stack: &ItemStack) -> mlua::Result<Value> {
     match &stack.extra {
         None => Ok(Value::Nil),
         Some(data) => match components_tag(0, Some(data)) {
-            Some(Tag::Compound(compound)) => Ok(Value::Table(
-                crate::lua_mods::nbt::compound_to_table(lua, &compound)?,
-            )),
+            Some(Tag::Compound(compound)) => {
+                let t = crate::lua_mods::nbt::compound_to_table(lua, &compound)?;
+                // The seeded compound rides hidden alongside, so the way
+                // back keeps its NBT types; a table the script builds fresh
+                // has none and reads with the default types.
+                hidden_table(lua)?.set(
+                    t.clone(),
+                    lua.create_userdata(LikeCompound(Tag::Compound(compound)))?,
+                )?;
+                Ok(Value::Table(t))
+            }
             _ => Ok(Value::Nil),
         },
     }
 }
 
+/// The seeded components compound, stashed so the way back keeps NBT types.
+#[derive(Clone)]
+struct LikeCompound(Tag);
+impl mlua::UserData for LikeCompound {}
+
 /// The seeded components back: `nil` (or a missing key) is a plain stack, a
-/// table decodes through the components compound, anything else errors.
-pub(crate) fn extra_back(table: &Table) -> mlua::Result<Option<Box<StackData>>> {
+/// table decodes through the components compound, anything else errors. An
+/// in-place edit keeps the seeded NBT types (a byte array stays a byte
+/// array, an empty list stays an empty list); a fresh table reads with the
+/// default types (integers are ints, sequences are lists).
+pub(crate) fn extra_back(lua: &Lua, table: &Table) -> mlua::Result<Option<Box<StackData>>> {
     match table.get::<Value>("extra")? {
         Value::Nil => Ok(None),
         Value::Table(extra) => {
-            let compound = crate::lua_mods::nbt::table_to_compound(&extra, None)
+            let like = match hidden_table(lua)?.get::<Value>(extra.clone())? {
+                Value::UserData(ud) => {
+                    ud.borrow::<LikeCompound>()
+                        .ok()
+                        .and_then(|like| match &like.0 {
+                            Tag::Compound(compound) => Some(compound.clone()),
+                            _ => None,
+                        })
+                }
+                _ => None,
+            };
+            let compound = crate::lua_mods::nbt::table_to_compound(&extra, like.as_ref())
                 .map_err(|e| mlua::Error::runtime(format!("extra: {e}")))?;
             let (_, data) = decode_components(Some(&Tag::Compound(compound)));
             Ok(data)
@@ -140,12 +189,12 @@ pub(crate) fn extra_back(table: &Table) -> mlua::Result<Option<Box<StackData>>> 
 
 /// An item stack from its table: `id`, `count`, `damage`, and the seeded
 /// `extra` components back (nil is plain).
-pub(crate) fn item_from_table(table: &Table) -> mlua::Result<ItemStack> {
+pub(crate) fn item_from_table(lua: &Lua, table: &Table) -> mlua::Result<ItemStack> {
     Ok(ItemStack {
         item: std::sync::Arc::from(table.get::<String>("id")?.as_str()),
         count: table.get::<Option<u32>>("count")?.unwrap_or(1),
         damage: table.get::<Option<u32>>("damage")?.unwrap_or(0),
-        extra: extra_back(table)?,
+        extra: extra_back(lua, table)?,
     })
 }
 
@@ -437,15 +486,20 @@ macro_rules! gen_seed {
             $event.$field.to_string_lossy().into_owned(),
         )?
     };
-    // Rich text: the plain string and the component table, plus a seed
-    // snapshot under NUL-prefixed keys so the write-back can tell which
-    // side the script changed.
+    // Rich text: the plain string and the component table, plus a frozen
+    // snapshot hidden beside the event table so the write-back can tell
+    // which side the script changed.
     ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : s_text) => {{
         let (plain, component) = crate::generated_runtime::text_parts($lua, &*$event.$field)?;
         $table.set(stringify!($field), plain.clone())?;
         $table.set(concat!(stringify!($field), "_component"), component.clone())?;
-        $table.set(concat!("\0", stringify!($field), "#text"), plain)?;
-        $table.set(concat!("\0", stringify!($field), "#component"), component)?;
+        crate::generated_runtime::seed_text_snap(
+            $lua,
+            &$table,
+            stringify!($field),
+            &plain,
+            &component,
+        )?;
     }};
     ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : s_opt_text) => {{
         match &*$event.$field {
@@ -453,17 +507,17 @@ macro_rules! gen_seed {
                 let (plain, component) = crate::generated_runtime::text_parts($lua, text)?;
                 $table.set(stringify!($field), plain.clone())?;
                 $table.set(concat!(stringify!($field), "_component"), component.clone())?;
-                $table.set(concat!("\0", stringify!($field), "#text"), plain)?;
-                $table.set(concat!("\0", stringify!($field), "#component"), component)?;
+                crate::generated_runtime::seed_text_snap(
+                    $lua,
+                    &$table,
+                    stringify!($field),
+                    &plain,
+                    &component,
+                )?;
             }
             None => {
                 $table.set(stringify!($field), mlua::Value::Nil)?;
                 $table.set(concat!(stringify!($field), "_component"), mlua::Value::Nil)?;
-                $table.set(concat!("\0", stringify!($field), "#text"), mlua::Value::Nil)?;
-                $table.set(
-                    concat!("\0", stringify!($field), "#component"),
-                    mlua::Value::Nil,
-                )?;
             }
         }
     }};
@@ -668,24 +722,21 @@ macro_rules! gen_writeback {
         }
     };
     // Rich text: both missing is unchanged (or cleared, when optional);
-    // otherwise the side the script changed since the seed wins (see
-    // `text_pick` for the rule).
+    // clearing the plain side of an optional text clears it, even though
+    // the seeded component table still sits there; otherwise the side the
+    // script changed since the seed wins (see `text_pick` for the rule).
     ($table:ident, $lua:ident, $event:ident, $level:expr, $field:ident, w_text) => {{
         let text: mlua::Value = $table.get(stringify!($field))?;
         let component: mlua::Value = $table.get(concat!(stringify!($field), "_component"))?;
         match (&text, &component) {
             (mlua::Value::Nil, mlua::Value::Nil) => {}
             _ => {
-                let seed_text: mlua::Value =
-                    $table.get(concat!("\0", stringify!($field), "#text"))?;
-                let seed_component: mlua::Value =
-                    $table.get(concat!("\0", stringify!($field), "#component"))?;
+                let seed = crate::generated_runtime::text_snap($lua, &$table, stringify!($field))?;
                 if let Some(written) = crate::generated_runtime::text_pick(
                     $lua,
                     text,
                     component,
-                    seed_text,
-                    seed_component,
+                    seed,
                     stringify!($field),
                 )? {
                     *$event.$field = written;
@@ -699,16 +750,14 @@ macro_rules! gen_writeback {
         match (&text, &component) {
             (mlua::Value::Nil, mlua::Value::Nil) => *$event.$field = None,
             _ => {
-                let seed_text: mlua::Value =
-                    $table.get(concat!("\0", stringify!($field), "#text"))?;
-                let seed_component: mlua::Value =
-                    $table.get(concat!("\0", stringify!($field), "#component"))?;
-                if let Some(written) = crate::generated_runtime::text_pick(
+                let seed = crate::generated_runtime::text_snap($lua, &$table, stringify!($field))?;
+                if crate::generated_runtime::text_plain_cleared($lua, &text, &component, &seed)? {
+                    *$event.$field = None;
+                } else if let Some(written) = crate::generated_runtime::text_pick(
                     $lua,
                     text,
                     component,
-                    seed_text,
-                    seed_component,
+                    seed,
                     stringify!($field),
                 )? {
                     *$event.$field = Some(written);
@@ -1205,51 +1254,88 @@ pub(crate) fn static_str(s: &str) -> &'static str {
     leaked
 }
 
-/// The seeded element count of a sequence table: in-place edits keep their
-/// positions even through `nil` holes, so the count rides the table itself.
-const SEQ_LEN_KEY: &str = "__len";
-
-/// A sequence table's element count: the seeded count when the script kept
-/// the seeded table (so a hole or trailing nil reads back in place), else
-/// the table's own length. A table the script replaced wholesale resizes to
-/// its own length; shrinking or growing in place is not a thing (replace
-/// the table to resize).
-pub(crate) fn struct_seq_len(t: &Table) -> usize {
-    let seeded = match t.get::<Value>(SEQ_LEN_KEY) {
-        Ok(Value::Integer(n)) if n > 0 => n as usize,
-        _ => 0,
-    };
-    seeded.max(t.raw_len())
+/// A seeded sequence table's length and its `nil` holes (1-based), hidden
+/// from scripts beside the table itself: the count is never a table key the
+/// script can overwrite, and holes stay real holes that read as nil.
+pub(crate) fn seed_seq_len(
+    lua: &Lua,
+    seq: &Table,
+    len: usize,
+    holes: &[usize],
+) -> mlua::Result<()> {
+    let entry = lua.create_table()?;
+    entry.set("len", len as i64)?;
+    let pinned = lua.create_table()?;
+    for h in holes {
+        pinned.set(*h, true)?;
+    }
+    entry.set("holes", pinned)?;
+    hidden_table(lua)?.set(seq.clone(), entry)?;
+    Ok(())
 }
 
-/// A sequence table of converted elements; a `nil` element has no Lua form
-/// and reads as `false`, which reads back as `nil`. The seeded count rides
-/// along under `__len` so holes read back in place.
+/// A sequence table's element count: a table the script kept in place reads
+/// its seeded length, trimmed of trailing slots the script cleared (a
+/// seeded hole stays pinned, so an untouched trailing hole survives, while
+/// `slots[3] = nil` shrinks; `false` pins an explicit hole instead); a
+/// table the script replaced wholesale reads its own length. No script key
+/// is ever trusted: a `__len` the script sets is just another ignored key.
+fn seq_len(lua: &Lua, t: &Table) -> mlua::Result<usize> {
+    let entry: Value = hidden_table(lua)?.get(t.clone())?;
+    let (mut len, holes): (usize, Option<Table>) = match entry {
+        Value::Table(entry) => (
+            entry.get::<i64>("len")?.max(0) as usize,
+            entry.get::<Option<Table>>("holes")?,
+        ),
+        _ => return Ok(t.raw_len()),
+    };
+    while len > 0 {
+        let v: Value = t.get(len)?;
+        if !matches!(v, Value::Nil) {
+            break;
+        }
+        let pinned = match &holes {
+            Some(holes) => holes.contains_key(len)?,
+            None => false,
+        };
+        if pinned {
+            break;
+        }
+        len -= 1;
+    }
+    Ok(len)
+}
+
+/// A sequence table of converted elements; a `nil` element stays a hole, so
+/// it reads as nil and reads back as `nil`. The seeded length and holes ride
+/// hidden alongside, so holes read back in place.
 pub(crate) fn struct_vec_to_lua<T: LuaStruct>(lua: &Lua, items: &[T]) -> mlua::Result<Table> {
     let t = lua.create_table()?;
+    let mut holes = Vec::new();
     for (i, item) in items.iter().enumerate() {
-        let v = T::to_value(lua, item)?;
-        match v {
-            Value::Nil => t.set(i + 1, false)?,
+        match T::to_value(lua, item)? {
+            Value::Nil => holes.push(i + 1),
             v => t.set(i + 1, v)?,
         }
     }
-    t.set(SEQ_LEN_KEY, items.len() as i64)?;
+    seed_seq_len(lua, &t, items.len(), &holes)?;
     Ok(t)
 }
 
 /// A sequence table back into elements; `false` reads as `nil`, and so does
-/// a hole or trailing nil inside the seeded count (element positions are
-/// fixed: `{slot, nil, slot}` is three elements with a `None` in the
-/// middle). A `nil` where the element type is not optional errors instead
-/// of silently dropping the tail.
+/// a hole inside the seeded length (element positions are fixed:
+/// `{slot, nil, slot}` is three elements with a `None` in the middle,
+/// while a cleared trailing slot shrinks the list). A `nil` where the
+/// element type is not optional errors instead of silently dropping the
+/// tail.
 pub(crate) fn struct_vec_from_lua<T: LuaStruct>(
     lua: &Lua,
     t: &Table,
     field: &str,
 ) -> mlua::Result<Vec<T>> {
-    let mut out = Vec::with_capacity(struct_seq_len(t));
-    for i in 1..=struct_seq_len(t) {
+    let len = seq_len(lua, t)?;
+    let mut out = Vec::with_capacity(len);
+    for i in 1..=len {
         let v: Value = t.get(i)?;
         let v = match v {
             Value::Boolean(false) => Value::Nil,
@@ -2671,25 +2757,117 @@ pub(crate) fn text_from_parts(
     }
 }
 
-/// Which side of an event text write changed since the seed: the seed
-/// snapshot rides the event table under NUL-prefixed keys, so a script that
-/// only sets `event.line = "bye"` reads back as the string even though the
+/// A seeded text's frozen snapshot: the plain string and the component
+/// table's canonical JSON. Compared by value, never by alias: an in-place
+/// edit of the live component table cannot move the snapshot with it.
+pub(crate) struct TextSnap {
+    text: String,
+    component: Option<String>,
+}
+
+/// A component table's canonical JSON, for comparing by value: `None` when
+/// the value is not a table or does not serialize (a scripted function
+/// inside, ...). The write-back treats that as changed and reports its own
+/// error from the conversion.
+fn component_json(value: &Value) -> Option<String> {
+    match value {
+        Value::Table(t) => crate::lua_mods::json::lua_to_json(&Value::Table(t.clone()))
+            .ok()
+            .and_then(|json| serde_json::to_string(&json).ok()),
+        _ => None,
+    }
+}
+
+/// The hidden per-event snapshot table, created on first use: field name to
+/// that field's [`TextSnap`] table.
+pub(crate) fn event_snaps(lua: &Lua, event: &Table) -> mlua::Result<Table> {
+    let hidden = hidden_table(lua)?;
+    match hidden.get::<Value>(event.clone())? {
+        Value::Table(snaps) => Ok(snaps),
+        _ => {
+            let snaps = lua.create_table()?;
+            hidden.set(event.clone(), snaps.clone())?;
+            Ok(snaps)
+        }
+    }
+}
+
+/// Freeze a seeded text's snapshot hidden beside the event table.
+pub(crate) fn seed_text_snap(
+    lua: &Lua,
+    event: &Table,
+    field: &str,
+    plain: &str,
+    component: &Value,
+) -> mlua::Result<()> {
+    let snap = lua.create_table()?;
+    snap.set("text", plain)?;
+    snap.set("component", component_json(component))?;
+    event_snaps(lua, event)?.set(field, snap)?;
+    Ok(())
+}
+
+/// A seeded text's frozen snapshot, if the field seeded one (a seeded
+/// `None` leaves none: `(nil, nil)` reads back as `None`).
+pub(crate) fn text_snap(lua: &Lua, event: &Table, field: &str) -> mlua::Result<Option<TextSnap>> {
+    match event_snaps(lua, event)?.get::<Value>(field)? {
+        Value::Table(snap) => Ok(Some(TextSnap {
+            text: snap.get("text")?,
+            component: snap.get("component")?,
+        })),
+        _ => Ok(None),
+    }
+}
+
+/// Whether the component side differs from its frozen snapshot by value.
+/// With no snapshot (a seeded `None`) any table counts as changed, and any
+/// other non-nil value too, so the conversion reports it.
+fn component_changed(_lua: &Lua, component: &Value, seed: &Option<TextSnap>) -> mlua::Result<bool> {
+    let current = component_json(component);
+    match (seed, current) {
+        (Some(snap), Some(now)) => Ok(snap.component.as_ref() != Some(&now)),
+        (Some(_), None) => Ok(true),
+        (None, Some(_)) => Ok(true),
+        (None, None) => Ok(!matches!(component, Value::Nil)),
+    }
+}
+
+/// Whether the script cleared the plain side of an optional text while its
+/// component sits untouched: setting `event.reason = nil` clears the
+/// reason, the seeded component table notwithstanding.
+pub(crate) fn text_plain_cleared(
+    lua: &Lua,
+    text: &Value,
+    component: &Value,
+    seed: &Option<TextSnap>,
+) -> mlua::Result<bool> {
+    if !matches!(text, Value::Nil) || seed.is_none() {
+        return Ok(false);
+    }
+    Ok(!component_changed(lua, component, seed)?)
+}
+
+/// Which side of an event text write changed since the seed: the snapshot
+/// is a frozen value hidden beside the event table, so a script that only
+/// sets `event.line = "bye"` reads back as the string even though the
 /// seeded component table is still there. `None` is unchanged (the native
 /// text stays). The rule, enforced here and nowhere else: a changed
-/// component wins when only it changed; a changed string wins when only it
-/// changed; when both changed, a component table wins and a cleared
-/// component falls back to the string; a cleared string falls back to an
-/// untouched component.
+/// component wins when only it changed (in place or replaced alike); a
+/// changed string wins when only it changed; when both changed, a component
+/// table wins and a cleared component falls back to the string; a cleared
+/// string falls back to an untouched component.
 pub(crate) fn text_pick(
     lua: &Lua,
     text: Value,
     component: Value,
-    seed_text: Value,
-    seed_component: Value,
+    seed: Option<TextSnap>,
     field: &str,
 ) -> mlua::Result<Option<Text>> {
-    let text_changed = text != seed_text;
-    let comp_changed = component != seed_component;
+    let text_changed = match &seed {
+        Some(snap) => text != Value::String(lua.create_string(&snap.text)?),
+        None => !matches!(text, Value::Nil),
+    };
+    let comp_changed = component_changed(lua, &component, &seed)?;
     if !text_changed && !comp_changed {
         return Ok(None);
     }
@@ -2778,9 +2956,9 @@ impl LuaStruct for ItemStack {
     fn to_value(lua: &Lua, v: &Self) -> mlua::Result<Value> {
         Ok(Value::Table(item_table_of(lua, v)?))
     }
-    fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
+    fn from_value(lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
         match v {
-            Value::Table(t) => crate::generated_runtime::item_from_table(&t)
+            Value::Table(t) => crate::generated_runtime::item_from_table(lua, &t)
                 .map_err(|e| mlua::Error::runtime(format!("{field}: {e}"))),
             other => Err(mlua::Error::runtime(format!(
                 "{field}: expected an item table, got {}",
@@ -2798,11 +2976,11 @@ impl LuaStruct for Option<ItemStack> {
             None => Ok(Value::Nil),
         }
     }
-    fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
+    fn from_value(lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
         match v {
             Value::Nil | Value::Boolean(false) => Ok(None),
             Value::Table(t) => Ok(Some(
-                crate::generated_runtime::item_from_table(&t)
+                crate::generated_runtime::item_from_table(lua, &t)
                     .map_err(|e| mlua::Error::runtime(format!("{field}: {e}")))?,
             )),
             other => Err(mlua::Error::runtime(format!(
@@ -3272,7 +3450,7 @@ macro_rules! gen_replace_out {
     ($table:ident, $lua:ident, $out:ident : item $(, $r:expr $(, $s:expr)?)?) => {
         Ok(match $table.get::<mlua::Value>(stringify!($out))? {
             mlua::Value::Nil => None,
-            mlua::Value::Table(t) => Some(crate::generated_runtime::item_from_table(&t)?),
+            mlua::Value::Table(t) => Some(crate::generated_runtime::item_from_table($lua, &t)?),
             _ => return Err(mlua::Error::runtime("expected a table or nil")),
         })
     };

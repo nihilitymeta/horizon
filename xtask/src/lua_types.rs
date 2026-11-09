@@ -523,6 +523,7 @@ fn render() -> Result<String, String> {
         out.push_str(&format!("export type {name} = {def}\n"));
     }
     out.push_str("\n-- The event tables of the generated hooks: one table per hook,\n-- holding the struct's fields by name.\n");
+    out.push_str("--\n-- A text field reads as its plain string plus a `<field>_component`\n-- table (vanilla JSON). A write is a string, a component table, or both:\n-- the changed side wins; both changed, the component wins; a cleared\n-- component falls back to the string. Setting the plain side to nil leaves\n-- a required text alone and clears an optional one (nil on both sides\n-- clears it too). In-place edits of the seeded component table count.\n--\n-- A sequence field reads its holes as nil. Edits in place keep positions:\n-- a cleared trailing slot shrinks the list (`false` pins an explicit hole\n-- instead), while a table the script replaces wholesale reads its own\n-- length (use `false` for holes there). An item's `extra` keeps its NBT\n-- types when edited in place; a fresh table reads with default types.\n");
     for g in &generated {
         out.push_str(&format!("export type {} = {}\n", g.event_ty, g.event_def));
     }
