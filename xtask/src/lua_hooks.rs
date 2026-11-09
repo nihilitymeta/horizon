@@ -17,7 +17,7 @@
 
 use crate::lua_model::{
     Class, Conv, Field, HookClass, Host, Kind, Model, ReplaceRead, assert_lines, classify,
-    dup_leaf, lua_read, mutate_line, replace_sample, sample, table_leaves,
+    deferred_outcomes, dup_leaf, lua_read, mutate_line, replace_sample, sample, table_leaves,
 };
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -365,7 +365,12 @@ struct Call {
     call: String,
 }
 
-fn dispatch_call(model: &Model, tys: &BTreeMap<String, String>, kind_rust: Option<String>) -> Call {
+fn dispatch_call(
+    model: &Model,
+    tys: &BTreeMap<String, String>,
+    kind_rust: Option<String>,
+    flip_opt: bool,
+) -> Call {
     let host_arg = match model.host {
         Host::None => String::new(),
         Host::GameMut => "&mut FakeHost::empty(), ".to_owned(),
@@ -392,7 +397,12 @@ fn dispatch_call(model: &Model, tys: &BTreeMap<String, String>, kind_rust: Optio
         }
         if let Some(field) = model.fields.iter().find(|f| f.name == param.name) {
             let field_ty = tys.get(&field.name).map(String::as_str).unwrap_or(ty);
-            let s = sample(&field.conv, field_ty, &field.name, n);
+            let s = sample(
+                &field.conv,
+                field_ty,
+                &field.name,
+                eff_n(&field.conv, n, flip_opt),
+            );
             if s.mutable {
                 bindings.push(format!("    let mut {} = {};", param.name, s.rust));
                 args.push(format!("&mut {}", param.name));
@@ -515,10 +525,38 @@ fn param_asserts(
     assert_lines(&field.conv, &field.name, &s.lua, field.key.as_deref(), n)
 }
 
+/// The sample index for one firing: the `_opt_item` test flips every OptItem
+/// param to the other parity, so each optional stack is exercised both
+/// present and absent across the hook's tests. Every other converter keeps
+/// the dispatch index.
+fn eff_n(conv: &Conv, n: usize, flip_opt: bool) -> usize {
+    if flip_opt && matches!(conv, Conv::OptItem) {
+        n + 1
+    } else {
+        n
+    }
+}
+
+/// Whether `model` fires an optional stack: those hooks get a second test
+/// with the option flipped, covering the state the dispatch index misses.
+fn has_opt_item(model: &Model) -> bool {
+    model.fields.iter().any(|f| matches!(f.conv, Conv::OptItem))
+}
+
+/// The hand-written spike test for `hook` in `spike_tests.rs`: the generator
+/// scans it (instead of trusting it) for the player-`name` assert, so a spike
+/// that drops the assert fails the check like a model test would.
+fn spike_test_body<'a>(src: &'a str, hook: &str) -> Option<&'a str> {
+    let start = src.find(&format!("\nfn generated_{hook}("))?;
+    let rest = &src[start..];
+    let end = rest[1..].find("\nfn ").map(|i| i + 1).unwrap_or(rest.len());
+    Some(&rest[..end])
+}
+
 /// The dispatch fields of `model` no assert covers: a parameter with no
 /// field entry, or one whose Lua asserts are empty and which is not
 /// allowlisted.
-fn uncovered_fields(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String> {
+fn uncovered_fields(model: &Model, tys: &BTreeMap<String, String>, flip_opt: bool) -> Vec<String> {
     let kind_lua = kind_values(model)
         .as_ref()
         .and_then(|plan| plan.assert_kind.clone());
@@ -536,6 +574,7 @@ fn uncovered_fields(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String
             continue;
         };
         let ty = tys.get(&field.name).map(String::as_str).unwrap_or("?");
+        let n = eff_n(&field.conv, n, flip_opt);
         if param_asserts(model, field, ty, n, kind_lua.as_deref()).is_empty()
             && !allowlisted(&model.name, &field.name)
         {
@@ -564,6 +603,7 @@ fn uncovered_fields(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String
             continue;
         }
         let ty = tys.get(&field.name).map(String::as_str).unwrap_or("?");
+        let n = eff_n(&field.conv, n, flip_opt);
         if !param_asserts(model, field, ty, n, kind_lua.as_deref())
             .iter()
             .any(|a| a.contains(".name =="))
@@ -578,7 +618,7 @@ fn uncovered_fields(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String
 /// nothing fails when the runtime drops or changes it. `table_leaves` is the
 /// model's own claim of what the handler checks, so every entry must appear
 /// in the emitted asserts; a silent leaf is a stale test, not a passing one.
-fn unasserted_leaves(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String> {
+fn unasserted_leaves(model: &Model, tys: &BTreeMap<String, String>, flip_opt: bool) -> Vec<String> {
     let kind_lua = kind_values(model)
         .as_ref()
         .and_then(|plan| plan.assert_kind.clone());
@@ -588,6 +628,7 @@ fn unasserted_leaves(model: &Model, tys: &BTreeMap<String, String>) -> Vec<Strin
             continue;
         };
         let ty = tys.get(&field.name).map(String::as_str).unwrap_or("?");
+        let n = eff_n(&field.conv, n, flip_opt);
         let asserts = param_asserts(model, field, ty, n, kind_lua.as_deref());
         let lua = sample(&field.conv, ty, &field.name, n).lua;
         for (suffix, value) in table_leaves(&field.conv, &field.name, &lua, field.key.as_deref(), n)
@@ -630,13 +671,14 @@ fn row_leaf(suffix: &str) -> &str {
 /// one row, or two identical sequence rows. Each names `hook: field` plus the
 /// leaf (or row) to fix. One leaf per row is not coverage: a second assert of
 /// the same value still passes when the handler never runs that leaf.
-fn dup_values(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String> {
+fn dup_values(model: &Model, tys: &BTreeMap<String, String>, flip_opt: bool) -> Vec<String> {
     let mut out = Vec::new();
     for (n, param) in model.dispatch_params.iter().enumerate() {
         let Some(field) = model.fields.iter().find(|f| f.name == param.name) else {
             continue;
         };
         let ty = tys.get(&field.name).map(String::as_str).unwrap_or("?");
+        let n = eff_n(&field.conv, n, flip_opt);
         let lua = sample(&field.conv, ty, &field.name, n).lua;
         let leaves = table_leaves(&field.conv, &field.name, &lua, field.key.as_deref(), n);
         let mut rows: std::collections::BTreeMap<&str, Vec<(String, String)>> =
@@ -681,6 +723,7 @@ fn handler_body(
     tys: &BTreeMap<String, String>,
     kind_lua: Option<&str>,
     cancel: bool,
+    flip_opt: bool,
 ) -> String {
     // The handler-ran witness, read back from the mod's Lua state: a handler
     // whose asserts never fire leaves no error row, so without this a test
@@ -694,6 +737,7 @@ fn handler_body(
             continue;
         };
         let ty = tys.get(&field.name).map(String::as_str).unwrap_or("?");
+        let n = eff_n(&field.conv, n, flip_opt);
         let asserts = param_asserts(model, field, ty, n, kind_lua);
         checked |= !asserts.is_empty();
         lines.extend(asserts);
@@ -732,7 +776,7 @@ fn handler_body(
 
 /// The Rust asserts after the K1 dispatch: outs and write-backs reached the
 /// native side.
-fn rust_asserts(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String> {
+fn rust_asserts(model: &Model, tys: &BTreeMap<String, String>, flip_opt: bool) -> Vec<String> {
     let mut lines = Vec::new();
     if model.contract == "cancel"
         && let Some(flag) = &model.cancel_flag
@@ -744,6 +788,7 @@ fn rust_asserts(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String> {
             continue;
         };
         let ty = tys.get(&field.name).map(String::as_str).unwrap_or("?");
+        let n = eff_n(&field.conv, n, flip_opt);
         let s = sample(&field.conv, ty, &field.name, n);
         if let Some(write) = s.write_rust {
             lines.push(match &field.conv {
@@ -831,8 +876,9 @@ fn emit_call(
     model: &Model,
     tys: &BTreeMap<String, String>,
     kind_rust: Option<String>,
+    flip_opt: bool,
 ) {
-    let call = dispatch_call(model, tys, kind_rust);
+    let call = dispatch_call(model, tys, kind_rust, flip_opt);
     for binding in &call.bindings {
         out.push_str(binding);
         out.push('\n');
@@ -847,43 +893,64 @@ fn emit_firing(
     model: &Model,
     tys: &BTreeMap<String, String>,
     kind_rust: Option<String>,
+    flip_opt: bool,
 ) {
-    emit_call(out, model, tys, kind_rust);
-    for assert in rust_asserts(model, tys) {
+    emit_call(out, model, tys, kind_rust, flip_opt);
+    for assert in rust_asserts(model, tys, flip_opt) {
         out.push_str(&assert);
         out.push('\n');
     }
 }
 
 fn test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
-    let mut out = format!("#[test]\nfn generated_{}() {{\n", model.name);
+    test_firing(model, tys, false)
+}
+
+/// A hook's second test with every optional stack flipped to the other
+/// parity: the dispatch index alone leaves one state uncovered (odd is
+/// always nil), so the pair proves both the present table and the absent nil.
+fn opt_item_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
+    test_firing(model, tys, true)
+}
+
+fn test_firing(model: &Model, tys: &BTreeMap<String, String>, flip_opt: bool) -> String {
+    let (test, firing) = if flip_opt {
+        (
+            format!("generated_{}_opt_item", model.name),
+            format!("gen_{}_optitem", model.name),
+        )
+    } else {
+        (
+            format!("generated_{}", model.name),
+            format!("gen_{}", model.name),
+        )
+    };
+    let mut out = format!("#[test]\nfn {test}() {{\n");
     match kind_values(model) {
         None => {
-            let body = handler_body(model, tys, None, true);
+            let body = handler_body(model, tys, None, true, flip_opt);
             let lua = format!(
                 "horizon.on(\"{}\", function(event)\n{body}\nend)",
                 model.name
             );
             out.push_str(&format!(
-                "    let (m, id, _dir, lua) = loaded_tracked(\"gen_{}\", {lua:?});\n",
-                model.name
+                "    let (m, id, _dir, lua) = loaded_tracked(\"{firing}\", {lua:?});\n"
             ));
             out.push_str("    let firing_mods = boxed(m);\n");
-            emit_firing(&mut out, model, tys, None);
+            emit_firing(&mut out, model, tys, None, flip_opt);
             // The handler ran (not merely stayed silent): without this, a
             // renamed event or a dead handler passes `no_error` for free.
             out.push_str("    assert_eq!(witness(&lua), 1, \"the handler ran\");\n");
             out.push_str("    no_error(&id);\n");
         }
         Some(plan) => {
-            let body = handler_body(model, tys, plan.assert_kind.as_deref(), true);
+            let body = handler_body(model, tys, plan.assert_kind.as_deref(), true, flip_opt);
             let lua = format!(
                 "horizon.on(\"{}\", function(event)\n{body}\nend, \"{}\")",
                 model.name, plan.register
             );
             out.push_str(&format!(
-                "    let (m, id, _dir, lua) = loaded_tracked(\"gen_{}\", {lua:?});\n",
-                model.name
+                "    let (m, id, _dir, lua) = loaded_tracked(\"{firing}\", {lua:?});\n"
             ));
             out.push_str("    let firing_mods = boxed(m);\n");
             // K2 (and gone) must not fire the K1 handler: any assert would
@@ -894,14 +961,14 @@ fn test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
             {
                 out.push_str(&format!("    // {label} event: the handler stays quiet.\n"));
                 out.push_str("    {\n");
-                emit_call(&mut out, model, tys, Some(kind_arg));
+                emit_call(&mut out, model, tys, Some(kind_arg), flip_opt);
                 out.push_str(&format!(
                     "    assert_eq!(witness(&lua), 0, \"{label} event must not fire the handler\");\n"
                 ));
                 out.push_str("    }\n");
                 out.push_str("    no_error(&id);\n");
             }
-            emit_firing(&mut out, model, tys, Some(plan.k1));
+            emit_firing(&mut out, model, tys, Some(plan.k1), flip_opt);
             out.push_str("    assert_eq!(witness(&lua), 1, \"the handler ran\");\n");
             out.push_str("    no_error(&id);\n");
         }
@@ -919,7 +986,7 @@ fn no_cancel_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
     let mut out = format!("#[test]\nfn generated_{}_no_cancel() {{\n", model.name);
     match kind_values(model) {
         None => {
-            let body = handler_body(model, tys, None, false);
+            let body = handler_body(model, tys, None, false, false);
             let lua = format!(
                 "horizon.on(\"{}\", function(event)\n{body}\nend)",
                 model.name
@@ -929,7 +996,7 @@ fn no_cancel_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
                 model.name
             ));
             out.push_str("    let firing_mods = boxed(m);\n");
-            emit_call(&mut out, model, tys, None);
+            emit_call(&mut out, model, tys, None, false);
             out.push_str("    assert_eq!(witness(&lua), 1, \"the handler ran\");\n");
             out.push_str(&format!(
                 "    assert!(!{flag}, \"{flag} set with no cancel\");\n"
@@ -937,7 +1004,7 @@ fn no_cancel_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
             out.push_str("    no_error(&id);\n");
         }
         Some(plan) => {
-            let body = handler_body(model, tys, plan.assert_kind.as_deref(), false);
+            let body = handler_body(model, tys, plan.assert_kind.as_deref(), false, false);
             let lua = format!(
                 "horizon.on(\"{}\", function(event)\n{body}\nend, \"{}\")",
                 model.name, plan.register
@@ -947,7 +1014,7 @@ fn no_cancel_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
                 model.name
             ));
             out.push_str("    let firing_mods = boxed(m);\n");
-            emit_call(&mut out, model, tys, Some(plan.k1));
+            emit_call(&mut out, model, tys, Some(plan.k1), false);
             out.push_str("    assert_eq!(witness(&lua), 1, \"the handler ran\");\n");
             out.push_str(&format!(
                 "    assert!(!{flag}, \"{flag} set with no cancel\");\n"
@@ -963,7 +1030,7 @@ fn no_cancel_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
 fn quiet_block(model: &Model, tys: &BTreeMap<String, String>) -> String {
     let mut out = format!("    // {}: unregistered, nothing runs.\n", model.name);
     out.push_str("    {\n");
-    emit_call(&mut out, model, tys, None);
+    emit_call(&mut out, model, tys, None, false);
     if model.contract == "cancel"
         && let Some(flag) = &model.cancel_flag
     {
@@ -980,6 +1047,34 @@ fn quiet_block(model: &Model, tys: &BTreeMap<String, String>) -> String {
 fn exposure_reason(name: &str, kind: &str, reason: &str) -> String {
     let prefix = format!("{name}: {kind}: ");
     reason.strip_prefix(&prefix).unwrap_or(reason).to_owned()
+}
+
+/// The model's own reason a deferred hook is not exposable either: copied
+/// from `model_of`'s classes, never rewritten (the fixed strings match the
+/// rows the classifier emits for the same class elsewhere in this page).
+fn deferred_model_reason(name: &str, class: &Class) -> String {
+    match class {
+        Class::Cannot(why) => why
+            .split("; ")
+            .map(|w| exposure_reason(name, "unsupported", w))
+            .collect::<Vec<_>>()
+            .join("; "),
+        Class::Adapter(whys) => {
+            let mut reasons: Vec<String> = whys
+                .iter()
+                .map(|w| exposure_reason(name, "adapter", w))
+                .collect();
+            reasons.sort();
+            reasons.dedup();
+            reasons.join("; ")
+        }
+        Class::Tick => "a `ticks` parameter (level-tick host)".to_owned(),
+        Class::Handle(ty) => format!("a {ty} handle needs its own design"),
+        Class::Protocol => "raw packets need their own design".to_owned(),
+        Class::Generated(_) => {
+            unreachable!("a deferred hook assessed as generated is exposable, not rejected")
+        }
+    }
 }
 
 /// The exposure-doc group of a cannot detail: deferred names kept by a
@@ -1029,8 +1124,14 @@ fn class_line(name: &str, class: &Class) -> String {
 /// hook with its name, class and reason, grouped so a reader can tell a
 /// deferral (#44) from a real exposure reason. Generated hooks are omitted:
 /// they are the zero-hand-work event tables, one per native name.
-fn exposure_doc(classes: &[HookClass]) -> String {
-    let mut deferred = Vec::new();
+fn exposure_doc(classes: &[HookClass], deferred: &[(String, Result<Model, Class>)]) -> String {
+    let mut deferred_ok = Vec::new();
+    let mut deferred_no = Vec::new();
+    let mut deferred_unknown = Vec::new();
+    let outcomes: BTreeMap<&str, &Result<Model, Class>> = deferred
+        .iter()
+        .map(|(name, outcome)| (name.as_str(), outcome))
+        .collect();
     let mut render = Vec::new();
     let mut worldgen = Vec::new();
     let mut loot = Vec::new();
@@ -1063,7 +1164,15 @@ fn exposure_doc(classes: &[HookClass]) -> String {
                     .collect();
                 let row = (hc.name.clone(), reasons.join("; "));
                 match cannot_group(why) {
-                    "deferred" => deferred.push(row),
+                    // Deferred names split by what the model says: exposable
+                    // (the deferral is the only reason) or rejected anyway
+                    // (the row carries the model's own reason).
+                    "deferred" => match outcomes.get(hc.name.as_str()) {
+                        Some(Ok(_)) => deferred_ok.push(row),
+                        Some(Err(class)) => deferred_no
+                            .push((hc.name.clone(), deferred_model_reason(&hc.name, class))),
+                        None => deferred_unknown.push(row),
+                    },
                     "loot" => loot.push(row),
                     "worldgen" => worldgen.push(row),
                     "render" => render.push(row),
@@ -1088,10 +1197,24 @@ fn exposure_doc(classes: &[HookClass]) -> String {
     ));
     exposure_section(
         &mut out,
-        "Deferred to #44 (name kept by a hand-written hook)",
-        "These names stay with the hand-written hooks for now; removing the old hook is #44. This is a deferral, not an exposure reason.",
-        &mut deferred,
+        "Deferred to #44 (name kept by a hand-written hook; would be exposable)",
+        "These names stay with the hand-written hooks for now; removing the old hook is #44. The model says an event table could carry each of them, so the deferral is the only reason they are missing from Lua.",
+        &mut deferred_ok,
     );
+    exposure_section(
+        &mut out,
+        "Deferred to #44 AND not exposable",
+        "These names stay with the hand-written hooks for now (removing the old hook is #44), and the model says no event-table mapping exists for them either. Each row carries the model's own reason, copied from the classifier, not rewritten.",
+        &mut deferred_no,
+    );
+    if !deferred_unknown.is_empty() {
+        exposure_section(
+            &mut out,
+            "Deferred to #44 (not assessed)",
+            "These names stay with the hand-written hooks for now; the model could not assess them, so their exposability is unknown.",
+            &mut deferred_unknown,
+        );
+    }
     exposure_section(
         &mut out,
         "Borrows render state (render thread)",
@@ -1200,7 +1323,14 @@ pub fn run(check: bool) -> Result<(), String> {
     let mut quiet = Vec::new();
     // Every visible field is asserted, or the generator fails naming the
     // hook and field. Spike hooks are hand-covered, except their generated
-    // non-cancel test, which needs the same asserts.
+    // non-cancel test, which needs the same asserts; the generator still
+    // scans each spike's own test body for the player-`name` assert below.
+    // Optional-stack hooks check twice: the dispatch parity and the flipped
+    // one, so both the present table and the absent nil are asserted.
+    let spike_src = fs::read_to_string(
+        root.join("crates/event-horizon-lua/src/generated_hooks/spike_tests.rs"),
+    )
+    .map_err(|e| e.to_string())?;
     let mut uncovered = Vec::new();
     let mut unasserted = Vec::new();
     let mut dups = Vec::new();
@@ -1222,27 +1352,55 @@ pub fn run(check: bool) -> Result<(), String> {
         if !spike {
             tests.push(test_fn(model, &tys));
         }
+        // The second firing covers the optional-stack state the dispatch
+        // index misses (odd is always nil): the name cannot collide with a
+        // spike's hand-written test, so no hook is skipped.
+        if has_opt_item(model) {
+            tests.push(opt_item_test_fn(model, &tys));
+        }
+        // A hand-written spike test with a player table must assert the
+        // `name` the table stands in for: the model checks below never see
+        // the spike's own body.
+        if spike {
+            for field in &model.fields {
+                if !matches!(field.conv, Conv::Player | Conv::PlayerOpt) {
+                    continue;
+                }
+                if !spike_test_body(&spike_src, &model.name)
+                    .is_some_and(|body| body.contains(".name =="))
+                {
+                    uncovered.push(format!("{}: {}.name", model.name, field.name));
+                }
+            }
+        }
+        // One firing's checks, at the dispatch parity and (for
+        // optional-stack hooks) the flipped one.
+        let mut check_firing = |flip_opt: bool| {
+            for field in uncovered_fields(model, &tys, flip_opt) {
+                uncovered.push(format!("{}: {field}", model.name));
+            }
+            for leaf in unasserted_leaves(model, &tys, flip_opt) {
+                unasserted.push(format!("{}: {leaf}", model.name));
+            }
+            dups.extend(dup_values(model, &tys, flip_opt));
+        };
         if model.contract == "cancel" {
             if model.cancel_flag.is_none() {
                 uncovered.push(format!("{}: no cancel flag", model.name));
             } else {
-                for field in uncovered_fields(model, &tys) {
-                    uncovered.push(format!("{}: {field}", model.name));
+                check_firing(false);
+                if has_opt_item(model) {
+                    check_firing(true);
                 }
-                for leaf in unasserted_leaves(model, &tys) {
-                    unasserted.push(format!("{}: {leaf}", model.name));
-                }
-                dups.extend(dup_values(model, &tys));
             }
             tests.push(no_cancel_test_fn(model, &tys));
-        } else if !spike {
-            for field in uncovered_fields(model, &tys) {
-                uncovered.push(format!("{}: {field}", model.name));
+        } else {
+            if !spike {
+                check_firing(false);
             }
-            for leaf in unasserted_leaves(model, &tys) {
-                unasserted.push(format!("{}: {leaf}", model.name));
+            if has_opt_item(model) {
+                check_firing(true);
             }
-            dups.extend(dup_values(model, &tys));
         }
         quiet.push(quiet_block(model, &tys));
     }
@@ -1366,7 +1524,8 @@ pub fn run(check: bool) -> Result<(), String> {
 
     let path = root.join("crates/event-horizon-lua/src/generated_hooks/mod.rs");
     let doc_path = root.join("docs/api/hook-exposure.md");
-    let doc = exposure_doc(&classes);
+    let deferred = deferred_outcomes(&root)?;
+    let doc = exposure_doc(&classes, &deferred);
     if check {
         let current = fs::read_to_string(&path).map_err(|e| e.to_string())?;
         // Write mode formats after writing, so the check formats too:

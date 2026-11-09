@@ -6,26 +6,21 @@ Every native hook lands in exactly one class: `generated` (a zero-hand-work even
 
 388 hooks are generated and omitted below. The rest:
 
-## Deferred to #44 (name kept by a hand-written hook) (56)
+## Deferred to #44 (name kept by a hand-written hook; would be exposable) (43)
 
-These names stay with the hand-written hooks for now; removing the old hook is #44. This is a deferral, not an exposure reason.
+These names stay with the hand-written hooks for now; removing the old hook is #44. The model says an event table could carry each of them, so the deferral is the only reason they are missing from Lua.
 
 | Hook | Reason |
 | --- | --- |
 | `attack_entity` | the hand-written hook keeps this name (removing it is #44) |
 | `block_entity` | the hand-written hook keeps this name (removing it is #44) |
-| `block_entity_tick` | the hand-written hook keeps this name (removing it is #44) |
-| `block_entity_ticks` | the hand-written hook keeps this name (removing it is #44) |
 | `command` | the hand-written hook keeps this name (removing it is #44) |
-| `data_pack_files` | the hand-written hook keeps this name (removing it is #44) |
 | `destroy_block` | the hand-written hook keeps this name (removing it is #44) |
 | `entity_join_level` | the hand-written hook keeps this name (removing it is #44) |
 | `entity_tick_listened` | the hand-written hook keeps this name (removing it is #44) |
 | `entity_tick_post` | the hand-written hook keeps this name (removing it is #44) |
 | `explosion_detonate` | the hand-written hook keeps this name (removing it is #44) |
-| `gui_layer_post` | the hand-written hook keeps this name (removing it is #44) |
 | `hears_projectile_impacts` | the hand-written hook keeps this name (removing it is #44) |
-| `hud` | the hand-written hook keeps this name (removing it is #44) |
 | `hurt_enemy` | the hand-written hook keeps this name (removing it is #44) |
 | `interact_entity` | the hand-written hook keeps this name (removing it is #44) |
 | `inventory_tick` | the hand-written hook keeps this name (removing it is #44) |
@@ -40,12 +35,9 @@ These names stay with the hand-written hooks for now; removing the old hook is #
 | `living_heal` | the hand-written hook keeps this name (removing it is #44) |
 | `living_incoming_damage` | the hand-written hook keeps this name (removing it is #44) |
 | `living_knockback` | the hand-written hook keeps this name (removing it is #44) |
-| `loot_drops` | the hand-written hook keeps this name (removing it is #44) |
-| `mob_ai_register` | the hand-written hook keeps this name (removing it is #44) |
 | `mob_died` | the hand-written hook keeps this name (removing it is #44) |
 | `mob_killed` | the hand-written hook keeps this name (removing it is #44) |
 | `mob_spawned` | the hand-written hook keeps this name (removing it is #44) |
-| `perform_command` | the hand-written hook keeps this name (removing it is #44) |
 | `place_block` | the hand-written hook keeps this name (removing it is #44) |
 | `player_bed_enter` | the hand-written hook keeps this name (removing it is #44) |
 | `player_changed_dimension` | the hand-written hook keeps this name (removing it is #44) |
@@ -60,14 +52,29 @@ These names stay with the hand-written hooks for now; removing the old hook is #
 | `player_tick` | the hand-written hook keeps this name (removing it is #44) |
 | `projectile_impact` | the hand-written hook keeps this name (removing it is #44) |
 | `projectile_launch` | the hand-written hook keeps this name (removing it is #44) |
-| `random_tick` | the hand-written hook keeps this name (removing it is #44) |
-| `register_commands` | the hand-written hook keeps this name (removing it is #44) |
 | `right_click_block` | the hand-written hook keeps this name (removing it is #44) |
-| `server_tick` | the hand-written hook keeps this name (removing it is #44) |
-| `tick_block` | the hand-written hook keeps this name (removing it is #44) |
 | `use_item` | the hand-written hook keeps this name (removing it is #44) |
 | `use_item_on` | the hand-written hook keeps this name (removing it is #44) |
-| `world_lifecycle` | the hand-written hook keeps this name (removing it is #44) |
+
+## Deferred to #44 AND not exposable (13)
+
+These names stay with the hand-written hooks for now (removing the old hook is #44), and the model says no event-table mapping exists for them either. Each row carries the model's own reason, copied from the classifier, not rewritten.
+
+| Hook | Reason |
+| --- | --- |
+| `block_entity_tick` | a ModBlockEntity handle needs its own design |
+| `block_entity_ticks` | a `ticks` parameter (level-tick host) |
+| `data_pack_files` | a tuple needs its table form |
+| `gui_layer_post` | HudBatch borrows render state (render thread) |
+| `hud` | HudBatch borrows render state (render thread); Corners borrows render state (render thread) |
+| `loot_drops` | native_loot_drops needs its table form |
+| `mob_ai_register` | a Mob handle needs its own design |
+| `perform_command` | a native_server_player needs its table form |
+| `random_tick` | a `ticks` parameter (level-tick host) |
+| `register_commands` | a native_command list needs its table form |
+| `server_tick` | a native_lifecycle_context needs its table form; a phase needs its name |
+| `tick_block` | a `ticks` parameter (level-tick host) |
+| `world_lifecycle` | a native_lifecycle_context needs its table form; a phase needs its name |
 
 ## Borrows render state (render thread) (38)
 

@@ -4001,6 +4001,34 @@ pub fn classify(root: &Path) -> Result<Vec<HookClass>, String> {
     Ok(out)
 }
 
+/// What `model_of` says about one hook the hand-written set keeps: whether
+/// an event table could carry it (so the deferral is its only reason), or
+/// the class that would reject it anyway. `classify` short-circuits these
+/// hooks before `model_of`, so the exposure doc asks here instead of
+/// guessing the reason.
+pub fn deferred_outcomes(root: &Path) -> Result<Vec<(String, Result<Model, Class>)>, String> {
+    let catalog: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(root.join("native-hooks.json")).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    let hooks = catalog_hooks(root, &catalog)?;
+    let game = game_methods(root)?;
+    let handwritten = handwritten_names(root)?;
+    let mut frees: BTreeMap<String, Vec<syn::ItemFn>> = BTreeMap::new();
+    let mut out = Vec::new();
+    for hook in &hooks {
+        let name = hook["name"].as_str().ok_or("hook name missing")?.to_owned();
+        if !handwritten.contains(&name) {
+            continue;
+        }
+        match model_of(root, hook, &game, &mut frees) {
+            Ok(model) => out.push((name, Ok(model))),
+            Err(class) => out.push((name, Err(class))),
+        }
+    }
+    Ok(out)
+}
+
 /// `PascalCase` of a `snake_case` hook name, plus `Event`.
 pub fn event_name(hook: &str) -> String {
     let mut out = String::new();

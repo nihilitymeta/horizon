@@ -2414,6 +2414,28 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_on_equip_opt_item() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_on_equip_optitem",
+            "horizon.on(\"on_equip\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.slot == \"test:slot\", \"slot\")\n    assert(event.new.id == \"test:new\", \"new\")\n    assert(event.new.count == 3, \"new\")\n    assert(event.new.damage == 2, \"new\")\n    assert(event.new.extra == nil, \"new\")\n    assert(event.new.plain == true, \"new\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_on_equip(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:slot",
+            Some(&ItemStack {
+                item: "test:new".into(),
+                count: 3,
+                damage: 2,
+                extra: None,
+            }),
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_block_signal() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_signal",
@@ -3067,6 +3089,34 @@ mod generated_tests {
             &firing_mods,
             Hand::Main,
             None,
+            3.5,
+            4.5,
+            5.5,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_render_hand_opt_item() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_render_hand_optitem",
+            "horizon.on(\"render_hand\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 3, \"stack\")\n    assert(event.stack.damage == 2, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(event.swing == 4.5, \"swing\")\n    assert(event.equip == 5.5, \"equip\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_render_hand(
+            &FakeHost::empty(),
+            &firing_mods,
+            Hand::Main,
+            Some(&ItemStack {
+                item: "test:stack".into(),
+                count: 3,
+                damage: 2,
+                extra: None,
+            }),
             3.5,
             4.5,
             5.5,
@@ -10157,6 +10207,66 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_incoming_damage_v2_opt_item() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_living_incoming_damage_v2_optitem",
+            "horizon.on(\"living_incoming_damage_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.source_position.x == 5.0, \"source_position\")\n    assert(event.source_position.y == 6.0, \"source_position\")\n    assert(event.source_position.z == 7.0, \"source_position\")\n    assert(event.victim_position.x == 6.0, \"victim_position\")\n    assert(event.victim_position.y == 7.0, \"victim_position\")\n    assert(event.victim_position.z == 8.0, \"victim_position\")\n    assert(event.victim_view.x == 7.0, \"victim_view\")\n    assert(event.victim_view.y == 8.0, \"victim_view\")\n    assert(event.victim_view.z == 9.0, \"victim_view\")\n    assert(event.weapon.id == \"test:weapon\", \"weapon\")\n    assert(event.weapon.count == 9, \"weapon\")\n    assert(event.weapon.damage == 8, \"weapon\")\n    assert(event.weapon.extra == nil, \"weapon\")\n    assert(event.weapon.plain == true, \"weapon\")\n    assert(event.amount == 9.5, \"amount\")\n    event.amount = 23.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut amount = 9.5;
+            let mut canceled = false;
+            dispatch_living_incoming_damage_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                "test:damage_type",
+                10,
+                Some([5.0, 6.0, 7.0]),
+                [6.0, 7.0, 8.0],
+                [7.0, 8.0, 9.0],
+                Some(&ItemStack {
+                    item: "test:weapon".into(),
+                    count: 9,
+                    damage: 8,
+                    extra: None,
+                }),
+                &mut amount,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut amount = 9.5;
+        let mut canceled = false;
+        dispatch_living_incoming_damage_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            "test:damage_type",
+            10,
+            Some([5.0, 6.0, 7.0]),
+            [6.0, 7.0, 8.0],
+            [7.0, 8.0, 9.0],
+            Some(&ItemStack {
+                item: "test:weapon".into(),
+                count: 9,
+                damage: 8,
+                extra: None,
+            }),
+            &mut amount,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(amount, 23.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_living_incoming_damage_v2_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_incoming_damage_v2_nocancel",
@@ -10233,6 +10343,68 @@ mod generated_tests {
                 damage: 4,
                 extra: None,
             }),
+            &mut strength,
+            &mut x,
+            &mut z,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(strength, 20.5);
+        assert_eq!(x, 21.5);
+        assert_eq!(z, 22.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_knockback_v2_opt_item() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_living_knockback_v2_optitem",
+            "horizon.on(\"living_knockback_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.attacker == 9, \"attacker\")\n    assert(event.attacker_main.id == \"test:attacker_main\", \"attacker_main\")\n    assert(event.attacker_main.count == 5, \"attacker_main\")\n    assert(event.attacker_main.damage == 4, \"attacker_main\")\n    assert(event.attacker_main.extra == nil, \"attacker_main\")\n    assert(event.attacker_main.plain == true, \"attacker_main\")\n    assert(event.attacker_off == nil, \"attacker_off\")\n    assert(event.strength == 6.5, \"strength\")\n    event.strength = 20.5\n    assert(event.x == 7.5, \"x\")\n    event.x = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut strength = 6.5;
+            let mut x = 7.5;
+            let mut z = 8.5;
+            let mut canceled = false;
+            dispatch_living_knockback_v2(
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                9,
+                Some(&ItemStack {
+                    item: "test:attacker_main".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                }),
+                None,
+                &mut strength,
+                &mut x,
+                &mut z,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut strength = 6.5;
+        let mut x = 7.5;
+        let mut z = 8.5;
+        let mut canceled = false;
+        dispatch_living_knockback_v2(
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            9,
+            Some(&ItemStack {
+                item: "test:attacker_main".into(),
+                count: 5,
+                damage: 4,
+                extra: None,
+            }),
+            None,
             &mut strength,
             &mut x,
             &mut z,
@@ -10716,6 +10888,52 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_render_hand_pose_opt_item() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_render_hand_pose_optitem",
+            "horizon.on(\"render_hand_pose\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 3, \"stack\")\n    assert(event.stack.damage == 2, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(event.swing == 4.5, \"swing\")\n    assert(event.equip == 5.5, \"equip\")\n    assert(event.x == 6.5, \"x\")\n    event.x = 20.5\n    assert(event.y == 7.5, \"y\")\n    event.y = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\n    assert(event.pitch == 9.5, \"pitch\")\n    event.pitch = 23.5\n    assert(event.yaw == 10.5, \"yaw\")\n    event.yaw = 24.5\n    assert(event.roll == 11.5, \"roll\")\n    event.roll = 25.5\n    assert(event.scale == 12.5, \"scale\")\n    event.scale = 26.5\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut x = 6.5;
+        let mut y = 7.5;
+        let mut z = 8.5;
+        let mut pitch = 9.5;
+        let mut yaw = 10.5;
+        let mut roll = 11.5;
+        let mut scale = 12.5;
+        dispatch_render_hand_pose(
+            &FakeHost::empty(),
+            &firing_mods,
+            Hand::Main,
+            Some(&ItemStack {
+                item: "test:stack".into(),
+                count: 3,
+                damage: 2,
+                extra: None,
+            }),
+            3.5,
+            4.5,
+            5.5,
+            &mut x,
+            &mut y,
+            &mut z,
+            &mut pitch,
+            &mut yaw,
+            &mut roll,
+            &mut scale,
+        );
+        assert_eq!(x, 20.5);
+        assert_eq!(y, 21.5);
+        assert_eq!(z, 22.5);
+        assert_eq!(pitch, 23.5);
+        assert_eq!(yaw, 24.5);
+        assert_eq!(roll, 25.5);
+        assert_eq!(scale, 26.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_render_item_in_frame() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_render_item_in_frame",
@@ -10864,6 +11082,31 @@ mod generated_tests {
                 damage: 0,
                 extra: None,
             }),
+            &mut background,
+            &mut border_top,
+            &mut border_bottom,
+        );
+        assert_eq!(background, 51);
+        assert_eq!(border_top, 52);
+        assert_eq!(border_bottom, 53);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_tooltip_color_opt_item() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tooltip_color_optitem",
+            "horizon.on(\"tooltip_color\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack == nil, \"stack\")\n    assert(event.background == 8, \"background\")\n    event.background = 51\n    assert(event.border_top == 9, \"border_top\")\n    event.border_top = 52\n    assert(event.border_bottom == 10, \"border_bottom\")\n    event.border_bottom = 53\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut background = 8;
+        let mut border_top = 9;
+        let mut border_bottom = 10;
+        dispatch_tooltip_color(
+            &FakeHost::empty(),
+            &firing_mods,
+            None,
             &mut background,
             &mut border_top,
             &mut border_bottom,
@@ -11202,6 +11445,64 @@ mod generated_tests {
             None,
             Some("test:item_name"),
             None,
+            13,
+            14,
+            &mut output,
+            &mut xp_cost,
+            &mut material_cost,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(output, None);
+        assert_eq!(xp_cost, 59);
+        assert_eq!(material_cost, 60);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_anvil_update_opt_item() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_anvil_update_optitem",
+            "horizon.on(\"anvil_update\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.left.id == \"test:left\", \"left\")\n    assert(event.left.count == 3, \"left\")\n    assert(event.left.damage == 2, \"left\")\n    assert(event.left.extra == nil, \"left\")\n    assert(event.left.plain == true, \"left\")\n    assert(event.right.id == \"test:right\", \"right\")\n    assert(event.right.count == 5, \"right\")\n    assert(event.right.damage == 4, \"right\")\n    assert(event.right.extra == nil, \"right\")\n    assert(event.right.plain == true, \"right\")\n    assert(event.item_name == \"test:item_name\", \"item_name\")\n    assert(event.vanilla_output.id == \"test:vanilla_output\", \"vanilla_output\")\n    assert(event.vanilla_output.count == 7, \"vanilla_output\")\n    assert(event.vanilla_output.damage == 6, \"vanilla_output\")\n    assert(event.vanilla_output.extra == nil, \"vanilla_output\")\n    assert(event.vanilla_output.plain == true, \"vanilla_output\")\n    assert(event.vanilla_xp_cost == 13, \"vanilla_xp_cost\")\n    assert(event.vanilla_material_cost == 14, \"vanilla_material_cost\")\n    assert(event.output.id == \"test:output\", \"output\")\n    assert(event.output.count == 9, \"output\")\n    assert(event.output.damage == 8, \"output\")\n    assert(event.output.extra[\"minecraft:repair_cost\"] == 28, \"output\")\n    assert(event.output.plain == false, \"output\")\n    event.output = nil\n    assert(event.xp_cost == 16, \"xp_cost\")\n    event.xp_cost = 59\n    assert(event.material_cost == 17, \"material_cost\")\n    event.material_cost = 60\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut output = Some(ItemStack {
+            item: "test:output".into(),
+            count: 9,
+            damage: 8,
+            extra: Some(Box::new(StackData {
+                repair_cost: 28,
+                ..Default::default()
+            })),
+        });
+        let mut xp_cost = 16;
+        let mut material_cost = 17;
+        let mut canceled = false;
+        dispatch_anvil_update(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &ItemStack {
+                item: "test:left".into(),
+                count: 3,
+                damage: 2,
+                extra: None,
+            },
+            Some(&ItemStack {
+                item: "test:right".into(),
+                count: 5,
+                damage: 4,
+                extra: None,
+            }),
+            Some("test:item_name"),
+            Some(&ItemStack {
+                item: "test:vanilla_output".into(),
+                count: 7,
+                damage: 6,
+                extra: None,
+            }),
             13,
             14,
             &mut output,
@@ -11591,6 +11892,33 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_creative_slot_v2_opt_item() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_creative_slot_v2_optitem",
+            "horizon.on(\"creative_slot_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 5, \"stack\")\n    assert(event.stack.damage == 4, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_creative_slot_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            Some(&ItemStack {
+                item: "test:stack".into(),
+                count: 5,
+                damage: 4,
+                extra: None,
+            }),
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_creative_slot_v2_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_creative_slot_v2_nocancel",
@@ -11845,6 +12173,43 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_interact_specific_opt_item() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_entity_interact_specific_optitem",
+            "horizon.on(\"entity_interact_specific\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack == nil, \"stack\")\n    assert(event.location.x == 4.0, \"location\")\n    assert(event.location.y == 5.0, \"location\")\n    assert(event.location.z == 6.0, \"location\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut claimed = false;
+            dispatch_entity_interact_specific(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                None,
+                [4.0, 5.0, 6.0],
+                &mut claimed,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut claimed = false;
+        dispatch_entity_interact_specific(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            None,
+            [4.0, 5.0, 6.0],
+            &mut claimed,
+        );
+        assert!(claimed, "claimed not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
     fn generated_entity_interact_specific_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_interact_specific_nocancel",
@@ -12001,6 +12366,53 @@ mod generated_tests {
             "minecraft:zombie",
             Hand::Main,
             None,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_interact_entity_v2_opt_item() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_interact_entity_v2_optitem",
+            "horizon.on(\"interact_entity_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 5, \"stack\")\n    assert(event.stack.damage == 4, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut cancel = false;
+            dispatch_interact_entity_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                Hand::Main,
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                }),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut cancel = false;
+        dispatch_interact_entity_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            Hand::Main,
+            Some(&ItemStack {
+                item: "test:stack".into(),
+                count: 5,
+                damage: 4,
+                extra: None,
+            }),
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
@@ -12343,6 +12755,41 @@ mod generated_tests {
                 damage: 2,
                 extra: None,
             }),
+            &mut swing,
+        );
+        assert_eq!(swing, Some(true));
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_item_interact_mob_opt_item() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_item_interact_mob_optitem",
+            "horizon.on(\"item_interact_mob\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack == nil, \"stack\")\n    assert(event.swing == nil, \"replace seed\")\n    event.swing = true\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut swing: Option<bool> = None;
+            dispatch_item_interact_mob(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                None,
+                &mut swing,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut swing: Option<bool> = None;
+        dispatch_item_interact_mob(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            None,
             &mut swing,
         );
         assert_eq!(swing, Some(true));
