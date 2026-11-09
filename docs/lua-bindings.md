@@ -393,7 +393,9 @@ in the defaults and saves them, so the file is there to edit after the first run
 
 `horizon.block_entity(block, { ticks = true, data = {...} })` gives the mod's block a block entity. It is made with
 *data*, a table of numbers, strings, booleans, nested tables and sequences, when the block is placed, and saved with
-the chunk. `ticks` makes it tick. Call it at load, in `init.lua`.
+the chunk. `ticks` makes it tick. Call it at load, in `init.lua`. The provider (`block_entity`) and
+`block_entity_ticks` are served from these declarations, not by script handlers: there is nothing to register
+with `horizon.on` for them.
 
 Some actions work only in the block hooks:
 
@@ -445,7 +447,7 @@ A handler receives the hook's arguments. Some hooks let it change the event, wit
 | `random_tick(event)` | a block that ticks randomly does: a mod's block as its template does, or one with `random_ticks`. Register it by block id: a handler for every block hears every random tick of the level, hundreds a tick. The event holds `dimension`, `state` (the id, as the other level hooks name it), `pos` (`{x, y, z}`), `state_props` (the state's properties by name) and `data` (the block entity's saved table, or nil without one, written back after the call); there is no state-string field, only the id and its properties. `set_block_property`, `schedule_tick` and `summon` run on the level; `handled()` skips the block's own tick |
 | `tick_block(event)` | a scheduled tick of the block is due. Register it by block id. The event and the actions are as in `random_tick` |
 | `right_click_block(x, y, z, block, face, player, held, data)` | a player right-clicks a block, before the block and the item act. *face* and `player.position` are `{x, y, z}`; *held* has `item`, `count` and `plain`. `cancel()` skips the block and the item's use on it for that hand, with no swing. See the note below |
-| `block_entity_tick(dimension, block, x, y, z, data)` | a server tick of a block entity declared with `ticks`. *data* is its saved table. The host actions and `set_block_property` work |
+| `block_entity_tick(event)` | a server tick of a block entity declared with `ticks`. Register it by block id. The event holds `dimension` (the host's level), `pos` (`{x, y, z}`) and `entity` (`{id, data}`): `id` is the entity's block id, and `data` is its saved table, written back after the call. The host actions and `set_block_property` work |
 | `block_broken(x, y, z, block, player)` | a player breaks a block, once the game has allowed it. `cancel()` keeps the block, so nothing breaks or drops. By block id |
 | `block_placed(x, y, z, block, player, item)` | a player has placed a block from *item*, the stack as it was. It only listens; to stop a placement, take the click in `item_use_on`. By block id |
 

@@ -54,18 +54,9 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "panel_event",
         "cannot: panel_event: unsupported: NativePanelEvent borrows render state (render thread)",
     ),
-    (
-        "block_entity",
-        "cannot: block_entity: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
-    (
-        "block_entity_ticks",
-        "cannot: block_entity_ticks: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
-    (
-        "block_entity_tick",
-        "cannot: block_entity_tick: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("block_entity", "generated"),
+    ("block_entity_ticks", "generated"),
+    ("block_entity_tick", "generated"),
     (
         "block_entity_update_tag",
         "handle: block_entity_update_tag: a ModBlockEntity handle needs its own design",
@@ -911,6 +902,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "mods",
     "settings",
     "settings_click",
+    "block_entity_tick",
     "block_entity_container",
     "screen",
     "screen_click",
@@ -1297,6 +1289,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
 pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
     "random_tick",
     "tick_block",
+    "block_entity_tick",
     "perform_command",
     "entity_leave_level",
     "apply_effect_tick",
@@ -1402,6 +1395,9 @@ macro_rules! impl_generated_hooks {
     gen_collect!(mods, game_mut, horizon_client::mod_api::ModsEvent<'_>, (none), [mods: s_vec(horizon_client::mod_api::NativeMod) => w_vec(horizon_client::mod_api::NativeMod)]);
     gen_collect!(settings, game_mut, horizon_client::mod_api::SettingsEvent<'_>, (none), [mod_id: cloned, buttons: str_seq => mut_strvec]);
     gen_listen!(settings_click, game_mut, horizon_client::mod_api::SettingsClickEvent<'_>, (none), [mod_id: cloned, button: copy]);
+    gen_block_entity!(block_entity, game_mut, horizon_client::mod_api::BlockEntityEvent<'_>, (none), [block: cloned], entity : struct_out(crate::generated_runtime::NamedTag), Option<crate::generated_runtime::NamedTag>);
+    gen_block_entity_ticks!(block_entity_ticks, game_ref, horizon_client::mod_api::BlockEntityTicksEvent<'_>, (none), [block: cloned, ticks: copy => mut_scalar]);
+    gen_block_entity_tick!(block_entity_tick, game_mut, horizon_client::mod_api::BlockEntityTickEvent<'_>, (block_entity entity), [pos: pos, entity: block_entity, dimension: host_dimension]);
     gen_replace!(block_entity_container, game_ref, horizon_client::mod_api::BlockEntityContainerEvent<'_>, (none), [block: cloned], container : struct_out(horizon_client::mod_api::ModContainer), Option<horizon_client::mod_api::ModContainer>);
     gen_replace!(screen, game_ref, horizon_client::mod_api::ScreenEvent<'_>, (none), [block: cloned], screen : struct_out(horizon_client::mod_api::NativeScreen), Option<horizon_client::mod_api::NativeScreen>);
     gen_replace!(screen_click, game_ref, horizon_client::mod_api::ScreenClickEvent<'_>, (none), [block: cloned, data: int_seq, at: pair, right: copy], button : value, Option<i32>);
@@ -5533,6 +5529,805 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "settings_click read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_block_entity_serves_declarations() {
+        let (m, id, _dir, _lua) = loaded_tracked(
+            "gen_block_entity_decl",
+            "horizon.block_entity(\"ruby:hive\", { ticks = true, data = { charge = 0, name = \"x\" } })\nhorizon.block_entity(\"ruby:lamp\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut entity: Option<(String, horizon_client::mod_api::Compound)> = None;
+            dispatch_block_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "ruby:hive",
+                &mut entity,
+            );
+            let (block, data) = entity.expect("a declared block gets an entity");
+            assert_eq!(block, "ruby:hive", "the provider names the declared block");
+            assert_eq!(
+                data.get(&horizon_world::nbt::JavaString::from("charge")),
+                Some(&horizon_world::nbt::Tag::Int(0)),
+                "the starting data keeps its NBT types"
+            );
+            assert_eq!(
+                data.get(&horizon_world::nbt::JavaString::from("name")),
+                Some(&horizon_world::nbt::Tag::String("x".into())),
+                "the starting data arrives whole"
+            );
+        }
+        {
+            let mut entity: Option<(String, horizon_client::mod_api::Compound)> = None;
+            dispatch_block_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "ruby:lamp",
+                &mut entity,
+            );
+            let (block, data) = entity.expect("a block declared without data gets an empty entity");
+            assert_eq!(block, "ruby:lamp", "the provider names the declared block");
+            assert!(data.is_empty(), "no starting data means an empty compound");
+        }
+        {
+            let mut entity: Option<(String, horizon_client::mod_api::Compound)> = None;
+            dispatch_block_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "ruby:other",
+                &mut entity,
+            );
+            assert!(entity.is_none(), "an undeclared block gets nothing");
+        }
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_first_declaration_wins() {
+        let (a, a_id, _a_dir, _a_lua) = loaded_tracked(
+            "gen_block_entity_duo_a",
+            "horizon.block_entity(\"ruby:hive\", { data = { v = \"a\" } })",
+        );
+        let (b, b_id, _b_dir, _b_lua) = loaded_tracked(
+            "gen_block_entity_duo_b",
+            "horizon.block_entity(\"ruby:hive\", { data = { v = \"b\" } })",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut entity: Option<(String, horizon_client::mod_api::Compound)> = None;
+            dispatch_block_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "ruby:hive",
+                &mut entity,
+            );
+            let (_, data) = entity.expect("a declared block gets an entity");
+            assert_eq!(
+                data.get(&horizon_world::nbt::JavaString::from("v")),
+                Some(&horizon_world::nbt::Tag::String("a".into())),
+                "the first declaration wins"
+            );
+        }
+        no_error(&a_id);
+        no_error(&b_id);
+    }
+
+    #[test]
+    fn generated_block_entity_unregistered_costs_nothing() {
+        let (m, id, dir, _lua) = loaded_tracked(
+            "gen_block_entity_cost",
+            "horizon.block_entity(\"ruby:hive\", { ticks = true, data = { charge = 0 } })",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            let mut entity: Option<(String, horizon_client::mod_api::Compound)> = None;
+            dispatch_block_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "ruby:hive",
+                &mut entity,
+            );
+            assert!(entity.is_some(), "the declaration served");
+            assert_eq!(event_tables(), 0, "no event table was built");
+            assert_eq!(entity_reads(), 0, "the provider read no entity");
+            assert_eq!(host_reads(), 0, "the provider read the host");
+            assert_eq!(level_reads(), 0, "the provider read the level");
+        }
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            let mut entity: Option<(String, horizon_client::mod_api::Compound)> = None;
+            dispatch_block_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "ruby:other",
+                &mut entity,
+            );
+            assert!(entity.is_none(), "an undeclared block gets nothing");
+            assert_eq!(event_tables(), 0, "no event table was built");
+            assert_eq!(entity_reads(), 0, "the provider read no entity");
+            assert_eq!(host_reads(), 0, "the provider read the host");
+            assert_eq!(level_reads(), 0, "the provider read the level");
+        }
+        no_error(&id);
+        drop_dir(dir);
+    }
+
+    #[test]
+    fn generated_block_entity_ticks_only_sets_true() {
+        let (m, id, _dir, _lua) = loaded_tracked(
+            "gen_block_entity_ticks_decl",
+            "horizon.block_entity(\"ruby:hive\", { ticks = true })\nhorizon.block_entity(\"ruby:lamp\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut ticks = false;
+            dispatch_block_entity_ticks(&FakeHost::empty(), &firing_mods, "ruby:hive", &mut ticks);
+            assert!(ticks, "a block declared with ticks turns the flag true");
+        }
+        {
+            let mut ticks = false;
+            dispatch_block_entity_ticks(&FakeHost::empty(), &firing_mods, "ruby:lamp", &mut ticks);
+            assert!(
+                !ticks,
+                "a block declared without ticks leaves a false flag alone"
+            );
+        }
+        {
+            let mut ticks = true;
+            dispatch_block_entity_ticks(&FakeHost::empty(), &firing_mods, "ruby:lamp", &mut ticks);
+            assert!(
+                ticks,
+                "a block declared without ticks never clears a true flag"
+            );
+        }
+        {
+            let mut ticks = false;
+            dispatch_block_entity_ticks(&FakeHost::empty(), &firing_mods, "ruby:other", &mut ticks);
+            assert!(!ticks, "an undeclared block leaves a false flag alone");
+        }
+        {
+            let mut ticks = true;
+            dispatch_block_entity_ticks(&FakeHost::empty(), &firing_mods, "ruby:other", &mut ticks);
+            assert!(ticks, "an undeclared block leaves a true flag alone");
+        }
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_ticks_second_mod_cannot_clear_the_first() {
+        let (a, a_id, _a_dir, _a_lua) = loaded_tracked(
+            "gen_block_entity_ticks_duo_a",
+            "horizon.block_entity(\"ruby:hive\", { ticks = true })",
+        );
+        let (b, b_id, _b_dir, _b_lua) =
+            loaded_tracked("gen_block_entity_ticks_duo_b", "-- nothing declared");
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut ticks = false;
+            dispatch_block_entity_ticks(&FakeHost::empty(), &firing_mods, "ruby:hive", &mut ticks);
+            assert!(ticks, "the declaring mod sets the flag past the plain mod");
+        }
+        no_error(&a_id);
+        no_error(&b_id);
+        let (a, a_id, _a_dir, _a_lua) = loaded_tracked(
+            "gen_block_entity_ticks_duo_c",
+            "horizon.block_entity(\"ruby:hive\", { ticks = true })",
+        );
+        let (b, b_id, _b_dir, _b_lua) =
+            loaded_tracked("gen_block_entity_ticks_duo_d", "-- nothing declared");
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut ticks = false;
+            dispatch_block_entity_ticks(&FakeHost::empty(), &firing_mods, "ruby:hive", &mut ticks);
+            assert!(
+                ticks,
+                "order never matters: the plain mod runs first and leaves the flag, then the declaring mod sets it"
+            );
+        }
+        no_error(&a_id);
+        no_error(&b_id);
+    }
+
+    #[test]
+    fn generated_block_entity_ticks_unregistered_costs_nothing() {
+        let (m, id, dir, _lua) = loaded_tracked(
+            "gen_block_entity_ticks_cost",
+            "horizon.block_entity(\"ruby:hive\", { ticks = true })",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            let mut ticks = false;
+            dispatch_block_entity_ticks(&FakeHost::empty(), &firing_mods, "ruby:hive", &mut ticks);
+            assert!(ticks, "the declaration served");
+            assert_eq!(event_tables(), 0, "no event table was built");
+            assert_eq!(entity_reads(), 0, "the ticks read no entity");
+            assert_eq!(host_reads(), 0, "the ticks read the host");
+            assert_eq!(level_reads(), 0, "the ticks read the level");
+        }
+        no_error(&id);
+        drop_dir(dir);
+    }
+
+    #[test]
+    fn generated_block_entity_tick() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_block_entity_tick",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.entity.id == \"minecraft:stone\", \"kind\")\n    assert(next(event.entity.data) == nil, \"data\")\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut test_block_entity("test:other"),
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        dispatch_block_entity_tick(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            [1, 2, 3],
+            &mut test_block_entity("minecraft:stone"),
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_tick_data_round_trip() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_block_entity_tick_data",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 1 and event.pos.y == 2 and event.pos.z == 3, \"pos\")\n    assert(event.entity.id == \"minecraft:stone\", \"id\")\n    assert(event.entity.data.charge == 0, \"data\")\n    event.entity.data.charge = event.entity.data.charge * 10 + 1\n    event.entity.data.extra = \"new\"\n    event.entity.data.name = nil\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        let mut entity = test_block_entity("minecraft:stone");
+        entity.nbt = [
+            (
+                horizon_world::nbt::JavaString::from("charge"),
+                horizon_world::nbt::Tag::Int(0),
+            ),
+            (
+                horizon_world::nbt::JavaString::from("name"),
+                horizon_world::nbt::Tag::String("x".into()),
+            ),
+            (
+                horizon_world::nbt::JavaString::from("kept"),
+                horizon_world::nbt::Tag::Long(5),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        let rev = entity.revision();
+        {
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut entity,
+            );
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            entity
+                .nbt
+                .get(&horizon_world::nbt::JavaString::from("charge")),
+            Some(&horizon_world::nbt::Tag::Int(1)),
+            "the int stays an int"
+        );
+        assert_eq!(
+            entity
+                .nbt
+                .get(&horizon_world::nbt::JavaString::from("extra")),
+            Some(&horizon_world::nbt::Tag::String("new".into())),
+            "the added key arrives"
+        );
+        assert_eq!(
+            entity
+                .nbt
+                .get(&horizon_world::nbt::JavaString::from("name")),
+            None,
+            "the removed key stays removed"
+        );
+        assert_eq!(
+            entity
+                .nbt
+                .get(&horizon_world::nbt::JavaString::from("kept")),
+            Some(&horizon_world::nbt::Tag::Long(5)),
+            "untouched keys survive with their NBT types"
+        );
+        assert_ne!(entity.revision(), rev, "a changed write bumps the revision");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_tick_unchanged_data_writes_nothing() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_block_entity_tick_clean",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 1 and event.pos.y == 2 and event.pos.z == 3, \"pos\")\n    assert(event.entity.id == \"minecraft:stone\", \"id\")\n    assert(event.entity.data.charge == 0, \"data\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        let mut entity = test_block_entity("minecraft:stone");
+        entity.nbt = [(
+            horizon_world::nbt::JavaString::from("charge"),
+            horizon_world::nbt::Tag::Int(0),
+        )]
+        .into_iter()
+        .collect();
+        let rev = entity.revision();
+        {
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut entity,
+            );
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            entity
+                .nbt
+                .get(&horizon_world::nbt::JavaString::from("charge")),
+            Some(&horizon_world::nbt::Tag::Int(0)),
+            "the data is untouched"
+        );
+        assert_eq!(
+            entity.revision(),
+            rev,
+            "an unchanged table leaves the revision alone"
+        );
+        assert_eq!(host_writes(), [], "no write action ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_tick_handler_error_drops_data_and_writes() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_block_entity_tick_errordrops",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity.data.charge = event.entity.data.charge + 1\n    horizon.set_block_property(\"stage\", \"growing\")\nend, \"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 10\n    error(\"boom\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        let mut entity = test_block_entity("minecraft:stone");
+        entity.nbt = [(
+            horizon_world::nbt::JavaString::from("charge"),
+            horizon_world::nbt::Tag::Int(0),
+        )]
+        .into_iter()
+        .collect();
+        let rev = entity.revision();
+        reset_host_writes();
+        {
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut entity,
+            );
+        }
+        assert_eq!(witness(&lua), 11, "both handlers ran");
+        assert_eq!(
+            entity
+                .nbt
+                .get(&horizon_world::nbt::JavaString::from("charge")),
+            Some(&horizon_world::nbt::Tag::Int(0)),
+            "the data edit was dropped"
+        );
+        assert_eq!(
+            entity.revision(),
+            rev,
+            "a dropped edit leaves the revision alone"
+        );
+        assert_eq!(host_writes(), [], "the queued write was dropped");
+        has_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_tick_writeback_error_only_logs() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_block_entity_tick_writeerror",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity.data.loop = event.entity.data\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        let mut entity = test_block_entity("minecraft:stone");
+        entity.nbt = [(
+            horizon_world::nbt::JavaString::from("charge"),
+            horizon_world::nbt::Tag::Int(0),
+        )]
+        .into_iter()
+        .collect();
+        let rev = entity.revision();
+        {
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut entity,
+            );
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            entity
+                .nbt
+                .get(&horizon_world::nbt::JavaString::from("charge")),
+            Some(&horizon_world::nbt::Tag::Int(0)),
+            "the cyclic data was never written back"
+        );
+        assert_eq!(
+            entity.revision(),
+            rev,
+            "a failed write leaves the revision alone"
+        );
+        has_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_tick_apply_error_only_logs() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_block_entity_tick_applyerror",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity.data.charge = event.entity.data.charge + 1\n    horizon.set_block_property(\"stage\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        let mut entity = test_block_entity("minecraft:stone");
+        entity.nbt = [(
+            horizon_world::nbt::JavaString::from("charge"),
+            horizon_world::nbt::Tag::Int(0),
+        )]
+        .into_iter()
+        .collect();
+        let rev = entity.revision();
+        reset_host_writes();
+        {
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut entity,
+            );
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(host_writes(), [], "the failing write never ran");
+        assert_eq!(
+            entity
+                .nbt
+                .get(&horizon_world::nbt::JavaString::from("charge")),
+            Some(&horizon_world::nbt::Tag::Int(0)),
+            "an apply error drops the data edit"
+        );
+        assert_eq!(
+            entity.revision(),
+            rev,
+            "a dropped edit leaves the revision alone"
+        );
+        has_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_tick_replaced_entity_writes_nothing() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_block_entity_tick_replace",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity = { id = \"minecraft:stone\", data = { charge = 99 } }\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        let mut entity = test_block_entity("minecraft:stone");
+        entity.nbt = [(
+            horizon_world::nbt::JavaString::from("charge"),
+            horizon_world::nbt::Tag::Int(0),
+        )]
+        .into_iter()
+        .collect();
+        let rev = entity.revision();
+        {
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut entity,
+            );
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            entity
+                .nbt
+                .get(&horizon_world::nbt::JavaString::from("charge")),
+            Some(&horizon_world::nbt::Tag::Int(0)),
+            "replacing event.entity writes nothing back"
+        );
+        assert_eq!(
+            entity.revision(),
+            rev,
+            "a replaced table leaves the revision alone"
+        );
+        no_error(&id);
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_block_entity_tick_assign",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity.data = { charge = 1 }\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        let mut entity = test_block_entity("minecraft:stone");
+        entity.nbt = [(
+            horizon_world::nbt::JavaString::from("charge"),
+            horizon_world::nbt::Tag::Int(0),
+        )]
+        .into_iter()
+        .collect();
+        let rev = entity.revision();
+        {
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut entity,
+            );
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            entity
+                .nbt
+                .get(&horizon_world::nbt::JavaString::from("charge")),
+            Some(&horizon_world::nbt::Tag::Int(0)),
+            "assigning data where the seed was writes nothing"
+        );
+        assert_eq!(
+            entity.revision(),
+            rev,
+            "an assigned table leaves the revision alone"
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_tick_undeclared_builds_no_table() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_block_entity_tick_undeclared",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"ruby:other\")",
+        );
+        let firing_mods = boxed(m);
+        let mut entity = test_block_entity("ruby:other");
+        let rev = entity.revision();
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut entity,
+            );
+            assert_eq!(witness(&lua), 0, "the undeclared block runs no handler");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built for an undeclared block"
+            );
+            assert_eq!(entity_reads(), 0, "the undeclared dispatch read no entity");
+            assert_eq!(host_reads(), 0, "the undeclared dispatch read the host");
+            assert_eq!(level_reads(), 0, "the undeclared dispatch read the level");
+            assert_eq!(
+                entity.revision(),
+                rev,
+                "the undeclared dispatch leaves the revision alone"
+            );
+        }
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_tick_two_mods_share_a_tick() {
+        let (a, a_id, _a_dir, a_lua) = loaded_tracked(
+            "gen_block_entity_tick_duo_a",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity.data.a = \"1\"\n    horizon.set_block_property(\"a\", \"1\")\nend, \"minecraft:stone\")",
+        );
+        let (b, b_id, _b_dir, b_lua) = loaded_tracked(
+            "gen_block_entity_tick_duo_b",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity.data.b = \"2\"\n    horizon.set_block_property(\"b\", \"2\")\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        let mut entity = test_block_entity("minecraft:stone");
+        reset_host_writes();
+        {
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut entity,
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the kind-filtered mod ran");
+        assert_eq!(witness(&b_lua), 1, "the every-block mod ran");
+        assert_eq!(
+            host_writes(),
+            [
+                ([1, 2, 3], "a".to_owned(), "1".to_owned()),
+                ([1, 2, 3], "b".to_owned(), "2".to_owned())
+            ],
+            "both mods wrote in load order"
+        );
+        assert_eq!(
+            entity.nbt.get(&horizon_world::nbt::JavaString::from("a")),
+            Some(&horizon_world::nbt::Tag::String("1".into())),
+            "the first mod's data edit lands"
+        );
+        assert_eq!(
+            entity.nbt.get(&horizon_world::nbt::JavaString::from("b")),
+            Some(&horizon_world::nbt::Tag::String("2".into())),
+            "the second mod's data edit lands"
+        );
+        no_error(&a_id);
+        no_error(&b_id);
+    }
+
+    #[test]
+    fn generated_block_entity_tick_error_spares_other_mods() {
+        let (a, a_id, _a_dir, a_lua) = loaded_tracked(
+            "gen_block_entity_tick_spare_err",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity.data.loop = event.entity.data\nend, \"minecraft:stone\")",
+        );
+        let (b, b_id, _b_dir, b_lua) = loaded_tracked(
+            "gen_block_entity_tick_spare_ok",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity.data.charge = event.entity.data.charge + 1\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = duo_boxed(a, b);
+        let mut entity = test_block_entity("minecraft:stone");
+        entity.nbt = [(
+            horizon_world::nbt::JavaString::from("charge"),
+            horizon_world::nbt::Tag::Int(0),
+        )]
+        .into_iter()
+        .collect();
+        {
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut entity,
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the erroring mod ran");
+        assert_eq!(witness(&b_lua), 1, "the other mod ran");
+        assert_eq!(
+            entity
+                .nbt
+                .get(&horizon_world::nbt::JavaString::from("charge")),
+            Some(&horizon_world::nbt::Tag::Int(1)),
+            "the other mod's data edit lands"
+        );
+        has_error(&a_id);
+        no_error(&b_id);
+    }
+
+    #[test]
+    fn generated_block_entity_tick_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_entity_tick_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut entity = test_block_entity("test:entity1");
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut entity,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_entity_tick read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_entity_tick read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_entity_tick read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_entity_tick_cost_kind",
+            "horizon.on(\"block_entity_tick\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut test_block_entity("minecraft:stone"),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_entity_tick read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_entity_tick read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_entity_tick read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_entity_tick_cost_live",
+            "horizon.block_entity(\"minecraft:stone\")\nhorizon.on(\"block_entity_tick\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut test_block_entity("minecraft:stone"),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_entity_tick built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "block_entity_tick read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_entity_tick read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -59827,6 +60622,31 @@ mod generated_tests {
         // settings_click: unregistered, nothing runs.
         {
             dispatch_settings_click(&mut FakeHost::empty(), &firing_mods, "test:mod_id", 8);
+        }
+        // block_entity: unregistered, nothing runs.
+        {
+            let mut entity: Option<(String, Compound)> = None;
+            dispatch_block_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut entity,
+            );
+        }
+        // block_entity_ticks: unregistered, nothing runs.
+        {
+            let mut ticks = false;
+            dispatch_block_entity_ticks(&FakeHost::empty(), &firing_mods, "test:block", &mut ticks);
+        }
+        // block_entity_tick: unregistered, nothing runs.
+        {
+            let mut entity = test_block_entity("test:entity1");
+            dispatch_block_entity_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                &mut entity,
+            );
         }
         // block_entity_container: unregistered, nothing runs.
         {

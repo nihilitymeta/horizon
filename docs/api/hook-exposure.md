@@ -4,17 +4,15 @@
 
 Every native hook lands in exactly one class: `generated` (a zero-hand-work event table under the native name), `adapter` (a hand-written converter would unblock it), `handle` or `protocol` (a live handle or raw packets, each needing its own design), `tick` (the level-tick host the Lua runtime does not implement), or `cannot` (no event-table mapping exists, with the reason). `HOOK_CLASSIFICATION` in `crates/event-horizon-lua/src/generated_hooks/mod.rs` is the machine-readable record; this page is its human-readable form, so a hook is never silently missing from Lua: it is either generated or listed here with its reason.
 
-400 hooks are generated and omitted below. The rest:
+403 hooks are generated and omitted below. The rest:
 
-## Deferred to #44 (name kept by a hand-written hook; would be exposable) (43)
+## Deferred to #44 (name kept by a hand-written hook; would be exposable) (41)
 
 These names stay with the hand-written hooks for now; removing the old hook is #44. The model says an event table could carry each of them, so the deferral is the only reason they are missing from Lua.
 
 | Hook | Reason |
 | --- | --- |
 | `attack_entity` | the hand-written hook keeps this name (removing it is #44) |
-| `block_entity` | the hand-written hook keeps this name (removing it is #44) |
-| `block_entity_ticks` | the hand-written hook keeps this name (removing it is #44) |
 | `destroy_block` | the hand-written hook keeps this name (removing it is #44) |
 | `entity_join_level` | the hand-written hook keeps this name (removing it is #44) |
 | `entity_tick_listened` | the hand-written hook keeps this name (removing it is #44) |
@@ -56,13 +54,12 @@ These names stay with the hand-written hooks for now; removing the old hook is #
 | `use_item` | the hand-written hook keeps this name (removing it is #44) |
 | `use_item_on` | the hand-written hook keeps this name (removing it is #44) |
 
-## Deferred to #44 AND not exposable (4)
+## Deferred to #44 AND not exposable (3)
 
 These names stay with the hand-written hooks for now (removing the old hook is #44), and the model says no event-table mapping exists for them either. Each row carries the model's own reason, copied from the classifier, not rewritten.
 
 | Hook | Reason |
 | --- | --- |
-| `block_entity_tick` | a ModBlockEntity handle needs its own design |
 | `gui_layer_post` | HudBatch borrows render state (render thread) |
 | `hud` | HudBatch borrows render state (render thread); Corners borrows render state (render thread) |
 | `mob_ai_register` | a Mob handle needs its own design |

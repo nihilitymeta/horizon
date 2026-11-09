@@ -22,6 +22,7 @@ export type GoalState = { [string]: any }
 export type GoalDef = { flags: { string }?, every_tick: boolean?, interruptable: boolean?, can_use: (mob: MobView, state: GoalState, out: GoalOut) -> boolean, can_continue: ((mob: MobView, state: GoalState, out: GoalOut) -> boolean)?, start: ((mob: MobView, state: GoalState, out: GoalOut) -> ())?, tick: ((mob: MobView, state: GoalState, out: GoalOut) -> ())?, stop: ((mob: MobView, state: GoalState, out: GoalOut) -> ())? }
 export type Data = { [string]: any }
 export type Props = { [string]: string }
+export type BlockEntity = { id: string, data: Data }
 export type Component = { text: string?, translate: string?, color: string?, bold: boolean?, italic: boolean?, underlined: boolean?, strikethrough: boolean?, obfuscated: boolean?, extra: { Component }? }
 export type Vec2 = { x: number, y: number }
 export type Chunk = { x: number, z: number }
@@ -86,6 +87,7 @@ export type BlockEntityContainerEvent = { block: string, container: { slots: num
 export type BlockEntityEnergyEvent = { block: string, energy: { capacity: number, max_insert: number, max_extract: number, insert_faces: { boolean }, extract_faces: { boolean } }?? }
 export type BlockEntityFluidsEvent = { block: string, fluids: { tanks: { number }, faces: {{ number }}, inputs: { number }, outputs: { number } }?? }
 export type BlockEntityFromStateEvent = { block: string, properties: { [string]: string }, entity: { name: string, tag: Data }?? }
+export type BlockEntityTickEvent = { pos: Vec3, entity: BlockEntity, dimension: string }
 export type BlockExpEvent = { dimension: string, pos: Vec3, block: string, experience: number }
 export type BlockFadeEvent = { dimension: string, pos: Vec3, from: string, to: string, from_props: Props, to_props: Props }
 export type BlockFailedDispenseEvent = { dimension: string, pos: Vec3, item: string }
@@ -467,7 +469,6 @@ export type HorizonOn =
     ((name: "mob_spawned", fn: (dimension: string, kind: string, x: number, y: number, z: number, natural: boolean) -> (), kind: string?) -> ()) &
     ((name: "mob_ai_register", fn: (mob: MobView) -> (), kind: string?) -> ()) &
     ((name: "right_click_block", fn: (x: number, y: number, z: number, block: string, face: Vec3, player: Player, held: Held?, data: Data?) -> (), kind: string?) -> ()) &
-    ((name: "block_entity_tick", fn: (dimension: string, block: string, x: number, y: number, z: number, data: Data) -> (), kind: string?) -> ()) &
     ((name: "mob_hurt", fn: (mob: IdKind, damage_type: string, causing: number, direct: number, amount: number) -> (), kind: string?) -> ()) &
     ((name: "player_hurt", fn: (player: IdKind, damage_type: string, causing: number, direct: number, amount: number) -> (), kind: string?) -> ()) &
     ((name: "mob_killed", fn: (dimension: string, mob: IdKind, killer: Player, data: Data?) -> (), kind: string?) -> ()) &
@@ -535,6 +536,7 @@ export type HorizonOn =
     ((name: "block_entity_energy", fn: (event: BlockEntityEnergyEvent) -> ()) -> ()) &
     ((name: "block_entity_fluids", fn: (event: BlockEntityFluidsEvent) -> ()) -> ()) &
     ((name: "block_entity_from_state", fn: (event: BlockEntityFromStateEvent) -> ()) -> ()) &
+    ((name: "block_entity_tick", fn: (event: BlockEntityTickEvent) -> (), kind: string?) -> ()) &
     ((name: "block_exp", fn: (event: BlockExpEvent) -> ()) -> ()) &
     ((name: "block_fade", fn: (event: BlockFadeEvent) -> ()) -> ()) &
     ((name: "block_failed_dispense", fn: (event: BlockFailedDispenseEvent) -> ()) -> ()) &

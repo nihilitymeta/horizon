@@ -23,11 +23,10 @@ use horizon_client::dev_input::mods::{
 };
 use horizon_client::mod_api::NativeCommand;
 use horizon_client::mod_api::{
-    AttachmentCodec, AttachmentType, BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
-    BlockStateId, Compound, EntityTickListenedEvent, EntityTickPostEvent, Flow, Holder, Hooks,
-    Host, InteractEntityEvent, LevelDimension, LevelHost, LevelWriteHost,
-    LivingIncomingDamageEvent, MobAiRegisterEvent, MobKilledEvent, MobSpawnedEvent, MobView,
-    RightClickBlockEvent,
+    AttachmentCodec, AttachmentType, BlockStateId, Compound, EntityTickListenedEvent,
+    EntityTickPostEvent, Flow, Holder, Hooks, Host, InteractEntityEvent, LevelDimension, LevelHost,
+    LevelWriteHost, LivingIncomingDamageEvent, MobAiRegisterEvent, MobKilledEvent, MobSpawnedEvent,
+    MobView, RightClickBlockEvent,
 };
 use horizon_client::mod_api::{
     AttackEntityEvent, DestroyBlockEvent, InventoryTickEvent, ItemPickedUpEvent, ItemStack,
@@ -135,7 +134,6 @@ pub const LUA_HOOK_NAMES: &[&str] = &[
     "mob_spawned",
     "mob_ai_register",
     "right_click_block",
-    "block_entity_tick",
     "mob_hurt",
     "player_hurt",
     "mob_killed",
@@ -3049,81 +3047,6 @@ impl Hooks for LuaMod {
         }
         self.store_data(host, hook, event.pos, before, data);
         if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-    /// A block the scripts gave a block entity gets one, with its starting data.
-    fn block_entity(
-        &self,
-        _host: &mut dyn Host,
-        event: &mut BlockEntityEvent<'_>,
-    ) -> Option<(String, Compound)> {
-        let declared = self.block_entities.lock().ok()?;
-        let decl = declared.get(event.block)?;
-        Some((event.block.to_owned(), decl.data.clone()))
-    }
-    fn block_entity_ticks(&self, _host: &dyn Host, event: &mut BlockEntityTicksEvent<'_>) {
-        if self
-            .block_entities
-            .lock()
-            .ok()
-            .is_some_and(|d| d.get(event.block).is_some_and(|decl| decl.ticks))
-        {
-            event.ticks = true;
-        }
-    }
-    /// A mod block entity's tick: `block_entity_tick(dimension, block, x, y, z, data)`;
-    /// `data` is the saved compound as a table, written back after the call.
-    fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
-        let hook = "block_entity_tick";
-        let id = event.entity.id.clone();
-        if !self.watches(hook, &id) {
-            return;
-        }
-        if !self
-            .block_entities
-            .lock()
-            .ok()
-            .is_some_and(|d| d.contains_key(&id))
-        {
-            return;
-        }
-        let before = event.entity.nbt.clone();
-        let data = match nbt::compound_to_table(&self.lua, &before) {
-            Ok(t) => t,
-            Err(e) => {
-                self.hook_error(hook, e);
-                return;
-            }
-        };
-        let [x, y, z] = event.pos;
-        let pos = event.pos;
-        let dimension = host.dimension();
-        let r = self.call_kind(
-            hook,
-            Some(&id),
-            host,
-            (dimension, id.as_str(), x, y, z, data.clone()),
-            &mut |host, action, args| {
-                match action {
-                    "set_block_property" => {
-                        let (key, value): (String, String) = (args.get(1)?, args.get(2)?);
-                        host.set_block_property(pos, &key, &value);
-                    }
-                    other => self.run_action(host, other, args)?,
-                }
-                Ok(())
-            },
-        );
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-            return;
-        }
-        match nbt::table_to_compound(&data, Some(&before)) {
-            Ok(after) if after != before => event.entity.nbt = after,
-            Ok(_) => {}
-            Err(e) => {
-                self.hook_error(hook, e);
-            }
-        }
     }
     /// A mob's goals as its species set them up: handlers see the mob's view
     /// and add Lua goals (`horizon.add_goal(priority, name)`,
@@ -6112,9 +6035,9 @@ experimental = ["scripts"]
                   AFTER_READ = horizon.block(1, 2, 3)
                 end)
                 horizon.block_entity("ruby:hive", { ticks = true, data = { bred = 0 } })
-                horizon.on("block_entity_tick", function(dimension, block, x, y, z, data)
-                  local id = horizon.summon(dimension, "ruby:crawler", x + 0.5, y + 1, z + 0.5)
-                  data.bred = data.bred + 1
+                horizon.on("block_entity_tick", function(event)
+                  local id = horizon.summon(event.dimension, "ruby:crawler", event.pos.x + 0.5, event.pos.y + 1, event.pos.z + 0.5)
+                  event.entity.data.bred = event.entity.data.bred + 1
                   local w = horizon.world_data()
                   TICK_READ = horizon.block(1, 2, 3) .. " " .. tostring(id) .. " " .. tostring(w ~= nil)
                 end, "ruby:hive")
@@ -7417,10 +7340,10 @@ experimental = ["scripts"]
                 br#"
                 horizon.block_entity("ruby:hive", { ticks = true, data = { charge = 0, name = "x" } })
                 horizon.block_entity("ruby:lamp")
-                horizon.on("block_entity_tick", function(dimension, block, x, y, z, data)
-                  data.charge = data.charge + 1
-                  data.seen = dimension .. ":" .. x
-                  data.name = nil
+                horizon.on("block_entity_tick", function(event)
+                  event.entity.data.charge = event.entity.data.charge + 1
+                  event.entity.data.seen = event.dimension .. ":" .. event.pos.x
+                  event.entity.data.name = nil
                 end)
                 horizon.on("random_tick", function(event)
                   if event.data then event.data.charge = event.data.charge * 10; event.data.under = horizon.block(event.pos.x, event.pos.y - 1, event.pos.z) end

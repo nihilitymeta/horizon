@@ -68,15 +68,15 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "block_entity",
-        "`horizon.block_entity(block, { ticks, data })`",
+        "`horizon.block_entity(block, { ticks, data })`: declaration-served, no `horizon.on` registration",
     ),
     (
         "block_entity_ticks",
-        "`horizon.block_entity(block, { ticks = true })`",
+        "`horizon.block_entity(block, { ticks = true })`: declaration-served, no `horizon.on` registration",
     ),
     (
         "block_entity_tick",
-        "`block_entity_tick(dimension, block, x, y, z, data)`, by block",
+        "an event table with `dimension`, `pos` and `entity` (`id`, and `data` written back), by block id",
     ),
     (
         "destroy_block",

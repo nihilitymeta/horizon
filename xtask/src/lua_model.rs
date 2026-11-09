@@ -68,6 +68,13 @@ pub enum Kind {
         /// The dispatch parameter the block id derives from (`state`).
         field: String,
     },
+    /// A block-entity tick's entity id: the ticking `entity`'s own id, with
+    /// the declaration check beside it (a block with no declaration tells
+    /// nobody, not even unfiltered handlers).
+    BlockEntity {
+        /// The dispatch parameter the entity id derives from (`entity`).
+        field: String,
+    },
 }
 
 /// One converter tag per event-table field: the seed expression, the
@@ -185,6 +192,19 @@ pub enum Conv {
     /// never the typeless `Compound::from_value`). A documentary tag: the
     /// bespoke arm seeds and writes it back inline.
     LevelData,
+    /// A block-entity tick's `entity`: `{id, data}`, where `data` is the
+    /// saved compound as a table (always a table, empty without keys),
+    /// written back through `entity.nbt` with the before-template rule
+    /// (`table_to_compound(&data, Some(&before))`, never the typeless
+    /// `Compound::from_value`). A documentary tag: the bespoke arm seeds
+    /// and writes it back inline. Only `block_entity_tick` classifies an
+    /// `&mut ModBlockEntity` this way (every other holder stays a handle).
+    BlockEntity,
+    /// A block-entity tick's `dimension`: `host.dimension()`, the one
+    /// documented extra (the native event has no dimension, and without it
+    /// a script cannot tell which level). A documentary tag: the bespoke
+    /// arm seeds it inline.
+    HostDimension,
 }
 
 /// How a `replace` out value reads back: nil stays `None`, a table or value
@@ -227,16 +247,29 @@ pub struct Extra {
 
 impl Model {
     /// The parameter the kind filter reads, if any: the `kind` field, the
-    /// resolved entity id, or the loot context the kind derives from.
+    /// resolved entity id, the loot context the kind derives from, or the
+    /// ticking entity the block-entity id derives from.
     pub fn kind_field(&self) -> Option<&str> {
         match &self.kind {
             Kind::Field => Some("kind"),
             Kind::Entity { field, .. } => Some(field.as_str()),
             Kind::Loot => Some("context"),
             Kind::Block { field } => Some(field.as_str()),
+            Kind::BlockEntity { field } => Some(field.as_str()),
             Kind::None => None,
         }
     }
+}
+
+/// Whether a hook is served from the Lua declarations instead of by script
+/// handlers: `block_entity` (the provider) and `block_entity_ticks` answer
+/// from the `horizon.block_entity` store, so their arms never invoke
+/// handlers, build no event table, and take no `horizon.on` registration
+/// (the runtime refuses them, as before). One name key, so a future
+/// declaration-served hook extends this predicate instead of scattering
+/// matches through the emitters.
+pub fn declaration_served(name: &str) -> bool {
+    matches!(name, "block_entity" | "block_entity_ticks")
 }
 
 /// A generated hook's model: everything the emitters need.
@@ -950,6 +983,13 @@ fn mut_of(
     }
     if is_path(elem, "ItemStack") {
         return adapter("a mutable stack needs its table form");
+    }
+    // A block-entity tick's entity: `{id, data}`, seeded from the entity
+    // and written back through `entity.nbt` by the bespoke arm. Only this
+    // hook classifies a live `ModBlockEntity` (every other holder, like
+    // `menu_button`'s, stays a handle): the stock arms must never see it.
+    if hook == "block_entity_tick" && is_path(elem, "ModBlockEntity") {
+        return FieldOutcome::Conv(Conv::BlockEntity, "BlockEntity".into());
     }
     opaque_of(hook, elem, adapter, cannot)
 }
@@ -3268,6 +3308,13 @@ fn model_of(
         Kind::Block {
             field: "state".to_owned(),
         }
+    } else if let Some(field) = fields.iter().find(|f| f.conv == Conv::BlockEntity) {
+        // A block-entity tick filters by its entity's own id (served from
+        // the declarations beside it). The converter only arises there, so
+        // no other hook can take this branch.
+        Kind::BlockEntity {
+            field: field.name.clone(),
+        }
     } else if params.iter().any(|(n, t)| n == "kind" && is_str_ref(t))
         && !NON_ENTITY_KINDS.iter().any(|(n, _)| n == &name)
     {
@@ -3345,6 +3392,15 @@ fn model_of(
         extras.push(Extra {
             name: "data".to_owned(),
             conv: Conv::LevelData,
+        });
+    }
+    // A block-entity tick mirrors its native `{pos, entity}` event, with
+    // `dimension` (`host.dimension()`) as the one documented extra: it is
+    // not a native field, and without it a script cannot tell which level.
+    if name == "block_entity_tick" {
+        extras.push(Extra {
+            name: "dimension".to_owned(),
+            conv: Conv::HostDimension,
         });
     }
     // Every state field seeds its `_props` table beside itself (the state
@@ -3494,6 +3550,16 @@ pub fn assert_lines(
         // A level tick's data seeds nil without a mod block entity (the
         // fake level has none); data present is the hand-written tests'.
         Conv::LevelData => vec![a(&format!("{e} == nil"))],
+        // A block-entity tick's entity: the kind line pins the id; the data
+        // table is always present (empty without keys), pinned by the
+        // bespoke data tests, not the stock smoke test.
+        Conv::BlockEntity => vec![
+            a(&format!("{e}.id == {lua}")),
+            a(&format!("next({e}.data) == nil")),
+        ],
+        // A block-entity tick's dimension is the host's (`host.dimension()`):
+        // the fake host is always the overworld.
+        Conv::HostDimension => vec![a(&format!("{e} == \"minecraft:overworld\""))],
         Conv::Bytes | Conv::PathStr => vec![a(&format!("{e} == {lua}"))],
         Conv::Player | Conv::PlayerOpt => vec![
             a(&format!("{e}.uuid == {lua}")),
@@ -3995,6 +4061,15 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
         // only document the seed): sampling one is a model bug.
         Conv::LevelProps => panic!("no sample for a level tick's state_props"),
         Conv::LevelData => panic!("no sample for a level tick's data"),
+        // A block-entity tick's entity: the fake builds it from the id, with
+        // an empty saved compound (the bespoke data tests seed their own).
+        Conv::BlockEntity => plain(
+            format!("test_block_entity(\"test:entity{n}\")"),
+            format!("\"test:entity{n}\""),
+        ),
+        // A block-entity tick's dimension seeds inline in the bespoke arm
+        // (its tag only documents the seed): sampling one is a model bug.
+        Conv::HostDimension => panic!("no sample for a block-entity tick's dimension"),
         // The lifecycle context both lifecycle hooks carry: the authority
         // alternates with `n`, the epoch and tick count up, so every leaf
         // has its own value.
@@ -4528,12 +4603,41 @@ mod tests {
                 "{name} stays tick-host for its own chunk"
             );
         }
-        // `block_entity_ticks` keeps its hand-written hook (H3b owns it).
-        match class_of("block_entity_ticks") {
-            Class::Cannot(reason) => {
-                assert!(reason.contains("keeps this name"), "{reason}");
+        // H3b: the block-entity provider and ticks are served from the
+        // declarations (no handlers), and the tick filters by entity id
+        // with the declaration check beside it.
+        for name in ["block_entity", "block_entity_ticks"] {
+            match class_of(name) {
+                Class::Generated(model) => {
+                    assert!(
+                        declaration_served(name),
+                        "{name} is served from declarations"
+                    );
+                    assert!(matches!(model.kind, Kind::None), "{name} takes no kind");
+                }
+                class => panic!("{name} should generate, got {class:?}"),
             }
-            class => panic!("block_entity_ticks keeps its hook, got {class:?}"),
+        }
+        match class_of("block_entity_tick") {
+            Class::Generated(model) => {
+                assert_eq!(model.host, Host::GameMut, "block_entity_tick host");
+                assert!(
+                    matches!(model.kind, Kind::BlockEntity { .. }),
+                    "block_entity_tick filters by entity id"
+                );
+                assert!(
+                    model.fields.iter().any(|f| f.conv == Conv::BlockEntity),
+                    "block_entity_tick seeds its entity table"
+                );
+                assert!(
+                    model
+                        .extras
+                        .iter()
+                        .any(|e| e.name == "dimension" && e.conv == Conv::HostDimension),
+                    "block_entity_tick carries the host dimension"
+                );
+            }
+            class => panic!("block_entity_tick should generate, got {class:?}"),
         }
         // A plain `ticks` number never meant the level-tick host.
         match class_of("player_item_cooldown") {

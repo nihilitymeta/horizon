@@ -7,8 +7,8 @@ use crate::lua_mods::LuaMod;
 use horizon_client::dev_input::mods::{ModStatus, set_status, status};
 use horizon_client::mod_api::{
     AttachmentError, Attachments, BlockStateId, Compound, EntityRef, Holder, Hooks, Host,
-    LegacyRandom, LevelHost, LevelRandomHost, LevelTicksHost, LevelWriteHost, NativeServerPlayer,
-    NativeWorldEpoch, ParticleOptions, Text,
+    LegacyRandom, LevelHost, LevelRandomHost, LevelTicksHost, LevelWriteHost, ModBlockEntity,
+    NativeServerPlayer, NativeWorldEpoch, ParticleOptions, Text,
 };
 use horizon_mods::Package;
 use mlua::Lua;
@@ -209,6 +209,25 @@ impl FakeHost {
     }
 }
 impl Host for FakeHost {
+    /// The host's level: always the overworld. Counted, like every other
+    /// fake-host read: a hook nobody listens to must not ask.
+    fn dimension(&self) -> &'static str {
+        count_host_read();
+        "minecraft:overworld"
+    }
+
+    /// A block-entity tick's `set_block_property`: recorded for the tests
+    /// to assert, like the fake level's writes. Uncounted: it is a write,
+    /// not a read.
+    fn set_block_property(&mut self, pos: [i32; 3], key: &str, value: &str) -> bool {
+        HOST_WRITES.with(|writes| {
+            writes
+                .borrow_mut()
+                .push((pos, key.to_owned(), value.to_owned()))
+        });
+        true
+    }
+
     fn level_players(&self) -> Vec<NativeServerPlayer> {
         count_host_read();
         Vec::new()
@@ -301,6 +320,29 @@ impl LevelRandomHost for FakeLevel {
     fn random(&mut self) -> Option<&mut LegacyRandom> {
         None
     }
+}
+
+/// A block-entity tick's entity with `id` and an empty saved compound: what
+/// the generated dispatches tick. The id names a block the test declares.
+pub fn test_block_entity(id: &str) -> ModBlockEntity {
+    let mut entity = ModBlockEntity::default();
+    entity.id = id.to_owned();
+    entity
+}
+
+thread_local! {
+    /// `set_block_property` calls the fake host answered since
+    /// `reset_host_writes`: what the block-entity-tick tests assert.
+    static HOST_WRITES: std::cell::RefCell<Vec<([i32; 3], String, String)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Every `set_block_property` call the fake host answered.
+pub fn host_writes() -> Vec<([i32; 3], String, String)> {
+    HOST_WRITES.with(|writes| writes.borrow().clone())
+}
+pub fn reset_host_writes() {
+    HOST_WRITES.with(|writes| writes.borrow_mut().clear());
 }
 
 thread_local! {

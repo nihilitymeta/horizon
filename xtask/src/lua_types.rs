@@ -62,6 +62,9 @@ const TYPES: &[(&str, &str)] = &[
     ),
     ("Data", "{ [string]: any }"),
     ("Props", "{ [string]: string }"),
+    // A block-entity tick's entity: the ticking entity's id, with the saved
+    // compound as a table (always present, empty without keys).
+    ("BlockEntity", "{ id: string, data: Data }"),
     // The vanilla JSON text-component table a text field's `_component`
     // carries (`{text=, color=, bold=, extra={}}`, `{translate=, with={}}`).
     (
@@ -111,9 +114,11 @@ const TYPES: &[(&str, &str)] = &[
 /// Every hook a script registers for (`horizon.on(name, fn[, kind])`) and
 /// its handler's type; the runtime's `LUA_HOOK_NAMES` names the same hooks.
 const HOOKS: &[(&str, &str)] = &[
-    // `server_tick`, `world_lifecycle`, `loot_drops`, `random_tick` and
-    // `tick_block` are generated now (an event table each): their overloads
-    // come from the model below.
+    // `server_tick`, `world_lifecycle`, `loot_drops`, `random_tick`,
+    // `tick_block` and `block_entity_tick` are generated now (an event table
+    // each): their overloads come from the model below. The
+    // declaration-served `block_entity` and `block_entity_ticks` take no
+    // `horizon.on` registration, so they have no overload.
     (
         "mob_spawned",
         "(dimension: string, kind: string, x: number, y: number, z: number, natural: boolean) -> ()",
@@ -122,10 +127,6 @@ const HOOKS: &[(&str, &str)] = &[
     (
         "right_click_block",
         "(x: number, y: number, z: number, block: string, face: Vec3, player: Player, held: Held?, data: Data?) -> ()",
-    ),
-    (
-        "block_entity_tick",
-        "(dimension: string, block: string, x: number, y: number, z: number, data: Data) -> ()",
     ),
     (
         "mob_hurt",
@@ -281,6 +282,8 @@ fn extra_ts(conv: &super::lua_model::Conv) -> &'static str {
         super::lua_model::Conv::BlockAtPos | super::lua_model::Conv::BlockFromState => "string",
         super::lua_model::Conv::StateProps | super::lua_model::Conv::LevelProps => "Props",
         super::lua_model::Conv::LevelData => "Data?",
+        // The host's dimension, always a string.
+        super::lua_model::Conv::HostDimension => "string",
         _ => "any",
     }
 }
@@ -292,6 +295,11 @@ fn generated_hooks() -> Result<Vec<GeneratedHook>, String> {
         let Class::Generated(model) = hook.class else {
             continue;
         };
+        // Declaration-served hooks take no `horizon.on` registration, so
+        // they have neither an event type nor an overload.
+        if super::lua_model::declaration_served(&model.name) {
+            continue;
+        }
         let event_ty = event_name(&model.name);
         let mut fields: Vec<String> = Vec::new();
         for f in &model.fields {

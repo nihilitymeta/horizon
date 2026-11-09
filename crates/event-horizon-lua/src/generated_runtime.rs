@@ -299,6 +299,12 @@ macro_rules! gen_kind {
     ((block $f:ident), $level:expr, $event:ident) => {
         $level.state_block($event.$f)
     };
+    // A block-entity tick filters by its entity's own id, served from the
+    // declarations beside it. The read borrows the entity shared, so the
+    // kind check never bumps its revision.
+    ((block_entity $f:ident), $host:expr, $event:ident) => {
+        Some($event.$f.id.clone())
+    };
 }
 
 /// One _event-table field's seed: the value the handler is told. The host
@@ -1313,6 +1319,136 @@ macro_rules! gen_level_tick {
                 Flow::Cancel
             } else {
                 Flow::Continue
+            }
+        }
+    };
+}
+
+/// A mod block entity's server tick: like a `game_mut` listen hook, but the
+/// event carries the entity as a table (`id`, and `data` seeded from its
+/// saved compound, always present and empty without keys), with the host's
+/// `dimension` beside it (the native event has none: it is only `{pos,
+/// entity}`, so `dimension` is the one documented extra), and only
+/// `set_block_property` runs on the host (every other action goes through
+/// the shared runner). The ticking entity's own id filters the handlers,
+/// and a block with no declaration tells nobody.
+///
+/// `data` writes back through `entity.nbt` with the before-template rule
+/// (`table_to_compound(&data, Some(&before))`, never the typeless
+/// `Compound::from_value`), only when the compound changed, and only on the
+/// success path: a later handler's error drops the edits with the queued
+/// actions. The write assigns through `DerefMut`, so a change bumps the
+/// entity's revision and an unchanged table leaves it alone, as the old
+/// hand-written hook did. The arm converts the table it seeded, not the
+/// field's current value, so a replaced `entity` (or `entity.data`) writes
+/// nothing back.
+///
+/// The field list only documents the parameters; the arm seeds and writes
+/// back inline, as the level-tick arm does.
+macro_rules! gen_block_entity_tick {
+    ($name:ident, game_mut, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(($st:ty))? $(=> $write:ident $(($wt:ty))?)?),* $(,)?]) => {
+        fn $name(&self, host: &mut dyn horizon_client::mod_api::Host, _event: &mut $event) {
+            let hook = stringify!($name);
+            if !self.has_any_handlers(hook) {
+                return;
+            }
+            // The ticking entity's own id filters the handlers, and a block
+            // with no declaration tells nobody.
+            let kind: Option<String> = gen_kind!($kind, host, _event);
+            let Some(id) = kind else {
+                return;
+            };
+            if !self.watches(hook, &id) {
+                return;
+            }
+            if !self
+                .block_entities
+                .lock()
+                .ok()
+                .is_some_and(|d| d.contains_key(&id))
+            {
+                return;
+            }
+            let pos = _event.pos;
+            let outcome = (|| -> mlua::Result<()> {
+                let lua = &self.lua;
+                let table = lua.create_table()?;
+                #[cfg(test)]
+                crate::generated_runtime::note_event_table();
+                table.set("dimension", host.dimension())?;
+                table.set("pos", crate::generated_runtime::pos_table(lua, pos)?)?;
+                let entity = lua.create_table()?;
+                entity.set("id", id.clone())?;
+                let before = _event.entity.nbt.clone();
+                let data = nbt::compound_to_table(lua, &before)?;
+                entity.set("data", data.clone())?;
+                table.set("entity", entity)?;
+                self.call_kind(
+                    hook,
+                    Some(&id),
+                    host,
+                    table.clone(),
+                    &mut |host, action, args| {
+                        match action {
+                            "set_block_property" => {
+                                let (key, value): (String, String) = (args.get(1)?, args.get(2)?);
+                                host.set_block_property(pos, &key, &value);
+                            }
+                            other => self.run_action(host, other, args)?,
+                        }
+                        Ok(())
+                    },
+                )?;
+                match nbt::table_to_compound(&data, Some(&before)) {
+                    Ok(after) if after != before => _event.entity.nbt = after,
+                    Ok(_) => {}
+                    Err(e) => return Err(e),
+                }
+                Ok(())
+            })();
+            // Any failure — the seed, a handler, an apply-closure
+            // conversion or the data writeback — only logs, as the old
+            // `hook_error` did.
+            if let Err(e) = outcome {
+                self.error(format!("{hook}: {e}"));
+            }
+        }
+    };
+}
+
+/// A block the scripts gave a block entity gets one, with its starting
+/// data: served from the `horizon.block_entity` declarations, not by script
+/// handlers. The arm never invokes handlers and builds no event table.
+macro_rules! gen_block_entity {
+    ($name:ident, game_mut, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(($st:ty))? $(=> $write:ident $(($wt:ty))?)?),* $(,)?], $out:ident : $read:ident $(($rt:ty))?, $ret:ty) => {
+        fn $name(
+            &self,
+            _host: &mut dyn horizon_client::mod_api::Host,
+            _event: &mut $event,
+        ) -> Option<(String, horizon_client::mod_api::Compound)> {
+            let declared = self.block_entities.lock().ok()?;
+            let decl = declared.get(_event.block)?;
+            Some((_event.block.to_owned(), decl.data.clone()))
+        }
+    };
+}
+
+/// Whether block `block`'s block entity ticks: served from the
+/// `horizon.block_entity` declarations, not by script handlers. The arm
+/// only ever sets `ticks`, never clears an earlier mod's `true` (the native
+/// `native_block_entity_ticks` contract: "set `ticks` to true to make it
+/// tick, and never clear a value an earlier mod or mixin set"), and builds
+/// no event table.
+macro_rules! gen_block_entity_ticks {
+    ($name:ident, game_ref, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(($st:ty))? $(=> $write:ident $(($wt:ty))?)?),* $(,)?]) => {
+        fn $name(&self, _host: &dyn horizon_client::mod_api::Host, _event: &mut $event) {
+            if self
+                .block_entities
+                .lock()
+                .ok()
+                .is_some_and(|d| d.get(_event.block).is_some_and(|decl| decl.ticks))
+            {
+                _event.ticks = true;
             }
         }
     };
