@@ -16,8 +16,9 @@
 //! an unsupported field fails the check naming it.
 
 use crate::lua_model::{
-    Class, Conv, Field, HookClass, Host, Kind, Model, ReplaceRead, assert_lines, classify,
-    deferred_outcomes, dup_leaf, lua_read, mutate_line, replace_sample, sample, table_leaves,
+    Class, Conv, Field, HookClass, Host, Kind, Model, ReplaceRead, assert_lines, canonical_elem,
+    classify, deferred_outcomes, dup_leaf, lua_read, mutate_line, replace_sample, sample,
+    table_leaves,
 };
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -553,6 +554,78 @@ fn spike_test_body<'a>(src: &'a str, hook: &str) -> Option<&'a str> {
     Some(&rest[..end])
 }
 
+/// The Lua a spike test registers: the `r#"..."#` its `const LUA` wraps.
+/// The gate scans Lua, not Rust source: Rust quoting (`r#"`, `\"`) would
+/// misalign a comment stripper, hiding a bypass or inventing one.
+fn spike_lua(body: &str) -> Option<&str> {
+    let start = body.find("r#\"")? + 3;
+    let rest = &body[start..];
+    // The const ends `"#;`: a `"#` inside the Lua would end it early, so no
+    // spike Lua may contain one (none does).
+    let end = rest.find("\"#;")?;
+    Some(&rest[..end])
+}
+
+/// Lua `src` with comments removed: `--` line comments and `--[[ ]]`
+/// blocks, keeping newlines so line-oriented scans still line up. A `--`
+/// inside a `'...'`, `"..."` or `[[...]]` string stays: it is text, not a
+/// comment. Only level-0 long forms are strings or blocks here; a deeper
+/// level keeps its dashes, failing loudly instead of mis-scanning.
+fn strip_lua_comments(src: &str) -> String {
+    let chars: Vec<char> = src.chars().collect();
+    let mut out = String::with_capacity(src.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\'' || c == '"' {
+            out.push(c);
+            i += 1;
+            while i < chars.len() {
+                let d = chars[i];
+                out.push(d);
+                i += 1;
+                if d == '\\' && i < chars.len() {
+                    out.push(chars[i]);
+                    i += 1;
+                } else if d == c {
+                    break;
+                }
+            }
+        } else if c == '[' && chars.get(i + 1) == Some(&'[') {
+            out.push_str("[[");
+            i += 2;
+            while i + 1 < chars.len() && !(chars[i] == ']' && chars[i + 1] == ']') {
+                out.push(chars[i]);
+                i += 1;
+            }
+            if i + 1 < chars.len() {
+                out.push_str("]]");
+                i += 2;
+            }
+        } else if c == '-' && chars.get(i + 1) == Some(&'-') {
+            if chars.get(i + 2) == Some(&'[') && chars.get(i + 3) == Some(&'[') {
+                i += 4;
+                while i + 1 < chars.len() && !(chars[i] == ']' && chars[i + 1] == ']') {
+                    if chars[i] == '\n' {
+                        out.push('\n');
+                    }
+                    i += 1;
+                }
+                i += 2.min(chars.len().saturating_sub(i));
+            } else {
+                i += 2;
+                while i < chars.len() && chars[i] != '\n' {
+                    i += 1;
+                }
+            }
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+    out
+}
+
 /// The dispatch fields of `model` no assert covers: a parameter with no
 /// field entry, or one whose Lua asserts are empty and which is not
 /// allowlisted.
@@ -1026,6 +1099,661 @@ fn no_cancel_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
     out
 }
 
+/// One hook's cost test: with a mod loaded that listens to another hook, a
+/// dispatch nobody listens to reads no host and runs no handler. The host
+/// check is the fake host/level counters, exact per call. (Lua memory
+/// cannot pin table construction: the handler check itself does two
+/// registry reads per dispatch, ~200 bytes of collectable Lua garbage, so a
+/// table built early hides inside the check's own traffic. See QUESTIONS.md.)
+/// Kind-filtered hooks run the K1 event again with a handler watching
+/// another kind. A field kind reads nothing; an entity kind resolves the
+/// kind through the host first (one `entity` and one `entity_kind` read per
+/// dispatch), pinned below because the watches check needs the kind it
+/// resolves.
+fn cost_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
+    let mut out = format!(
+        "#[test]\nfn generated_{}_unregistered_costs_nothing() {{\n",
+        model.name
+    );
+    // A loaded mod that listens to another hook: the Lua state exists, but
+    // nothing listens to this hook.
+    let other = if model.name == "tick" {
+        "frame"
+    } else {
+        "tick"
+    };
+    let unregistered = format!(
+        "loaded_tracked(\"gen_{}_cost\", \"horizon.on(\\\"{}\\\", function(event) end)\")",
+        model.name, other
+    );
+    cost_part(
+        &mut out,
+        model,
+        tys,
+        None,
+        &unregistered,
+        (0, 0),
+        "with no handler",
+    );
+    if kind_values(model).is_some() {
+        // A handler watching another kind: the K1 event still builds no table.
+        let mismatch = format!(
+            "loaded_tracked(\"gen_{}_cost_kind\", \"horizon.on(\\\"{}\\\", function(event) end, \\\"{}\\\")\")",
+            model.name, model.name, KIND_TWO
+        );
+        let plan = kind_values(model).unwrap_or_else(|| panic!("no kind plan for {}", model.name));
+        // A field kind resolves without the host; an entity kind resolves
+        // through it (one `entity`, one `entity_kind`), before the watches
+        // check that turns the event away.
+        let reads = match model.kind {
+            Kind::Entity { .. } => (2, 2),
+            _ => (0, 0),
+        };
+        cost_part(
+            &mut out,
+            model,
+            tys,
+            Some(plan.k1),
+            &mismatch,
+            reads,
+            "for a watched-away kind",
+        );
+    }
+    out.push_str("}\n");
+    out
+}
+
+/// One cost-test part: a loaded mod, then a single measured dispatch with
+/// the host counters reset. `kind` is the K1 dispatch argument for
+/// kind-filtered hooks; `reads` is the pinned per-dispatch (`entity`,
+/// `host`) read count.
+#[allow(clippy::too_many_arguments)]
+fn cost_part(
+    out: &mut String,
+    model: &Model,
+    tys: &BTreeMap<String, String>,
+    kind: Option<String>,
+    load: &str,
+    reads: (usize, usize),
+    when: &str,
+) {
+    out.push_str(&format!("    let (m, id, dir, lua) = {load};\n"));
+    out.push_str("    let firing_mods = boxed(m);\n");
+    out.push_str("    {\n");
+    let call = dispatch_call(model, tys, kind, false);
+    for binding in &call.bindings {
+        out.push_str(binding);
+        out.push('\n');
+    }
+    out.push_str("    reset_entity_reads();\n");
+    out.push_str("    reset_host_reads();\n");
+    out.push_str("    reset_level_reads();\n");
+    out.push_str(&call.call);
+    out.push('\n');
+    out.push_str("    assert_eq!(witness(&lua), 0, \"no handler ran\");\n");
+    out.push_str(&format!(
+        "    assert_eq!(entity_reads(), {}, \"{} read the host {}\");\n",
+        reads.0, model.name, when
+    ));
+    out.push_str(&format!(
+        "    assert_eq!(host_reads(), {}, \"{} read the host {}\");\n",
+        reads.1, model.name, when
+    ));
+    out.push_str(&format!(
+        "    assert_eq!(level_reads(), 0, \"{} read the level {}\");\n",
+        model.name, when
+    ));
+    out.push_str("    no_error(&id);\n");
+    out.push_str("    drop_dir(dir);\n");
+    out.push_str("    }\n");
+}
+
+/// One hook's duo test: two mods hear the same dispatch, in load order.
+/// Collect sequences reach the native side appended in order (each mod
+/// inserts its own element); collect scalars and other single-slot shapes
+/// keep the last writer's value; a replace out keeps the first mod's `Some`
+/// answer, and the loser never runs (its witness stays zero). A third firing
+/// puts an erroring mod first: its failure lands in its status row, and the
+/// second mod's result still lands. Swapping the two firing orders flips the
+/// assertions, so a dispatch that stopped hearing mods in order fails loudly.
+fn duo_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
+    let plan = kind_values(model);
+    let kind_arg = |p: &Option<KindPlan>| p.as_ref().map(|p| p.k1.clone());
+    let kind_reg = plan
+        .as_ref()
+        .map(|p| format!(", \"{}\"", p.register))
+        .unwrap_or_default();
+    // One mod's handler source: the ran-witness plus its contribution.
+    let handler = |contrib: &[String]| {
+        let mut lines = vec!["    __witness = (__witness or 0) + 1".to_owned()];
+        lines.extend(contrib.iter().cloned());
+        format!(
+            "horizon.on(\"{}\", function(event)\n{}\nend{})",
+            model.name,
+            lines.join("\n"),
+            kind_reg
+        )
+    };
+    let error_handler = {
+        let src = handler(&["    error(\"test:boom\")".to_owned()]);
+        format!("{src:?}")
+    };
+    // A firing: fresh mods, the dispatch in a scope, the order asserts.
+    // The erroring firing loads only the erroring mod and B.
+    let firing = |tag: &str,
+                  a_src: &str,
+                  b_src: &str,
+                  rust: &[String],
+                  wit_a: i64,
+                  wit_b: i64,
+                  b_only_error: bool| {
+        let mut out = String::new();
+        if !b_only_error {
+            out.push_str(&format!(
+                "    let (a, a_id, a_dir, a_lua) = loaded_tracked(\"gen_{}_duo_a{tag}\", {a_src});\n",
+                model.name
+            ));
+        }
+        out.push_str(&format!(
+            "    let (b, b_id, b_dir, b_lua) = loaded_tracked(\"gen_{}_duo_b{tag}\", {b_src});\n",
+            model.name
+        ));
+        if b_only_error {
+            out.push_str(&format!(
+                "    let (e, e_id, e_dir, e_lua) = loaded_tracked(\"gen_{}_duo_e{tag}\", {error_handler});\n",
+                model.name
+            ));
+            out.push_str("    let firing_mods = duo_boxed(e, b);\n");
+        } else if tag == "2" {
+            out.push_str("    let firing_mods = duo_boxed(b, a);\n");
+        } else {
+            out.push_str("    let firing_mods = duo_boxed(a, b);\n");
+        }
+        out.push_str("    {\n");
+        emit_call(&mut out, model, tys, kind_arg(&plan), false);
+        for line in rust {
+            out.push_str(line);
+            out.push('\n');
+        }
+        out.push_str("    }\n");
+        if b_only_error {
+            out.push_str("    assert_eq!(witness(&e_lua), 1, \"the erroring handler ran\");\n");
+            out.push_str(&format!(
+                "    assert_eq!(witness(&b_lua), {wit_b}, \"the second handler ran\");\n"
+            ));
+            out.push_str("    has_error(&e_id);\n");
+            out.push_str("    no_error(&b_id);\n");
+            out.push_str("    drop_dir(e_dir);\n");
+            out.push_str("    drop_dir(b_dir);\n");
+        } else {
+            out.push_str(&format!(
+                "    assert_eq!(witness(&a_lua), {wit_a}, \"the first handler ran\");\n"
+            ));
+            out.push_str(&format!(
+                "    assert_eq!(witness(&b_lua), {wit_b}, \"the second handler ran\");\n"
+            ));
+            out.push_str("    no_error(&a_id);\n");
+            out.push_str("    no_error(&b_id);\n");
+            out.push_str("    drop_dir(a_dir);\n");
+            out.push_str("    drop_dir(b_dir);\n");
+        }
+        out
+    };
+    let (lua_a, lua_b, rust_ab, rust_ba, rust_eb, wit, suffix) = duo_parts(model, tys);
+    let a_src = format!("{:?}", handler(&lua_a));
+    let b_src = format!("{:?}", handler(&lua_b));
+    let mut out = format!(
+        "#[test]\nfn generated_{}_two_mods_{suffix}() {{\n",
+        model.name
+    );
+    out.push_str("    // First in load order lands first.\n");
+    out.push_str(&firing("1", &a_src, &b_src, &rust_ab, wit.0, wit.1, false));
+    out.push_str("    // Swapped: the other mod lands first.\n");
+    out.push_str(&firing("2", &a_src, &b_src, &rust_ba, wit.2, wit.3, false));
+    out.push_str("    // An erroring first mod does not hide the second mod's result.\n");
+    out.push_str(&firing("3", &a_src, &b_src, &rust_eb, wit.4, wit.5, true));
+    out.push_str("}\n");
+    out
+}
+
+/// A duo test's contributions and asserts: each mod's handler lines, the Rust
+/// asserts after the [A, B], [B, A] and [error, B] firings, the expected
+/// (a, b) witnesses after each firing, and the name suffix stating the
+/// defined semantics (`mod_api_gen` documents first-`Some`-wins for replace
+/// and in-order sharing for collect).
+#[allow(clippy::type_complexity)]
+fn duo_parts(
+    model: &Model,
+    tys: &BTreeMap<String, String>,
+) -> (
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    (i64, i64, i64, i64, i64, i64),
+    &'static str,
+) {
+    if model.contract == "replace" {
+        return duo_replace(model);
+    }
+    // A collect out: the mutable field each mod edits in turn. (One hook,
+    // `player_commands_sent_v2`, carries two; both are shared lists.)
+    let mut lua_a = Vec::new();
+    let mut lua_b = Vec::new();
+    let mut rust_ab = Vec::new();
+    let mut rust_ba = Vec::new();
+    let mut rust_eb = Vec::new();
+    let mut suffix = "append_in_load_order";
+    for (n, param) in model.dispatch_params.iter().enumerate() {
+        let Some(field) = model.fields.iter().find(|f| f.name == param.name) else {
+            continue;
+        };
+        let ty = tys.get(&field.name).map(String::as_str).unwrap_or("?");
+        let s = sample(&field.conv, ty, &field.name, eff_n(&field.conv, n, false));
+        if s.write_lua.is_none() {
+            continue;
+        }
+        let read = lua_read(&field.name);
+        match field.conv {
+            Conv::MutStrVec => {
+                let statik = ty.contains("str");
+                let (mark_a, mark_b) = if statik {
+                    ("\"test:duo_a\"".to_owned(), "\"test:duo_b\"".to_owned())
+                } else {
+                    (
+                        "\"test:duo_a\".to_owned()".to_owned(),
+                        "\"test:duo_b\".to_owned()".to_owned(),
+                    )
+                };
+                lua_a.push(format!("    table.insert({read}, \"test:duo_a\")"));
+                lua_b.push(format!("    table.insert({read}, \"test:duo_b\")"));
+                // Each firing's expected list: the seed plus the mods'
+                // elements in firing order (the erroring firing has B's only).
+                let seq_asserts = |rust: &mut Vec<String>, markers: &[&str]| {
+                    rust.push(format!("    let mut expected_{} = {};", field.name, s.rust));
+                    for marker in markers {
+                        rust.push(format!("    expected_{}.push({marker});", field.name));
+                    }
+                    rust.push(format!(
+                        "    assert_eq!({}, expected_{});",
+                        field.name, field.name
+                    ));
+                };
+                seq_asserts(&mut rust_ab, &[&mark_a, &mark_b]);
+                seq_asserts(&mut rust_ba, &[&mark_b, &mark_a]);
+                seq_asserts(&mut rust_eb, &[&mark_b]);
+            }
+            Conv::MutScalar => {
+                suffix = "last_write_wins";
+                let boolean = ty.contains("bool");
+                let (la, lb, ra, rb) = if boolean {
+                    (
+                        "true".to_owned(),
+                        "false".to_owned(),
+                        "true".to_owned(),
+                        "false".to_owned(),
+                    )
+                } else {
+                    (
+                        "111".to_owned(),
+                        "222".to_owned(),
+                        "111".to_owned(),
+                        "222".to_owned(),
+                    )
+                };
+                lua_a.push(format!("    {read} = {la}"));
+                lua_b.push(format!("    {read} = {lb}"));
+                let assert = |v: &str| {
+                    if boolean {
+                        if v == "true" {
+                            format!("    assert!({});", field.name)
+                        } else {
+                            format!("    assert!(!{});", field.name)
+                        }
+                    } else {
+                        format!("    assert_eq!({}, {v});", field.name)
+                    }
+                };
+                // Each firing keeps the last writer's value.
+                rust_ab.push(assert(&rb));
+                rust_ba.push(assert(&ra));
+                rust_eb.push(assert(&rb));
+            }
+            Conv::Struct
+                if write_tag(&field.conv, ty, field.key.as_deref())
+                    .is_some_and(|w| w.starts_with("w_vec")) =>
+            {
+                let key = field.key.as_deref().unwrap_or("?");
+                let (rust_a, lua_elem_a, edited_a) = canonical_elem(key, &field.name, n + 50)
+                    .unwrap_or_else(|| panic!("no duo element for {}", model.name));
+                let (rust_b, lua_elem_b, _) = canonical_elem(key, &field.name, n + 51)
+                    .unwrap_or_else(|| panic!("no duo element for {}", model.name));
+                if lua_elem_a == lua_elem_b {
+                    panic!("duo elements collide for {}: {}", model.name, field.name);
+                }
+                lua_a.push(format!("    table.insert({read}, {lua_elem_a})"));
+                lua_b.push(format!("    table.insert({read}, {lua_elem_b})"));
+                // Elements lack `PartialEq` in general, so the lists compare
+                // through `Debug`, like the single-mod tests. A shape with an
+                // edited pair (a tooltip line) does not round-trip its seed,
+                // so the test checks the appended suffix instead of the whole
+                // list; the seed itself is the single-mod tests' job.
+                if edited_a {
+                    // Length-relative: seeds vary in length (an `[i32;3]`
+                    // list seeds one row) and the erroring firing appends
+                    // once, so the test checks the appended tail.
+                    let suffix_asserts = |rust: &mut Vec<String>, take: usize, elems: &[&str]| {
+                        rust.push(format!(
+                            "    assert_eq!(format!(\"{{:?}}\", &{}[{}.len() - {take}..]), format!(\"{{:?}}\", vec![{}]));",
+                            field.name,
+                            field.name,
+                            elems.join(", ")
+                        ));
+                    };
+                    suffix_asserts(&mut rust_ab, 2, &[&rust_a, &rust_b]);
+                    suffix_asserts(&mut rust_ba, 2, &[&rust_b, &rust_a]);
+                    suffix_asserts(&mut rust_eb, 1, &[&rust_b]);
+                } else {
+                    let seq_asserts = |rust: &mut Vec<String>, elems: &[&str]| {
+                        rust.push(format!("    let mut expected_{} = {};", field.name, s.rust));
+                        for elem in elems {
+                            rust.push(format!("    expected_{}.push({elem});", field.name));
+                        }
+                        rust.push(format!(
+                            "    assert_eq!(format!(\"{{:?}}\", {}), format!(\"{{:?}}\", expected_{}));",
+                            field.name, field.name
+                        ));
+                    };
+                    seq_asserts(&mut rust_ab, &[&rust_a, &rust_b]);
+                    seq_asserts(&mut rust_ba, &[&rust_b, &rust_a]);
+                    seq_asserts(&mut rust_eb, &[&rust_b]);
+                }
+            }
+            _ => {
+                let (la, lb, ab, ba, eb) = duo_exotic(model, &field.name);
+                suffix = if model.name == "player_pre_login" {
+                    "refusals_in_load_order"
+                } else {
+                    "last_write_wins"
+                };
+                lua_a.extend(la);
+                lua_b.extend(lb);
+                rust_ab.extend(ab);
+                rust_ba.extend(ba);
+                rust_eb.extend(eb);
+            }
+        }
+    }
+    if lua_a.is_empty() {
+        panic!("no duo out for collect hook {}", model.name);
+    }
+    (
+        lua_a,
+        lua_b,
+        rust_ab,
+        rust_ba,
+        rust_eb,
+        (1, 1, 1, 1, 1, 1),
+        suffix,
+    )
+}
+
+/// A duo replace test's contributions and asserts: both mods answer, and the
+/// first mod's `Some` wins while the loser never runs.
+#[allow(clippy::type_complexity)]
+fn duo_replace(
+    model: &Model,
+) -> (
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    (i64, i64, i64, i64, i64, i64),
+    &'static str,
+) {
+    let out = model
+        .out
+        .as_ref()
+        .unwrap_or_else(|| panic!("no duo out for replace hook {}", model.name));
+    let read = lua_read(&out.name);
+    let (lua_a, lua_b, rust_ab, rust_ba, rust_eb) = match out.read {
+        ReplaceRead::Int => {
+            let (ra, la) = replace_sample(out.read, &out.ret, 0);
+            let (rb, lb) = replace_sample(out.read, &out.ret, 1);
+            assert_ne!(la, lb, "duo answers collide for {}", model.name);
+            (
+                vec![format!("    {read} = {la}")],
+                vec![format!("    {read} = {lb}")],
+                vec![format!("    assert_eq!({}, Some({ra}));", out.name)],
+                vec![format!("    assert_eq!({}, Some({rb}));", out.name)],
+                vec![format!("    assert_eq!({}, Some({rb}));", out.name)],
+            )
+        }
+        ReplaceRead::Bool => (
+            vec![format!("    {read} = true")],
+            vec![format!("    {read} = false")],
+            vec![format!("    assert_eq!({}, Some(true));", out.name)],
+            vec![format!("    assert_eq!({}, Some(false));", out.name)],
+            vec![format!("    assert_eq!({}, Some(false));", out.name)],
+        ),
+        ReplaceRead::Pair => (
+            vec![format!("    {read} = {{ x = 16, y = 8 }}")],
+            vec![format!("    {read} = {{ x = 1, y = 2 }}")],
+            vec![format!("    assert_eq!({}, Some([16.0, 8.0]));", out.name)],
+            vec![format!("    assert_eq!({}, Some([1.0, 2.0]));", out.name)],
+            vec![format!("    assert_eq!({}, Some([1.0, 2.0]));", out.name)],
+        ),
+        ReplaceRead::Item => (
+            vec![format!(
+                "    {read} = {{ id = \"test:result\", count = 1 }}"
+            )],
+            vec![format!(
+                "    {read} = {{ id = \"test:result\", count = 2 }}"
+            )],
+            vec![
+                format!(
+                    "    let replaced = {}.expect(\"a replaced value\");",
+                    out.name
+                ),
+                "    assert_eq!(&*replaced.item, \"test:result\");".to_owned(),
+                "    assert_eq!(replaced.count, 1);".to_owned(),
+            ],
+            vec![
+                format!(
+                    "    let replaced = {}.expect(\"a replaced value\");",
+                    out.name
+                ),
+                "    assert_eq!(&*replaced.item, \"test:result\");".to_owned(),
+                "    assert_eq!(replaced.count, 2);".to_owned(),
+            ],
+            vec![
+                format!(
+                    "    let replaced = {}.expect(\"a replaced value\");",
+                    out.name
+                ),
+                "    assert_eq!(&*replaced.item, \"test:result\");".to_owned(),
+                "    assert_eq!(replaced.count, 2);".to_owned(),
+            ],
+        ),
+        ReplaceRead::Struct | ReplaceRead::StructVec => {
+            let (ra, la) = replace_sample(out.read, &out.ret, 0);
+            let (rb, lb) = replace_sample(out.read, &out.ret, 1);
+            assert_ne!(la, lb, "duo answers collide for {}", model.name);
+            (
+                vec![format!("    {read} = {la}")],
+                vec![format!("    {read} = {lb}")],
+                vec![format!("    assert_eq!({}, Some({ra}));", out.name)],
+                vec![format!("    assert_eq!({}, Some({rb}));", out.name)],
+                vec![format!("    assert_eq!({}, Some({rb}));", out.name)],
+            )
+        }
+        ReplaceRead::Bytes => (
+            vec![format!("    {read} = \"t\" .. string.char(0, 159)")],
+            vec![format!("    {read} = \"u\" .. string.char(1)")],
+            vec![format!(
+                "    assert_eq!({}, Some(vec![116u8, 0u8, 159u8]));",
+                out.name
+            )],
+            vec![format!(
+                "    assert_eq!({}, Some(vec![117u8, 1u8]));",
+                out.name
+            )],
+            vec![format!(
+                "    assert_eq!({}, Some(vec![117u8, 1u8]));",
+                out.name
+            )],
+        ),
+        ReplaceRead::AnswerState => {
+            // Both mods answer the event's own state: the values match, so
+            // the witnesses prove the first mod won and the loser never ran.
+            let state_idx = model
+                .dispatch_params
+                .iter()
+                .position(|p| p.name == "state")
+                .unwrap_or(0);
+            let assert = format!(
+                "    assert_eq!({}, Some(Some(BlockStateId({}))));",
+                out.name,
+                8 + state_idx
+            );
+            (
+                vec![format!("    {read} = event.state")],
+                vec![format!("    {read} = event.state")],
+                vec![assert.clone()],
+                vec![assert.clone()],
+                vec![assert],
+            )
+        }
+    };
+    // The winner runs and the loser never does; the error firing's second
+    // mod still lands its answer.
+    (
+        lua_a,
+        lua_b,
+        rust_ab,
+        rust_ba,
+        rust_eb,
+        (1, 0, 0, 1, 1, 1),
+        "first_some_wins",
+    )
+}
+
+/// A duo collect hook whose out is not a plain sequence or scalar: one
+/// hook-specific contribution per mod and the asserts after each firing.
+fn duo_exotic(
+    model: &Model,
+    field: &str,
+) -> (
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+) {
+    let read = lua_read(field);
+    match model.name.as_str() {
+        "loot_table_load" => (
+            vec![format!("    {read} = {{ duo = \"a\" }}")],
+            vec![format!("    {read} = {{ duo = \"b\" }}")],
+            vec![format!(
+                "    assert_eq!({field}, serde_json::json!({{ \"duo\": \"b\" }}));"
+            )],
+            vec![format!(
+                "    assert_eq!({field}, serde_json::json!({{ \"duo\": \"a\" }}));"
+            )],
+            vec![format!(
+                "    assert_eq!({field}, serde_json::json!({{ \"duo\": \"b\" }}));"
+            )],
+        ),
+        "modify_default_components" => (
+            vec![format!("    {read} = {{ duo = \"a\" }}")],
+            vec![format!("    {read} = {{ duo = \"b\" }}")],
+            vec![format!(
+                "    assert_eq!({field}, [(\"duo\".to_owned(), serde_json::json!(\"b\"))].into_iter().collect());"
+            )],
+            vec![format!(
+                "    assert_eq!({field}, [(\"duo\".to_owned(), serde_json::json!(\"a\"))].into_iter().collect());"
+            )],
+            vec![format!(
+                "    assert_eq!({field}, [(\"duo\".to_owned(), serde_json::json!(\"b\"))].into_iter().collect());"
+            )],
+        ),
+        "merchant_offer_traded" => (
+            vec![format!("    {read}.uses = 51")],
+            vec![format!("    {read}.uses = 52")],
+            vec![format!("    assert_eq!({field}.uses, 52);")],
+            vec![format!("    assert_eq!({field}.uses, 51);")],
+            vec![format!("    assert_eq!({field}.uses, 52);")],
+        ),
+        "explosion_knockback" => (
+            vec![format!(
+                "    {read} = {{ x = 111.0, y = 112.0, z = 113.0 }}"
+            )],
+            vec![format!(
+                "    {read} = {{ x = 211.0, y = 212.0, z = 213.0 }}"
+            )],
+            vec![format!("    assert_eq!({field}, [211.0, 212.0, 213.0]);")],
+            vec![format!("    assert_eq!({field}, [111.0, 112.0, 113.0]);")],
+            vec![format!("    assert_eq!({field}, [211.0, 212.0, 213.0]);")],
+        ),
+        "living_get_projectile" => (
+            vec![format!(
+                "    {read} = {{ id = \"test:projectile\", count = 51 }}"
+            )],
+            vec![format!(
+                "    {read} = {{ id = \"test:projectile\", count = 52 }}"
+            )],
+            // Each firing keeps the last writer's stack.
+            vec![
+                format!("    let got = {field}.expect(\"a collected value\");"),
+                "    assert_eq!(&*got.item, \"test:projectile\");".to_owned(),
+                "    assert_eq!(got.count, 52);".to_owned(),
+            ],
+            vec![
+                format!("    let got = {field}.expect(\"a collected value\");"),
+                "    assert_eq!(&*got.item, \"test:projectile\");".to_owned(),
+                "    assert_eq!(got.count, 51);".to_owned(),
+            ],
+            vec![
+                format!("    let got = {field}.expect(\"a collected value\");"),
+                "    assert_eq!(&*got.item, \"test:projectile\");".to_owned(),
+                "    assert_eq!(got.count, 52);".to_owned(),
+            ],
+        ),
+        "player_pre_login" => (
+            vec![format!("    {read} = {{ refuse = \"test:duo_a\" }}")],
+            vec![format!("    {read} = {{ refuse = \"test:duo_b\" }}")],
+            vec![
+                format!("    assert_eq!({field}.len(), 2);"),
+                format!(
+                    "    assert_eq!({field}[0].try_recv().unwrap().unwrap_err().plain(), \"test:duo_a\");"
+                ),
+                format!(
+                    "    assert_eq!({field}[1].try_recv().unwrap().unwrap_err().plain(), \"test:duo_b\");"
+                ),
+            ],
+            vec![
+                format!("    assert_eq!({field}.len(), 2);"),
+                format!(
+                    "    assert_eq!({field}[0].try_recv().unwrap().unwrap_err().plain(), \"test:duo_b\");"
+                ),
+                format!(
+                    "    assert_eq!({field}[1].try_recv().unwrap().unwrap_err().plain(), \"test:duo_a\");"
+                ),
+            ],
+            vec![
+                format!("    assert_eq!({field}.len(), 1);"),
+                format!(
+                    "    assert_eq!({field}[0].try_recv().unwrap().unwrap_err().plain(), \"test:duo_b\");"
+                ),
+            ],
+        ),
+        _ => panic!("no duo edit for collect hook {}", model.name),
+    }
+}
+
 /// One no-handler dispatch: the model only, no Lua work, outs unchanged.
 fn quiet_block(model: &Model, tys: &BTreeMap<String, String>) -> String {
     let mut out = format!("    // {}: unregistered, nothing runs.\n", model.name);
@@ -1362,13 +2090,17 @@ pub fn run(check: bool) -> Result<(), String> {
         // `name` the table stands in for: the model checks below never see
         // the spike's own body.
         if spike {
+            // The registered Lua with comments stripped first: a
+            // commented-out assert, or an assert on another table's `name`,
+            // is not the player's name.
+            let lua = spike_test_body(&spike_src, &model.name).and_then(spike_lua);
+            let stripped = lua.map(strip_lua_comments);
             for field in &model.fields {
                 if !matches!(field.conv, Conv::Player | Conv::PlayerOpt) {
                     continue;
                 }
-                if !spike_test_body(&spike_src, &model.name)
-                    .is_some_and(|body| body.contains(".name =="))
-                {
+                let want = format!("event.{}.name ==", field.name);
+                if !stripped.as_deref().is_some_and(|lua| lua.contains(&want)) {
                     uncovered.push(format!("{}: {}.name", model.name, field.name));
                 }
             }
@@ -1403,6 +2135,12 @@ pub fn run(check: bool) -> Result<(), String> {
             }
         }
         quiet.push(quiet_block(model, &tys));
+        // Every hook proves an unregistered dispatch costs nothing; every
+        // collect and replace hook proves two mods share the out in order.
+        tests.push(cost_test_fn(model, &tys));
+        if model.contract == "collect" || model.contract == "replace" {
+            tests.push(duo_test_fn(model, &tys));
+        }
     }
     if !uncovered.is_empty() {
         return Err(format!(

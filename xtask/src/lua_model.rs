@@ -1306,6 +1306,27 @@ fn struct_vec_sample(inner: &str, field: &str, n: usize, borrowed: bool) -> Stru
     }
 }
 
+/// The canonical write-back element of a sequence field at sample index `n`,
+/// and whether it is the edited pair: the edited pair when the shape has one
+/// (a tooltip line reads back as the spans form, not the seed's literal),
+/// else the seed element itself. Duo tests append one per mod, so both
+/// contributions stay valid write-backs. Only one sequence layer is stripped:
+/// an `Option` element stays an element (`Some(..)`), matching the seed the
+/// dispatch builds.
+pub fn canonical_elem(key: &str, field: &str, n: usize) -> Option<(String, String, bool)> {
+    let mut elem = key;
+    if let Some(inner) = elem.strip_prefix("Vec<").and_then(|s| s.strip_suffix('>')) {
+        elem = inner;
+    } else if let Some(inner) = elem.strip_prefix("&[").and_then(|s| s.strip_suffix(']')) {
+        elem = inner;
+    }
+    let s = struct_sample(elem, field, n)?;
+    match (&s.write_rust, &s.write_lua) {
+        (Some(rust), Some(lua)) if rust != "None" => Some((rust.clone(), lua.clone(), true)),
+        _ => Some((s.rust, s.lua, false)),
+    }
+}
+
 fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
     if let Some(inner) = key
         .strip_prefix("Option<")

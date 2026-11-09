@@ -1837,6 +1837,31 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_frame_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_frame_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_frame(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Duration::from_secs_f64(1.5),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "frame read the host with no handler");
+            assert_eq!(host_reads(), 0, "frame read the host with no handler");
+            assert_eq!(level_reads(), 0, "frame read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_tick() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_tick",
@@ -1846,6 +1871,27 @@ mod generated_tests {
         dispatch_tick(&mut FakeHost::empty(), &firing_mods);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_tick_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tick_cost",
+            "horizon.on(\"frame\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_tick(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "tick read the host with no handler");
+            assert_eq!(host_reads(), 0, "tick read the host with no handler");
+            assert_eq!(level_reads(), 0, "tick read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -1866,6 +1912,103 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_emissive_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_emissive_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut layers = vec![("test:a0", "test:b0"), ("test:a1", "test:b1")];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_emissive(&FakeHost::empty(), &firing_mods, &mut layers);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "emissive read the host with no handler");
+            assert_eq!(host_reads(), 0, "emissive read the host with no handler");
+            assert_eq!(level_reads(), 0, "emissive read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_emissive_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_emissive_duo_a1",
+            "horizon.on(\"emissive\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.layers, { a = \"test:a50\", b = \"test:b50\" })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_emissive_duo_b1",
+            "horizon.on(\"emissive\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.layers, { a = \"test:a51\", b = \"test:b51\" })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut layers = vec![("test:a0", "test:b0"), ("test:a1", "test:b1")];
+            dispatch_emissive(&FakeHost::empty(), &firing_mods, &mut layers);
+            let mut expected_layers = vec![("test:a0", "test:b0"), ("test:a1", "test:b1")];
+            expected_layers.push(("test:a50", "test:b50"));
+            expected_layers.push(("test:a51", "test:b51"));
+            assert_eq!(format!("{:?}", layers), format!("{:?}", expected_layers));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_emissive_duo_a2",
+            "horizon.on(\"emissive\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.layers, { a = \"test:a50\", b = \"test:b50\" })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_emissive_duo_b2",
+            "horizon.on(\"emissive\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.layers, { a = \"test:a51\", b = \"test:b51\" })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut layers = vec![("test:a0", "test:b0"), ("test:a1", "test:b1")];
+            dispatch_emissive(&FakeHost::empty(), &firing_mods, &mut layers);
+            let mut expected_layers = vec![("test:a0", "test:b0"), ("test:a1", "test:b1")];
+            expected_layers.push(("test:a51", "test:b51"));
+            expected_layers.push(("test:a50", "test:b50"));
+            assert_eq!(format!("{:?}", layers), format!("{:?}", expected_layers));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_emissive_duo_b3",
+            "horizon.on(\"emissive\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.layers, { a = \"test:a51\", b = \"test:b51\" })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_emissive_duo_e3",
+            "horizon.on(\"emissive\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut layers = vec![("test:a0", "test:b0"), ("test:a1", "test:b1")];
+            dispatch_emissive(&FakeHost::empty(), &firing_mods, &mut layers);
+            let mut expected_layers = vec![("test:a0", "test:b0"), ("test:a1", "test:b1")];
+            expected_layers.push(("test:a51", "test:b51"));
+            assert_eq!(format!("{:?}", layers), format!("{:?}", expected_layers));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_server_about_to_start() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_server_about_to_start",
@@ -1875,6 +2018,39 @@ mod generated_tests {
         dispatch_server_about_to_start(&mut FakeHost::empty(), &firing_mods, true);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_server_about_to_start_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_about_to_start_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_server_about_to_start(&mut FakeHost::empty(), &firing_mods, true);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "server_about_to_start read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "server_about_to_start read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_about_to_start read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -1890,6 +2066,72 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_server_stopping_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_stopping_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_server_stopping(&mut FakeHost::empty(), &firing_mods, true);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "server_stopping read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "server_stopping read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_stopping read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_level_tick_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_level_tick_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_level_tick_pre(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "level_tick_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "level_tick_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "level_tick_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_level_tick_post() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_level_tick_post",
@@ -1899,6 +2141,39 @@ mod generated_tests {
         dispatch_level_tick_post(&mut FakeHost::empty(), &firing_mods, "test:dimension");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_level_tick_post_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_level_tick_post_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_level_tick_post(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "level_tick_post read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "level_tick_post read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "level_tick_post read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -1921,6 +2196,46 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_changed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_changed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_changed(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                BlockStateId(11),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_changed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_changed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_key() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_key",
@@ -1930,6 +2245,25 @@ mod generated_tests {
         dispatch_key(&mut FakeHost::empty(), &firing_mods, "test:key", false);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_key_unregistered_costs_nothing() {
+        let (m, id, dir, lua) =
+            loaded_tracked("gen_key_cost", "horizon.on(\"tick\", function(event) end)");
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_key(&mut FakeHost::empty(), &firing_mods, "test:key", false);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "key read the host with no handler");
+            assert_eq!(host_reads(), 0, "key read the host with no handler");
+            assert_eq!(level_reads(), 0, "key read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -1961,6 +2295,28 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_wheel_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_wheel_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut claimed = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_wheel(&mut FakeHost::empty(), &firing_mods, 1.5, &mut claimed);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "wheel read the host with no handler");
+            assert_eq!(host_reads(), 0, "wheel read the host with no handler");
+            assert_eq!(level_reads(), 0, "wheel read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_commands() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_commands",
@@ -1979,6 +2335,103 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_commands_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_commands_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut commands = vec!["test:seed", "test:seed2"];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "commands read the host with no handler");
+            assert_eq!(host_reads(), 0, "commands read the host with no handler");
+            assert_eq!(level_reads(), 0, "commands read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_commands_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_commands_duo_a1",
+            "horizon.on(\"commands\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.commands, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_commands_duo_b1",
+            "horizon.on(\"commands\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.commands, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut commands = vec!["test:seed", "test:seed2"];
+            dispatch_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
+            let mut expected_commands = vec!["test:seed", "test:seed2"];
+            expected_commands.push("test:duo_a");
+            expected_commands.push("test:duo_b");
+            assert_eq!(commands, expected_commands);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_commands_duo_a2",
+            "horizon.on(\"commands\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.commands, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_commands_duo_b2",
+            "horizon.on(\"commands\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.commands, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut commands = vec!["test:seed", "test:seed2"];
+            dispatch_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
+            let mut expected_commands = vec!["test:seed", "test:seed2"];
+            expected_commands.push("test:duo_b");
+            expected_commands.push("test:duo_a");
+            assert_eq!(commands, expected_commands);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_commands_duo_b3",
+            "horizon.on(\"commands\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.commands, \"test:duo_b\")\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_commands_duo_e3",
+            "horizon.on(\"commands\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut commands = vec!["test:seed", "test:seed2"];
+            dispatch_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
+            let mut expected_commands = vec!["test:seed", "test:seed2"];
+            expected_commands.push("test:duo_b");
+            assert_eq!(commands, expected_commands);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -2003,6 +2456,114 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_zoom_unregistered_costs_nothing() {
+        let (m, id, dir, lua) =
+            loaded_tracked("gen_zoom_cost", "horizon.on(\"tick\", function(event) end)");
+        let firing_mods = boxed(m);
+        {
+            let mut zoom: Option<NativeZoom> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_zoom(&FakeHost::empty(), &firing_mods, &mut zoom);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "zoom read the host with no handler");
+            assert_eq!(host_reads(), 0, "zoom read the host with no handler");
+            assert_eq!(level_reads(), 0, "zoom read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_zoom_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_zoom_duo_a1",
+            "horizon.on(\"zoom\", function(event)\n    __witness = (__witness or 0) + 1\n    event.zoom = { factor = 1.5, smooth = true, turn = 2.5 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_zoom_duo_b1",
+            "horizon.on(\"zoom\", function(event)\n    __witness = (__witness or 0) + 1\n    event.zoom = { factor = 2.5, smooth = false, turn = 2.5 }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut zoom: Option<NativeZoom> = None;
+            dispatch_zoom(&FakeHost::empty(), &firing_mods, &mut zoom);
+            assert_eq!(
+                zoom,
+                Some(NativeZoom {
+                    factor: 1.5,
+                    smooth: true,
+                    turn: 2.5
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_zoom_duo_a2",
+            "horizon.on(\"zoom\", function(event)\n    __witness = (__witness or 0) + 1\n    event.zoom = { factor = 1.5, smooth = true, turn = 2.5 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_zoom_duo_b2",
+            "horizon.on(\"zoom\", function(event)\n    __witness = (__witness or 0) + 1\n    event.zoom = { factor = 2.5, smooth = false, turn = 2.5 }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut zoom: Option<NativeZoom> = None;
+            dispatch_zoom(&FakeHost::empty(), &firing_mods, &mut zoom);
+            assert_eq!(
+                zoom,
+                Some(NativeZoom {
+                    factor: 2.5,
+                    smooth: false,
+                    turn: 2.5
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_zoom_duo_b3",
+            "horizon.on(\"zoom\", function(event)\n    __witness = (__witness or 0) + 1\n    event.zoom = { factor = 2.5, smooth = false, turn = 2.5 }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_zoom_duo_e3",
+            "horizon.on(\"zoom\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut zoom: Option<NativeZoom> = None;
+            dispatch_zoom(&FakeHost::empty(), &firing_mods, &mut zoom);
+            assert_eq!(
+                zoom,
+                Some(NativeZoom {
+                    factor: 2.5,
+                    smooth: false,
+                    turn: 2.5
+                })
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_minimap() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_minimap",
@@ -2023,6 +2584,122 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_minimap_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_minimap_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut minimap: Option<NativeMinimap> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_minimap(&FakeHost::empty(), &firing_mods, &mut minimap);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "minimap read the host with no handler");
+            assert_eq!(host_reads(), 0, "minimap read the host with no handler");
+            assert_eq!(level_reads(), 0, "minimap read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_minimap_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_minimap_duo_a1",
+            "horizon.on(\"minimap\", function(event)\n    __witness = (__witness or 0) + 1\n    event.minimap = { corner = \"top_left\", size = 64.0, blocks_per_pixel = 1.0, rotate = true, round = false }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_minimap_duo_b1",
+            "horizon.on(\"minimap\", function(event)\n    __witness = (__witness or 0) + 1\n    event.minimap = { corner = \"top_left\", size = 65.0, blocks_per_pixel = 1.0, rotate = false, round = true }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut minimap: Option<NativeMinimap> = None;
+            dispatch_minimap(&FakeHost::empty(), &firing_mods, &mut minimap);
+            assert_eq!(
+                minimap,
+                Some(NativeMinimap {
+                    corner: Corner::TopLeft,
+                    size: 64.0,
+                    blocks_per_pixel: 1.0,
+                    rotate: true,
+                    round: false
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_minimap_duo_a2",
+            "horizon.on(\"minimap\", function(event)\n    __witness = (__witness or 0) + 1\n    event.minimap = { corner = \"top_left\", size = 64.0, blocks_per_pixel = 1.0, rotate = true, round = false }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_minimap_duo_b2",
+            "horizon.on(\"minimap\", function(event)\n    __witness = (__witness or 0) + 1\n    event.minimap = { corner = \"top_left\", size = 65.0, blocks_per_pixel = 1.0, rotate = false, round = true }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut minimap: Option<NativeMinimap> = None;
+            dispatch_minimap(&FakeHost::empty(), &firing_mods, &mut minimap);
+            assert_eq!(
+                minimap,
+                Some(NativeMinimap {
+                    corner: Corner::TopLeft,
+                    size: 65.0,
+                    blocks_per_pixel: 1.0,
+                    rotate: false,
+                    round: true
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_minimap_duo_b3",
+            "horizon.on(\"minimap\", function(event)\n    __witness = (__witness or 0) + 1\n    event.minimap = { corner = \"top_left\", size = 65.0, blocks_per_pixel = 1.0, rotate = false, round = true }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_minimap_duo_e3",
+            "horizon.on(\"minimap\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut minimap: Option<NativeMinimap> = None;
+            dispatch_minimap(&FakeHost::empty(), &firing_mods, &mut minimap);
+            assert_eq!(
+                minimap,
+                Some(NativeMinimap {
+                    corner: Corner::TopLeft,
+                    size: 65.0,
+                    blocks_per_pixel: 1.0,
+                    rotate: false,
+                    round: true
+                })
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -2076,6 +2753,293 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_mods_unregistered_costs_nothing() {
+        let (m, id, dir, lua) =
+            loaded_tracked("gen_mods_cost", "horizon.on(\"tick\", function(event) end)");
+        let firing_mods = boxed(m);
+        {
+            let mut mods = vec![
+                NativeMod {
+                    id: "test:mod0".into(),
+                    title: "test:title0".into(),
+                    description: "test:desc0".into(),
+                    keys: vec![[
+                        "test:key0".into(),
+                        "test:label0".into(),
+                        "test:default0".into(),
+                    ]],
+                },
+                NativeMod {
+                    id: "test:mod1".into(),
+                    title: "test:title1".into(),
+                    description: "test:desc1".into(),
+                    keys: vec![[
+                        "test:key1".into(),
+                        "test:label1".into(),
+                        "test:default1".into(),
+                    ]],
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_mods(&mut FakeHost::empty(), &firing_mods, &mut mods);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "mods read the host with no handler");
+            assert_eq!(host_reads(), 0, "mods read the host with no handler");
+            assert_eq!(level_reads(), 0, "mods read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_mods_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_mods_duo_a1",
+            "horizon.on(\"mods\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.mods, { id = \"test:mod50\", title = \"test:title50\", description = \"test:desc50\", keys = { { key = \"test:key50\", label = \"test:label50\", default = \"test:default50\" } } })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_mods_duo_b1",
+            "horizon.on(\"mods\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.mods, { id = \"test:mod51\", title = \"test:title51\", description = \"test:desc51\", keys = { { key = \"test:key51\", label = \"test:label51\", default = \"test:default51\" } } })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut mods = vec![
+                NativeMod {
+                    id: "test:mod0".into(),
+                    title: "test:title0".into(),
+                    description: "test:desc0".into(),
+                    keys: vec![[
+                        "test:key0".into(),
+                        "test:label0".into(),
+                        "test:default0".into(),
+                    ]],
+                },
+                NativeMod {
+                    id: "test:mod1".into(),
+                    title: "test:title1".into(),
+                    description: "test:desc1".into(),
+                    keys: vec![[
+                        "test:key1".into(),
+                        "test:label1".into(),
+                        "test:default1".into(),
+                    ]],
+                },
+            ];
+            dispatch_mods(&mut FakeHost::empty(), &firing_mods, &mut mods);
+            let mut expected_mods = vec![
+                NativeMod {
+                    id: "test:mod0".into(),
+                    title: "test:title0".into(),
+                    description: "test:desc0".into(),
+                    keys: vec![[
+                        "test:key0".into(),
+                        "test:label0".into(),
+                        "test:default0".into(),
+                    ]],
+                },
+                NativeMod {
+                    id: "test:mod1".into(),
+                    title: "test:title1".into(),
+                    description: "test:desc1".into(),
+                    keys: vec![[
+                        "test:key1".into(),
+                        "test:label1".into(),
+                        "test:default1".into(),
+                    ]],
+                },
+            ];
+            expected_mods.push(NativeMod {
+                id: "test:mod50".into(),
+                title: "test:title50".into(),
+                description: "test:desc50".into(),
+                keys: vec![[
+                    "test:key50".into(),
+                    "test:label50".into(),
+                    "test:default50".into(),
+                ]],
+            });
+            expected_mods.push(NativeMod {
+                id: "test:mod51".into(),
+                title: "test:title51".into(),
+                description: "test:desc51".into(),
+                keys: vec![[
+                    "test:key51".into(),
+                    "test:label51".into(),
+                    "test:default51".into(),
+                ]],
+            });
+            assert_eq!(format!("{:?}", mods), format!("{:?}", expected_mods));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_mods_duo_a2",
+            "horizon.on(\"mods\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.mods, { id = \"test:mod50\", title = \"test:title50\", description = \"test:desc50\", keys = { { key = \"test:key50\", label = \"test:label50\", default = \"test:default50\" } } })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_mods_duo_b2",
+            "horizon.on(\"mods\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.mods, { id = \"test:mod51\", title = \"test:title51\", description = \"test:desc51\", keys = { { key = \"test:key51\", label = \"test:label51\", default = \"test:default51\" } } })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut mods = vec![
+                NativeMod {
+                    id: "test:mod0".into(),
+                    title: "test:title0".into(),
+                    description: "test:desc0".into(),
+                    keys: vec![[
+                        "test:key0".into(),
+                        "test:label0".into(),
+                        "test:default0".into(),
+                    ]],
+                },
+                NativeMod {
+                    id: "test:mod1".into(),
+                    title: "test:title1".into(),
+                    description: "test:desc1".into(),
+                    keys: vec![[
+                        "test:key1".into(),
+                        "test:label1".into(),
+                        "test:default1".into(),
+                    ]],
+                },
+            ];
+            dispatch_mods(&mut FakeHost::empty(), &firing_mods, &mut mods);
+            let mut expected_mods = vec![
+                NativeMod {
+                    id: "test:mod0".into(),
+                    title: "test:title0".into(),
+                    description: "test:desc0".into(),
+                    keys: vec![[
+                        "test:key0".into(),
+                        "test:label0".into(),
+                        "test:default0".into(),
+                    ]],
+                },
+                NativeMod {
+                    id: "test:mod1".into(),
+                    title: "test:title1".into(),
+                    description: "test:desc1".into(),
+                    keys: vec![[
+                        "test:key1".into(),
+                        "test:label1".into(),
+                        "test:default1".into(),
+                    ]],
+                },
+            ];
+            expected_mods.push(NativeMod {
+                id: "test:mod51".into(),
+                title: "test:title51".into(),
+                description: "test:desc51".into(),
+                keys: vec![[
+                    "test:key51".into(),
+                    "test:label51".into(),
+                    "test:default51".into(),
+                ]],
+            });
+            expected_mods.push(NativeMod {
+                id: "test:mod50".into(),
+                title: "test:title50".into(),
+                description: "test:desc50".into(),
+                keys: vec![[
+                    "test:key50".into(),
+                    "test:label50".into(),
+                    "test:default50".into(),
+                ]],
+            });
+            assert_eq!(format!("{:?}", mods), format!("{:?}", expected_mods));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_mods_duo_b3",
+            "horizon.on(\"mods\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.mods, { id = \"test:mod51\", title = \"test:title51\", description = \"test:desc51\", keys = { { key = \"test:key51\", label = \"test:label51\", default = \"test:default51\" } } })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_mods_duo_e3",
+            "horizon.on(\"mods\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut mods = vec![
+                NativeMod {
+                    id: "test:mod0".into(),
+                    title: "test:title0".into(),
+                    description: "test:desc0".into(),
+                    keys: vec![[
+                        "test:key0".into(),
+                        "test:label0".into(),
+                        "test:default0".into(),
+                    ]],
+                },
+                NativeMod {
+                    id: "test:mod1".into(),
+                    title: "test:title1".into(),
+                    description: "test:desc1".into(),
+                    keys: vec![[
+                        "test:key1".into(),
+                        "test:label1".into(),
+                        "test:default1".into(),
+                    ]],
+                },
+            ];
+            dispatch_mods(&mut FakeHost::empty(), &firing_mods, &mut mods);
+            let mut expected_mods = vec![
+                NativeMod {
+                    id: "test:mod0".into(),
+                    title: "test:title0".into(),
+                    description: "test:desc0".into(),
+                    keys: vec![[
+                        "test:key0".into(),
+                        "test:label0".into(),
+                        "test:default0".into(),
+                    ]],
+                },
+                NativeMod {
+                    id: "test:mod1".into(),
+                    title: "test:title1".into(),
+                    description: "test:desc1".into(),
+                    keys: vec![[
+                        "test:key1".into(),
+                        "test:label1".into(),
+                        "test:default1".into(),
+                    ]],
+                },
+            ];
+            expected_mods.push(NativeMod {
+                id: "test:mod51".into(),
+                title: "test:title51".into(),
+                description: "test:desc51".into(),
+                keys: vec![[
+                    "test:key51".into(),
+                    "test:label51".into(),
+                    "test:default51".into(),
+                ]],
+            });
+            assert_eq!(format!("{:?}", mods), format!("{:?}", expected_mods));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_settings() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_settings",
@@ -2102,6 +3066,123 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_settings_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_settings_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut buttons = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_settings(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:mod_id",
+                &mut buttons,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "settings read the host with no handler");
+            assert_eq!(host_reads(), 0, "settings read the host with no handler");
+            assert_eq!(level_reads(), 0, "settings read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_settings_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_settings_duo_a1",
+            "horizon.on(\"settings\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.buttons, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_settings_duo_b1",
+            "horizon.on(\"settings\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.buttons, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut buttons = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_settings(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:mod_id",
+                &mut buttons,
+            );
+            let mut expected_buttons = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_buttons.push("test:duo_a".to_owned());
+            expected_buttons.push("test:duo_b".to_owned());
+            assert_eq!(buttons, expected_buttons);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_settings_duo_a2",
+            "horizon.on(\"settings\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.buttons, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_settings_duo_b2",
+            "horizon.on(\"settings\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.buttons, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut buttons = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_settings(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:mod_id",
+                &mut buttons,
+            );
+            let mut expected_buttons = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_buttons.push("test:duo_b".to_owned());
+            expected_buttons.push("test:duo_a".to_owned());
+            assert_eq!(buttons, expected_buttons);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_settings_duo_b3",
+            "horizon.on(\"settings\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.buttons, \"test:duo_b\")\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_settings_duo_e3",
+            "horizon.on(\"settings\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut buttons = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_settings(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:mod_id",
+                &mut buttons,
+            );
+            let mut expected_buttons = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_buttons.push("test:duo_b".to_owned());
+            assert_eq!(buttons, expected_buttons);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_settings_click() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_settings_click",
@@ -2111,6 +3192,39 @@ mod generated_tests {
         dispatch_settings_click(&mut FakeHost::empty(), &firing_mods, "test:mod_id", 8);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_settings_click_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_settings_click_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_settings_click(&mut FakeHost::empty(), &firing_mods, "test:mod_id", 8);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "settings_click read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "settings_click read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "settings_click read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -2142,6 +3256,154 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_entity_container_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_entity_container_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut container: Option<ModContainer> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_entity_container(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut container,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_entity_container read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_entity_container read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_entity_container read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_block_entity_container_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_block_entity_container_duo_a1",
+            "horizon.on(\"block_entity_container\", function(event)\n    __witness = (__witness or 0) + 1\n    event.container = { slots = 9, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {}, menu = nil }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_block_entity_container_duo_b1",
+            "horizon.on(\"block_entity_container\", function(event)\n    __witness = (__witness or 0) + 1\n    event.container = { slots = 10, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {}, menu = nil }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut container: Option<ModContainer> = None;
+            dispatch_block_entity_container(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut container,
+            );
+            assert_eq!(
+                container,
+                Some(ModContainer {
+                    slots: 9,
+                    faces: [vec![0], vec![], vec![], vec![], vec![], vec![]],
+                    inputs: vec![0],
+                    outputs: vec![],
+                    menu: None
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_block_entity_container_duo_a2",
+            "horizon.on(\"block_entity_container\", function(event)\n    __witness = (__witness or 0) + 1\n    event.container = { slots = 9, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {}, menu = nil }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_block_entity_container_duo_b2",
+            "horizon.on(\"block_entity_container\", function(event)\n    __witness = (__witness or 0) + 1\n    event.container = { slots = 10, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {}, menu = nil }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut container: Option<ModContainer> = None;
+            dispatch_block_entity_container(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut container,
+            );
+            assert_eq!(
+                container,
+                Some(ModContainer {
+                    slots: 10,
+                    faces: [vec![0], vec![], vec![], vec![], vec![], vec![]],
+                    inputs: vec![0],
+                    outputs: vec![],
+                    menu: None
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_block_entity_container_duo_b3",
+            "horizon.on(\"block_entity_container\", function(event)\n    __witness = (__witness or 0) + 1\n    event.container = { slots = 10, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {}, menu = nil }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_block_entity_container_duo_e3",
+            "horizon.on(\"block_entity_container\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut container: Option<ModContainer> = None;
+            dispatch_block_entity_container(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut container,
+            );
+            assert_eq!(
+                container,
+                Some(ModContainer {
+                    slots: 10,
+                    faces: [vec![0], vec![], vec![], vec![], vec![], vec![]],
+                    inputs: vec![0],
+                    outputs: vec![],
+                    menu: None
+                })
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_screen() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_screen",
@@ -2167,6 +3429,398 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_screen_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut screen: Option<NativeScreen> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_screen(&FakeHost::empty(), &firing_mods, "test:block", &mut screen);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "screen read the host with no handler");
+            assert_eq!(host_reads(), 0, "screen read the host with no handler");
+            assert_eq!(level_reads(), 0, "screen read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_screen_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_screen_duo_a1",
+            "horizon.on(\"screen\", function(event)\n    __witness = (__witness or 0) + 1\n    event.screen = { width = 100.0, height = 50.0, slots = { { x = 1.0, y = 2.0 }, false }, inventory_y = 10.0, inventory_x = 20.0, own_labels = true, own_background = false }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_screen_duo_b1",
+            "horizon.on(\"screen\", function(event)\n    __witness = (__witness or 0) + 1\n    event.screen = { width = 101.0, height = 50.0, slots = { { x = 1.0, y = 2.0 }, false }, inventory_y = 10.0, inventory_x = 20.0, own_labels = false, own_background = true }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut screen: Option<NativeScreen> = None;
+            dispatch_screen(&FakeHost::empty(), &firing_mods, "test:block", &mut screen);
+            assert_eq!(
+                screen,
+                Some(NativeScreen {
+                    width: 100.0,
+                    height: 50.0,
+                    slots: vec![Some([1.0, 2.0]), None],
+                    inventory_y: 10.0,
+                    inventory_x: 20.0,
+                    own_labels: true,
+                    own_background: false
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_screen_duo_a2",
+            "horizon.on(\"screen\", function(event)\n    __witness = (__witness or 0) + 1\n    event.screen = { width = 100.0, height = 50.0, slots = { { x = 1.0, y = 2.0 }, false }, inventory_y = 10.0, inventory_x = 20.0, own_labels = true, own_background = false }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_screen_duo_b2",
+            "horizon.on(\"screen\", function(event)\n    __witness = (__witness or 0) + 1\n    event.screen = { width = 101.0, height = 50.0, slots = { { x = 1.0, y = 2.0 }, false }, inventory_y = 10.0, inventory_x = 20.0, own_labels = false, own_background = true }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut screen: Option<NativeScreen> = None;
+            dispatch_screen(&FakeHost::empty(), &firing_mods, "test:block", &mut screen);
+            assert_eq!(
+                screen,
+                Some(NativeScreen {
+                    width: 101.0,
+                    height: 50.0,
+                    slots: vec![Some([1.0, 2.0]), None],
+                    inventory_y: 10.0,
+                    inventory_x: 20.0,
+                    own_labels: false,
+                    own_background: true
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_screen_duo_b3",
+            "horizon.on(\"screen\", function(event)\n    __witness = (__witness or 0) + 1\n    event.screen = { width = 101.0, height = 50.0, slots = { { x = 1.0, y = 2.0 }, false }, inventory_y = 10.0, inventory_x = 20.0, own_labels = false, own_background = true }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_screen_duo_e3",
+            "horizon.on(\"screen\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut screen: Option<NativeScreen> = None;
+            dispatch_screen(&FakeHost::empty(), &firing_mods, "test:block", &mut screen);
+            assert_eq!(
+                screen,
+                Some(NativeScreen {
+                    width: 101.0,
+                    height: 50.0,
+                    slots: vec![Some([1.0, 2.0]), None],
+                    inventory_y: 10.0,
+                    inventory_x: 20.0,
+                    own_labels: false,
+                    own_background: true
+                })
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
+    fn generated_screen_click_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_click_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut button: Option<i32> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_screen_click(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &[5, 10],
+                [3.5, 4.5],
+                false,
+                &mut button,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "screen_click read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_click read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_click read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_screen_click_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_screen_click_duo_a1",
+            "horizon.on(\"screen_click\", function(event)\n    __witness = (__witness or 0) + 1\n    event.button = 81000\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_screen_click_duo_b1",
+            "horizon.on(\"screen_click\", function(event)\n    __witness = (__witness or 0) + 1\n    event.button = 81001\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut button: Option<i32> = None;
+            dispatch_screen_click(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &[5, 10],
+                [3.5, 4.5],
+                false,
+                &mut button,
+            );
+            assert_eq!(button, Some(81000));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_screen_click_duo_a2",
+            "horizon.on(\"screen_click\", function(event)\n    __witness = (__witness or 0) + 1\n    event.button = 81000\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_screen_click_duo_b2",
+            "horizon.on(\"screen_click\", function(event)\n    __witness = (__witness or 0) + 1\n    event.button = 81001\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut button: Option<i32> = None;
+            dispatch_screen_click(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &[5, 10],
+                [3.5, 4.5],
+                false,
+                &mut button,
+            );
+            assert_eq!(button, Some(81001));
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_screen_click_duo_b3",
+            "horizon.on(\"screen_click\", function(event)\n    __witness = (__witness or 0) + 1\n    event.button = 81001\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_screen_click_duo_e3",
+            "horizon.on(\"screen_click\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut button: Option<i32> = None;
+            dispatch_screen_click(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &[5, 10],
+                [3.5, 4.5],
+                false,
+                &mut button,
+            );
+            assert_eq!(button, Some(81001));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
+    fn generated_screen_tooltip_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_tooltip_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_screen_tooltip(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &[5, 10],
+                [3.5, 4.5],
+                &mut lines,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "screen_tooltip read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_tooltip read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_tooltip read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_screen_tooltip_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_screen_tooltip_duo_a1",
+            "horizon.on(\"screen_tooltip\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.lines, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_screen_tooltip_duo_b1",
+            "horizon.on(\"screen_tooltip\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.lines, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_screen_tooltip(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &[5, 10],
+                [3.5, 4.5],
+                &mut lines,
+            );
+            let mut expected_lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_lines.push("test:duo_a".to_owned());
+            expected_lines.push("test:duo_b".to_owned());
+            assert_eq!(lines, expected_lines);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_screen_tooltip_duo_a2",
+            "horizon.on(\"screen_tooltip\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.lines, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_screen_tooltip_duo_b2",
+            "horizon.on(\"screen_tooltip\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.lines, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_screen_tooltip(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &[5, 10],
+                [3.5, 4.5],
+                &mut lines,
+            );
+            let mut expected_lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_lines.push("test:duo_b".to_owned());
+            expected_lines.push("test:duo_a".to_owned());
+            assert_eq!(lines, expected_lines);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_screen_tooltip_duo_b3",
+            "horizon.on(\"screen_tooltip\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.lines, \"test:duo_b\")\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_screen_tooltip_duo_e3",
+            "horizon.on(\"screen_tooltip\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_screen_tooltip(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &[5, 10],
+                [3.5, 4.5],
+                &mut lines,
+            );
+            let mut expected_lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_lines.push("test:duo_b".to_owned());
+            assert_eq!(lines, expected_lines);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_menu_clicked() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_clicked",
@@ -2179,6 +3833,39 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_menu_clicked_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_menu_clicked_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_menu_clicked(&mut FakeHost::empty(), &firing_mods, 7, 8, 9, 10, 11);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "menu_clicked read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "menu_clicked read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "menu_clicked read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_menu_closed() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_closed",
@@ -2188,6 +3875,35 @@ mod generated_tests {
         dispatch_menu_closed(&mut FakeHost::empty(), &firing_mods, 7, 8);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_menu_closed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_menu_closed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_menu_closed(&mut FakeHost::empty(), &firing_mods, 7, 8);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "menu_closed read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "menu_closed read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "menu_closed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -2224,6 +3940,190 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_tooltip_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tooltip_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut lines = vec![
+                (Text::literal("test:line1"), 3),
+                (Text::literal("test:line2"), 4),
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_tooltip(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut lines,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "tooltip read the host with no handler");
+            assert_eq!(host_reads(), 0, "tooltip read the host with no handler");
+            assert_eq!(level_reads(), 0, "tooltip read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_tooltip_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_tooltip_duo_a1",
+            "horizon.on(\"tooltip\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.lines, { text = \"test:line51\", component = { text = \"test:line51\" }, count = 53 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_tooltip_duo_b1",
+            "horizon.on(\"tooltip\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.lines, { text = \"test:line52\", component = { text = \"test:line52\" }, count = 54 })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut lines = vec![
+                (Text::literal("test:line1"), 3),
+                (Text::literal("test:line2"), 4),
+            ];
+            dispatch_tooltip(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut lines,
+            );
+            assert_eq!(
+                format!("{:?}", &lines[lines.len() - 2..]),
+                format!(
+                    "{:?}",
+                    vec![
+                        (
+                            Text::empty()
+                                .with_component(serde_json::json!({ "text": "test:line51" })),
+                            53
+                        ),
+                        (
+                            Text::empty()
+                                .with_component(serde_json::json!({ "text": "test:line52" })),
+                            54
+                        )
+                    ]
+                )
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_tooltip_duo_a2",
+            "horizon.on(\"tooltip\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.lines, { text = \"test:line51\", component = { text = \"test:line51\" }, count = 53 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_tooltip_duo_b2",
+            "horizon.on(\"tooltip\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.lines, { text = \"test:line52\", component = { text = \"test:line52\" }, count = 54 })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut lines = vec![
+                (Text::literal("test:line1"), 3),
+                (Text::literal("test:line2"), 4),
+            ];
+            dispatch_tooltip(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut lines,
+            );
+            assert_eq!(
+                format!("{:?}", &lines[lines.len() - 2..]),
+                format!(
+                    "{:?}",
+                    vec![
+                        (
+                            Text::empty()
+                                .with_component(serde_json::json!({ "text": "test:line52" })),
+                            54
+                        ),
+                        (
+                            Text::empty()
+                                .with_component(serde_json::json!({ "text": "test:line51" })),
+                            53
+                        )
+                    ]
+                )
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_tooltip_duo_b3",
+            "horizon.on(\"tooltip\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.lines, { text = \"test:line52\", component = { text = \"test:line52\" }, count = 54 })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_tooltip_duo_e3",
+            "horizon.on(\"tooltip\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut lines = vec![
+                (Text::literal("test:line1"), 3),
+                (Text::literal("test:line2"), 4),
+            ];
+            dispatch_tooltip(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut lines,
+            );
+            assert_eq!(
+                format!("{:?}", &lines[lines.len() - 1..]),
+                format!(
+                    "{:?}",
+                    vec![(
+                        Text::empty().with_component(serde_json::json!({ "text": "test:line52" })),
+                        54
+                    )]
+                )
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -2271,6 +4171,48 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_spread_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_spread_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_spread(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                "test:kind",
+                BlockPos::new(3, 4, 5),
+                BlockPos::new(4, 5, 6),
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_spread read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_spread read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_spread read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_piston_move() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_piston_move",
@@ -2314,6 +4256,45 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_piston_move_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_piston_move_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_piston_move(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                [3, 4, 5],
+                &[BlockPos::new(4, 5, 6), BlockPos::new(5, 6, 7)],
+                &[BlockPos::new(5, 6, 7), BlockPos::new(6, 7, 8)],
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "piston_move read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "piston_move read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "piston_move read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -2367,6 +4348,47 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_fill_bucket_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_fill_bucket_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_fill_bucket(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                [2, 3, 4],
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "fill_bucket read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "fill_bucket read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "fill_bucket read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_net_from_client() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_net_from_client",
@@ -2385,6 +4407,45 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_net_from_client_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_net_from_client_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_net_from_client(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:channel",
+                &[116u8, 0u8, 159u8],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "net_from_client read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "net_from_client read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "net_from_client read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_net_from_server() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_net_from_server",
@@ -2399,6 +4460,44 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_net_from_server_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_net_from_server_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_net_from_server(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:channel",
+                &[116u8, 0u8, 159u8],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "net_from_server read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "net_from_server read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "net_from_server read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -2436,6 +4535,27 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_on_equip_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_on_equip_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_on_equip(&mut FakeHost::empty(), &firing_mods, "test:slot", None);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "on_equip read the host with no handler");
+            assert_eq!(host_reads(), 0, "on_equip read the host with no handler");
+            assert_eq!(level_reads(), 0, "on_equip read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_block_signal() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_signal",
@@ -2459,6 +4579,49 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_signal_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_signal_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut signal = 12;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_signal(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                Direction::South,
+                true,
+                &mut signal,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_signal read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_signal read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_signal read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_is_signal_source() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_is_signal_source",
@@ -2470,6 +4633,40 @@ mod generated_tests {
         assert!(source);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_is_signal_source_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_is_signal_source_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut source = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_is_signal_source(&FakeLevel, &firing_mods, BlockStateId(8), &mut source);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "is_signal_source read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "is_signal_source read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "is_signal_source read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -2515,6 +4712,47 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_left_click_block_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_left_click_block_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_left_click_block(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                [2, 3, 4],
+                BlockStateId(10),
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "left_click_block read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "left_click_block read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "left_click_block read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_entity_leave_level() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_leave_level",
@@ -2545,6 +4783,80 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_leave_level_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_leave_level_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_leave_level(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "test:kind",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_leave_level read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_leave_level read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_leave_level read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_leave_level_cost_kind",
+            "horizon.on(\"entity_leave_level\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_leave_level(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_leave_level read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_leave_level read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_leave_level read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_block_entity_fluids() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_entity_fluids",
@@ -2567,6 +4879,151 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_entity_fluids_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_entity_fluids_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut fluids: Option<ModFluidTanks> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_entity_fluids(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut fluids,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_entity_fluids read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_entity_fluids read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_entity_fluids read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_block_entity_fluids_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_block_entity_fluids_duo_a1",
+            "horizon.on(\"block_entity_fluids\", function(event)\n    __witness = (__witness or 0) + 1\n    event.fluids = { tanks = { 1000 }, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {} }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_block_entity_fluids_duo_b1",
+            "horizon.on(\"block_entity_fluids\", function(event)\n    __witness = (__witness or 0) + 1\n    event.fluids = { tanks = { 1001 }, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {} }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut fluids: Option<ModFluidTanks> = None;
+            dispatch_block_entity_fluids(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut fluids,
+            );
+            assert_eq!(
+                fluids,
+                Some(ModFluidTanks {
+                    tanks: vec![1000],
+                    faces: [vec![0], vec![], vec![], vec![], vec![], vec![]],
+                    inputs: vec![0],
+                    outputs: vec![]
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_block_entity_fluids_duo_a2",
+            "horizon.on(\"block_entity_fluids\", function(event)\n    __witness = (__witness or 0) + 1\n    event.fluids = { tanks = { 1000 }, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {} }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_block_entity_fluids_duo_b2",
+            "horizon.on(\"block_entity_fluids\", function(event)\n    __witness = (__witness or 0) + 1\n    event.fluids = { tanks = { 1001 }, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {} }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut fluids: Option<ModFluidTanks> = None;
+            dispatch_block_entity_fluids(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut fluids,
+            );
+            assert_eq!(
+                fluids,
+                Some(ModFluidTanks {
+                    tanks: vec![1001],
+                    faces: [vec![0], vec![], vec![], vec![], vec![], vec![]],
+                    inputs: vec![0],
+                    outputs: vec![]
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_block_entity_fluids_duo_b3",
+            "horizon.on(\"block_entity_fluids\", function(event)\n    __witness = (__witness or 0) + 1\n    event.fluids = { tanks = { 1001 }, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {} }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_block_entity_fluids_duo_e3",
+            "horizon.on(\"block_entity_fluids\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut fluids: Option<ModFluidTanks> = None;
+            dispatch_block_entity_fluids(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut fluids,
+            );
+            assert_eq!(
+                fluids,
+                Some(ModFluidTanks {
+                    tanks: vec![1001],
+                    faces: [vec![0], vec![], vec![], vec![], vec![], vec![]],
+                    inputs: vec![0],
+                    outputs: vec![]
+                })
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_should_apply_effect_tick_this_tick() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_should_apply_effect_tick_this_tick",
@@ -2585,6 +5042,47 @@ mod generated_tests {
         assert!(apply);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_should_apply_effect_tick_this_tick_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_should_apply_effect_tick_this_tick_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut apply = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_should_apply_effect_tick_this_tick(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:effect",
+                8,
+                9,
+                &mut apply,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "should_apply_effect_tick_this_tick read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "should_apply_effect_tick_this_tick read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "should_apply_effect_tick_this_tick read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -2640,6 +5138,86 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_apply_effect_tick_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_apply_effect_tick_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut keep = true;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_apply_effect_tick(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:effect",
+                "test:dimension",
+                Some(9),
+                10,
+                &mut keep,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "apply_effect_tick read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "apply_effect_tick read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "apply_effect_tick read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_apply_effect_tick_cost_kind",
+            "horizon.on(\"apply_effect_tick\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut keep = true;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_apply_effect_tick(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:effect",
+                "test:dimension",
+                Some(11),
+                10,
+                &mut keep,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "apply_effect_tick read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "apply_effect_tick read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "apply_effect_tick read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_on_effect_added() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_on_effect_added",
@@ -2673,6 +5251,74 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_on_effect_added_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_on_effect_added_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_on_effect_added(&mut FakeHost::empty(), &firing_mods, "test:effect", None, 9);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "on_effect_added read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "on_effect_added read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "on_effect_added read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_on_effect_added_cost_kind",
+            "horizon.on(\"on_effect_added\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_on_effect_added(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:effect",
+                Some(11),
+                9,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "on_effect_added read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "on_effect_added read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "on_effect_added read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -2712,6 +5358,109 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_mob_effect_added_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_effect_added_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_mob_effect_added(&mut FakeHost::empty(), &firing_mods, "test:effect", None, 9);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mob_effect_added read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mob_effect_added read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_effect_added read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_effect_added_cost_kind",
+            "horizon.on(\"mob_effect_added\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_mob_effect_added(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:effect",
+                Some(11),
+                9,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "mob_effect_added read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "mob_effect_added read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_effect_added read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_chunk_load_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_chunk_load_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_chunk_load(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [4, -6],
+                true,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "chunk_load read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "chunk_load read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "chunk_load read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_chunk_unload() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_chunk_unload",
@@ -2726,6 +5475,44 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_chunk_unload_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_chunk_unload_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_chunk_unload(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [4, -6],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "chunk_unload read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "chunk_unload read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "chunk_unload read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -2753,6 +5540,38 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_item_bar_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_bar_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut bar = Some((8, 2));
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_bar(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut bar,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "item_bar read the host with no handler");
+            assert_eq!(host_reads(), 0, "item_bar read the host with no handler");
+            assert_eq!(level_reads(), 0, "item_bar read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_has_analog_output() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_has_analog_output",
@@ -2764,6 +5583,107 @@ mod generated_tests {
         assert!(output);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_has_analog_output_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_has_analog_output_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut output = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_has_analog_output(&FakeLevel, &firing_mods, BlockStateId(8), &mut output);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "has_analog_output read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "has_analog_output read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "has_analog_output read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_has_analog_output_two_mods_last_write_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_has_analog_output_duo_a1",
+            "horizon.on(\"has_analog_output\", function(event)\n    __witness = (__witness or 0) + 1\n    event.output = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_has_analog_output_duo_b1",
+            "horizon.on(\"has_analog_output\", function(event)\n    __witness = (__witness or 0) + 1\n    event.output = false\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut output = false;
+            dispatch_has_analog_output(&FakeLevel, &firing_mods, BlockStateId(8), &mut output);
+            assert!(!output);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_has_analog_output_duo_a2",
+            "horizon.on(\"has_analog_output\", function(event)\n    __witness = (__witness or 0) + 1\n    event.output = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_has_analog_output_duo_b2",
+            "horizon.on(\"has_analog_output\", function(event)\n    __witness = (__witness or 0) + 1\n    event.output = false\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut output = false;
+            dispatch_has_analog_output(&FakeLevel, &firing_mods, BlockStateId(8), &mut output);
+            assert!(output);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_has_analog_output_duo_b3",
+            "horizon.on(\"has_analog_output\", function(event)\n    __witness = (__witness or 0) + 1\n    event.output = false\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_has_analog_output_duo_e3",
+            "horizon.on(\"has_analog_output\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut output = false;
+            dispatch_has_analog_output(&FakeLevel, &firing_mods, BlockStateId(8), &mut output);
+            assert!(!output);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -2786,6 +5706,248 @@ mod generated_tests {
         assert_eq!(output, 54);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_analog_output_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_analog_output_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut output = 11;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_analog_output(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                Direction::South,
+                &mut output,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "analog_output read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "analog_output read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "analog_output read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_analog_output_two_mods_last_write_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_analog_output_duo_a1",
+            "horizon.on(\"analog_output\", function(event)\n    __witness = (__witness or 0) + 1\n    event.output = 111\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_analog_output_duo_b1",
+            "horizon.on(\"analog_output\", function(event)\n    __witness = (__witness or 0) + 1\n    event.output = 222\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut output = 11;
+            dispatch_analog_output(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                Direction::South,
+                &mut output,
+            );
+            assert_eq!(output, 222);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_analog_output_duo_a2",
+            "horizon.on(\"analog_output\", function(event)\n    __witness = (__witness or 0) + 1\n    event.output = 111\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_analog_output_duo_b2",
+            "horizon.on(\"analog_output\", function(event)\n    __witness = (__witness or 0) + 1\n    event.output = 222\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut output = 11;
+            dispatch_analog_output(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                Direction::South,
+                &mut output,
+            );
+            assert_eq!(output, 111);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_analog_output_duo_b3",
+            "horizon.on(\"analog_output\", function(event)\n    __witness = (__witness or 0) + 1\n    event.output = 222\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_analog_output_duo_e3",
+            "horizon.on(\"analog_output\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut output = 11;
+            dispatch_analog_output(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                Direction::South,
+                &mut output,
+            );
+            assert_eq!(output, 222);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
+    fn generated_component_types_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_component_types_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_component_types(&firing_mods, &mut types);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "component_types read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "component_types read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "component_types read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_component_types_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_component_types_duo_a1",
+            "horizon.on(\"component_types\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.types, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_component_types_duo_b1",
+            "horizon.on(\"component_types\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.types, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_component_types(&firing_mods, &mut types);
+            let mut expected_types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_types.push("test:duo_a".to_owned());
+            expected_types.push("test:duo_b".to_owned());
+            assert_eq!(types, expected_types);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_component_types_duo_a2",
+            "horizon.on(\"component_types\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.types, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_component_types_duo_b2",
+            "horizon.on(\"component_types\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.types, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_component_types(&firing_mods, &mut types);
+            let mut expected_types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_types.push("test:duo_b".to_owned());
+            expected_types.push("test:duo_a".to_owned());
+            assert_eq!(types, expected_types);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_component_types_duo_b3",
+            "horizon.on(\"component_types\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.types, \"test:duo_b\")\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_component_types_duo_e3",
+            "horizon.on(\"component_types\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_component_types(&firing_mods, &mut types);
+            let mut expected_types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_types.push("test:duo_b".to_owned());
+            assert_eq!(types, expected_types);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -2827,6 +5989,333 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_dispense_item_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_dispense_item_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut answer: Option<NativeDispensed> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_dispense_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                Direction::North,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: None,
+                },
+                &mut answer,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "dispense_item read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "dispense_item read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "dispense_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_dispense_item_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_dispense_item_duo_a1",
+            "horizon.on(\"dispense_item\", function(event)\n    __witness = (__witness or 0) + 1\n    event.answer = { remainder = { id = \"test:replace\", count = 1, damage = 0 }, event = 2000 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_dispense_item_duo_b1",
+            "horizon.on(\"dispense_item\", function(event)\n    __witness = (__witness or 0) + 1\n    event.answer = { remainder = { id = \"test:replace\", count = 1, damage = 0 }, event = 2001 }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut answer: Option<NativeDispensed> = None;
+            dispatch_dispense_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                Direction::North,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: None,
+                },
+                &mut answer,
+            );
+            assert_eq!(
+                answer,
+                Some((
+                    Some(ItemStack {
+                        item: "test:replace".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None
+                    }),
+                    2000
+                ))
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_dispense_item_duo_a2",
+            "horizon.on(\"dispense_item\", function(event)\n    __witness = (__witness or 0) + 1\n    event.answer = { remainder = { id = \"test:replace\", count = 1, damage = 0 }, event = 2000 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_dispense_item_duo_b2",
+            "horizon.on(\"dispense_item\", function(event)\n    __witness = (__witness or 0) + 1\n    event.answer = { remainder = { id = \"test:replace\", count = 1, damage = 0 }, event = 2001 }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut answer: Option<NativeDispensed> = None;
+            dispatch_dispense_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                Direction::North,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: None,
+                },
+                &mut answer,
+            );
+            assert_eq!(
+                answer,
+                Some((
+                    Some(ItemStack {
+                        item: "test:replace".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None
+                    }),
+                    2001
+                ))
+            );
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_dispense_item_duo_b3",
+            "horizon.on(\"dispense_item\", function(event)\n    __witness = (__witness or 0) + 1\n    event.answer = { remainder = { id = \"test:replace\", count = 1, damage = 0 }, event = 2001 }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_dispense_item_duo_e3",
+            "horizon.on(\"dispense_item\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut answer: Option<NativeDispensed> = None;
+            dispatch_dispense_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                Direction::North,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: None,
+                },
+                &mut answer,
+            );
+            assert_eq!(
+                answer,
+                Some((
+                    Some(ItemStack {
+                        item: "test:replace".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None
+                    }),
+                    2001
+                ))
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
+    fn generated_tooltip_component_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tooltip_component_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut size: Option<[f32; 2]> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_tooltip_component(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut size,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "tooltip_component read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "tooltip_component read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "tooltip_component read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_tooltip_component_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_tooltip_component_duo_a1",
+            "horizon.on(\"tooltip_component\", function(event)\n    __witness = (__witness or 0) + 1\n    event.size = { x = 16, y = 8 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_tooltip_component_duo_b1",
+            "horizon.on(\"tooltip_component\", function(event)\n    __witness = (__witness or 0) + 1\n    event.size = { x = 1, y = 2 }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut size: Option<[f32; 2]> = None;
+            dispatch_tooltip_component(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut size,
+            );
+            assert_eq!(size, Some([16.0, 8.0]));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_tooltip_component_duo_a2",
+            "horizon.on(\"tooltip_component\", function(event)\n    __witness = (__witness or 0) + 1\n    event.size = { x = 16, y = 8 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_tooltip_component_duo_b2",
+            "horizon.on(\"tooltip_component\", function(event)\n    __witness = (__witness or 0) + 1\n    event.size = { x = 1, y = 2 }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut size: Option<[f32; 2]> = None;
+            dispatch_tooltip_component(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut size,
+            );
+            assert_eq!(size, Some([1.0, 2.0]));
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_tooltip_component_duo_b3",
+            "horizon.on(\"tooltip_component\", function(event)\n    __witness = (__witness or 0) + 1\n    event.size = { x = 1, y = 2 }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_tooltip_component_duo_e3",
+            "horizon.on(\"tooltip_component\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut size: Option<[f32; 2]> = None;
+            dispatch_tooltip_component(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut size,
+            );
+            assert_eq!(size, Some([1.0, 2.0]));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_can_survive() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_can_survive",
@@ -2845,6 +6334,131 @@ mod generated_tests {
         assert_eq!(survives, Some(true));
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_can_survive_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_can_survive_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut survives: Option<bool> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_can_survive(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut survives,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "can_survive read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "can_survive read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "can_survive read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_can_survive_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_can_survive_duo_a1",
+            "horizon.on(\"can_survive\", function(event)\n    __witness = (__witness or 0) + 1\n    event.survives = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_can_survive_duo_b1",
+            "horizon.on(\"can_survive\", function(event)\n    __witness = (__witness or 0) + 1\n    event.survives = false\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut survives: Option<bool> = None;
+            dispatch_can_survive(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut survives,
+            );
+            assert_eq!(survives, Some(true));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_can_survive_duo_a2",
+            "horizon.on(\"can_survive\", function(event)\n    __witness = (__witness or 0) + 1\n    event.survives = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_can_survive_duo_b2",
+            "horizon.on(\"can_survive\", function(event)\n    __witness = (__witness or 0) + 1\n    event.survives = false\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut survives: Option<bool> = None;
+            dispatch_can_survive(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut survives,
+            );
+            assert_eq!(survives, Some(false));
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_can_survive_duo_b3",
+            "horizon.on(\"can_survive\", function(event)\n    __witness = (__witness or 0) + 1\n    event.survives = false\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_can_survive_duo_e3",
+            "horizon.on(\"can_survive\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut survives: Option<bool> = None;
+            dispatch_can_survive(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut survives,
+            );
+            assert_eq!(survives, Some(false));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -2870,6 +6484,139 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_may_place_on_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_may_place_on_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut may: Option<bool> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_may_place_on(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                BlockStateId(10),
+                BlockPos::new(4, 5, 6),
+                &mut may,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "may_place_on read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "may_place_on read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "may_place_on read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_may_place_on_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_may_place_on_duo_a1",
+            "horizon.on(\"may_place_on\", function(event)\n    __witness = (__witness or 0) + 1\n    event.may = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_may_place_on_duo_b1",
+            "horizon.on(\"may_place_on\", function(event)\n    __witness = (__witness or 0) + 1\n    event.may = false\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut may: Option<bool> = None;
+            dispatch_may_place_on(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                BlockStateId(10),
+                BlockPos::new(4, 5, 6),
+                &mut may,
+            );
+            assert_eq!(may, Some(true));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_may_place_on_duo_a2",
+            "horizon.on(\"may_place_on\", function(event)\n    __witness = (__witness or 0) + 1\n    event.may = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_may_place_on_duo_b2",
+            "horizon.on(\"may_place_on\", function(event)\n    __witness = (__witness or 0) + 1\n    event.may = false\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut may: Option<bool> = None;
+            dispatch_may_place_on(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                BlockStateId(10),
+                BlockPos::new(4, 5, 6),
+                &mut may,
+            );
+            assert_eq!(may, Some(false));
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_may_place_on_duo_b3",
+            "horizon.on(\"may_place_on\", function(event)\n    __witness = (__witness or 0) + 1\n    event.may = false\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_may_place_on_duo_e3",
+            "horizon.on(\"may_place_on\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut may: Option<bool> = None;
+            dispatch_may_place_on(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                BlockStateId(10),
+                BlockPos::new(4, 5, 6),
+                &mut may,
+            );
+            assert_eq!(may, Some(false));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_is_valid_bonemeal_target() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_is_valid_bonemeal_target",
@@ -2891,6 +6638,264 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_is_valid_bonemeal_target_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_is_valid_bonemeal_target_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut valid: Option<bool> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_is_valid_bonemeal_target(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut valid,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "is_valid_bonemeal_target read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "is_valid_bonemeal_target read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "is_valid_bonemeal_target read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_is_valid_bonemeal_target_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_is_valid_bonemeal_target_duo_a1",
+            "horizon.on(\"is_valid_bonemeal_target\", function(event)\n    __witness = (__witness or 0) + 1\n    event.valid = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_is_valid_bonemeal_target_duo_b1",
+            "horizon.on(\"is_valid_bonemeal_target\", function(event)\n    __witness = (__witness or 0) + 1\n    event.valid = false\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut valid: Option<bool> = None;
+            dispatch_is_valid_bonemeal_target(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut valid,
+            );
+            assert_eq!(valid, Some(true));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_is_valid_bonemeal_target_duo_a2",
+            "horizon.on(\"is_valid_bonemeal_target\", function(event)\n    __witness = (__witness or 0) + 1\n    event.valid = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_is_valid_bonemeal_target_duo_b2",
+            "horizon.on(\"is_valid_bonemeal_target\", function(event)\n    __witness = (__witness or 0) + 1\n    event.valid = false\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut valid: Option<bool> = None;
+            dispatch_is_valid_bonemeal_target(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut valid,
+            );
+            assert_eq!(valid, Some(false));
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_is_valid_bonemeal_target_duo_b3",
+            "horizon.on(\"is_valid_bonemeal_target\", function(event)\n    __witness = (__witness or 0) + 1\n    event.valid = false\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_is_valid_bonemeal_target_duo_e3",
+            "horizon.on(\"is_valid_bonemeal_target\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut valid: Option<bool> = None;
+            dispatch_is_valid_bonemeal_target(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut valid,
+            );
+            assert_eq!(valid, Some(false));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
+    fn generated_is_bonemeal_success_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_is_bonemeal_success_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut success = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_is_bonemeal_success(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut success,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "is_bonemeal_success read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "is_bonemeal_success read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "is_bonemeal_success read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_is_bonemeal_success_two_mods_last_write_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_is_bonemeal_success_duo_a1",
+            "horizon.on(\"is_bonemeal_success\", function(event)\n    __witness = (__witness or 0) + 1\n    event.success = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_is_bonemeal_success_duo_b1",
+            "horizon.on(\"is_bonemeal_success\", function(event)\n    __witness = (__witness or 0) + 1\n    event.success = false\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut success = false;
+            dispatch_is_bonemeal_success(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut success,
+            );
+            assert!(!success);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_is_bonemeal_success_duo_a2",
+            "horizon.on(\"is_bonemeal_success\", function(event)\n    __witness = (__witness or 0) + 1\n    event.success = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_is_bonemeal_success_duo_b2",
+            "horizon.on(\"is_bonemeal_success\", function(event)\n    __witness = (__witness or 0) + 1\n    event.success = false\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut success = false;
+            dispatch_is_bonemeal_success(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut success,
+            );
+            assert!(success);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_is_bonemeal_success_duo_b3",
+            "horizon.on(\"is_bonemeal_success\", function(event)\n    __witness = (__witness or 0) + 1\n    event.success = false\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_is_bonemeal_success_duo_e3",
+            "horizon.on(\"is_bonemeal_success\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut success = false;
+            dispatch_is_bonemeal_success(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut success,
+            );
+            assert!(!success);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_consume_effect() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_consume_effect",
@@ -2908,6 +6913,44 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_consume_effect_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_consume_effect_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_consume_effect(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:kind",
+                &serde_json::json!({ "testkey": 8 }),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "consume_effect read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "consume_effect read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "consume_effect read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_loot_table_load() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_loot_table_load",
@@ -2919,6 +6962,107 @@ mod generated_tests {
         assert_eq!(table, serde_json::json!({ "testkey": 51 }));
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_loot_table_load_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_loot_table_load_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut table = serde_json::json!({ "testkey": 8 });
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_loot_table_load(&firing_mods, "test:id", &mut table);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "loot_table_load read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "loot_table_load read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "loot_table_load read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_loot_table_load_two_mods_last_write_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_loot_table_load_duo_a1",
+            "horizon.on(\"loot_table_load\", function(event)\n    __witness = (__witness or 0) + 1\n    event.table = { duo = \"a\" }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_loot_table_load_duo_b1",
+            "horizon.on(\"loot_table_load\", function(event)\n    __witness = (__witness or 0) + 1\n    event.table = { duo = \"b\" }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut table = serde_json::json!({ "testkey": 8 });
+            dispatch_loot_table_load(&firing_mods, "test:id", &mut table);
+            assert_eq!(table, serde_json::json!({ "duo": "b" }));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_loot_table_load_duo_a2",
+            "horizon.on(\"loot_table_load\", function(event)\n    __witness = (__witness or 0) + 1\n    event.table = { duo = \"a\" }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_loot_table_load_duo_b2",
+            "horizon.on(\"loot_table_load\", function(event)\n    __witness = (__witness or 0) + 1\n    event.table = { duo = \"b\" }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut table = serde_json::json!({ "testkey": 8 });
+            dispatch_loot_table_load(&firing_mods, "test:id", &mut table);
+            assert_eq!(table, serde_json::json!({ "duo": "a" }));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_loot_table_load_duo_b3",
+            "horizon.on(\"loot_table_load\", function(event)\n    __witness = (__witness or 0) + 1\n    event.table = { duo = \"b\" }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_loot_table_load_duo_e3",
+            "horizon.on(\"loot_table_load\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut table = serde_json::json!({ "testkey": 8 });
+            dispatch_loot_table_load(&firing_mods, "test:id", &mut table);
+            assert_eq!(table, serde_json::json!({ "duo": "b" }));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -2959,6 +7103,199 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_state_for_placement_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_state_for_placement_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut answer: Option<Option<BlockStateId>> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_state_for_placement(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &PlacementContext {
+                    pos: BlockPos::new(3, 4, 5),
+                    hit_pos: BlockPos::new(6, 7, 8),
+                    face: Direction::North,
+                    hit: horizon_core::geometry::Vec3 {
+                        x: 9.5,
+                        y: 10.5,
+                        z: 11.5,
+                    },
+                    inside: true,
+                    yaw: 92.0,
+                    pitch: 32.0,
+                    sneaking: false,
+                    item: "test:item2".into(),
+                    replace_clicked: true,
+                },
+                FluidState::EMPTY,
+                &mut answer,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "state_for_placement read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "state_for_placement read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "state_for_placement read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_state_for_placement_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_state_for_placement_duo_a1",
+            "horizon.on(\"state_for_placement\", function(event)\n    __witness = (__witness or 0) + 1\n    event.answer = event.state\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_state_for_placement_duo_b1",
+            "horizon.on(\"state_for_placement\", function(event)\n    __witness = (__witness or 0) + 1\n    event.answer = event.state\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut answer: Option<Option<BlockStateId>> = None;
+            dispatch_state_for_placement(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &PlacementContext {
+                    pos: BlockPos::new(3, 4, 5),
+                    hit_pos: BlockPos::new(6, 7, 8),
+                    face: Direction::North,
+                    hit: horizon_core::geometry::Vec3 {
+                        x: 9.5,
+                        y: 10.5,
+                        z: 11.5,
+                    },
+                    inside: true,
+                    yaw: 92.0,
+                    pitch: 32.0,
+                    sneaking: false,
+                    item: "test:item2".into(),
+                    replace_clicked: true,
+                },
+                FluidState::EMPTY,
+                &mut answer,
+            );
+            assert_eq!(answer, Some(Some(BlockStateId(9))));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_state_for_placement_duo_a2",
+            "horizon.on(\"state_for_placement\", function(event)\n    __witness = (__witness or 0) + 1\n    event.answer = event.state\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_state_for_placement_duo_b2",
+            "horizon.on(\"state_for_placement\", function(event)\n    __witness = (__witness or 0) + 1\n    event.answer = event.state\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut answer: Option<Option<BlockStateId>> = None;
+            dispatch_state_for_placement(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &PlacementContext {
+                    pos: BlockPos::new(3, 4, 5),
+                    hit_pos: BlockPos::new(6, 7, 8),
+                    face: Direction::North,
+                    hit: horizon_core::geometry::Vec3 {
+                        x: 9.5,
+                        y: 10.5,
+                        z: 11.5,
+                    },
+                    inside: true,
+                    yaw: 92.0,
+                    pitch: 32.0,
+                    sneaking: false,
+                    item: "test:item2".into(),
+                    replace_clicked: true,
+                },
+                FluidState::EMPTY,
+                &mut answer,
+            );
+            assert_eq!(answer, Some(Some(BlockStateId(9))));
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_state_for_placement_duo_b3",
+            "horizon.on(\"state_for_placement\", function(event)\n    __witness = (__witness or 0) + 1\n    event.answer = event.state\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_state_for_placement_duo_e3",
+            "horizon.on(\"state_for_placement\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut answer: Option<Option<BlockStateId>> = None;
+            dispatch_state_for_placement(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &PlacementContext {
+                    pos: BlockPos::new(3, 4, 5),
+                    hit_pos: BlockPos::new(6, 7, 8),
+                    face: Direction::North,
+                    hit: horizon_core::geometry::Vec3 {
+                        x: 9.5,
+                        y: 10.5,
+                        z: 11.5,
+                    },
+                    inside: true,
+                    yaw: 92.0,
+                    pitch: 32.0,
+                    sneaking: false,
+                    item: "test:item2".into(),
+                    replace_clicked: true,
+                },
+                FluidState::EMPTY,
+                &mut answer,
+            );
+            assert_eq!(answer, Some(Some(BlockStateId(9))));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_enchant_effect() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_enchant_effect",
@@ -2976,6 +7313,47 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_enchant_effect_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_enchant_effect_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_enchant_effect(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:enchantment",
+                "test:kind",
+                &serde_json::json!({ "testkey": 9 }),
+                10,
+                11,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "enchant_effect read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "enchant_effect read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "enchant_effect read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -2997,6 +7375,130 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_modify_default_components_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_modify_default_components_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut components = [("testkey".to_owned(), serde_json::json!(8))]
+                .into_iter()
+                .collect();
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_modify_default_components(&firing_mods, "test:item", &mut components);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "modify_default_components read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "modify_default_components read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "modify_default_components read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_modify_default_components_two_mods_last_write_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_modify_default_components_duo_a1",
+            "horizon.on(\"modify_default_components\", function(event)\n    __witness = (__witness or 0) + 1\n    event.components = { duo = \"a\" }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_modify_default_components_duo_b1",
+            "horizon.on(\"modify_default_components\", function(event)\n    __witness = (__witness or 0) + 1\n    event.components = { duo = \"b\" }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut components = [("testkey".to_owned(), serde_json::json!(8))]
+                .into_iter()
+                .collect();
+            dispatch_modify_default_components(&firing_mods, "test:item", &mut components);
+            assert_eq!(
+                components,
+                [("duo".to_owned(), serde_json::json!("b"))]
+                    .into_iter()
+                    .collect()
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_modify_default_components_duo_a2",
+            "horizon.on(\"modify_default_components\", function(event)\n    __witness = (__witness or 0) + 1\n    event.components = { duo = \"a\" }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_modify_default_components_duo_b2",
+            "horizon.on(\"modify_default_components\", function(event)\n    __witness = (__witness or 0) + 1\n    event.components = { duo = \"b\" }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut components = [("testkey".to_owned(), serde_json::json!(8))]
+                .into_iter()
+                .collect();
+            dispatch_modify_default_components(&firing_mods, "test:item", &mut components);
+            assert_eq!(
+                components,
+                [("duo".to_owned(), serde_json::json!("a"))]
+                    .into_iter()
+                    .collect()
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_modify_default_components_duo_b3",
+            "horizon.on(\"modify_default_components\", function(event)\n    __witness = (__witness or 0) + 1\n    event.components = { duo = \"b\" }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_modify_default_components_duo_e3",
+            "horizon.on(\"modify_default_components\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut components = [("testkey".to_owned(), serde_json::json!(8))]
+                .into_iter()
+                .collect();
+            dispatch_modify_default_components(&firing_mods, "test:item", &mut components);
+            assert_eq!(
+                components,
+                [("duo".to_owned(), serde_json::json!("b"))]
+                    .into_iter()
+                    .collect()
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -3032,6 +7534,49 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_shader_params_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_shader_params_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut params = [
+                [2.5, 3.5, 4.5, 5.5],
+                [12.5, 13.5, 14.5, 15.5],
+                [22.5, 23.5, 24.5, 25.5],
+                [32.5, 33.5, 34.5, 35.5],
+                [42.5, 43.5, 44.5, 45.5],
+                [52.5, 53.5, 54.5, 55.5],
+                [62.5, 63.5, 64.5, 65.5],
+                [72.5, 73.5, 74.5, 75.5],
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_shader_params(&FakeHost::empty(), &firing_mods, 1.5, &mut params);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "shader_params read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "shader_params read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "shader_params read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -3074,6 +7619,47 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_highlight_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_highlight_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_highlight(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                BlockStateId(9),
+                3.5,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_highlight read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_highlight read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_highlight read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -3151,6 +7737,45 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_render_hand_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_render_hand_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_render_hand(
+                &FakeHost::empty(),
+                &firing_mods,
+                Hand::Main,
+                None,
+                3.5,
+                4.5,
+                5.5,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "render_hand read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "render_hand read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "render_hand read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_client_resources_reloaded() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_resources_reloaded",
@@ -3160,6 +7785,39 @@ mod generated_tests {
         dispatch_client_resources_reloaded(&mut FakeHost::empty(), &firing_mods);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_client_resources_reloaded_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_resources_reloaded_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_client_resources_reloaded(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "client_resources_reloaded read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_resources_reloaded read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_resources_reloaded read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -3187,6 +7845,50 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_use_duration_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_use_duration_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut duration = 8;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_use_duration(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut duration,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "use_duration read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "use_duration read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "use_duration read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_use_animation() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_use_animation",
@@ -3211,6 +7913,50 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_use_animation_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_use_animation_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut animation = UseAnimation::Block;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_use_animation(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut animation,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "use_animation read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "use_animation read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "use_animation read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_can_eat() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_can_eat",
@@ -3232,6 +7978,38 @@ mod generated_tests {
         assert!(can_eat);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_can_eat_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_can_eat_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut can_eat = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_can_eat(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut can_eat,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "can_eat read the host with no handler");
+            assert_eq!(host_reads(), 0, "can_eat read the host with no handler");
+            assert_eq!(level_reads(), 0, "can_eat read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -3273,6 +8051,45 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_perform_console_command_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_perform_console_command_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut ran = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_perform_console_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:command",
+                &mut ran,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "perform_console_command read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "perform_console_command read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "perform_console_command read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_server_data_loaded() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_server_data_loaded",
@@ -3282,6 +8099,39 @@ mod generated_tests {
         dispatch_server_data_loaded(&mut FakeHost::empty(), &firing_mods, true);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_server_data_loaded_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_data_loaded_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_server_data_loaded(&mut FakeHost::empty(), &firing_mods, true);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "server_data_loaded read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "server_data_loaded read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_data_loaded read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -3302,6 +8152,42 @@ mod generated_tests {
         assert_eq!(degrees, 17.5);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_compute_fov_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_compute_fov_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut degrees = 3.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_compute_fov(
+                &FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                [2.0, 3.0, 4.0],
+                &mut degrees,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "compute_fov read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "compute_fov read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "compute_fov read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -3347,6 +8233,47 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_mouse_button_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mouse_button_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_mouse_button_pre(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                false,
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mouse_button_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mouse_button_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mouse_button_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_mouse_button_post() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_mouse_button_post",
@@ -3356,6 +8283,39 @@ mod generated_tests {
         dispatch_mouse_button_post(&mut FakeHost::empty(), &firing_mods, 7, false, 9);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_mouse_button_post_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mouse_button_post_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_mouse_button_post(&mut FakeHost::empty(), &firing_mods, 7, false, 9);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mouse_button_post read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mouse_button_post read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mouse_button_post read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -3377,6 +8337,34 @@ mod generated_tests {
         assert_eq!(volume, 16.5);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_music_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_music_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut music = Some(Music {
+                sound: "test:sound0".into(),
+                min_delay: 1,
+                max_delay: 2,
+                replace_current_music: true,
+            });
+            let mut volume = 2.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_music(&FakeHost::empty(), &firing_mods, &mut music, &mut volume);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "music read the host with no handler");
+            assert_eq!(host_reads(), 0, "music read the host with no handler");
+            assert_eq!(level_reads(), 0, "music read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -3412,6 +8400,302 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_music_layers_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_music_layers_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut layers = vec![
+                MusicLayer {
+                    sound: "test:sound0".into(),
+                    volume: 0.5,
+                },
+                MusicLayer {
+                    sound: "test:sound1".into(),
+                    volume: 1.5,
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_music_layers(&FakeHost::empty(), &firing_mods, &mut layers);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "music_layers read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "music_layers read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "music_layers read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_music_layers_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_music_layers_duo_a1",
+            "horizon.on(\"music_layers\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.layers, { sound = \"test:sound50\", volume = 50.5 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_music_layers_duo_b1",
+            "horizon.on(\"music_layers\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.layers, { sound = \"test:sound51\", volume = 51.5 })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut layers = vec![
+                MusicLayer {
+                    sound: "test:sound0".into(),
+                    volume: 0.5,
+                },
+                MusicLayer {
+                    sound: "test:sound1".into(),
+                    volume: 1.5,
+                },
+            ];
+            dispatch_music_layers(&FakeHost::empty(), &firing_mods, &mut layers);
+            let mut expected_layers = vec![
+                MusicLayer {
+                    sound: "test:sound0".into(),
+                    volume: 0.5,
+                },
+                MusicLayer {
+                    sound: "test:sound1".into(),
+                    volume: 1.5,
+                },
+            ];
+            expected_layers.push(MusicLayer {
+                sound: "test:sound50".into(),
+                volume: 50.5,
+            });
+            expected_layers.push(MusicLayer {
+                sound: "test:sound51".into(),
+                volume: 51.5,
+            });
+            assert_eq!(format!("{:?}", layers), format!("{:?}", expected_layers));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_music_layers_duo_a2",
+            "horizon.on(\"music_layers\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.layers, { sound = \"test:sound50\", volume = 50.5 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_music_layers_duo_b2",
+            "horizon.on(\"music_layers\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.layers, { sound = \"test:sound51\", volume = 51.5 })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut layers = vec![
+                MusicLayer {
+                    sound: "test:sound0".into(),
+                    volume: 0.5,
+                },
+                MusicLayer {
+                    sound: "test:sound1".into(),
+                    volume: 1.5,
+                },
+            ];
+            dispatch_music_layers(&FakeHost::empty(), &firing_mods, &mut layers);
+            let mut expected_layers = vec![
+                MusicLayer {
+                    sound: "test:sound0".into(),
+                    volume: 0.5,
+                },
+                MusicLayer {
+                    sound: "test:sound1".into(),
+                    volume: 1.5,
+                },
+            ];
+            expected_layers.push(MusicLayer {
+                sound: "test:sound51".into(),
+                volume: 51.5,
+            });
+            expected_layers.push(MusicLayer {
+                sound: "test:sound50".into(),
+                volume: 50.5,
+            });
+            assert_eq!(format!("{:?}", layers), format!("{:?}", expected_layers));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_music_layers_duo_b3",
+            "horizon.on(\"music_layers\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.layers, { sound = \"test:sound51\", volume = 51.5 })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_music_layers_duo_e3",
+            "horizon.on(\"music_layers\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut layers = vec![
+                MusicLayer {
+                    sound: "test:sound0".into(),
+                    volume: 0.5,
+                },
+                MusicLayer {
+                    sound: "test:sound1".into(),
+                    volume: 1.5,
+                },
+            ];
+            dispatch_music_layers(&FakeHost::empty(), &firing_mods, &mut layers);
+            let mut expected_layers = vec![
+                MusicLayer {
+                    sound: "test:sound0".into(),
+                    volume: 0.5,
+                },
+                MusicLayer {
+                    sound: "test:sound1".into(),
+                    volume: 1.5,
+                },
+            ];
+            expected_layers.push(MusicLayer {
+                sound: "test:sound51".into(),
+                volume: 51.5,
+            });
+            assert_eq!(format!("{:?}", layers), format!("{:?}", expected_layers));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
+    fn generated_datapack_sync_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_datapack_sync_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut recipe_types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_datapack_sync(&mut FakeHost::empty(), &firing_mods, &mut recipe_types);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "datapack_sync read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "datapack_sync read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "datapack_sync read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_datapack_sync_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_datapack_sync_duo_a1",
+            "horizon.on(\"datapack_sync\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.recipe_types, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_datapack_sync_duo_b1",
+            "horizon.on(\"datapack_sync\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.recipe_types, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut recipe_types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_datapack_sync(&mut FakeHost::empty(), &firing_mods, &mut recipe_types);
+            let mut expected_recipe_types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_recipe_types.push("test:duo_a".to_owned());
+            expected_recipe_types.push("test:duo_b".to_owned());
+            assert_eq!(recipe_types, expected_recipe_types);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_datapack_sync_duo_a2",
+            "horizon.on(\"datapack_sync\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.recipe_types, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_datapack_sync_duo_b2",
+            "horizon.on(\"datapack_sync\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.recipe_types, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut recipe_types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_datapack_sync(&mut FakeHost::empty(), &firing_mods, &mut recipe_types);
+            let mut expected_recipe_types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_recipe_types.push("test:duo_b".to_owned());
+            expected_recipe_types.push("test:duo_a".to_owned());
+            assert_eq!(recipe_types, expected_recipe_types);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_datapack_sync_duo_b3",
+            "horizon.on(\"datapack_sync\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.recipe_types, \"test:duo_b\")\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_datapack_sync_duo_e3",
+            "horizon.on(\"datapack_sync\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut recipe_types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_datapack_sync(&mut FakeHost::empty(), &firing_mods, &mut recipe_types);
+            let mut expected_recipe_types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_recipe_types.push("test:duo_b".to_owned());
+            assert_eq!(recipe_types, expected_recipe_types);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_recipes_received() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_recipes_received",
@@ -3425,6 +8709,43 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_recipes_received_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_recipes_received_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_recipes_received(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &["test:seed".to_owned(), "test:seed2".to_owned()],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "recipes_received read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "recipes_received read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "recipes_received read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -3474,6 +8795,49 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_mouse_scrolling_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mouse_scrolling_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_mouse_scrolling(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1.5, 2.5],
+                [4, -6],
+                [true, false, false],
+                [4.5, 5.5],
+                11,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mouse_scrolling read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mouse_scrolling read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mouse_scrolling read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_mod_container_viewers() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_mod_container_viewers",
@@ -3490,6 +8854,46 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_mod_container_viewers_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mod_container_viewers_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_mod_container_viewers(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                9,
+                10,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mod_container_viewers read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mod_container_viewers read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mod_container_viewers read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -3513,6 +8917,49 @@ mod generated_tests {
         assert!(can_merge);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_experience_orb_can_merge_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_experience_orb_can_merge_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut can_merge = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_experience_orb_can_merge(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                9,
+                10,
+                11,
+                &mut can_merge,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "experience_orb_can_merge read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "experience_orb_can_merge read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "experience_orb_can_merge read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -3560,6 +9007,48 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_experience_orb_merge_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_experience_orb_merge_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_experience_orb_merge(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                9,
+                10,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "experience_orb_merge read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "experience_orb_merge read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "experience_orb_merge read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_menu_slot_rules() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_slot_rules",
@@ -3585,6 +9074,53 @@ mod generated_tests {
         assert_eq!(max_stack, 54);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_menu_slot_rules_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_menu_slot_rules_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut may_place = false;
+            let mut max_stack = 11;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_menu_slot_rules(
+                &firing_mods,
+                "test:menu",
+                8,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                &mut may_place,
+                &mut max_stack,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "menu_slot_rules read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "menu_slot_rules read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "menu_slot_rules read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -3687,6 +9223,98 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_entity_use_item_tick_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_entity_use_item_tick_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut duration = 10;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_entity_use_item_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                None,
+                Hand::Main,
+                &mut duration,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_entity_use_item_tick read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_entity_use_item_tick read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_entity_use_item_tick read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_entity_use_item_tick_cost_kind",
+            "horizon.on(\"living_entity_use_item_tick\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut duration = 10;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_entity_use_item_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                Some(11),
+                Hand::Main,
+                &mut duration,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "living_entity_use_item_tick read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "living_entity_use_item_tick read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_entity_use_item_tick read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_on_use_tick() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_on_use_tick",
@@ -3741,6 +9369,86 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_on_use_tick_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_on_use_tick_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_on_use_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                None,
+                9,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "on_use_tick read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "on_use_tick read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "on_use_tick read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_on_use_tick_cost_kind",
+            "horizon.on(\"on_use_tick\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_on_use_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                Some(11),
+                9,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "on_use_tick read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "on_use_tick read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "on_use_tick read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -3838,6 +9546,96 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_entity_use_item_stop_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_entity_use_item_stop_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_entity_use_item_stop(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                None,
+                Hand::Main,
+                10,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_entity_use_item_stop read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_entity_use_item_stop read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_entity_use_item_stop read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_entity_use_item_stop_cost_kind",
+            "horizon.on(\"living_entity_use_item_stop\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_entity_use_item_stop(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                Some(11),
+                Hand::Main,
+                10,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "living_entity_use_item_stop read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "living_entity_use_item_stop read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_entity_use_item_stop read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_release_using() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_release_using",
@@ -3902,6 +9700,94 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_release_using_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_release_using_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut used = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_release_using(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                None,
+                9,
+                &mut used,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "release_using read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "release_using read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "release_using read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_release_using_cost_kind",
+            "horizon.on(\"release_using\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut used = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_release_using(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                Some(11),
+                9,
+                &mut used,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "release_using read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "release_using read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "release_using read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_level_load() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_level_load",
@@ -3911,6 +9797,35 @@ mod generated_tests {
         dispatch_level_load(&mut FakeHost::empty(), &firing_mods, "test:dimension");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_level_load_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_level_load_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_level_load(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "level_load read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "level_load read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "level_load read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -3926,6 +9841,39 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_level_unload_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_level_unload_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_level_unload(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "level_unload read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "level_unload read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "level_unload read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_client_level_load() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_level_load",
@@ -3938,6 +9886,39 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_client_level_load_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_level_load_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_client_level_load(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "client_level_load read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_level_load read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_level_load read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_client_level_unload() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_level_unload",
@@ -3947,6 +9928,39 @@ mod generated_tests {
         dispatch_client_level_unload(&mut FakeHost::empty(), &firing_mods, "test:dimension");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_client_level_unload_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_level_unload_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_client_level_unload(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "client_level_unload read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_level_unload read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_level_unload read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -4015,6 +10029,90 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_mount_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_mount_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_mount(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "test:kind",
+                10,
+                "test:vehicle_kind",
+                false,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_mount read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_mount read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_mount read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_mount_cost_kind",
+            "horizon.on(\"entity_mount\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_mount(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+                10,
+                "test:vehicle_kind",
+                false,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_mount read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_mount read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_mount read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_interaction_key() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_interaction_key",
@@ -4059,6 +10157,49 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_interaction_key_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_interaction_key_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut swing_hand = false;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_interaction_key(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:key_mapping",
+                Hand::Main,
+                &mut swing_hand,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "interaction_key read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "interaction_key read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "interaction_key read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -4115,6 +10256,307 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_map_decorations_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_map_decorations_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut decorations = vec![
+                NativeMapDecoration {
+                    sprite: "test:sprite1".into(),
+                    x: 2,
+                    y: 4,
+                    rot: 0,
+                    shown_on_frame: false,
+                },
+                NativeMapDecoration {
+                    sprite: "test:sprite2".into(),
+                    x: 3,
+                    y: 5,
+                    rot: 0,
+                    shown_on_frame: true,
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_map_decorations(
+                &FakeHost::empty(),
+                &firing_mods,
+                &NativeMapInfo {
+                    id: 7,
+                    center: [3, -5],
+                    scale: 0,
+                    dimension: "minecraft:overworld",
+                    locked: true,
+                    in_frame: false,
+                },
+                &mut decorations,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "map_decorations read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "map_decorations read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "map_decorations read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_map_decorations_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_map_decorations_duo_a1",
+            "horizon.on(\"map_decorations\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.decorations, { sprite = \"test:sprite51\", x = 52, y = 54, rot = 0, shown_on_frame = false })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_map_decorations_duo_b1",
+            "horizon.on(\"map_decorations\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.decorations, { sprite = \"test:sprite52\", x = 53, y = 55, rot = 0, shown_on_frame = true })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut decorations = vec![
+                NativeMapDecoration {
+                    sprite: "test:sprite1".into(),
+                    x: 2,
+                    y: 4,
+                    rot: 0,
+                    shown_on_frame: false,
+                },
+                NativeMapDecoration {
+                    sprite: "test:sprite2".into(),
+                    x: 3,
+                    y: 5,
+                    rot: 0,
+                    shown_on_frame: true,
+                },
+            ];
+            dispatch_map_decorations(
+                &FakeHost::empty(),
+                &firing_mods,
+                &NativeMapInfo {
+                    id: 7,
+                    center: [3, -5],
+                    scale: 0,
+                    dimension: "minecraft:overworld",
+                    locked: true,
+                    in_frame: false,
+                },
+                &mut decorations,
+            );
+            let mut expected_decorations = vec![
+                NativeMapDecoration {
+                    sprite: "test:sprite1".into(),
+                    x: 2,
+                    y: 4,
+                    rot: 0,
+                    shown_on_frame: false,
+                },
+                NativeMapDecoration {
+                    sprite: "test:sprite2".into(),
+                    x: 3,
+                    y: 5,
+                    rot: 0,
+                    shown_on_frame: true,
+                },
+            ];
+            expected_decorations.push(NativeMapDecoration {
+                sprite: "test:sprite51".into(),
+                x: 52,
+                y: 54,
+                rot: 0,
+                shown_on_frame: false,
+            });
+            expected_decorations.push(NativeMapDecoration {
+                sprite: "test:sprite52".into(),
+                x: 53,
+                y: 55,
+                rot: 0,
+                shown_on_frame: true,
+            });
+            assert_eq!(
+                format!("{:?}", decorations),
+                format!("{:?}", expected_decorations)
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_map_decorations_duo_a2",
+            "horizon.on(\"map_decorations\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.decorations, { sprite = \"test:sprite51\", x = 52, y = 54, rot = 0, shown_on_frame = false })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_map_decorations_duo_b2",
+            "horizon.on(\"map_decorations\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.decorations, { sprite = \"test:sprite52\", x = 53, y = 55, rot = 0, shown_on_frame = true })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut decorations = vec![
+                NativeMapDecoration {
+                    sprite: "test:sprite1".into(),
+                    x: 2,
+                    y: 4,
+                    rot: 0,
+                    shown_on_frame: false,
+                },
+                NativeMapDecoration {
+                    sprite: "test:sprite2".into(),
+                    x: 3,
+                    y: 5,
+                    rot: 0,
+                    shown_on_frame: true,
+                },
+            ];
+            dispatch_map_decorations(
+                &FakeHost::empty(),
+                &firing_mods,
+                &NativeMapInfo {
+                    id: 7,
+                    center: [3, -5],
+                    scale: 0,
+                    dimension: "minecraft:overworld",
+                    locked: true,
+                    in_frame: false,
+                },
+                &mut decorations,
+            );
+            let mut expected_decorations = vec![
+                NativeMapDecoration {
+                    sprite: "test:sprite1".into(),
+                    x: 2,
+                    y: 4,
+                    rot: 0,
+                    shown_on_frame: false,
+                },
+                NativeMapDecoration {
+                    sprite: "test:sprite2".into(),
+                    x: 3,
+                    y: 5,
+                    rot: 0,
+                    shown_on_frame: true,
+                },
+            ];
+            expected_decorations.push(NativeMapDecoration {
+                sprite: "test:sprite52".into(),
+                x: 53,
+                y: 55,
+                rot: 0,
+                shown_on_frame: true,
+            });
+            expected_decorations.push(NativeMapDecoration {
+                sprite: "test:sprite51".into(),
+                x: 52,
+                y: 54,
+                rot: 0,
+                shown_on_frame: false,
+            });
+            assert_eq!(
+                format!("{:?}", decorations),
+                format!("{:?}", expected_decorations)
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_map_decorations_duo_b3",
+            "horizon.on(\"map_decorations\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.decorations, { sprite = \"test:sprite52\", x = 53, y = 55, rot = 0, shown_on_frame = true })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_map_decorations_duo_e3",
+            "horizon.on(\"map_decorations\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut decorations = vec![
+                NativeMapDecoration {
+                    sprite: "test:sprite1".into(),
+                    x: 2,
+                    y: 4,
+                    rot: 0,
+                    shown_on_frame: false,
+                },
+                NativeMapDecoration {
+                    sprite: "test:sprite2".into(),
+                    x: 3,
+                    y: 5,
+                    rot: 0,
+                    shown_on_frame: true,
+                },
+            ];
+            dispatch_map_decorations(
+                &FakeHost::empty(),
+                &firing_mods,
+                &NativeMapInfo {
+                    id: 7,
+                    center: [3, -5],
+                    scale: 0,
+                    dimension: "minecraft:overworld",
+                    locked: true,
+                    in_frame: false,
+                },
+                &mut decorations,
+            );
+            let mut expected_decorations = vec![
+                NativeMapDecoration {
+                    sprite: "test:sprite1".into(),
+                    x: 2,
+                    y: 4,
+                    rot: 0,
+                    shown_on_frame: false,
+                },
+                NativeMapDecoration {
+                    sprite: "test:sprite2".into(),
+                    x: 3,
+                    y: 5,
+                    rot: 0,
+                    shown_on_frame: true,
+                },
+            ];
+            expected_decorations.push(NativeMapDecoration {
+                sprite: "test:sprite52".into(),
+                x: 53,
+                y: 55,
+                rot: 0,
+                shown_on_frame: true,
+            });
+            assert_eq!(
+                format!("{:?}", decorations),
+                format!("{:?}", expected_decorations)
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_player_start_tracking() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_start_tracking",
@@ -4146,6 +10588,84 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_start_tracking_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_start_tracking_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_start_tracking(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+                "test:kind",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_start_tracking read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_start_tracking read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_start_tracking read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_start_tracking_cost_kind",
+            "horizon.on(\"player_start_tracking\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_start_tracking(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+                "minecraft:zombie",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_start_tracking read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_start_tracking read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_start_tracking read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -4183,6 +10703,84 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_stop_tracking_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_stop_tracking_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_stop_tracking(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+                "test:kind",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_stop_tracking read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_stop_tracking read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_stop_tracking read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_stop_tracking_cost_kind",
+            "horizon.on(\"player_stop_tracking\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_stop_tracking(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+                "minecraft:zombie",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_stop_tracking read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_stop_tracking read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_stop_tracking read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_block_entity_energy() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_entity_energy",
@@ -4203,6 +10801,154 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_energy_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_entity_energy_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut energy: Option<ModEnergyBuffer> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_entity_energy(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut energy,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_entity_energy read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_entity_energy read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_entity_energy read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_block_entity_energy_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_block_entity_energy_duo_a1",
+            "horizon.on(\"block_entity_energy\", function(event)\n    __witness = (__witness or 0) + 1\n    event.energy = { capacity = 1000, max_insert = 100, max_extract = 100, insert_faces = { true, false, false, false, false, false }, extract_faces = { false, false, false, false, false, false } }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_block_entity_energy_duo_b1",
+            "horizon.on(\"block_entity_energy\", function(event)\n    __witness = (__witness or 0) + 1\n    event.energy = { capacity = 1001, max_insert = 101, max_extract = 101, insert_faces = { true, false, false, false, false, false }, extract_faces = { false, false, false, false, false, false } }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut energy: Option<ModEnergyBuffer> = None;
+            dispatch_block_entity_energy(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut energy,
+            );
+            assert_eq!(
+                energy,
+                Some(ModEnergyBuffer {
+                    capacity: 1000,
+                    max_insert: 100,
+                    max_extract: 100,
+                    insert_faces: [true, false, false, false, false, false],
+                    extract_faces: [false; 6]
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_block_entity_energy_duo_a2",
+            "horizon.on(\"block_entity_energy\", function(event)\n    __witness = (__witness or 0) + 1\n    event.energy = { capacity = 1000, max_insert = 100, max_extract = 100, insert_faces = { true, false, false, false, false, false }, extract_faces = { false, false, false, false, false, false } }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_block_entity_energy_duo_b2",
+            "horizon.on(\"block_entity_energy\", function(event)\n    __witness = (__witness or 0) + 1\n    event.energy = { capacity = 1001, max_insert = 101, max_extract = 101, insert_faces = { true, false, false, false, false, false }, extract_faces = { false, false, false, false, false, false } }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut energy: Option<ModEnergyBuffer> = None;
+            dispatch_block_entity_energy(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut energy,
+            );
+            assert_eq!(
+                energy,
+                Some(ModEnergyBuffer {
+                    capacity: 1001,
+                    max_insert: 101,
+                    max_extract: 101,
+                    insert_faces: [true, false, false, false, false, false],
+                    extract_faces: [false; 6]
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_block_entity_energy_duo_b3",
+            "horizon.on(\"block_entity_energy\", function(event)\n    __witness = (__witness or 0) + 1\n    event.energy = { capacity = 1001, max_insert = 101, max_extract = 101, insert_faces = { true, false, false, false, false, false }, extract_faces = { false, false, false, false, false, false } }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_block_entity_energy_duo_e3",
+            "horizon.on(\"block_entity_energy\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut energy: Option<ModEnergyBuffer> = None;
+            dispatch_block_entity_energy(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut energy,
+            );
+            assert_eq!(
+                energy,
+                Some(ModEnergyBuffer {
+                    capacity: 1001,
+                    max_insert: 101,
+                    max_extract: 101,
+                    insert_faces: [true, false, false, false, false, false],
+                    extract_faces: [false; 6]
+                })
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -4235,6 +10981,193 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_data_map_types_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_data_map_types_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut types = vec![
+                NativeDataMapType {
+                    id: "test:map0".into(),
+                    registry: "test:registry0".into(),
+                },
+                NativeDataMapType {
+                    id: "test:map1".into(),
+                    registry: "test:registry1".into(),
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_data_map_types(&FakeHost::empty(), &firing_mods, &mut types);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "data_map_types read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "data_map_types read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "data_map_types read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_data_map_types_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_data_map_types_duo_a1",
+            "horizon.on(\"data_map_types\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.types, { id = \"test:map50\", registry = \"test:registry50\" })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_data_map_types_duo_b1",
+            "horizon.on(\"data_map_types\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.types, { id = \"test:map51\", registry = \"test:registry51\" })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut types = vec![
+                NativeDataMapType {
+                    id: "test:map0".into(),
+                    registry: "test:registry0".into(),
+                },
+                NativeDataMapType {
+                    id: "test:map1".into(),
+                    registry: "test:registry1".into(),
+                },
+            ];
+            dispatch_data_map_types(&FakeHost::empty(), &firing_mods, &mut types);
+            let mut expected_types = vec![
+                NativeDataMapType {
+                    id: "test:map0".into(),
+                    registry: "test:registry0".into(),
+                },
+                NativeDataMapType {
+                    id: "test:map1".into(),
+                    registry: "test:registry1".into(),
+                },
+            ];
+            expected_types.push(NativeDataMapType {
+                id: "test:map50".into(),
+                registry: "test:registry50".into(),
+            });
+            expected_types.push(NativeDataMapType {
+                id: "test:map51".into(),
+                registry: "test:registry51".into(),
+            });
+            assert_eq!(format!("{:?}", types), format!("{:?}", expected_types));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_data_map_types_duo_a2",
+            "horizon.on(\"data_map_types\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.types, { id = \"test:map50\", registry = \"test:registry50\" })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_data_map_types_duo_b2",
+            "horizon.on(\"data_map_types\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.types, { id = \"test:map51\", registry = \"test:registry51\" })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut types = vec![
+                NativeDataMapType {
+                    id: "test:map0".into(),
+                    registry: "test:registry0".into(),
+                },
+                NativeDataMapType {
+                    id: "test:map1".into(),
+                    registry: "test:registry1".into(),
+                },
+            ];
+            dispatch_data_map_types(&FakeHost::empty(), &firing_mods, &mut types);
+            let mut expected_types = vec![
+                NativeDataMapType {
+                    id: "test:map0".into(),
+                    registry: "test:registry0".into(),
+                },
+                NativeDataMapType {
+                    id: "test:map1".into(),
+                    registry: "test:registry1".into(),
+                },
+            ];
+            expected_types.push(NativeDataMapType {
+                id: "test:map51".into(),
+                registry: "test:registry51".into(),
+            });
+            expected_types.push(NativeDataMapType {
+                id: "test:map50".into(),
+                registry: "test:registry50".into(),
+            });
+            assert_eq!(format!("{:?}", types), format!("{:?}", expected_types));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_data_map_types_duo_b3",
+            "horizon.on(\"data_map_types\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.types, { id = \"test:map51\", registry = \"test:registry51\" })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_data_map_types_duo_e3",
+            "horizon.on(\"data_map_types\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut types = vec![
+                NativeDataMapType {
+                    id: "test:map0".into(),
+                    registry: "test:registry0".into(),
+                },
+                NativeDataMapType {
+                    id: "test:map1".into(),
+                    registry: "test:registry1".into(),
+                },
+            ];
+            dispatch_data_map_types(&FakeHost::empty(), &firing_mods, &mut types);
+            let mut expected_types = vec![
+                NativeDataMapType {
+                    id: "test:map0".into(),
+                    registry: "test:registry0".into(),
+                },
+                NativeDataMapType {
+                    id: "test:map1".into(),
+                    registry: "test:registry1".into(),
+                },
+            ];
+            expected_types.push(NativeDataMapType {
+                id: "test:map51".into(),
+                registry: "test:registry51".into(),
+            });
+            assert_eq!(format!("{:?}", types), format!("{:?}", expected_types));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -4276,6 +11209,88 @@ mod generated_tests {
         assert_eq!(refill, 54);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_breathe_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_breathe_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut can_breathe = true;
+            let mut consume = 10;
+            let mut refill = 11;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_breathe(
+                &firing_mods,
+                7,
+                "test:kind",
+                &mut can_breathe,
+                &mut consume,
+                &mut refill,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_breathe read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_breathe read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_breathe read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_breathe_cost_kind",
+            "horizon.on(\"living_breathe\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut can_breathe = true;
+            let mut consume = 10;
+            let mut refill = 11;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_breathe(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &mut can_breathe,
+                &mut consume,
+                &mut refill,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_breathe read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_breathe read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_breathe read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -4335,6 +11350,185 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_tick_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_tick_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_tick_pre(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "test:kind",
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_tick_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_tick_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_tick_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_tick_pre_cost_kind",
+            "horizon.on(\"entity_tick_pre\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_tick_pre(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_tick_pre read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_tick_pre read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_tick_pre read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_item_fluid_tank_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_fluid_tank_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut capacity: Option<i32> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_fluid_tank(&FakeHost::empty(), &firing_mods, "test:item", &mut capacity);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "item_fluid_tank read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_fluid_tank read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_fluid_tank read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_item_fluid_tank_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_item_fluid_tank_duo_a1",
+            "horizon.on(\"item_fluid_tank\", function(event)\n    __witness = (__witness or 0) + 1\n    event.capacity = 81000\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_item_fluid_tank_duo_b1",
+            "horizon.on(\"item_fluid_tank\", function(event)\n    __witness = (__witness or 0) + 1\n    event.capacity = 81001\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut capacity: Option<i32> = None;
+            dispatch_item_fluid_tank(&FakeHost::empty(), &firing_mods, "test:item", &mut capacity);
+            assert_eq!(capacity, Some(81000));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_item_fluid_tank_duo_a2",
+            "horizon.on(\"item_fluid_tank\", function(event)\n    __witness = (__witness or 0) + 1\n    event.capacity = 81000\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_item_fluid_tank_duo_b2",
+            "horizon.on(\"item_fluid_tank\", function(event)\n    __witness = (__witness or 0) + 1\n    event.capacity = 81001\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut capacity: Option<i32> = None;
+            dispatch_item_fluid_tank(&FakeHost::empty(), &firing_mods, "test:item", &mut capacity);
+            assert_eq!(capacity, Some(81001));
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_item_fluid_tank_duo_b3",
+            "horizon.on(\"item_fluid_tank\", function(event)\n    __witness = (__witness or 0) + 1\n    event.capacity = 81001\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_item_fluid_tank_duo_e3",
+            "horizon.on(\"item_fluid_tank\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut capacity: Option<i32> = None;
+            dispatch_item_fluid_tank(&FakeHost::empty(), &firing_mods, "test:item", &mut capacity);
+            assert_eq!(capacity, Some(81001));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_player_render_listened() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_render_listened",
@@ -4346,6 +11540,107 @@ mod generated_tests {
         assert!(!listened);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_render_listened_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_render_listened_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut listened = true;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_render_listened(&FakeHost::empty(), &firing_mods, &mut listened);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_render_listened read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_render_listened read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_render_listened read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_player_render_listened_two_mods_last_write_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_player_render_listened_duo_a1",
+            "horizon.on(\"player_render_listened\", function(event)\n    __witness = (__witness or 0) + 1\n    event.listened = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_player_render_listened_duo_b1",
+            "horizon.on(\"player_render_listened\", function(event)\n    __witness = (__witness or 0) + 1\n    event.listened = false\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut listened = true;
+            dispatch_player_render_listened(&FakeHost::empty(), &firing_mods, &mut listened);
+            assert!(!listened);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_player_render_listened_duo_a2",
+            "horizon.on(\"player_render_listened\", function(event)\n    __witness = (__witness or 0) + 1\n    event.listened = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_player_render_listened_duo_b2",
+            "horizon.on(\"player_render_listened\", function(event)\n    __witness = (__witness or 0) + 1\n    event.listened = false\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut listened = true;
+            dispatch_player_render_listened(&FakeHost::empty(), &firing_mods, &mut listened);
+            assert!(listened);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_player_render_listened_duo_b3",
+            "horizon.on(\"player_render_listened\", function(event)\n    __witness = (__witness or 0) + 1\n    event.listened = false\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_player_render_listened_duo_e3",
+            "horizon.on(\"player_render_listened\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut listened = true;
+            dispatch_player_render_listened(&FakeHost::empty(), &firing_mods, &mut listened);
+            assert!(!listened);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -4407,6 +11702,51 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_sign_changed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_sign_changed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_sign_changed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:dimension",
+                [4, 5, 6],
+                true,
+                &mut lines,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "sign_changed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "sign_changed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "sign_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_standalone_models() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_standalone_models",
@@ -4425,6 +11765,156 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_standalone_models_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_standalone_models_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut models = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_standalone_models(&firing_mods, &mut models);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "standalone_models read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "standalone_models read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "standalone_models read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_standalone_models_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_standalone_models_duo_a1",
+            "horizon.on(\"standalone_models\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.models, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_standalone_models_duo_b1",
+            "horizon.on(\"standalone_models\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.models, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut models = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_standalone_models(&firing_mods, &mut models);
+            let mut expected_models = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_models.push("test:duo_a".to_owned());
+            expected_models.push("test:duo_b".to_owned());
+            assert_eq!(models, expected_models);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_standalone_models_duo_a2",
+            "horizon.on(\"standalone_models\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.models, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_standalone_models_duo_b2",
+            "horizon.on(\"standalone_models\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.models, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut models = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_standalone_models(&firing_mods, &mut models);
+            let mut expected_models = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_models.push("test:duo_b".to_owned());
+            expected_models.push("test:duo_a".to_owned());
+            assert_eq!(models, expected_models);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_standalone_models_duo_b3",
+            "horizon.on(\"standalone_models\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.models, \"test:duo_b\")\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_standalone_models_duo_e3",
+            "horizon.on(\"standalone_models\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut models = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_standalone_models(&firing_mods, &mut models);
+            let mut expected_models = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_models.push("test:duo_b".to_owned());
+            assert_eq!(models, expected_models);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
+    fn generated_player_container_close_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_container_close_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_container_close(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:dimension",
+                "test:menu",
+                Some([5, 6, 7]),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_container_close read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_container_close read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_container_close read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -4470,6 +11960,87 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_toggle_flight_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_toggle_flight_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_toggle_flight(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                true,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_toggle_flight read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_toggle_flight read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_toggle_flight read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_anvil_damaged_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_anvil_damaged_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_anvil_damaged(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:from",
+                "test:to",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "anvil_damaged read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "anvil_damaged read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "anvil_damaged read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_arrow_loose_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_arrow_loose_nocancel",
@@ -4497,6 +12068,49 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_arrow_loose_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_arrow_loose_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut charge = 9;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_arrow_loose(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                false,
+                &mut charge,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "arrow_loose read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "arrow_loose read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "arrow_loose read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_beacon_state_change() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_beacon_state_change",
@@ -4512,6 +12126,45 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_beacon_state_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_beacon_state_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_beacon_state_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                true,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "beacon_state_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "beacon_state_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "beacon_state_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -4536,6 +12189,35 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_bell_ring_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_bell_ring_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_bell_ring(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                None,
+                BlockPos::new(3, 4, 5),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "bell_ring read the host with no handler");
+            assert_eq!(host_reads(), 0, "bell_ring read the host with no handler");
+            assert_eq!(level_reads(), 0, "bell_ring read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_block_break_progress_update() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_break_progress_update",
@@ -4552,6 +12234,46 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_break_progress_update_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_break_progress_update_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_break_progress_update(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                10,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_break_progress_update read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_break_progress_update read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_break_progress_update read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -4575,6 +12297,77 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_burn_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_burn_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_burn(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_burn read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "block_burn read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_burn read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_block_cook_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_cook_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_cook(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                "test:item",
+                "test:result",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_cook read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "block_cook read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_cook read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_block_damage_abort() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_damage_abort",
@@ -4590,6 +12383,45 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_damage_abort_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_damage_abort_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_damage_abort(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_damage_abort read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_damage_abort read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_damage_abort read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -4612,6 +12444,46 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_dispense_armor_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_dispense_armor_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_dispense_armor(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:item",
+                "test:target",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_dispense_armor read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_dispense_armor read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_dispense_armor read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_block_exp() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_exp",
@@ -4630,6 +12502,35 @@ mod generated_tests {
         assert_eq!(experience, 53);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_exp_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_exp_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut experience = 10;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_exp(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                "test:block",
+                &mut experience,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "block_exp read the host with no handler");
+            assert_eq!(host_reads(), 0, "block_exp read the host with no handler");
+            assert_eq!(level_reads(), 0, "block_exp read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -4677,6 +12578,44 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_fade_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_fade_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_fade(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                BlockStateId(11),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_fade read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "block_fade read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_fade read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_block_failed_dispense() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_failed_dispense",
@@ -4692,6 +12631,45 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_failed_dispense_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_failed_dispense_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_failed_dispense(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:item",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_failed_dispense read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_failed_dispense read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_failed_dispense read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -4739,6 +12717,44 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_form_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_form_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_form(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                BlockStateId(11),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_form read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "block_form read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_form read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_block_ignite() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_ignite",
@@ -4783,6 +12799,48 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_ignite_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_ignite_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_ignite(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                None,
+                BlockPos::new(3, 4, 5),
+                "test:cause",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_ignite read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_ignite read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_ignite read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_block_lock_check_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_lock_check_nocancel",
@@ -4801,6 +12859,47 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!locked, "locked set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_lock_check_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_lock_check_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut locked = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_lock_check(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut locked,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_lock_check read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_lock_check read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_lock_check read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -4848,6 +12947,48 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_receive_game_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_receive_game_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_receive_game(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:block",
+                "test:event",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_receive_game read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_receive_game read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_receive_game read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_block_shear_entity() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_shear_entity",
@@ -4880,6 +13021,82 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_shear_entity_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_shear_entity_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_shear_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                9,
+                "test:kind",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_shear_entity read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_shear_entity read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_shear_entity read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_shear_entity_cost_kind",
+            "horizon.on(\"block_shear_entity\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_shear_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                9,
+                "minecraft:zombie",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_shear_entity read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_shear_entity read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_shear_entity read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_brewing_complete() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_brewing_complete",
@@ -4892,6 +13109,39 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_brewing_complete_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_brewing_complete_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_brewing_complete(&FakeHost::empty(), &firing_mods, [1, 2, 3]);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "brewing_complete read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "brewing_complete read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "brewing_complete read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_brewing_fuel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_brewing_fuel",
@@ -4901,6 +13151,39 @@ mod generated_tests {
         dispatch_brewing_fuel(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_brewing_fuel_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_brewing_fuel_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_brewing_fuel(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "brewing_fuel read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "brewing_fuel read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "brewing_fuel read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -4918,6 +13201,44 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_brewing_start_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_brewing_start_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_brewing_start(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                "test:ingredient",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "brewing_start read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "brewing_start read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "brewing_start read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -4952,6 +13273,41 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_broadcast_message_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_broadcast_message_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut line = Text::literal("test:line");
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_broadcast_message(&FakeHost::empty(), &firing_mods, &mut line, &mut cancel);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "broadcast_message read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "broadcast_message read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "broadcast_message read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_campfire_start() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_campfire_start",
@@ -4961,6 +13317,39 @@ mod generated_tests {
         dispatch_campfire_start(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_campfire_start_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_campfire_start_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_campfire_start(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "campfire_start read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "campfire_start read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "campfire_start read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5012,6 +13401,50 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_cauldron_level_changed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_cauldron_level_changed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_cauldron_level_changed(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                None,
+                BlockPos::new(3, 4, 5),
+                10,
+                11,
+                "test:reason",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "cauldron_level_changed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "cauldron_level_changed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "cauldron_level_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_chorus_fruit_teleport() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_chorus_fruit_teleport",
@@ -5059,6 +13492,49 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_chorus_fruit_teleport_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_chorus_fruit_teleport_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut target = [4.0, 5.0, 6.0];
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_chorus_fruit_teleport(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3.0, 4.0, 5.0],
+                &mut target,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "chorus_fruit_teleport read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "chorus_fruit_teleport read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "chorus_fruit_teleport read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_compost_item() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_compost_item",
@@ -5071,6 +13547,39 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_compost_item_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_compost_item_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_compost_item(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "compost_item read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "compost_item read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "compost_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_crafter_craft() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_crafter_craft",
@@ -5080,6 +13589,39 @@ mod generated_tests {
         dispatch_crafter_craft(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:recipe");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_crafter_craft_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_crafter_craft_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_crafter_craft(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:recipe");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "crafter_craft read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "crafter_craft read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "crafter_craft read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5107,6 +13649,68 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_creeper_ignite_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_creeper_ignite_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_creeper_ignite(&mut FakeHost::empty(), &firing_mods, 7, 8, "test:item");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "creeper_ignite read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "creeper_ignite read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "creeper_ignite read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_creeper_ignite_cost_kind",
+            "horizon.on(\"creeper_ignite\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_creeper_ignite(&mut FakeHost::empty(), &firing_mods, 11, 8, "test:item");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "creeper_ignite read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "creeper_ignite read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "creeper_ignite read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_creeper_power() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_creeper_power",
@@ -5128,6 +13732,68 @@ mod generated_tests {
         dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 3.0, 4.0]);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_creeper_power_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_creeper_power_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 7, [2.0, 3.0, 4.0]);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "creeper_power read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "creeper_power read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "creeper_power read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_creeper_power_cost_kind",
+            "horizon.on(\"creeper_power\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 3.0, 4.0]);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "creeper_power read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "creeper_power read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "creeper_power read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5154,6 +13820,48 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_critical_hit_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_critical_hit_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut critical = true;
+            let mut damage_multiplier = 4.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_critical_hit(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:target_kind",
+                false,
+                &mut critical,
+                &mut damage_multiplier,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "critical_hit read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "critical_hit read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "critical_hit read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_difficulty_changed() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_difficulty_changed",
@@ -5163,6 +13871,44 @@ mod generated_tests {
         dispatch_difficulty_changed(&mut FakeHost::empty(), &firing_mods, "test:from", "test:to");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_difficulty_changed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_difficulty_changed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_difficulty_changed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:from",
+                "test:to",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "difficulty_changed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "difficulty_changed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "difficulty_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5206,6 +13952,46 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_dragon_egg_form_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_dragon_egg_form_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_dragon_egg_form(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "dragon_egg_form read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "dragon_egg_form read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "dragon_egg_form read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_enchant_item() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_enchant_item",
@@ -5228,6 +14014,52 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_enchant_item_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_enchant_item_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_enchant_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &ItemStack {
+                    item: "test:item".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: None,
+                },
+                11,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "enchant_item read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "enchant_item read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "enchant_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5285,6 +14117,52 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_ender_pearl_teleport_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_ender_pearl_teleport_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut target = [5.0, 6.0, 7.0];
+            let mut damage = 6.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_ender_pearl_teleport(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                [4.0, 5.0, 6.0],
+                &mut target,
+                &mut damage,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "ender_pearl_teleport read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "ender_pearl_teleport read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "ender_pearl_teleport read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_entities_load() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_entities_load",
@@ -5303,6 +14181,45 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entities_load_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entities_load_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entities_load(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [4, -6],
+                9,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entities_load read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entities_load read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entities_load read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_entities_unload() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_entities_unload",
@@ -5318,6 +14235,45 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_entities_unload_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entities_unload_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entities_unload(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [4, -6],
+                9,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entities_unload read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entities_unload read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entities_unload read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5351,6 +14307,80 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_break_door_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_break_door_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_break_door(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                [3, 4, 5],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_break_door read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_break_door read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_break_door read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_break_door_cost_kind",
+            "horizon.on(\"entity_break_door\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_break_door(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                [3, 4, 5],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_break_door read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_break_door read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_break_door read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_entity_breed() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_breed",
@@ -5360,6 +14390,39 @@ mod generated_tests {
         dispatch_entity_breed(&mut FakeHost::empty(), &firing_mods, 7, 8, Some(9));
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_entity_breed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_breed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_breed(&mut FakeHost::empty(), &firing_mods, 7, 8, Some(9));
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_breed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_breed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_breed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5394,6 +14457,84 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_entity_change_block_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_change_block_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_change_block(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                [3, 4, 5],
+                "test:from",
+                "test:to",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_change_block read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_change_block read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_change_block read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_change_block_cost_kind",
+            "horizon.on(\"entity_change_block\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_change_block(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                [3, 4, 5],
+                "test:from",
+                "test:to",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_change_block read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_change_block read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_change_block read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5442,6 +14583,82 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_drop_item_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_drop_item_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_drop_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:item",
+                9,
+                [4.0, 5.0, 6.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_drop_item read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_drop_item read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_drop_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_drop_item_cost_kind",
+            "horizon.on(\"entity_drop_item\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_drop_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                11,
+                "test:item",
+                9,
+                [4.0, 5.0, 6.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "entity_drop_item read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "entity_drop_item read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_drop_item read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_entity_enter_block() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_enter_block",
@@ -5474,6 +14691,82 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_enter_block_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_enter_block_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_enter_block(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                [3, 4, 5],
+                "test:block",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_enter_block read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_enter_block read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_enter_block read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_enter_block_cost_kind",
+            "horizon.on(\"entity_enter_block\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_enter_block(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                [3, 4, 5],
+                "test:block",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_enter_block read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_enter_block read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_enter_block read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_entity_enter_love_mode() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_enter_love_mode",
@@ -5501,6 +14794,80 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_entity_enter_love_mode_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_enter_love_mode_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_enter_love_mode(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                Some(9),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_enter_love_mode read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_enter_love_mode read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_enter_love_mode read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_enter_love_mode_cost_kind",
+            "horizon.on(\"entity_enter_love_mode\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_enter_love_mode(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                Some(9),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_enter_love_mode read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_enter_love_mode read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_enter_love_mode read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5546,6 +14913,80 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_portal_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_portal_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_portal(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                [3, 4, 5],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_portal read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_portal read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_portal read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_portal_cost_kind",
+            "horizon.on(\"entity_portal\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_portal(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                11,
+                [3, 4, 5],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "entity_portal read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "entity_portal read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_portal read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_entity_pose_change() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_pose_change",
@@ -5562,6 +15003,46 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_entity_pose_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_pose_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_pose_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:from",
+                "test:to",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_pose_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_pose_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_pose_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5610,6 +15091,75 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_shoot_bow_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_shoot_bow_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_shoot_bow(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9, 4.5);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_shoot_bow read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_shoot_bow read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_shoot_bow read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_shoot_bow_cost_kind",
+            "horizon.on(\"entity_shoot_bow\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_shoot_bow(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+                4.5,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "entity_shoot_bow read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "entity_shoot_bow read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_shoot_bow read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_entity_tame() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_tame",
@@ -5637,6 +15187,76 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_entity_tame_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_tame_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_tame(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                Some(9),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_tame read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "entity_tame read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_tame read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_tame_cost_kind",
+            "horizon.on(\"entity_tame\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_tame(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                Some(9),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_tame read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_tame read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_tame read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5685,6 +15305,82 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_teleport_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_teleport_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_teleport(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                [3.0, 4.0, 5.0],
+                [4.0, 5.0, 6.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_teleport read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_teleport read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_teleport read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_teleport_cost_kind",
+            "horizon.on(\"entity_teleport\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_teleport(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                11,
+                [3.0, 4.0, 5.0],
+                [4.0, 5.0, 6.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "entity_teleport read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "entity_teleport read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_teleport read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_entity_toggle_glide() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_toggle_glide",
@@ -5694,6 +15390,45 @@ mod generated_tests {
         dispatch_entity_toggle_glide(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_entity_toggle_glide_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_toggle_glide_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_toggle_glide(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                true,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_toggle_glide read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_toggle_glide read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_toggle_glide read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5729,6 +15464,82 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_transform_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_transform_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_transform(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                9,
+                "test:transformed_kind",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_transform read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_transform read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_transform read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_transform_cost_kind",
+            "horizon.on(\"entity_transform\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_transform(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                9,
+                "test:transformed_kind",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_transform read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_transform read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_transform read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_entity_unleash() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_unleash",
@@ -5752,6 +15563,68 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_unleash_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_unleash_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_unleash(&mut FakeHost::empty(), &firing_mods, 7, "test:kind");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_unleash read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_unleash read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_unleash read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_unleash_cost_kind",
+            "horizon.on(\"entity_unleash\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_unleash(&mut FakeHost::empty(), &firing_mods, 7, "minecraft:zombie");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_unleash read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_unleash read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_unleash read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_exp_bottle() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_exp_bottle",
@@ -5761,6 +15634,35 @@ mod generated_tests {
         dispatch_exp_bottle(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 8);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_exp_bottle_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_exp_bottle_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_exp_bottle(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 8);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "exp_bottle read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "exp_bottle read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "exp_bottle read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5775,6 +15677,123 @@ mod generated_tests {
         assert!(!listened);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_experience_orb_pickup_listened_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_experience_orb_pickup_listened_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut listened = true;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_experience_orb_pickup_listened(
+                &FakeHost::empty(),
+                &firing_mods,
+                &mut listened,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "experience_orb_pickup_listened read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "experience_orb_pickup_listened read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "experience_orb_pickup_listened read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_experience_orb_pickup_listened_two_mods_last_write_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_experience_orb_pickup_listened_duo_a1",
+            "horizon.on(\"experience_orb_pickup_listened\", function(event)\n    __witness = (__witness or 0) + 1\n    event.listened = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_experience_orb_pickup_listened_duo_b1",
+            "horizon.on(\"experience_orb_pickup_listened\", function(event)\n    __witness = (__witness or 0) + 1\n    event.listened = false\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut listened = true;
+            dispatch_experience_orb_pickup_listened(
+                &FakeHost::empty(),
+                &firing_mods,
+                &mut listened,
+            );
+            assert!(!listened);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_experience_orb_pickup_listened_duo_a2",
+            "horizon.on(\"experience_orb_pickup_listened\", function(event)\n    __witness = (__witness or 0) + 1\n    event.listened = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_experience_orb_pickup_listened_duo_b2",
+            "horizon.on(\"experience_orb_pickup_listened\", function(event)\n    __witness = (__witness or 0) + 1\n    event.listened = false\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut listened = true;
+            dispatch_experience_orb_pickup_listened(
+                &FakeHost::empty(),
+                &firing_mods,
+                &mut listened,
+            );
+            assert!(listened);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_experience_orb_pickup_listened_duo_b3",
+            "horizon.on(\"experience_orb_pickup_listened\", function(event)\n    __witness = (__witness or 0) + 1\n    event.listened = false\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_experience_orb_pickup_listened_duo_e3",
+            "horizon.on(\"experience_orb_pickup_listened\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut listened = true;
+            dispatch_experience_orb_pickup_listened(
+                &FakeHost::empty(),
+                &firing_mods,
+                &mut listened,
+            );
+            assert!(!listened);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -5830,6 +15849,51 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_experience_orb_pickup_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_experience_orb_pickup_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut value = 10;
+            let mut count = 11;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_experience_orb_pickup(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:dimension",
+                9,
+                &mut value,
+                &mut count,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "experience_orb_pickup read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "experience_orb_pickup read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "experience_orb_pickup read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_mending_repair() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_mending_repair",
@@ -5856,6 +15920,52 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_mending_repair_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mending_repair_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut repair = 10;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_mending_repair(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: None,
+                },
+                9,
+                &mut repair,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mending_repair read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mending_repair read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mending_repair read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_explosion_prime() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_explosion_prime",
@@ -5865,6 +15975,39 @@ mod generated_tests {
         dispatch_explosion_prime(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 2.5);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_explosion_prime_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_explosion_prime_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_explosion_prime(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 2.5);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "explosion_prime read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "explosion_prime read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "explosion_prime read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5888,6 +16031,119 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_fire_odds_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_fire_odds_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut odds: Option<(i32, i32)> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_fire_odds(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &mut odds,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "fire_odds read the host with no handler");
+            assert_eq!(host_reads(), 0, "fire_odds read the host with no handler");
+            assert_eq!(level_reads(), 0, "fire_odds read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_fire_odds_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_fire_odds_duo_a1",
+            "horizon.on(\"fire_odds\", function(event)\n    __witness = (__witness or 0) + 1\n    event.odds = { min = 1, max = 2 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_fire_odds_duo_b1",
+            "horizon.on(\"fire_odds\", function(event)\n    __witness = (__witness or 0) + 1\n    event.odds = { min = 2, max = 3 }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut odds: Option<(i32, i32)> = None;
+            dispatch_fire_odds(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &mut odds,
+            );
+            assert_eq!(odds, Some((1, 2)));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_fire_odds_duo_a2",
+            "horizon.on(\"fire_odds\", function(event)\n    __witness = (__witness or 0) + 1\n    event.odds = { min = 1, max = 2 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_fire_odds_duo_b2",
+            "horizon.on(\"fire_odds\", function(event)\n    __witness = (__witness or 0) + 1\n    event.odds = { min = 2, max = 3 }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut odds: Option<(i32, i32)> = None;
+            dispatch_fire_odds(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &mut odds,
+            );
+            assert_eq!(odds, Some((2, 3)));
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_fire_odds_duo_b3",
+            "horizon.on(\"fire_odds\", function(event)\n    __witness = (__witness or 0) + 1\n    event.odds = { min = 2, max = 3 }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_fire_odds_duo_e3",
+            "horizon.on(\"fire_odds\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut odds: Option<(i32, i32)> = None;
+            dispatch_fire_odds(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &mut odds,
+            );
+            assert_eq!(odds, Some((2, 3)));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_smoke_source() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_smoke_source",
@@ -5905,6 +16161,131 @@ mod generated_tests {
         assert_eq!(smoke, Some(true));
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_smoke_source_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_smoke_source_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut smoke: Option<bool> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_smoke_source(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &mut smoke,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "smoke_source read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "smoke_source read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "smoke_source read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_smoke_source_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_smoke_source_duo_a1",
+            "horizon.on(\"smoke_source\", function(event)\n    __witness = (__witness or 0) + 1\n    event.smoke = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_smoke_source_duo_b1",
+            "horizon.on(\"smoke_source\", function(event)\n    __witness = (__witness or 0) + 1\n    event.smoke = false\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut smoke: Option<bool> = None;
+            dispatch_smoke_source(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &mut smoke,
+            );
+            assert_eq!(smoke, Some(true));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_smoke_source_duo_a2",
+            "horizon.on(\"smoke_source\", function(event)\n    __witness = (__witness or 0) + 1\n    event.smoke = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_smoke_source_duo_b2",
+            "horizon.on(\"smoke_source\", function(event)\n    __witness = (__witness or 0) + 1\n    event.smoke = false\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut smoke: Option<bool> = None;
+            dispatch_smoke_source(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &mut smoke,
+            );
+            assert_eq!(smoke, Some(false));
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_smoke_source_duo_b3",
+            "horizon.on(\"smoke_source\", function(event)\n    __witness = (__witness or 0) + 1\n    event.smoke = false\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_smoke_source_duo_e3",
+            "horizon.on(\"smoke_source\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut smoke: Option<bool> = None;
+            dispatch_smoke_source(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &mut smoke,
+            );
+            assert_eq!(smoke, Some(false));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -5929,6 +16310,68 @@ mod generated_tests {
         dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 3.0, 4.0], 9);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_firework_explode_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_firework_explode_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 7, [2.0, 3.0, 4.0], 9);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "firework_explode read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "firework_explode read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "firework_explode read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_firework_explode_cost_kind",
+            "horizon.on(\"firework_explode\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 3.0, 4.0], 9);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "firework_explode read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "firework_explode read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "firework_explode read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5978,6 +16421,49 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_fluid_level_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_fluid_level_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_fluid_level_change(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                "test:fluid",
+                10,
+                11,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "fluid_level_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "fluid_level_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "fluid_level_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_framerate_limit() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_framerate_limit",
@@ -5999,6 +16485,47 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_framerate_limit_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_framerate_limit_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut limit = 10;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_framerate_limit(
+                &FakeHost::empty(),
+                &firing_mods,
+                true,
+                false,
+                true,
+                &mut limit,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "framerate_limit read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "framerate_limit read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "framerate_limit read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_furnace_burn() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_furnace_burn",
@@ -6008,6 +16535,39 @@ mod generated_tests {
         dispatch_furnace_burn(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_furnace_burn_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_furnace_burn_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_furnace_burn(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "furnace_burn read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "furnace_burn read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "furnace_burn read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -6031,6 +16591,47 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_furnace_extract_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_furnace_extract_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_furnace_extract(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                "test:item",
+                11,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "furnace_extract read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "furnace_extract read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "furnace_extract read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_furnace_smelt() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_furnace_smelt",
@@ -6049,6 +16650,45 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_furnace_smelt_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_furnace_smelt_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_furnace_smelt(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                "test:item",
+                "test:result",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "furnace_smelt read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "furnace_smelt read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "furnace_smelt read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_furnace_start_smelt() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_furnace_start_smelt",
@@ -6058,6 +16698,39 @@ mod generated_tests {
         dispatch_furnace_start_smelt(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_furnace_start_smelt_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_furnace_start_smelt_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_furnace_start_smelt(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "furnace_start_smelt read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "furnace_start_smelt read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "furnace_start_smelt read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -6075,6 +16748,40 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_game_event_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_game_event_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_game_event(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:event",
+                [2.0, 3.0, 4.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "game_event read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "game_event read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "game_event read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -6117,6 +16824,80 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_hopper_inventory_search_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_hopper_inventory_search_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_hopper_inventory_search(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some([2, 3, 4]),
+                Some(9),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "hopper_inventory_search read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "hopper_inventory_search read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "hopper_inventory_search read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_hopper_inventory_search_cost_kind",
+            "horizon.on(\"hopper_inventory_search\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_hopper_inventory_search(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some([2, 3, 4]),
+                Some(11),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "hopper_inventory_search read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "hopper_inventory_search read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "hopper_inventory_search read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -6164,6 +16945,48 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_hopper_pickup_item_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_hopper_pickup_item_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_hopper_pickup_item(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                "test:item",
+                10,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "hopper_pickup_item read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "hopper_pickup_item read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "hopper_pickup_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_ingredient() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_ingredient",
@@ -6189,6 +17012,139 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_ingredient_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_ingredient_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut items = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_ingredient(
+                &firing_mods,
+                "test:kind",
+                &[("testkey".to_owned(), serde_json::json!(8))]
+                    .into_iter()
+                    .collect(),
+                &mut items,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "ingredient read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "ingredient read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "ingredient read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_ingredient_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_ingredient_duo_a1",
+            "horizon.on(\"ingredient\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.items, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_ingredient_duo_b1",
+            "horizon.on(\"ingredient\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.items, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut items = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_ingredient(
+                &firing_mods,
+                "test:kind",
+                &[("testkey".to_owned(), serde_json::json!(8))]
+                    .into_iter()
+                    .collect(),
+                &mut items,
+            );
+            let mut expected_items = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_items.push("test:duo_a".to_owned());
+            expected_items.push("test:duo_b".to_owned());
+            assert_eq!(items, expected_items);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_ingredient_duo_a2",
+            "horizon.on(\"ingredient\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.items, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_ingredient_duo_b2",
+            "horizon.on(\"ingredient\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.items, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut items = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_ingredient(
+                &firing_mods,
+                "test:kind",
+                &[("testkey".to_owned(), serde_json::json!(8))]
+                    .into_iter()
+                    .collect(),
+                &mut items,
+            );
+            let mut expected_items = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_items.push("test:duo_b".to_owned());
+            expected_items.push("test:duo_a".to_owned());
+            assert_eq!(items, expected_items);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_ingredient_duo_b3",
+            "horizon.on(\"ingredient\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.items, \"test:duo_b\")\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_ingredient_duo_e3",
+            "horizon.on(\"ingredient\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut items = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_ingredient(
+                &firing_mods,
+                "test:kind",
+                &[("testkey".to_owned(), serde_json::json!(8))]
+                    .into_iter()
+                    .collect(),
+                &mut items,
+            );
+            let mut expected_items = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_items.push("test:duo_b".to_owned());
+            assert_eq!(items, expected_items);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -6234,6 +17190,47 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_inventory_block_start_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_inventory_block_start_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_inventory_block_start(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "inventory_block_start read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "inventory_block_start read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "inventory_block_start read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_inventory_move_item() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_inventory_move_item",
@@ -6273,6 +17270,47 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_inventory_move_item_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_inventory_move_item_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_inventory_move_item(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                [2, 3, 4],
+                "test:item",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "inventory_move_item read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "inventory_move_item read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "inventory_move_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -6321,6 +17359,82 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_item_despawn_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_despawn_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_despawn(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:item",
+                9,
+                [4.0, 5.0, 6.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "item_despawn read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_despawn read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_despawn read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_despawn_cost_kind",
+            "horizon.on(\"item_despawn\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_despawn(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                11,
+                "test:item",
+                9,
+                [4.0, 5.0, 6.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "item_despawn read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "item_despawn read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_despawn read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_item_energy_buffer() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_energy_buffer",
@@ -6339,6 +17453,128 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_item_energy_buffer_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_energy_buffer_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut buffer: Option<ItemEnergyBuffer> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_energy_buffer(&FakeHost::empty(), &firing_mods, "test:item", &mut buffer);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "item_energy_buffer read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_energy_buffer read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_energy_buffer read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_item_energy_buffer_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_item_energy_buffer_duo_a1",
+            "horizon.on(\"item_energy_buffer\", function(event)\n    __witness = (__witness or 0) + 1\n    event.buffer = { capacity = 1000, max_insert = 100, max_extract = 100 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_item_energy_buffer_duo_b1",
+            "horizon.on(\"item_energy_buffer\", function(event)\n    __witness = (__witness or 0) + 1\n    event.buffer = { capacity = 1001, max_insert = 101, max_extract = 101 }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut buffer: Option<ItemEnergyBuffer> = None;
+            dispatch_item_energy_buffer(&FakeHost::empty(), &firing_mods, "test:item", &mut buffer);
+            assert_eq!(
+                buffer,
+                Some(ItemEnergyBuffer {
+                    capacity: 1000,
+                    max_insert: 100,
+                    max_extract: 100
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_item_energy_buffer_duo_a2",
+            "horizon.on(\"item_energy_buffer\", function(event)\n    __witness = (__witness or 0) + 1\n    event.buffer = { capacity = 1000, max_insert = 100, max_extract = 100 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_item_energy_buffer_duo_b2",
+            "horizon.on(\"item_energy_buffer\", function(event)\n    __witness = (__witness or 0) + 1\n    event.buffer = { capacity = 1001, max_insert = 101, max_extract = 101 }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut buffer: Option<ItemEnergyBuffer> = None;
+            dispatch_item_energy_buffer(&FakeHost::empty(), &firing_mods, "test:item", &mut buffer);
+            assert_eq!(
+                buffer,
+                Some(ItemEnergyBuffer {
+                    capacity: 1001,
+                    max_insert: 101,
+                    max_extract: 101
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_item_energy_buffer_duo_b3",
+            "horizon.on(\"item_energy_buffer\", function(event)\n    __witness = (__witness or 0) + 1\n    event.buffer = { capacity = 1001, max_insert = 101, max_extract = 101 }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_item_energy_buffer_duo_e3",
+            "horizon.on(\"item_energy_buffer\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut buffer: Option<ItemEnergyBuffer> = None;
+            dispatch_item_energy_buffer(&FakeHost::empty(), &firing_mods, "test:item", &mut buffer);
+            assert_eq!(
+                buffer,
+                Some(ItemEnergyBuffer {
+                    capacity: 1001,
+                    max_insert: 101,
+                    max_extract: 101
+                })
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -6403,6 +17639,88 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_item_expire_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_expire_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut extra_life = 9;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_expire(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: None,
+                },
+                &mut extra_life,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "item_expire read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "item_expire read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_expire read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_expire_cost_kind",
+            "horizon.on(\"item_expire\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut extra_life = 9;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_expire(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                11,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: None,
+                },
+                &mut extra_life,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "item_expire read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "item_expire read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_expire read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_item_spawn() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_spawn",
@@ -6448,6 +17766,78 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_item_spawn_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_spawn_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_spawn(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:item",
+                9,
+                [4.0, 5.0, 6.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "item_spawn read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "item_spawn read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_spawn read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_spawn_cost_kind",
+            "horizon.on(\"item_spawn\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_spawn(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                11,
+                "test:item",
+                9,
+                [4.0, 5.0, 6.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "item_spawn read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "item_spawn read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_spawn read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_leaves_decay() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_leaves_decay",
@@ -6485,6 +17875,46 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_leaves_decay_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_leaves_decay_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_leaves_decay(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "leaves_decay read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "leaves_decay read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "leaves_decay read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -6527,6 +17957,47 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_lightning_strike_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_lightning_strike_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_lightning_strike(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                [2, 3, 4],
+                "test:cause",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "lightning_strike read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "lightning_strike read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "lightning_strike read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -6574,6 +18045,48 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_moisture_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_moisture_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_moisture_change(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                9,
+                10,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "moisture_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "moisture_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "moisture_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_anvil_craft_post() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_anvil_craft_post",
@@ -6604,6 +18117,60 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_anvil_craft_post_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_anvil_craft_post_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_anvil_craft_post(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &AnvilCraft {
+                    left: Some(ItemStack {
+                        item: "test:craft".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    }),
+                    right: None,
+                    output: ItemStack {
+                        item: "test:craft:out".into(),
+                        count: 2,
+                        damage: 3,
+                        extra: None,
+                    },
+                },
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "anvil_craft_post read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "anvil_craft_post read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "anvil_craft_post read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -6679,6 +18246,62 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_anvil_craft_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_anvil_craft_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_anvil_craft_pre(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &AnvilCraft {
+                    left: Some(ItemStack {
+                        item: "test:craft".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    }),
+                    right: None,
+                    output: ItemStack {
+                        item: "test:craft:out".into(),
+                        count: 2,
+                        damage: 3,
+                        extra: None,
+                    },
+                },
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "anvil_craft_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "anvil_craft_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "anvil_craft_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_armor_stand_manipulate() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_armor_stand_manipulate",
@@ -6720,6 +18343,48 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_armor_stand_manipulate_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_armor_stand_manipulate_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_armor_stand_manipulate(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                "test:slot",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "armor_stand_manipulate read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "armor_stand_manipulate read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "armor_stand_manipulate read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -6767,6 +18432,48 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_bucket_empty_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_bucket_empty_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_bucket_empty(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                "test:fluid",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "bucket_empty read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "bucket_empty read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "bucket_empty read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_container_opened() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_container_opened",
@@ -6808,6 +18515,48 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_container_opened_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_container_opened_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_container_opened(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:kind",
+                Some([4, 5, 6]),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "container_opened read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "container_opened read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "container_opened read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -6857,6 +18606,49 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_creative_slot_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_creative_slot_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_creative_slot(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                "test:item",
+                11,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "creative_slot read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "creative_slot read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "creative_slot read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_food_level_changed() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_food_level_changed",
@@ -6901,6 +18693,49 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_food_level_changed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_food_level_changed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut to = 10;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_food_level_changed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                &mut to,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "food_level_changed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "food_level_changed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "food_level_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -6957,6 +18792,84 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_hanging_break_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_hanging_break_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_hanging_break(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:kind",
+                [3, 4, 5],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "hanging_break read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "hanging_break read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "hanging_break read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_hanging_break_cost_kind",
+            "horizon.on(\"hanging_break\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_hanging_break(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "minecraft:zombie",
+                [3, 4, 5],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "hanging_break read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "hanging_break read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "hanging_break read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7019,6 +18932,86 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_hanging_place_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_hanging_place_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_hanging_place(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:kind",
+                [4, 5, 6],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "hanging_place read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "hanging_place read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "hanging_place read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_hanging_place_cost_kind",
+            "horizon.on(\"hanging_place\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_hanging_place(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "minecraft:zombie",
+                [4, 5, 6],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "hanging_place read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "hanging_place read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "hanging_place read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_item_damaged() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_damaged",
@@ -7066,6 +19059,49 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_item_damaged_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_damaged_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 10;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_damaged(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:item",
+                &mut amount,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "item_damaged read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_damaged read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_damaged read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_clone() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_clone",
@@ -7075,6 +19111,39 @@ mod generated_tests {
         dispatch_player_clone(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_clone_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_clone_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_clone(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_clone read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_clone read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_clone read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7105,6 +19174,139 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_commands_sent_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_commands_sent_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_commands_sent(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut names,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_commands_sent read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_commands_sent read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_commands_sent read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_player_commands_sent_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_player_commands_sent_duo_a1",
+            "horizon.on(\"player_commands_sent\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.names, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_player_commands_sent_duo_b1",
+            "horizon.on(\"player_commands_sent\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.names, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_player_commands_sent(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut names,
+            );
+            let mut expected_names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_names.push("test:duo_a".to_owned());
+            expected_names.push("test:duo_b".to_owned());
+            assert_eq!(names, expected_names);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_player_commands_sent_duo_a2",
+            "horizon.on(\"player_commands_sent\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.names, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_player_commands_sent_duo_b2",
+            "horizon.on(\"player_commands_sent\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.names, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_player_commands_sent(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut names,
+            );
+            let mut expected_names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_names.push("test:duo_b".to_owned());
+            expected_names.push("test:duo_a".to_owned());
+            assert_eq!(names, expected_names);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_player_commands_sent_duo_b3",
+            "horizon.on(\"player_commands_sent\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.names, \"test:duo_b\")\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_player_commands_sent_duo_e3",
+            "horizon.on(\"player_commands_sent\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_player_commands_sent(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut names,
+            );
+            let mut expected_names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_names.push("test:duo_b".to_owned());
+            assert_eq!(names, expected_names);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_player_destroy_item() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_destroy_item",
@@ -7121,6 +19323,46 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_destroy_item_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_destroy_item_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_destroy_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:item",
+                "test:slot",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_destroy_item read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_destroy_item read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_destroy_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7166,6 +19408,43 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_fish_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_fish_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_fish(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_fish read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "player_fish read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_fish read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_flower_pot_manipulate() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_flower_pot_manipulate",
@@ -7182,6 +19461,46 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_flower_pot_manipulate_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_flower_pot_manipulate_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_flower_pot_manipulate(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                "test:plant",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_flower_pot_manipulate read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_flower_pot_manipulate read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_flower_pot_manipulate read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7229,6 +19548,48 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_game_mode_changed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_game_mode_changed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_game_mode_changed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_game_mode_changed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_game_mode_changed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_game_mode_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_insert_lectern_book() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_insert_lectern_book",
@@ -7245,6 +19606,46 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_insert_lectern_book_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_insert_lectern_book_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_insert_lectern_book(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                "test:book",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_insert_lectern_book read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_insert_lectern_book read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_insert_lectern_book read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7299,6 +19700,86 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_item_frame_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_item_frame_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_item_frame_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                "test:action",
+                "test:item",
+                12,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_item_frame_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_item_frame_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_item_frame_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_item_frame_change_cost_kind",
+            "horizon.on(\"player_item_frame_change\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_item_frame_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+                "test:action",
+                "test:item",
+                12,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "player_item_frame_change read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "player_item_frame_change read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_item_frame_change read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_item_mend() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_item_mend",
@@ -7316,6 +19797,47 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_item_mend_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_item_mend_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_item_mend(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:item",
+                10,
+                11,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_item_mend read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_item_mend read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_item_mend read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7338,6 +19860,46 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_lectern_page_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_lectern_page_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_lectern_page_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                10,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_lectern_page_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_lectern_page_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_lectern_page_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_load_from_file() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_load_from_file",
@@ -7353,6 +19915,45 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_load_from_file_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_load_from_file_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_load_from_file(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                std::path::Path::new("test:path"),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_load_from_file read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_load_from_file read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_load_from_file read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7401,6 +20002,48 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_login_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_login_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut reason = Some(Text::literal("test:reason"));
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_login(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut reason,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_login read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_login read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_login read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_save_to_file() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_save_to_file",
@@ -7419,6 +20062,45 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_save_to_file_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_save_to_file_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_save_to_file(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                std::path::Path::new("test:path"),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_save_to_file read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_save_to_file read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_save_to_file read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_sprint() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_sprint",
@@ -7428,6 +20110,39 @@ mod generated_tests {
         dispatch_player_sprint(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_sprint_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_sprint_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_sprint(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_sprint read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_sprint read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_sprint read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7471,6 +20186,46 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_swap_hands_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_swap_hands_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_swap_hands(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_swap_hands read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_swap_hands read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_swap_hands read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_take_lectern_book() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_take_lectern_book",
@@ -7487,6 +20242,46 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_take_lectern_book_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_take_lectern_book_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_take_lectern_book(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                "test:book",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_take_lectern_book read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_take_lectern_book read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_take_lectern_book read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7510,6 +20305,47 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_teleported_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_teleported_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_teleported(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3.0, 4.0, 5.0],
+                [4.0, 5.0, 6.0],
+                "test:dimension",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_teleported read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_teleported read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_teleported read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_totem() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_totem",
@@ -7519,6 +20355,39 @@ mod generated_tests {
         dispatch_player_totem(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_totem_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_totem_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_totem(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_totem read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_totem read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_totem read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7534,6 +20403,39 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_resource_pack_status_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_resource_pack_status_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_resource_pack_status(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "resource_pack_status read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "resource_pack_status read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "resource_pack_status read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_spawn_change() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_spawn_change",
@@ -7543,6 +20445,39 @@ mod generated_tests {
         dispatch_spawn_change(&mut FakeHost::empty(), &firing_mods, [1, 2, 3], [2.5, 3.5]);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_spawn_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_spawn_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_spawn_change(&mut FakeHost::empty(), &firing_mods, [1, 2, 3], [2.5, 3.5]);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "spawn_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "spawn_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "spawn_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7586,6 +20521,42 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_tnt_primed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tnt_primed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_tnt_primed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                [2, 3, 4],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "tnt_primed read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "tnt_primed read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "tnt_primed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_vehicle_create() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_vehicle_create",
@@ -7611,6 +20582,78 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_vehicle_create_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vehicle_create_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_vehicle_create(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:kind",
+                [2.0, 3.0, 4.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "vehicle_create read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vehicle_create read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vehicle_create read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vehicle_create_cost_kind",
+            "horizon.on(\"vehicle_create\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_vehicle_create(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "minecraft:zombie",
+                [2.0, 3.0, 4.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "vehicle_create read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vehicle_create read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vehicle_create read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7671,6 +20714,84 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_vehicle_damage_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vehicle_damage_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut damage = 2.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_vehicle_damage(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:kind",
+                &mut damage,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "vehicle_damage read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vehicle_damage read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vehicle_damage read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vehicle_damage_cost_kind",
+            "horizon.on(\"vehicle_damage\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut damage = 2.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_vehicle_damage(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "minecraft:zombie",
+                &mut damage,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "vehicle_damage read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vehicle_damage read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vehicle_damage read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_vehicle_destroy() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_vehicle_destroy",
@@ -7696,6 +20817,78 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_vehicle_destroy_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vehicle_destroy_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_vehicle_destroy(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:kind",
+                [2.0, 3.0, 4.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "vehicle_destroy read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vehicle_destroy read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vehicle_destroy read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vehicle_destroy_cost_kind",
+            "horizon.on(\"vehicle_destroy\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_vehicle_destroy(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "minecraft:zombie",
+                [2.0, 3.0, 4.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "vehicle_destroy read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vehicle_destroy read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vehicle_destroy read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7731,6 +20924,82 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_vehicle_moved_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vehicle_moved_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_vehicle_moved(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:kind",
+                [3.0, 4.0, 5.0],
+                [4.0, 5.0, 6.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "vehicle_moved read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vehicle_moved read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vehicle_moved read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vehicle_moved_cost_kind",
+            "horizon.on(\"vehicle_moved\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_vehicle_moved(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "minecraft:zombie",
+                [3.0, 4.0, 5.0],
+                [4.0, 5.0, 6.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "vehicle_moved read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vehicle_moved read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vehicle_moved read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_world_border_bounds_changed() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_world_border_bounds_changed",
@@ -7743,6 +21012,39 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_world_border_bounds_changed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_world_border_bounds_changed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_world_border_bounds_changed(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "world_border_bounds_changed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "world_border_bounds_changed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "world_border_bounds_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_world_border_center_changed() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_world_border_center_changed",
@@ -7752,6 +21054,39 @@ mod generated_tests {
         dispatch_world_border_center_changed(&mut FakeHost::empty(), &firing_mods);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_world_border_center_changed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_world_border_center_changed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_world_border_center_changed(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "world_border_center_changed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "world_border_center_changed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "world_border_center_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7771,6 +21106,46 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_world_game_rule_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_world_game_rule_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_world_game_rule_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:rule",
+                "test:value",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "world_game_rule_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "world_game_rule_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "world_game_rule_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7820,6 +21195,37 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_note_play_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_note_play_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_note_play(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                None,
+                BlockPos::new(3, 4, 5),
+                "test:instrument",
+                11,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "note_play read the host with no handler");
+            assert_eq!(host_reads(), 0, "note_play read the host with no handler");
+            assert_eq!(level_reads(), 0, "note_play read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_advancement_criterion_grant() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_advancement_criterion_grant",
@@ -7839,6 +21245,46 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_advancement_criterion_grant_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_advancement_criterion_grant_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_advancement_criterion_grant(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:advancement",
+                "test:criterion",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_advancement_criterion_grant read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_advancement_criterion_grant read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_advancement_criterion_grant read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_advancement_done() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_advancement_done",
@@ -7854,6 +21300,45 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_advancement_done_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_advancement_done_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_advancement_done(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:advancement",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_advancement_done read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_advancement_done read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_advancement_done read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7877,6 +21362,47 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_advancement_progress_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_advancement_progress_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_advancement_progress(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:advancement",
+                "test:criterion",
+                true,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_advancement_progress read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_advancement_progress read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_advancement_progress read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_arm_swing() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_arm_swing",
@@ -7895,6 +21421,45 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_arm_swing_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_arm_swing_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_arm_swing(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:hand",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_arm_swing read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_arm_swing read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_arm_swing read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_attack_cooldown_reset() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_attack_cooldown_reset",
@@ -7904,6 +21469,44 @@ mod generated_tests {
         dispatch_player_attack_cooldown_reset(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_attack_cooldown_reset_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_attack_cooldown_reset_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_attack_cooldown_reset(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_attack_cooldown_reset read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_attack_cooldown_reset read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_attack_cooldown_reset read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7922,6 +21525,45 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_bed_leave_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_bed_leave_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_bed_leave(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_bed_leave read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_bed_leave read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_bed_leave read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -7970,6 +21612,82 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_bucket_entity_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_bucket_entity_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_bucket_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                "test:entity",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_bucket_entity read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_bucket_entity read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_bucket_entity read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_bucket_entity_cost_kind",
+            "horizon.on(\"player_bucket_entity\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_bucket_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+                "test:entity",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "player_bucket_entity read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "player_bucket_entity read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_bucket_entity read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_bundle_item_select() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_bundle_item_select",
@@ -7986,6 +21704,46 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_bundle_item_select_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_bundle_item_select_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_bundle_item_select(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_bundle_item_select read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_bundle_item_select read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_bundle_item_select read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8009,6 +21767,47 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_change_beacon_effect_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_change_beacon_effect_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_change_beacon_effect(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                "test:primary",
+                "test:secondary",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_change_beacon_effect read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_change_beacon_effect read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_change_beacon_effect read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_change_main_hand() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_change_main_hand",
@@ -8027,6 +21826,45 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_change_main_hand_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_change_main_hand_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_change_main_hand(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                true,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_change_main_hand read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_change_main_hand read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_change_main_hand read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_client_loaded_world() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_client_loaded_world",
@@ -8039,6 +21877,44 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_client_loaded_world_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_client_loaded_world_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_client_loaded_world(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_client_loaded_world read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_client_loaded_world read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_client_loaded_world read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_deep_sleep() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_deep_sleep",
@@ -8048,6 +21924,39 @@ mod generated_tests {
         dispatch_player_deep_sleep(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_deep_sleep_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_deep_sleep_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_deep_sleep(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_deep_sleep read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_deep_sleep read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_deep_sleep read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8095,6 +22004,48 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_edit_book_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_edit_book_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_edit_book(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                false,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_edit_book read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_edit_book read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_edit_book read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_egg_throw() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_egg_throw",
@@ -8104,6 +22055,39 @@ mod generated_tests {
         dispatch_player_egg_throw(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_egg_throw_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_egg_throw_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_egg_throw(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_egg_throw read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_egg_throw read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_egg_throw read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8119,6 +22103,39 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_elytra_boost_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_elytra_boost_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_elytra_boost(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_elytra_boost read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_elytra_boost read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_elytra_boost read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_input() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_input",
@@ -8128,6 +22145,39 @@ mod generated_tests {
         dispatch_player_input(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_input_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_input_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_input(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_input read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_input read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_input read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8175,6 +22225,48 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_item_held_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_item_held_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_item_held(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_item_held read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_item_held read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_item_held read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_jump() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_jump",
@@ -8184,6 +22276,35 @@ mod generated_tests {
         dispatch_player_jump(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_jump_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_jump_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_jump(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_jump read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "player_jump read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_jump read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8205,6 +22326,45 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_kicked_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_kicked_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_kicked(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:reason",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_kicked read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_kicked read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_kicked read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_launch_projectile() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_launch_projectile",
@@ -8223,6 +22383,45 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_launch_projectile_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_launch_projectile_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_launch_projectile(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:item",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_launch_projectile read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_launch_projectile read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_launch_projectile read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_level_change() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_level_change",
@@ -8232,6 +22431,46 @@ mod generated_tests {
         dispatch_player_level_change(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9, 10);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_level_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_level_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_level_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_level_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_level_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_level_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8253,6 +22492,45 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_locale_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_locale_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_locale_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:locale",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_locale_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_locale_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_locale_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_loom_pattern_select() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_loom_pattern_select",
@@ -8271,6 +22549,45 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_loom_pattern_select_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_loom_pattern_select_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_loom_pattern_select(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_loom_pattern_select read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_loom_pattern_select read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_loom_pattern_select read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_map_filled() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_map_filled",
@@ -8280,6 +22597,39 @@ mod generated_tests {
         dispatch_player_map_filled(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_map_filled_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_map_filled_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_map_filled(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_map_filled read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_map_filled read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_map_filled read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8328,6 +22678,82 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_name_entity_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_name_entity_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_name_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                "test:entity_name",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_name_entity read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_name_entity read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_name_entity read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_name_entity_cost_kind",
+            "horizon.on(\"player_name_entity\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_name_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+                "test:entity_name",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "player_name_entity read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "player_name_entity read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_name_entity read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_open_sign() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_open_sign",
@@ -8344,6 +22770,46 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_open_sign_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_open_sign_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_open_sign(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                false,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_open_sign read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_open_sign read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_open_sign read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8425,6 +22891,88 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_pick_item_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_pick_item_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_pick_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                true,
+                [4, 5, 6],
+                11,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_pick_item read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_pick_item read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_pick_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_pick_item_cost_kind",
+            "horizon.on(\"player_pick_item\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_pick_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                true,
+                [4, 5, 6],
+                11,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "player_pick_item read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "player_pick_item read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_pick_item read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_pickup_arrow() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_pickup_arrow",
@@ -8467,6 +23015,82 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_pickup_arrow_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_pickup_arrow_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_pickup_arrow(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                "test:item",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_pickup_arrow read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_pickup_arrow read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_pickup_arrow read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_pickup_arrow_cost_kind",
+            "horizon.on(\"player_pickup_arrow\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_pickup_arrow(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+                "test:item",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "player_pickup_arrow read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "player_pickup_arrow read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_pickup_arrow read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8516,6 +23140,49 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_portal_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_portal_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_portal(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:from_dimension",
+                "test:to_dimension",
+                "test:cause",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_portal read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_portal read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_portal read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_ready_arrow() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_ready_arrow",
@@ -8531,6 +23198,45 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_ready_arrow_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_ready_arrow_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_ready_arrow(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:arrow",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_ready_arrow read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_ready_arrow read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_ready_arrow read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8553,6 +23259,46 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_recipe_book_click_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_recipe_book_click_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_recipe_book_click(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:recipe",
+                false,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_recipe_book_click read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_recipe_book_click read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_recipe_book_click read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_recipe_book_settings_change() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_recipe_book_settings_change",
@@ -8570,6 +23316,47 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_recipe_book_settings_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_recipe_book_settings_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_recipe_book_settings_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                false,
+                true,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_recipe_book_settings_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_recipe_book_settings_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_recipe_book_settings_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8615,6 +23402,47 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_recipe_discovered_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_recipe_discovered_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_recipe_discovered(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:recipe",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_recipe_discovered read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_recipe_discovered read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_recipe_discovered read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_riptide() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_riptide",
@@ -8624,6 +23452,39 @@ mod generated_tests {
         dispatch_player_riptide(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_riptide_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_riptide_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_riptide(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_riptide read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_riptide read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_riptide read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8701,6 +23562,86 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_shear_entity_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_shear_entity_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_shear_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                false,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_shear_entity read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_shear_entity read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_shear_entity read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_shear_entity_cost_kind",
+            "horizon.on(\"player_shear_entity\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_shear_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+                false,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "player_shear_entity read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "player_shear_entity read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_shear_entity read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_spawn_point_set() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_spawn_point_set",
@@ -8744,6 +23685,49 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_spawn_point_set_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_spawn_point_set_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_spawn_point_set(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:dimension",
+                [4, 5, 6],
+                "test:cause",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_spawn_point_set read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_spawn_point_set read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_spawn_point_set read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8793,6 +23777,49 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_stat_award_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_stat_award_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_stat_award(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:stat_type",
+                "test:stat",
+                11,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_stat_award read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_stat_award read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_stat_award read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_stonecutter_recipe_select() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_stonecutter_recipe_select",
@@ -8808,6 +23835,45 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_stonecutter_recipe_select_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_stonecutter_recipe_select_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_stonecutter_recipe_select(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_stonecutter_recipe_select read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_stonecutter_recipe_select read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_stonecutter_recipe_select read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8853,6 +23919,80 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_stop_spectating_entity_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_stop_spectating_entity_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_stop_spectating_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_stop_spectating_entity read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_stop_spectating_entity read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_stop_spectating_entity read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_stop_spectating_entity_cost_kind",
+            "horizon.on(\"player_stop_spectating_entity\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_stop_spectating_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "player_stop_spectating_entity read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "player_stop_spectating_entity read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_stop_spectating_entity read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_stop_using_item() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_stop_using_item",
@@ -8862,6 +24002,39 @@ mod generated_tests {
         dispatch_player_stop_using_item(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_stop_using_item_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_stop_using_item_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_stop_using_item(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_stop_using_item read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_stop_using_item read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_stop_using_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8880,6 +24053,45 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_swap_with_equipment_slot_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_swap_with_equipment_slot_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_swap_with_equipment_slot(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:slot",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_swap_with_equipment_slot read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_swap_with_equipment_slot read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_swap_with_equipment_slot read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8922,6 +24134,47 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_teleport_end_gateway_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_teleport_end_gateway_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_teleport_end_gateway(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_teleport_end_gateway read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_teleport_end_gateway read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_teleport_end_gateway read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -8970,6 +24223,82 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_toggle_entity_age_lock_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_toggle_entity_age_lock_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_toggle_entity_age_lock(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                false,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_toggle_entity_age_lock read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_toggle_entity_age_lock read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_toggle_entity_age_lock read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_toggle_entity_age_lock_cost_kind",
+            "horizon.on(\"player_toggle_entity_age_lock\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_toggle_entity_age_lock(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+                false,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "player_toggle_entity_age_lock read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "player_toggle_entity_age_lock read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_toggle_entity_age_lock read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_toggle_sneak() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_toggle_sneak",
@@ -8979,6 +24308,45 @@ mod generated_tests {
         dispatch_player_toggle_sneak(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_toggle_sneak_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_toggle_sneak_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_toggle_sneak(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                true,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_toggle_sneak read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_toggle_sneak read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_toggle_sneak read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9003,6 +24371,68 @@ mod generated_tests {
         dispatch_player_trade(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 11);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_trade_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_trade_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_trade(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_trade read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_trade read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_trade read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_trade_cost_kind",
+            "horizon.on(\"player_trade\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_trade(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 11);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "player_trade read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "player_trade read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_trade read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9042,6 +24472,74 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_unleash_entity_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_unleash_entity_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_unleash_entity(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_unleash_entity read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_unleash_entity read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_unleash_entity read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_unleash_entity_cost_kind",
+            "horizon.on(\"player_unleash_entity\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_unleash_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "player_unleash_entity read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "player_unleash_entity read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_unleash_entity read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_velocity() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_velocity",
@@ -9057,6 +24555,45 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_velocity_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_velocity_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_velocity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3.0, 4.0, 5.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_velocity read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_velocity read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_velocity read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9077,6 +24614,44 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_portal_create_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_portal_create_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_portal_create(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "portal_create read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "portal_create read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "portal_create read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_potion_splash() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_potion_splash",
@@ -9091,6 +24666,187 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_potion_splash_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_potion_splash_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_potion_splash(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:item",
+                [2.0, 3.0, 4.0],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "potion_splash read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "potion_splash read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "potion_splash read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_prepare_anvil_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_prepare_anvil_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cost = 10;
+            let mut result: Option<ItemStack> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_prepare_anvil(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut cost,
+                &mut result,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "prepare_anvil read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "prepare_anvil read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "prepare_anvil read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_prepare_anvil_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_prepare_anvil_duo_a1",
+            "horizon.on(\"prepare_anvil\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 1 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_prepare_anvil_duo_b1",
+            "horizon.on(\"prepare_anvil\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 2 }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut cost = 10;
+            let mut result: Option<ItemStack> = None;
+            dispatch_prepare_anvil(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut cost,
+                &mut result,
+            );
+            let replaced = result.expect("a replaced value");
+            assert_eq!(&*replaced.item, "test:result");
+            assert_eq!(replaced.count, 1);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_prepare_anvil_duo_a2",
+            "horizon.on(\"prepare_anvil\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 1 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_prepare_anvil_duo_b2",
+            "horizon.on(\"prepare_anvil\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 2 }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut cost = 10;
+            let mut result: Option<ItemStack> = None;
+            dispatch_prepare_anvil(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut cost,
+                &mut result,
+            );
+            let replaced = result.expect("a replaced value");
+            assert_eq!(&*replaced.item, "test:result");
+            assert_eq!(replaced.count, 2);
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_prepare_anvil_duo_b3",
+            "horizon.on(\"prepare_anvil\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 2 }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_prepare_anvil_duo_e3",
+            "horizon.on(\"prepare_anvil\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut cost = 10;
+            let mut result: Option<ItemStack> = None;
+            dispatch_prepare_anvil(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut cost,
+                &mut result,
+            );
+            let replaced = result.expect("a replaced value");
+            assert_eq!(&*replaced.item, "test:result");
+            assert_eq!(replaced.count, 2);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -9117,6 +24873,141 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_prepare_grindstone_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_prepare_grindstone_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut result: Option<ItemStack> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_prepare_grindstone(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut result,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "prepare_grindstone read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "prepare_grindstone read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "prepare_grindstone read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_prepare_grindstone_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_prepare_grindstone_duo_a1",
+            "horizon.on(\"prepare_grindstone\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 1 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_prepare_grindstone_duo_b1",
+            "horizon.on(\"prepare_grindstone\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 2 }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut result: Option<ItemStack> = None;
+            dispatch_prepare_grindstone(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut result,
+            );
+            let replaced = result.expect("a replaced value");
+            assert_eq!(&*replaced.item, "test:result");
+            assert_eq!(replaced.count, 1);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_prepare_grindstone_duo_a2",
+            "horizon.on(\"prepare_grindstone\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 1 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_prepare_grindstone_duo_b2",
+            "horizon.on(\"prepare_grindstone\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 2 }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut result: Option<ItemStack> = None;
+            dispatch_prepare_grindstone(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut result,
+            );
+            let replaced = result.expect("a replaced value");
+            assert_eq!(&*replaced.item, "test:result");
+            assert_eq!(replaced.count, 2);
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_prepare_grindstone_duo_b3",
+            "horizon.on(\"prepare_grindstone\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 2 }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_prepare_grindstone_duo_e3",
+            "horizon.on(\"prepare_grindstone\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut result: Option<ItemStack> = None;
+            dispatch_prepare_grindstone(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut result,
+            );
+            let replaced = result.expect("a replaced value");
+            assert_eq!(&*replaced.item, "test:result");
+            assert_eq!(replaced.count, 2);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_prepare_hopper_transfer() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_prepare_hopper_transfer",
@@ -9126,6 +25017,39 @@ mod generated_tests {
         dispatch_prepare_hopper_transfer(&FakeHost::empty(), &firing_mods, [1, 2, 3]);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_prepare_hopper_transfer_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_prepare_hopper_transfer_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_prepare_hopper_transfer(&FakeHost::empty(), &firing_mods, [1, 2, 3]);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "prepare_hopper_transfer read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "prepare_hopper_transfer read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "prepare_hopper_transfer read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9152,6 +25076,141 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_prepare_item_craft_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_prepare_item_craft_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut result: Option<ItemStack> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_prepare_item_craft(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                Some([3, 4, 5]),
+                &mut result,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "prepare_item_craft read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "prepare_item_craft read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "prepare_item_craft read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_prepare_item_craft_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_prepare_item_craft_duo_a1",
+            "horizon.on(\"prepare_item_craft\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 1 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_prepare_item_craft_duo_b1",
+            "horizon.on(\"prepare_item_craft\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 2 }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut result: Option<ItemStack> = None;
+            dispatch_prepare_item_craft(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                Some([3, 4, 5]),
+                &mut result,
+            );
+            let replaced = result.expect("a replaced value");
+            assert_eq!(&*replaced.item, "test:result");
+            assert_eq!(replaced.count, 1);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_prepare_item_craft_duo_a2",
+            "horizon.on(\"prepare_item_craft\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 1 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_prepare_item_craft_duo_b2",
+            "horizon.on(\"prepare_item_craft\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 2 }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut result: Option<ItemStack> = None;
+            dispatch_prepare_item_craft(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                Some([3, 4, 5]),
+                &mut result,
+            );
+            let replaced = result.expect("a replaced value");
+            assert_eq!(&*replaced.item, "test:result");
+            assert_eq!(replaced.count, 2);
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_prepare_item_craft_duo_b3",
+            "horizon.on(\"prepare_item_craft\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 2 }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_prepare_item_craft_duo_e3",
+            "horizon.on(\"prepare_item_craft\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut result: Option<ItemStack> = None;
+            dispatch_prepare_item_craft(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                Some([3, 4, 5]),
+                &mut result,
+            );
+            let replaced = result.expect("a replaced value");
+            assert_eq!(&*replaced.item, "test:result");
+            assert_eq!(replaced.count, 2);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_prepare_item_enchant() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_prepare_item_enchant",
@@ -9170,6 +25229,47 @@ mod generated_tests {
         assert_eq!(costs, [14, 15, 16]);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_prepare_item_enchant_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_prepare_item_enchant_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut costs = [4, 5, 6];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_prepare_item_enchant(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut costs,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "prepare_item_enchant read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "prepare_item_enchant read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "prepare_item_enchant read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9196,6 +25296,141 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_prepare_smithing_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_prepare_smithing_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut result: Option<ItemStack> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_prepare_smithing(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut result,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "prepare_smithing read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "prepare_smithing read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "prepare_smithing read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_prepare_smithing_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_prepare_smithing_duo_a1",
+            "horizon.on(\"prepare_smithing\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 1 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_prepare_smithing_duo_b1",
+            "horizon.on(\"prepare_smithing\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 2 }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut result: Option<ItemStack> = None;
+            dispatch_prepare_smithing(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut result,
+            );
+            let replaced = result.expect("a replaced value");
+            assert_eq!(&*replaced.item, "test:result");
+            assert_eq!(replaced.count, 1);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_prepare_smithing_duo_a2",
+            "horizon.on(\"prepare_smithing\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 1 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_prepare_smithing_duo_b2",
+            "horizon.on(\"prepare_smithing\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 2 }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut result: Option<ItemStack> = None;
+            dispatch_prepare_smithing(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut result,
+            );
+            let replaced = result.expect("a replaced value");
+            assert_eq!(&*replaced.item, "test:result");
+            assert_eq!(replaced.count, 2);
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_prepare_smithing_duo_b3",
+            "horizon.on(\"prepare_smithing\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = { id = \"test:result\", count = 2 }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_prepare_smithing_duo_e3",
+            "horizon.on(\"prepare_smithing\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut result: Option<ItemStack> = None;
+            dispatch_prepare_smithing(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut result,
+            );
+            let replaced = result.expect("a replaced value");
+            assert_eq!(&*replaced.item, "test:result");
+            assert_eq!(replaced.count, 2);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_raid_spawn_wave() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_raid_spawn_wave",
@@ -9205,6 +25440,39 @@ mod generated_tests {
         dispatch_raid_spawn_wave(&mut FakeHost::empty(), &firing_mods, 7, [2, 3, 4], 9, 10);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_raid_spawn_wave_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_raid_spawn_wave_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_raid_spawn_wave(&mut FakeHost::empty(), &firing_mods, 7, [2, 3, 4], 9, 10);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "raid_spawn_wave read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "raid_spawn_wave read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "raid_spawn_wave read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9226,6 +25494,45 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_raid_state_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_raid_state_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_raid_state_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                [2, 3, 4],
+                "test:state",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "raid_state_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "raid_state_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "raid_state_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_sculk_bloom() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_sculk_bloom",
@@ -9240,6 +25547,40 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_sculk_bloom_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_sculk_bloom_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_sculk_bloom(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "sculk_bloom read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "sculk_bloom read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "sculk_bloom read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9263,6 +25604,46 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_sleep_finished_time_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_sleep_finished_time_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut new_time = 9;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_sleep_finished_time(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                &mut new_time,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "sleep_finished_time read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "sleep_finished_time read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "sleep_finished_time read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_sponge_absorb() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_sponge_absorb",
@@ -9277,6 +25658,44 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_sponge_absorb_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_sponge_absorb_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_sponge_absorb(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "sponge_absorb read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "sponge_absorb read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "sponge_absorb read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9326,6 +25745,272 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_tab_complete_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tab_complete_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut suggestions = vec![
+                Suggestion {
+                    range: (7 + 4, 12 + 4),
+                    text: "test:suggestion4".into(),
+                    tooltip: Some("test:tooltip4".into()),
+                    int_value: Some(34),
+                },
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_tab_complete(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:command",
+                [10, 15],
+                &mut suggestions,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "tab_complete read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "tab_complete read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "tab_complete read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_tab_complete_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_tab_complete_duo_a1",
+            "horizon.on(\"tab_complete\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.suggestions, { range = { start = 61, [\"end\"] = 66 }, text = \"test:suggestion54\", tooltip = \"test:tooltip54\", int_value = 84 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_tab_complete_duo_b1",
+            "horizon.on(\"tab_complete\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.suggestions, { range = { start = 62, [\"end\"] = 67 }, text = \"test:suggestion55\", tooltip = \"test:tooltip55\", int_value = 85 })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut suggestions = vec![
+                Suggestion {
+                    range: (7 + 4, 12 + 4),
+                    text: "test:suggestion4".into(),
+                    tooltip: Some("test:tooltip4".into()),
+                    int_value: Some(34),
+                },
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+            ];
+            dispatch_tab_complete(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:command",
+                [10, 15],
+                &mut suggestions,
+            );
+            let mut expected_suggestions = vec![
+                Suggestion {
+                    range: (7 + 4, 12 + 4),
+                    text: "test:suggestion4".into(),
+                    tooltip: Some("test:tooltip4".into()),
+                    int_value: Some(34),
+                },
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+            ];
+            expected_suggestions.push(Suggestion {
+                range: (7 + 54, 12 + 54),
+                text: "test:suggestion54".into(),
+                tooltip: Some("test:tooltip54".into()),
+                int_value: Some(84),
+            });
+            expected_suggestions.push(Suggestion {
+                range: (7 + 55, 12 + 55),
+                text: "test:suggestion55".into(),
+                tooltip: Some("test:tooltip55".into()),
+                int_value: Some(85),
+            });
+            assert_eq!(
+                format!("{:?}", suggestions),
+                format!("{:?}", expected_suggestions)
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_tab_complete_duo_a2",
+            "horizon.on(\"tab_complete\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.suggestions, { range = { start = 61, [\"end\"] = 66 }, text = \"test:suggestion54\", tooltip = \"test:tooltip54\", int_value = 84 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_tab_complete_duo_b2",
+            "horizon.on(\"tab_complete\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.suggestions, { range = { start = 62, [\"end\"] = 67 }, text = \"test:suggestion55\", tooltip = \"test:tooltip55\", int_value = 85 })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut suggestions = vec![
+                Suggestion {
+                    range: (7 + 4, 12 + 4),
+                    text: "test:suggestion4".into(),
+                    tooltip: Some("test:tooltip4".into()),
+                    int_value: Some(34),
+                },
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+            ];
+            dispatch_tab_complete(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:command",
+                [10, 15],
+                &mut suggestions,
+            );
+            let mut expected_suggestions = vec![
+                Suggestion {
+                    range: (7 + 4, 12 + 4),
+                    text: "test:suggestion4".into(),
+                    tooltip: Some("test:tooltip4".into()),
+                    int_value: Some(34),
+                },
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+            ];
+            expected_suggestions.push(Suggestion {
+                range: (7 + 55, 12 + 55),
+                text: "test:suggestion55".into(),
+                tooltip: Some("test:tooltip55".into()),
+                int_value: Some(85),
+            });
+            expected_suggestions.push(Suggestion {
+                range: (7 + 54, 12 + 54),
+                text: "test:suggestion54".into(),
+                tooltip: Some("test:tooltip54".into()),
+                int_value: Some(84),
+            });
+            assert_eq!(
+                format!("{:?}", suggestions),
+                format!("{:?}", expected_suggestions)
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_tab_complete_duo_b3",
+            "horizon.on(\"tab_complete\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.suggestions, { range = { start = 62, [\"end\"] = 67 }, text = \"test:suggestion55\", tooltip = \"test:tooltip55\", int_value = 85 })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_tab_complete_duo_e3",
+            "horizon.on(\"tab_complete\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut suggestions = vec![
+                Suggestion {
+                    range: (7 + 4, 12 + 4),
+                    text: "test:suggestion4".into(),
+                    tooltip: Some("test:tooltip4".into()),
+                    int_value: Some(34),
+                },
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+            ];
+            dispatch_tab_complete(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:command",
+                [10, 15],
+                &mut suggestions,
+            );
+            let mut expected_suggestions = vec![
+                Suggestion {
+                    range: (7 + 4, 12 + 4),
+                    text: "test:suggestion4".into(),
+                    tooltip: Some("test:tooltip4".into()),
+                    int_value: Some(34),
+                },
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+            ];
+            expected_suggestions.push(Suggestion {
+                range: (7 + 55, 12 + 55),
+                text: "test:suggestion55".into(),
+                tooltip: Some("test:tooltip55".into()),
+                int_value: Some(85),
+            });
+            assert_eq!(
+                format!("{:?}", suggestions),
+                format!("{:?}", expected_suggestions)
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_target_hit() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_target_hit",
@@ -9341,6 +26026,41 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_target_hit_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_target_hit_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_target_hit(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                9,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "target_hit read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "target_hit read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "target_hit read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9381,6 +26101,46 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_thunder_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_thunder_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_thunder_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                false,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "thunder_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "thunder_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "thunder_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9428,6 +26188,36 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_time_skip_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_time_skip_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_time_skip(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                9,
+                "test:cause",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "time_skip read the host with no handler");
+            assert_eq!(host_reads(), 0, "time_skip read the host with no handler");
+            assert_eq!(level_reads(), 0, "time_skip read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_trade_select() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_trade_select",
@@ -9444,6 +26234,46 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_trade_select_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_trade_select_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_trade_select(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                Some(9),
+                10,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "trade_select read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "trade_select read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "trade_select read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9523,6 +26353,126 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_trade_with_villager_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_trade_with_villager_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_trade_with_villager(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                &MerchantOffer {
+                    base_cost_a: ItemCost {
+                        stack: ItemStack {
+                            item: "test:offer".into(),
+                            count: 1,
+                            damage: 0,
+                            extra: None,
+                        },
+                    },
+                    cost_b: None,
+                    result: ItemStack {
+                        item: "test:offer:out".into(),
+                        count: 2,
+                        damage: 3,
+                        extra: None,
+                    },
+                    uses: 12,
+                    max_uses: 4,
+                    reward_exp: true,
+                    special_price_diff: 5,
+                    demand: 6,
+                    price_multiplier: 0.5,
+                    xp: 7,
+                },
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "trade_with_villager read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "trade_with_villager read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "trade_with_villager read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_trade_with_villager_cost_kind",
+            "horizon.on(\"trade_with_villager\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_trade_with_villager(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &MerchantOffer {
+                    base_cost_a: ItemCost {
+                        stack: ItemStack {
+                            item: "test:offer".into(),
+                            count: 1,
+                            damage: 0,
+                            extra: None,
+                        },
+                    },
+                    cost_b: None,
+                    result: ItemStack {
+                        item: "test:offer:out".into(),
+                        count: 2,
+                        damage: 3,
+                        extra: None,
+                    },
+                    uses: 12,
+                    max_uses: 4,
+                    reward_exp: true,
+                    special_price_diff: 5,
+                    demand: 6,
+                    price_multiplier: 0.5,
+                    xp: 7,
+                },
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "trade_with_villager read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "trade_with_villager read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "trade_with_villager read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_vault_change_state() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_vault_change_state",
@@ -9541,6 +26491,45 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_vault_change_state_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vault_change_state_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_vault_change_state(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:state",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "vault_change_state read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vault_change_state read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vault_change_state read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_vault_loot() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_vault_loot",
@@ -9550,6 +26539,35 @@ mod generated_tests {
         dispatch_vault_loot(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_vault_loot_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vault_loot_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_vault_loot(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "vault_loot read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "vault_loot read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "vault_loot read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9595,6 +26613,47 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_weather_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_weather_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_weather_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                false,
+                true,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "weather_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "weather_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "weather_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_whitelist_state_update() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_whitelist_state_update",
@@ -9604,6 +26663,39 @@ mod generated_tests {
         dispatch_whitelist_state_update(&mut FakeHost::empty(), &firing_mods, true);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_whitelist_state_update_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_whitelist_state_update_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_whitelist_state_update(&mut FakeHost::empty(), &firing_mods, true);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "whitelist_state_update read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "whitelist_state_update read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "whitelist_state_update read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9619,6 +26711,39 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_world_border_bounds_change_finish_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_world_border_bounds_change_finish_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_world_border_bounds_change_finish(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "world_border_bounds_change_finish read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "world_border_bounds_change_finish read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "world_border_bounds_change_finish read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_world_saved() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_world_saved",
@@ -9628,6 +26753,35 @@ mod generated_tests {
         dispatch_world_saved(&mut FakeHost::empty(), &firing_mods, true);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_world_saved_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_world_saved_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_world_saved(&mut FakeHost::empty(), &firing_mods, true);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "world_saved read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "world_saved read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "world_saved read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9698,6 +26852,90 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_drown_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_drown_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut is_drowning = true;
+            let mut damage_amount = 4.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_drown(
+                &firing_mods,
+                7,
+                "test:kind",
+                &mut is_drowning,
+                &mut damage_amount,
+                11,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_drown read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_drown read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_drown read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_drown_cost_kind",
+            "horizon.on(\"living_drown\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut is_drowning = true;
+            let mut damage_amount = 4.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_drown(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &mut is_drowning,
+                &mut damage_amount,
+                11,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_drown read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_drown read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_drown read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_living_jump() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_jump",
@@ -9713,6 +26951,64 @@ mod generated_tests {
         dispatch_living_jump(&firing_mods, 7, "minecraft:zombie");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_jump_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_jump_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_jump(&firing_mods, 7, "test:kind");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_jump read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "living_jump read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_jump read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_jump_cost_kind",
+            "horizon.on(\"living_jump\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_jump(&firing_mods, 7, "minecraft:zombie");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_jump read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_jump read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_jump read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9769,6 +27065,50 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_arrow_nock_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_arrow_nock_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_arrow_nock(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &ItemStack {
+                    item: "test:bow".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                Hand::Off,
+                true,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "arrow_nock read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "arrow_nock read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "arrow_nock read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9831,6 +27171,86 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_baby_entity_spawn_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_baby_entity_spawn_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_baby_entity_spawn(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                8,
+                9,
+                "test:kind",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "baby_entity_spawn read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "baby_entity_spawn read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "baby_entity_spawn read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_baby_entity_spawn_cost_kind",
+            "horizon.on(\"baby_entity_spawn\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_baby_entity_spawn(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                8,
+                9,
+                "minecraft:zombie",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "baby_entity_spawn read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "baby_entity_spawn read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "baby_entity_spawn read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_can_player_sleep() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_can_player_sleep",
@@ -9849,6 +27269,47 @@ mod generated_tests {
         assert_eq!(problem, Some("test:problem:edited".to_owned()));
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_can_player_sleep_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_can_player_sleep_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut problem = Some("test:problem".to_owned());
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_can_player_sleep(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut problem,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "can_player_sleep read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "can_player_sleep read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "can_player_sleep read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -9904,6 +27365,177 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_explosion_knockback_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_explosion_knockback_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut knockback_velocity = [5.0, 6.0, 7.0];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_explosion_knockback(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                &[[3, 4, 5], [4, 5, 6]],
+                None,
+                &mut knockback_velocity,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "explosion_knockback read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "explosion_knockback read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "explosion_knockback read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_explosion_knockback_cost_kind",
+            "horizon.on(\"explosion_knockback\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut knockback_velocity = [5.0, 6.0, 7.0];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_explosion_knockback(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                &[[3, 4, 5], [4, 5, 6]],
+                Some(11),
+                &mut knockback_velocity,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "explosion_knockback read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "explosion_knockback read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "explosion_knockback read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_explosion_knockback_two_mods_last_write_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_explosion_knockback_duo_a1",
+            "horizon.on(\"explosion_knockback\", function(event)\n    __witness = (__witness or 0) + 1\n    event.knockback_velocity = { x = 111.0, y = 112.0, z = 113.0 }\nend, \"minecraft:zombie\")",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_explosion_knockback_duo_b1",
+            "horizon.on(\"explosion_knockback\", function(event)\n    __witness = (__witness or 0) + 1\n    event.knockback_velocity = { x = 211.0, y = 212.0, z = 213.0 }\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut knockback_velocity = [5.0, 6.0, 7.0];
+            dispatch_explosion_knockback(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                &[[3, 4, 5], [4, 5, 6]],
+                Some(11),
+                &mut knockback_velocity,
+            );
+            assert_eq!(knockback_velocity, [211.0, 212.0, 213.0]);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_explosion_knockback_duo_a2",
+            "horizon.on(\"explosion_knockback\", function(event)\n    __witness = (__witness or 0) + 1\n    event.knockback_velocity = { x = 111.0, y = 112.0, z = 113.0 }\nend, \"minecraft:zombie\")",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_explosion_knockback_duo_b2",
+            "horizon.on(\"explosion_knockback\", function(event)\n    __witness = (__witness or 0) + 1\n    event.knockback_velocity = { x = 211.0, y = 212.0, z = 213.0 }\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut knockback_velocity = [5.0, 6.0, 7.0];
+            dispatch_explosion_knockback(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                &[[3, 4, 5], [4, 5, 6]],
+                Some(11),
+                &mut knockback_velocity,
+            );
+            assert_eq!(knockback_velocity, [111.0, 112.0, 113.0]);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_explosion_knockback_duo_b3",
+            "horizon.on(\"explosion_knockback\", function(event)\n    __witness = (__witness or 0) + 1\n    event.knockback_velocity = { x = 211.0, y = 212.0, z = 213.0 }\nend, \"minecraft:zombie\")",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_explosion_knockback_duo_e3",
+            "horizon.on(\"explosion_knockback\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut knockback_velocity = [5.0, 6.0, 7.0];
+            dispatch_explosion_knockback(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                &[[3, 4, 5], [4, 5, 6]],
+                Some(11),
+                &mut knockback_velocity,
+            );
+            assert_eq!(knockback_velocity, [211.0, 212.0, 213.0]);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_ingredient_test() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_ingredient_test",
@@ -9931,6 +27563,53 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_ingredient_test_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_ingredient_test_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut accept = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_ingredient_test(
+                &firing_mods,
+                "test:kind",
+                &[("testkey".to_owned(), serde_json::json!(8))]
+                    .into_iter()
+                    .collect(),
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                &mut accept,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "ingredient_test read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "ingredient_test read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "ingredient_test read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_item_container() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_container",
@@ -9942,6 +27621,107 @@ mod generated_tests {
         assert_eq!(slots, Some(81000));
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_item_container_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_container_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut slots: Option<u32> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_container(&FakeHost::empty(), &firing_mods, "test:item", &mut slots);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "item_container read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_container read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_container read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_item_container_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_item_container_duo_a1",
+            "horizon.on(\"item_container\", function(event)\n    __witness = (__witness or 0) + 1\n    event.slots = 81000\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_item_container_duo_b1",
+            "horizon.on(\"item_container\", function(event)\n    __witness = (__witness or 0) + 1\n    event.slots = 81001\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut slots: Option<u32> = None;
+            dispatch_item_container(&FakeHost::empty(), &firing_mods, "test:item", &mut slots);
+            assert_eq!(slots, Some(81000));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_item_container_duo_a2",
+            "horizon.on(\"item_container\", function(event)\n    __witness = (__witness or 0) + 1\n    event.slots = 81000\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_item_container_duo_b2",
+            "horizon.on(\"item_container\", function(event)\n    __witness = (__witness or 0) + 1\n    event.slots = 81001\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut slots: Option<u32> = None;
+            dispatch_item_container(&FakeHost::empty(), &firing_mods, "test:item", &mut slots);
+            assert_eq!(slots, Some(81001));
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_item_container_duo_b3",
+            "horizon.on(\"item_container\", function(event)\n    __witness = (__witness or 0) + 1\n    event.slots = 81001\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_item_container_duo_e3",
+            "horizon.on(\"item_container\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut slots: Option<u32> = None;
+            dispatch_item_container(&FakeHost::empty(), &firing_mods, "test:item", &mut slots);
+            assert_eq!(slots, Some(81001));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -9974,6 +27754,82 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_conversion_post_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_conversion_post_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_conversion_post(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                9,
+                "test:converted_kind",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_conversion_post read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_conversion_post read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_conversion_post read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_conversion_post_cost_kind",
+            "horizon.on(\"living_conversion_post\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_conversion_post(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                9,
+                "test:converted_kind",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_conversion_post read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_conversion_post read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_conversion_post read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -10033,6 +27889,84 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_conversion_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_conversion_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_conversion_pre(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                "test:outcome",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_conversion_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_conversion_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_conversion_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_conversion_pre_cost_kind",
+            "horizon.on(\"living_conversion_pre\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_conversion_pre(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:outcome",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_conversion_pre read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_conversion_pre read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_conversion_pre read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_living_death() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_death",
@@ -10089,6 +28023,86 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_death_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_death_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_death(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                "test:damage_type",
+                10,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_death read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_death read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_death read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_death_cost_kind",
+            "horizon.on(\"living_death\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_death(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:damage_type",
+                10,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_death read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_death read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_death read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -10154,6 +28168,253 @@ mod generated_tests {
         assert_eq!(projectile, None);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_get_projectile_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_get_projectile_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut projectile = Some(ItemStack {
+                item: "test:projectile".into(),
+                count: 6,
+                damage: 5,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 25,
+                    ..Default::default()
+                })),
+            });
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_get_projectile(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:name",
+                Some(9),
+                "test:kind",
+                &ItemStack {
+                    item: "test:weapon".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                },
+                &mut projectile,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_get_projectile read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_get_projectile read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_get_projectile read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_get_projectile_cost_kind",
+            "horizon.on(\"living_get_projectile\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut projectile = Some(ItemStack {
+                item: "test:projectile".into(),
+                count: 6,
+                damage: 5,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 25,
+                    ..Default::default()
+                })),
+            });
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_get_projectile(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:name",
+                Some(9),
+                "minecraft:zombie",
+                &ItemStack {
+                    item: "test:weapon".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                },
+                &mut projectile,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_get_projectile read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_get_projectile read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_get_projectile read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_living_get_projectile_two_mods_last_write_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_living_get_projectile_duo_a1",
+            "horizon.on(\"living_get_projectile\", function(event)\n    __witness = (__witness or 0) + 1\n    event.projectile = { id = \"test:projectile\", count = 51 }\nend, \"minecraft:zombie\")",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_living_get_projectile_duo_b1",
+            "horizon.on(\"living_get_projectile\", function(event)\n    __witness = (__witness or 0) + 1\n    event.projectile = { id = \"test:projectile\", count = 52 }\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut projectile = Some(ItemStack {
+                item: "test:projectile".into(),
+                count: 6,
+                damage: 5,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 25,
+                    ..Default::default()
+                })),
+            });
+            dispatch_living_get_projectile(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:name",
+                Some(9),
+                "minecraft:zombie",
+                &ItemStack {
+                    item: "test:weapon".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                },
+                &mut projectile,
+            );
+            let got = projectile.expect("a collected value");
+            assert_eq!(&*got.item, "test:projectile");
+            assert_eq!(got.count, 52);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_living_get_projectile_duo_a2",
+            "horizon.on(\"living_get_projectile\", function(event)\n    __witness = (__witness or 0) + 1\n    event.projectile = { id = \"test:projectile\", count = 51 }\nend, \"minecraft:zombie\")",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_living_get_projectile_duo_b2",
+            "horizon.on(\"living_get_projectile\", function(event)\n    __witness = (__witness or 0) + 1\n    event.projectile = { id = \"test:projectile\", count = 52 }\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut projectile = Some(ItemStack {
+                item: "test:projectile".into(),
+                count: 6,
+                damage: 5,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 25,
+                    ..Default::default()
+                })),
+            });
+            dispatch_living_get_projectile(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:name",
+                Some(9),
+                "minecraft:zombie",
+                &ItemStack {
+                    item: "test:weapon".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                },
+                &mut projectile,
+            );
+            let got = projectile.expect("a collected value");
+            assert_eq!(&*got.item, "test:projectile");
+            assert_eq!(got.count, 51);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_living_get_projectile_duo_b3",
+            "horizon.on(\"living_get_projectile\", function(event)\n    __witness = (__witness or 0) + 1\n    event.projectile = { id = \"test:projectile\", count = 52 }\nend, \"minecraft:zombie\")",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_living_get_projectile_duo_e3",
+            "horizon.on(\"living_get_projectile\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut projectile = Some(ItemStack {
+                item: "test:projectile".into(),
+                count: 6,
+                damage: 5,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 25,
+                    ..Default::default()
+                })),
+            });
+            dispatch_living_get_projectile(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:name",
+                Some(9),
+                "minecraft:zombie",
+                &ItemStack {
+                    item: "test:weapon".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                },
+                &mut projectile,
+            );
+            let got = projectile.expect("a collected value");
+            assert_eq!(&*got.item, "test:projectile");
+            assert_eq!(got.count, 52);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -10292,6 +28553,98 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_incoming_damage_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_incoming_damage_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 9.5;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_incoming_damage_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                "test:damage_type",
+                10,
+                Some([5.0, 6.0, 7.0]),
+                [6.0, 7.0, 8.0],
+                [7.0, 8.0, 9.0],
+                None,
+                &mut amount,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_incoming_damage_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_incoming_damage_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_incoming_damage_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_incoming_damage_v2_cost_kind",
+            "horizon.on(\"living_incoming_damage_v2\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 9.5;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_incoming_damage_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:damage_type",
+                10,
+                Some([5.0, 6.0, 7.0]),
+                [6.0, 7.0, 8.0],
+                [7.0, 8.0, 9.0],
+                None,
+                &mut amount,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_incoming_damage_v2 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_incoming_damage_v2 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_incoming_damage_v2 read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -10452,6 +28805,108 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_knockback_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_knockback_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut strength = 6.5;
+            let mut x = 7.5;
+            let mut z = 8.5;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_knockback_v2(
+                &firing_mods,
+                7,
+                "test:kind",
+                9,
+                None,
+                Some(&ItemStack {
+                    item: "test:attacker_off".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                }),
+                &mut strength,
+                &mut x,
+                &mut z,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_knockback_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_knockback_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_knockback_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_knockback_v2_cost_kind",
+            "horizon.on(\"living_knockback_v2\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut strength = 6.5;
+            let mut x = 7.5;
+            let mut z = 8.5;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_knockback_v2(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                9,
+                None,
+                Some(&ItemStack {
+                    item: "test:attacker_off".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                }),
+                &mut strength,
+                &mut x,
+                &mut z,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_knockback_v2 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_knockback_v2 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_knockback_v2 read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_mob_split() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_mob_split",
@@ -10518,6 +28973,78 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_mob_split_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_split_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut count = 11;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_mob_split(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                9,
+                10,
+                &mut count,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "mob_split read the host with no handler");
+            assert_eq!(host_reads(), 0, "mob_split read the host with no handler");
+            assert_eq!(level_reads(), 0, "mob_split read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_split_cost_kind",
+            "horizon.on(\"mob_split\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut count = 11;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_mob_split(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                9,
+                10,
+                &mut count,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mob_split read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mob_split read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_split read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_register_configs() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_register_configs",
@@ -10556,6 +29083,231 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_register_configs_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_register_configs_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut configs = vec![
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod0", NativeConfigKind::Server, "test:default0");
+                    c.file = "test:file0".into();
+                    c
+                },
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod1", NativeConfigKind::Server, "test:default1");
+                    c.file = "test:file1".into();
+                    c
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_register_configs(&mut FakeHost::empty(), &firing_mods, &mut configs);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "register_configs read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "register_configs read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "register_configs read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_register_configs_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_register_configs_duo_a1",
+            "horizon.on(\"register_configs\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.configs, { mod_id = \"test:mod50\", kind = \"server\", file = \"test:file50\", default = \"test:default50\" })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_register_configs_duo_b1",
+            "horizon.on(\"register_configs\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.configs, { mod_id = \"test:mod51\", kind = \"server\", file = \"test:file51\", default = \"test:default51\" })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut configs = vec![
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod0", NativeConfigKind::Server, "test:default0");
+                    c.file = "test:file0".into();
+                    c
+                },
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod1", NativeConfigKind::Server, "test:default1");
+                    c.file = "test:file1".into();
+                    c
+                },
+            ];
+            dispatch_register_configs(&mut FakeHost::empty(), &firing_mods, &mut configs);
+            let mut expected_configs = vec![
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod0", NativeConfigKind::Server, "test:default0");
+                    c.file = "test:file0".into();
+                    c
+                },
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod1", NativeConfigKind::Server, "test:default1");
+                    c.file = "test:file1".into();
+                    c
+                },
+            ];
+            expected_configs.push({
+                let mut c =
+                    NativeConfig::new("test:mod50", NativeConfigKind::Server, "test:default50");
+                c.file = "test:file50".into();
+                c
+            });
+            expected_configs.push({
+                let mut c =
+                    NativeConfig::new("test:mod51", NativeConfigKind::Server, "test:default51");
+                c.file = "test:file51".into();
+                c
+            });
+            assert_eq!(format!("{:?}", configs), format!("{:?}", expected_configs));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_register_configs_duo_a2",
+            "horizon.on(\"register_configs\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.configs, { mod_id = \"test:mod50\", kind = \"server\", file = \"test:file50\", default = \"test:default50\" })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_register_configs_duo_b2",
+            "horizon.on(\"register_configs\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.configs, { mod_id = \"test:mod51\", kind = \"server\", file = \"test:file51\", default = \"test:default51\" })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut configs = vec![
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod0", NativeConfigKind::Server, "test:default0");
+                    c.file = "test:file0".into();
+                    c
+                },
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod1", NativeConfigKind::Server, "test:default1");
+                    c.file = "test:file1".into();
+                    c
+                },
+            ];
+            dispatch_register_configs(&mut FakeHost::empty(), &firing_mods, &mut configs);
+            let mut expected_configs = vec![
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod0", NativeConfigKind::Server, "test:default0");
+                    c.file = "test:file0".into();
+                    c
+                },
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod1", NativeConfigKind::Server, "test:default1");
+                    c.file = "test:file1".into();
+                    c
+                },
+            ];
+            expected_configs.push({
+                let mut c =
+                    NativeConfig::new("test:mod51", NativeConfigKind::Server, "test:default51");
+                c.file = "test:file51".into();
+                c
+            });
+            expected_configs.push({
+                let mut c =
+                    NativeConfig::new("test:mod50", NativeConfigKind::Server, "test:default50");
+                c.file = "test:file50".into();
+                c
+            });
+            assert_eq!(format!("{:?}", configs), format!("{:?}", expected_configs));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_register_configs_duo_b3",
+            "horizon.on(\"register_configs\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.configs, { mod_id = \"test:mod51\", kind = \"server\", file = \"test:file51\", default = \"test:default51\" })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_register_configs_duo_e3",
+            "horizon.on(\"register_configs\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut configs = vec![
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod0", NativeConfigKind::Server, "test:default0");
+                    c.file = "test:file0".into();
+                    c
+                },
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod1", NativeConfigKind::Server, "test:default1");
+                    c.file = "test:file1".into();
+                    c
+                },
+            ];
+            dispatch_register_configs(&mut FakeHost::empty(), &firing_mods, &mut configs);
+            let mut expected_configs = vec![
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod0", NativeConfigKind::Server, "test:default0");
+                    c.file = "test:file0".into();
+                    c
+                },
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod1", NativeConfigKind::Server, "test:default1");
+                    c.file = "test:file1".into();
+                    c
+                },
+            ];
+            expected_configs.push({
+                let mut c =
+                    NativeConfig::new("test:mod51", NativeConfigKind::Server, "test:default51");
+                c.file = "test:file51".into();
+                c
+            });
+            assert_eq!(format!("{:?}", configs), format!("{:?}", expected_configs));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_movement_input() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_movement_input",
@@ -10580,6 +29332,50 @@ mod generated_tests {
         assert!(sneak);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_movement_input_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_movement_input_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut forward = 1.5;
+            let mut strafe = 2.5;
+            let mut jump = true;
+            let mut sneak = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_movement_input(
+                &FakeHost::empty(),
+                &firing_mods,
+                &mut forward,
+                &mut strafe,
+                &mut jump,
+                &mut sneak,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "movement_input read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "movement_input read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "movement_input read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -10633,6 +29429,52 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_note_block_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_note_block_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut new_note = 8;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_note_block_change(
+                &FakeLevel,
+                &firing_mods,
+                &NativeNoteBlockChange {
+                    dimension: LevelDimension::Overworld,
+                    pos: BlockPos::new(1, 2, 3),
+                    instrument: "test:instrument0",
+                    old_note: 7,
+                },
+                &mut new_note,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "note_block_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "note_block_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "note_block_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -10725,6 +29567,64 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_potential_spawns_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_potential_spawns_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut entries = vec![
+                SpawnEntry {
+                    entity: "test:entity3".into(),
+                    weight: 10,
+                    min: 1,
+                    max: 2,
+                    constant: false,
+                },
+                SpawnEntry {
+                    entity: "test:entity4".into(),
+                    weight: 11,
+                    min: 1,
+                    max: 2,
+                    constant: true,
+                },
+            ];
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_potential_spawns(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                "test:category",
+                [3, 4, 5],
+                &mut entries,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "potential_spawns read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "potential_spawns read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "potential_spawns read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_village_siege() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_village_siege",
@@ -10764,6 +29664,47 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_village_siege_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_village_siege_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_village_siege(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                [3.0, 4.0, 5.0],
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "village_siege read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "village_siege read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "village_siege read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -10812,6 +29753,48 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_xp_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_xp_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 9;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_xp_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut amount,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_xp_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_xp_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_xp_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_recipe_book_categories() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_recipe_book_categories",
@@ -10844,6 +29827,51 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_recipe_book_categories_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_recipe_book_categories_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut categories = vec![
+                RecipeBookCategory {
+                    id: "test:cat0".into(),
+                    recipe_type: "test:type0".into(),
+                    icon: "test:icon0".into(),
+                },
+                RecipeBookCategory {
+                    id: "test:cat1".into(),
+                    recipe_type: "test:type1".into(),
+                    icon: "test:icon1".into(),
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_recipe_book_categories(&FakeHost::empty(), &firing_mods, &mut categories);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "recipe_book_categories read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "recipe_book_categories read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "recipe_book_categories read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -10931,6 +29959,61 @@ mod generated_tests {
         assert_eq!(scale, 26.5);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_render_hand_pose_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_render_hand_pose_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut x = 6.5;
+            let mut y = 7.5;
+            let mut z = 8.5;
+            let mut pitch = 9.5;
+            let mut yaw = 10.5;
+            let mut roll = 11.5;
+            let mut scale = 12.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_render_hand_pose(
+                &FakeHost::empty(),
+                &firing_mods,
+                Hand::Main,
+                None,
+                3.5,
+                4.5,
+                5.5,
+                &mut x,
+                &mut y,
+                &mut z,
+                &mut pitch,
+                &mut yaw,
+                &mut roll,
+                &mut scale,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "render_hand_pose read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "render_hand_pose read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "render_hand_pose read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -11024,6 +30107,94 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_render_item_in_frame_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_render_item_in_frame_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_render_item_in_frame(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                [2, 3, 4],
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "render_item_in_frame read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "render_item_in_frame read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "render_item_in_frame read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_render_item_in_frame_cost_kind",
+            "horizon.on(\"render_item_in_frame\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_render_item_in_frame(
+                &FakeHost::empty(),
+                &firing_mods,
+                11,
+                [2, 3, 4],
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "render_item_in_frame read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "render_item_in_frame read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "render_item_in_frame read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_render_name_tag() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_render_name_tag",
@@ -11061,6 +30232,88 @@ mod generated_tests {
         assert_eq!(text, Some("test:text:edited".to_owned()));
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_render_name_tag_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_render_name_tag_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut visible = false;
+            let mut text = Some("test:text".to_owned());
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_render_name_tag(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                true,
+                &mut visible,
+                &mut text,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "render_name_tag read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "render_name_tag read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "render_name_tag read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_render_name_tag_cost_kind",
+            "horizon.on(\"render_name_tag\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut visible = false;
+            let mut text = Some("test:text".to_owned());
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_render_name_tag(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                true,
+                &mut visible,
+                &mut text,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "render_name_tag read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "render_name_tag read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "render_name_tag read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -11119,6 +30372,54 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_tooltip_color_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tooltip_color_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut background = 8;
+            let mut border_top = 9;
+            let mut border_bottom = 10;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_tooltip_color(
+                &FakeHost::empty(),
+                &firing_mods,
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                }),
+                &mut background,
+                &mut border_top,
+                &mut border_bottom,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "tooltip_color read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "tooltip_color read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "tooltip_color read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_camera_pose() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_camera_pose",
@@ -11141,6 +30442,45 @@ mod generated_tests {
         assert_eq!(pitch, 18.5);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_camera_pose_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_camera_pose_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut position = [2.0, 3.0, 4.0];
+            let mut yaw = 3.5;
+            let mut pitch = 4.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_camera_pose(
+                &FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                &mut position,
+                &mut yaw,
+                &mut pitch,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "camera_pose read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "camera_pose read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "camera_pose read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -11193,6 +30533,50 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_client_chat_received_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_chat_received_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut message = Text::literal("test:message");
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_client_chat_received(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                true,
+                false,
+                9,
+                None,
+                &mut message,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "client_chat_received read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_chat_received read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_chat_received read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_menu_extra_data() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_extra_data",
@@ -11212,6 +30596,139 @@ mod generated_tests {
         assert_eq!(data, Some(vec![116u8, 0u8, 159u8]));
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_menu_extra_data_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_menu_extra_data_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut data: Option<Vec<u8>> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_menu_extra_data(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                "test:block",
+                [4, 5, 6],
+                &mut data,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "menu_extra_data read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "menu_extra_data read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "menu_extra_data read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_menu_extra_data_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_menu_extra_data_duo_a1",
+            "horizon.on(\"menu_extra_data\", function(event)\n    __witness = (__witness or 0) + 1\n    event.data = \"t\" .. string.char(0, 159)\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_menu_extra_data_duo_b1",
+            "horizon.on(\"menu_extra_data\", function(event)\n    __witness = (__witness or 0) + 1\n    event.data = \"u\" .. string.char(1)\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut data: Option<Vec<u8>> = None;
+            dispatch_menu_extra_data(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                "test:block",
+                [4, 5, 6],
+                &mut data,
+            );
+            assert_eq!(data, Some(vec![116u8, 0u8, 159u8]));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_menu_extra_data_duo_a2",
+            "horizon.on(\"menu_extra_data\", function(event)\n    __witness = (__witness or 0) + 1\n    event.data = \"t\" .. string.char(0, 159)\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_menu_extra_data_duo_b2",
+            "horizon.on(\"menu_extra_data\", function(event)\n    __witness = (__witness or 0) + 1\n    event.data = \"u\" .. string.char(1)\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut data: Option<Vec<u8>> = None;
+            dispatch_menu_extra_data(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                "test:block",
+                [4, 5, 6],
+                &mut data,
+            );
+            assert_eq!(data, Some(vec![117u8, 1u8]));
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_menu_extra_data_duo_b3",
+            "horizon.on(\"menu_extra_data\", function(event)\n    __witness = (__witness or 0) + 1\n    event.data = \"u\" .. string.char(1)\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_menu_extra_data_duo_e3",
+            "horizon.on(\"menu_extra_data\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut data: Option<Vec<u8>> = None;
+            dispatch_menu_extra_data(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                "test:block",
+                [4, 5, 6],
+                &mut data,
+            );
+            assert_eq!(data, Some(vec![117u8, 1u8]));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -11320,6 +30837,282 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_merchant_offer_traded_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_merchant_offer_traded_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut offer = MerchantOffer {
+                base_cost_a: ItemCost {
+                    stack: ItemStack {
+                        item: "test:offer".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    },
+                },
+                cost_b: None,
+                result: ItemStack {
+                    item: "test:offer:out".into(),
+                    count: 2,
+                    damage: 3,
+                    extra: None,
+                },
+                uses: 12,
+                max_uses: 4,
+                reward_exp: true,
+                special_price_diff: 5,
+                demand: 6,
+                price_multiplier: 0.5,
+                xp: 7,
+            };
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_merchant_offer_traded(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                &mut offer,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "merchant_offer_traded read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "merchant_offer_traded read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "merchant_offer_traded read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_merchant_offer_traded_cost_kind",
+            "horizon.on(\"merchant_offer_traded\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut offer = MerchantOffer {
+                base_cost_a: ItemCost {
+                    stack: ItemStack {
+                        item: "test:offer".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    },
+                },
+                cost_b: None,
+                result: ItemStack {
+                    item: "test:offer:out".into(),
+                    count: 2,
+                    damage: 3,
+                    extra: None,
+                },
+                uses: 12,
+                max_uses: 4,
+                reward_exp: true,
+                special_price_diff: 5,
+                demand: 6,
+                price_multiplier: 0.5,
+                xp: 7,
+            };
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_merchant_offer_traded(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &mut offer,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "merchant_offer_traded read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "merchant_offer_traded read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "merchant_offer_traded read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_merchant_offer_traded_two_mods_last_write_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_merchant_offer_traded_duo_a1",
+            "horizon.on(\"merchant_offer_traded\", function(event)\n    __witness = (__witness or 0) + 1\n    event.offer.uses = 51\nend, \"minecraft:zombie\")",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_merchant_offer_traded_duo_b1",
+            "horizon.on(\"merchant_offer_traded\", function(event)\n    __witness = (__witness or 0) + 1\n    event.offer.uses = 52\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut offer = MerchantOffer {
+                base_cost_a: ItemCost {
+                    stack: ItemStack {
+                        item: "test:offer".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    },
+                },
+                cost_b: None,
+                result: ItemStack {
+                    item: "test:offer:out".into(),
+                    count: 2,
+                    damage: 3,
+                    extra: None,
+                },
+                uses: 12,
+                max_uses: 4,
+                reward_exp: true,
+                special_price_diff: 5,
+                demand: 6,
+                price_multiplier: 0.5,
+                xp: 7,
+            };
+            dispatch_merchant_offer_traded(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &mut offer,
+            );
+            assert_eq!(offer.uses, 52);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_merchant_offer_traded_duo_a2",
+            "horizon.on(\"merchant_offer_traded\", function(event)\n    __witness = (__witness or 0) + 1\n    event.offer.uses = 51\nend, \"minecraft:zombie\")",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_merchant_offer_traded_duo_b2",
+            "horizon.on(\"merchant_offer_traded\", function(event)\n    __witness = (__witness or 0) + 1\n    event.offer.uses = 52\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut offer = MerchantOffer {
+                base_cost_a: ItemCost {
+                    stack: ItemStack {
+                        item: "test:offer".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    },
+                },
+                cost_b: None,
+                result: ItemStack {
+                    item: "test:offer:out".into(),
+                    count: 2,
+                    damage: 3,
+                    extra: None,
+                },
+                uses: 12,
+                max_uses: 4,
+                reward_exp: true,
+                special_price_diff: 5,
+                demand: 6,
+                price_multiplier: 0.5,
+                xp: 7,
+            };
+            dispatch_merchant_offer_traded(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &mut offer,
+            );
+            assert_eq!(offer.uses, 51);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_merchant_offer_traded_duo_b3",
+            "horizon.on(\"merchant_offer_traded\", function(event)\n    __witness = (__witness or 0) + 1\n    event.offer.uses = 52\nend, \"minecraft:zombie\")",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_merchant_offer_traded_duo_e3",
+            "horizon.on(\"merchant_offer_traded\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut offer = MerchantOffer {
+                base_cost_a: ItemCost {
+                    stack: ItemStack {
+                        item: "test:offer".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    },
+                },
+                cost_b: None,
+                result: ItemStack {
+                    item: "test:offer:out".into(),
+                    count: 2,
+                    damage: 3,
+                    extra: None,
+                },
+                uses: 12,
+                max_uses: 4,
+                reward_exp: true,
+                special_price_diff: 5,
+                demand: 6,
+                price_multiplier: 0.5,
+                xp: 7,
+            };
+            dispatch_merchant_offer_traded(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &mut offer,
+            );
+            assert_eq!(offer.uses, 52);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_add_server_reload_listeners() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_add_server_reload_listeners",
@@ -11343,6 +31136,161 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_add_server_reload_listeners_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_add_server_reload_listeners_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut listeners = vec![
+                NativeReloadListener::json("test:id0", "test:folder0"),
+                NativeReloadListener::json("test:id1", "test:folder1"),
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_add_server_reload_listeners(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &mut listeners,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "add_server_reload_listeners read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "add_server_reload_listeners read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "add_server_reload_listeners read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_add_server_reload_listeners_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_add_server_reload_listeners_duo_a1",
+            "horizon.on(\"add_server_reload_listeners\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.listeners, { id = \"test:id50\", folder = \"test:folder50\" })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_add_server_reload_listeners_duo_b1",
+            "horizon.on(\"add_server_reload_listeners\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.listeners, { id = \"test:id51\", folder = \"test:folder51\" })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut listeners = vec![
+                NativeReloadListener::json("test:id0", "test:folder0"),
+                NativeReloadListener::json("test:id1", "test:folder1"),
+            ];
+            dispatch_add_server_reload_listeners(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &mut listeners,
+            );
+            let mut expected_listeners = vec![
+                NativeReloadListener::json("test:id0", "test:folder0"),
+                NativeReloadListener::json("test:id1", "test:folder1"),
+            ];
+            expected_listeners.push(NativeReloadListener::json("test:id50", "test:folder50"));
+            expected_listeners.push(NativeReloadListener::json("test:id51", "test:folder51"));
+            assert_eq!(
+                format!("{:?}", listeners),
+                format!("{:?}", expected_listeners)
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_add_server_reload_listeners_duo_a2",
+            "horizon.on(\"add_server_reload_listeners\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.listeners, { id = \"test:id50\", folder = \"test:folder50\" })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_add_server_reload_listeners_duo_b2",
+            "horizon.on(\"add_server_reload_listeners\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.listeners, { id = \"test:id51\", folder = \"test:folder51\" })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut listeners = vec![
+                NativeReloadListener::json("test:id0", "test:folder0"),
+                NativeReloadListener::json("test:id1", "test:folder1"),
+            ];
+            dispatch_add_server_reload_listeners(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &mut listeners,
+            );
+            let mut expected_listeners = vec![
+                NativeReloadListener::json("test:id0", "test:folder0"),
+                NativeReloadListener::json("test:id1", "test:folder1"),
+            ];
+            expected_listeners.push(NativeReloadListener::json("test:id51", "test:folder51"));
+            expected_listeners.push(NativeReloadListener::json("test:id50", "test:folder50"));
+            assert_eq!(
+                format!("{:?}", listeners),
+                format!("{:?}", expected_listeners)
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_add_server_reload_listeners_duo_b3",
+            "horizon.on(\"add_server_reload_listeners\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.listeners, { id = \"test:id51\", folder = \"test:folder51\" })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_add_server_reload_listeners_duo_e3",
+            "horizon.on(\"add_server_reload_listeners\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut listeners = vec![
+                NativeReloadListener::json("test:id0", "test:folder0"),
+                NativeReloadListener::json("test:id1", "test:folder1"),
+            ];
+            dispatch_add_server_reload_listeners(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &mut listeners,
+            );
+            let mut expected_listeners = vec![
+                NativeReloadListener::json("test:id0", "test:folder0"),
+                NativeReloadListener::json("test:id1", "test:folder1"),
+            ];
+            expected_listeners.push(NativeReloadListener::json("test:id51", "test:folder51"));
+            assert_eq!(
+                format!("{:?}", listeners),
+                format!("{:?}", expected_listeners)
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_server_reload_listener_apply() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_server_reload_listener_apply",
@@ -11363,6 +31311,47 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_server_reload_listener_apply_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_reload_listener_apply_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_server_reload_listener_apply(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &NativeReloadListener::json("test:id0", "test:folder0"),
+                &[
+                    ("test:path1".to_owned(), serde_json::json!(8)),
+                    ("test:path2".to_owned(), serde_json::json!(9)),
+                ],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "server_reload_listener_apply read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "server_reload_listener_apply read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_reload_listener_apply read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_client_start() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_start",
@@ -11372,6 +31361,39 @@ mod generated_tests {
         dispatch_client_start(&mut FakeHost::empty(), &firing_mods);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_client_start_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_start_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_client_start(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "client_start read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_start read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_start read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -11387,6 +31409,39 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_client_disconnecting_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_disconnecting_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_client_disconnecting(&FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "client_disconnecting read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_disconnecting read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_disconnecting read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_client_stopping() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_stopping",
@@ -11396,6 +31451,39 @@ mod generated_tests {
         dispatch_client_stopping(&FakeHost::empty(), &firing_mods);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_client_stopping_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_stopping_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_client_stopping(&FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "client_stopping read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_stopping read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_stopping read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -11410,6 +31498,40 @@ mod generated_tests {
         assert_eq!(radius, Some(15.5));
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_menu_background_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_menu_background_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut radius = Some(1.5);
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_menu_background(&FakeHost::empty(), &firing_mods, &mut radius);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "menu_background read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "menu_background read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "menu_background read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -11564,6 +31686,71 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_anvil_update_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_anvil_update_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut output = Some(ItemStack {
+                item: "test:output".into(),
+                count: 9,
+                damage: 8,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 28,
+                    ..Default::default()
+                })),
+            });
+            let mut xp_cost = 16;
+            let mut material_cost = 17;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_anvil_update(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &ItemStack {
+                    item: "test:left".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                None,
+                Some("test:item_name"),
+                None,
+                13,
+                14,
+                &mut output,
+                &mut xp_cost,
+                &mut material_cost,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "anvil_update read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "anvil_update read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "anvil_update read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_block_clone_item() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_clone_item",
@@ -11584,6 +31771,141 @@ mod generated_tests {
         assert_eq!(replaced.count, 1);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_clone_item_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_clone_item_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut stack: Option<ItemStack> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_clone_item(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                [2, 3, 4],
+                BlockStateId(10),
+                &mut stack,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_clone_item read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_clone_item read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_clone_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_block_clone_item_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_block_clone_item_duo_a1",
+            "horizon.on(\"block_clone_item\", function(event)\n    __witness = (__witness or 0) + 1\n    event.stack = { id = \"test:result\", count = 1 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_block_clone_item_duo_b1",
+            "horizon.on(\"block_clone_item\", function(event)\n    __witness = (__witness or 0) + 1\n    event.stack = { id = \"test:result\", count = 2 }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut stack: Option<ItemStack> = None;
+            dispatch_block_clone_item(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                [2, 3, 4],
+                BlockStateId(10),
+                &mut stack,
+            );
+            let replaced = stack.expect("a replaced value");
+            assert_eq!(&*replaced.item, "test:result");
+            assert_eq!(replaced.count, 1);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_block_clone_item_duo_a2",
+            "horizon.on(\"block_clone_item\", function(event)\n    __witness = (__witness or 0) + 1\n    event.stack = { id = \"test:result\", count = 1 }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_block_clone_item_duo_b2",
+            "horizon.on(\"block_clone_item\", function(event)\n    __witness = (__witness or 0) + 1\n    event.stack = { id = \"test:result\", count = 2 }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut stack: Option<ItemStack> = None;
+            dispatch_block_clone_item(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                [2, 3, 4],
+                BlockStateId(10),
+                &mut stack,
+            );
+            let replaced = stack.expect("a replaced value");
+            assert_eq!(&*replaced.item, "test:result");
+            assert_eq!(replaced.count, 2);
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_block_clone_item_duo_b3",
+            "horizon.on(\"block_clone_item\", function(event)\n    __witness = (__witness or 0) + 1\n    event.stack = { id = \"test:result\", count = 2 }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_block_clone_item_duo_e3",
+            "horizon.on(\"block_clone_item\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut stack: Option<ItemStack> = None;
+            dispatch_block_clone_item(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                [2, 3, 4],
+                BlockStateId(10),
+                &mut stack,
+            );
+            let replaced = stack.expect("a replaced value");
+            assert_eq!(&*replaced.item, "test:result");
+            assert_eq!(replaced.count, 2);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -11626,6 +31948,47 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_accepts_fluid_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_entity_accepts_fluid_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_entity_accepts_fluid(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                8,
+                "test:fluid",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_entity_accepts_fluid read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_entity_accepts_fluid read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_entity_accepts_fluid read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -11685,6 +32048,50 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_place_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_place_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_place(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                [4, 5, 6],
+                BlockStateId(12),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_place read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "block_place read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_place read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_block_redstone() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_redstone",
@@ -11703,6 +32110,47 @@ mod generated_tests {
         assert_eq!(new, 53);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_redstone_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_redstone_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut new = 10;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_redstone(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                9,
+                &mut new,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_redstone read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_redstone read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_redstone read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -11727,6 +32175,43 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_break_speed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_break_speed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut speed = 4.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_break_speed(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                BlockStateId(9),
+                3.5,
+                &mut speed,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "break_speed read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "break_speed read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "break_speed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_chat_suggestion_applied() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_chat_suggestion_applied",
@@ -11744,6 +32229,47 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_chat_suggestion_applied_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_chat_suggestion_applied_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_chat_suggestion_applied(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:original",
+                8,
+                9,
+                "test:suggestion",
+                "test:input",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "chat_suggestion_applied read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "chat_suggestion_applied read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "chat_suggestion_applied read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -11771,6 +32297,68 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_client_attack_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_attack_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_client_attack(&mut FakeHost::empty(), &firing_mods, 7, false);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "client_attack read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_attack read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_attack read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_attack_cost_kind",
+            "horizon.on(\"client_attack\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_client_attack(&mut FakeHost::empty(), &firing_mods, 11, false);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "client_attack read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "client_attack read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_attack read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_client_hurt() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_hurt",
@@ -11780,6 +32368,35 @@ mod generated_tests {
         dispatch_client_hurt(&mut FakeHost::empty(), &firing_mods, Some(7), false);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_client_hurt_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_hurt_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_client_hurt(&mut FakeHost::empty(), &firing_mods, Some(7), false);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "client_hurt read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "client_hurt read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_hurt read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -11795,6 +32412,39 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_client_player_network_logging_in_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_player_network_logging_in_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_client_player_network_logging_in(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "client_player_network_logging_in read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_player_network_logging_in read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_player_network_logging_in read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_client_tick_pre() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_tick_pre",
@@ -11807,6 +32457,39 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_client_tick_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_tick_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_client_tick_pre(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "client_tick_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_tick_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_tick_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_client_tick_post() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_tick_post",
@@ -11816,6 +32499,39 @@ mod generated_tests {
         dispatch_client_tick_post(&mut FakeHost::empty(), &firing_mods);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_client_tick_post_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_tick_post_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_client_tick_post(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "client_tick_post read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_tick_post read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_tick_post read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -11867,6 +32583,48 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_console_line_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_console_line_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut replies = vec![Text::literal("test:line2"), Text::literal("test:line3")];
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_console_line(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:source",
+                "test:line",
+                &mut replies,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "console_line read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "console_line read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "console_line read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -11941,6 +32699,48 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_creative_slot_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_creative_slot_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_creative_slot_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                None,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "creative_slot_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "creative_slot_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "creative_slot_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_custom_block_fluids() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_custom_block_fluids",
@@ -11952,6 +32752,45 @@ mod generated_tests {
         assert!(custom);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_custom_block_fluids_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_custom_block_fluids_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut custom = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_custom_block_fluids(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut custom,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "custom_block_fluids read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "custom_block_fluids read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "custom_block_fluids read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -11988,6 +32827,170 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_custom_fluid_tanks_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_custom_fluid_tanks_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut out: Option<Vec<NativeFluidTankView>> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_custom_fluid_tanks(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &mut out,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "custom_fluid_tanks read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "custom_fluid_tanks read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "custom_fluid_tanks read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_custom_fluid_tanks_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_custom_fluid_tanks_duo_a1",
+            "horizon.on(\"custom_fluid_tanks\", function(event)\n    __witness = (__witness or 0) + 1\n    event.out = { { tank = 0, content = { fluid = \"test:fluid0\", amount = 7, components = {} }, capacity = 1000, can_fill = true, can_drain = false } }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_custom_fluid_tanks_duo_b1",
+            "horizon.on(\"custom_fluid_tanks\", function(event)\n    __witness = (__witness or 0) + 1\n    event.out = { { tank = 1, content = { fluid = \"test:fluid1\", amount = 7, components = {} }, capacity = 1000, can_fill = true, can_drain = false } }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut out: Option<Vec<NativeFluidTankView>> = None;
+            dispatch_custom_fluid_tanks(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &mut out,
+            );
+            assert_eq!(
+                out,
+                Some(vec![NativeFluidTankView {
+                    tank: 0,
+                    content: Some(NativeFluidStack {
+                        fluid: "test:fluid0".into(),
+                        amount: 7,
+                        components: Compound::new()
+                    }),
+                    capacity: 1000,
+                    can_fill: true,
+                    can_drain: false
+                }])
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_custom_fluid_tanks_duo_a2",
+            "horizon.on(\"custom_fluid_tanks\", function(event)\n    __witness = (__witness or 0) + 1\n    event.out = { { tank = 0, content = { fluid = \"test:fluid0\", amount = 7, components = {} }, capacity = 1000, can_fill = true, can_drain = false } }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_custom_fluid_tanks_duo_b2",
+            "horizon.on(\"custom_fluid_tanks\", function(event)\n    __witness = (__witness or 0) + 1\n    event.out = { { tank = 1, content = { fluid = \"test:fluid1\", amount = 7, components = {} }, capacity = 1000, can_fill = true, can_drain = false } }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut out: Option<Vec<NativeFluidTankView>> = None;
+            dispatch_custom_fluid_tanks(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &mut out,
+            );
+            assert_eq!(
+                out,
+                Some(vec![NativeFluidTankView {
+                    tank: 1,
+                    content: Some(NativeFluidStack {
+                        fluid: "test:fluid1".into(),
+                        amount: 7,
+                        components: Compound::new()
+                    }),
+                    capacity: 1000,
+                    can_fill: true,
+                    can_drain: false
+                }])
+            );
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_custom_fluid_tanks_duo_b3",
+            "horizon.on(\"custom_fluid_tanks\", function(event)\n    __witness = (__witness or 0) + 1\n    event.out = { { tank = 1, content = { fluid = \"test:fluid1\", amount = 7, components = {} }, capacity = 1000, can_fill = true, can_drain = false } }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_custom_fluid_tanks_duo_e3",
+            "horizon.on(\"custom_fluid_tanks\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut out: Option<Vec<NativeFluidTankView>> = None;
+            dispatch_custom_fluid_tanks(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &mut out,
+            );
+            assert_eq!(
+                out,
+                Some(vec![NativeFluidTankView {
+                    tank: 1,
+                    content: Some(NativeFluidStack {
+                        fluid: "test:fluid1".into(),
+                        amount: 7,
+                        components: Compound::new()
+                    }),
+                    capacity: 1000,
+                    can_fill: true,
+                    can_drain: false
+                }])
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_custom_fluid_fill() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_custom_fluid_fill",
@@ -12011,6 +33014,155 @@ mod generated_tests {
         assert_eq!(out, Some(81000));
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_custom_fluid_fill_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_custom_fluid_fill_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut out: Option<i32> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_custom_fluid_fill(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &NativeFluidStack {
+                    fluid: "test:fluid2".into(),
+                    amount: 9,
+                    components: Compound::from([("testkey".into(), Tag::Int(14))]),
+                },
+                NativeFluidAction::Execute,
+                &mut out,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "custom_fluid_fill read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "custom_fluid_fill read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "custom_fluid_fill read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_custom_fluid_fill_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_custom_fluid_fill_duo_a1",
+            "horizon.on(\"custom_fluid_fill\", function(event)\n    __witness = (__witness or 0) + 1\n    event.out = 81000\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_custom_fluid_fill_duo_b1",
+            "horizon.on(\"custom_fluid_fill\", function(event)\n    __witness = (__witness or 0) + 1\n    event.out = 81001\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut out: Option<i32> = None;
+            dispatch_custom_fluid_fill(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &NativeFluidStack {
+                    fluid: "test:fluid2".into(),
+                    amount: 9,
+                    components: Compound::from([("testkey".into(), Tag::Int(14))]),
+                },
+                NativeFluidAction::Execute,
+                &mut out,
+            );
+            assert_eq!(out, Some(81000));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_custom_fluid_fill_duo_a2",
+            "horizon.on(\"custom_fluid_fill\", function(event)\n    __witness = (__witness or 0) + 1\n    event.out = 81000\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_custom_fluid_fill_duo_b2",
+            "horizon.on(\"custom_fluid_fill\", function(event)\n    __witness = (__witness or 0) + 1\n    event.out = 81001\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut out: Option<i32> = None;
+            dispatch_custom_fluid_fill(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &NativeFluidStack {
+                    fluid: "test:fluid2".into(),
+                    amount: 9,
+                    components: Compound::from([("testkey".into(), Tag::Int(14))]),
+                },
+                NativeFluidAction::Execute,
+                &mut out,
+            );
+            assert_eq!(out, Some(81001));
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_custom_fluid_fill_duo_b3",
+            "horizon.on(\"custom_fluid_fill\", function(event)\n    __witness = (__witness or 0) + 1\n    event.out = 81001\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_custom_fluid_fill_duo_e3",
+            "horizon.on(\"custom_fluid_fill\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut out: Option<i32> = None;
+            dispatch_custom_fluid_fill(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &NativeFluidStack {
+                    fluid: "test:fluid2".into(),
+                    amount: 9,
+                    components: Compound::from([("testkey".into(), Tag::Int(14))]),
+                },
+                NativeFluidAction::Execute,
+                &mut out,
+            );
+            assert_eq!(out, Some(81001));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -12043,6 +33195,160 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_custom_fluid_drain_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_custom_fluid_drain_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut out: Option<NativeFluidStack> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_custom_fluid_drain(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &NativeFluidDrain::Any(9),
+                NativeFluidAction::Execute,
+                &mut out,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "custom_fluid_drain read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "custom_fluid_drain read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "custom_fluid_drain read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_custom_fluid_drain_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_custom_fluid_drain_duo_a1",
+            "horizon.on(\"custom_fluid_drain\", function(event)\n    __witness = (__witness or 0) + 1\n    event.out = { fluid = \"test:fluid0\", amount = 7, components = { testkey = 12 } }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_custom_fluid_drain_duo_b1",
+            "horizon.on(\"custom_fluid_drain\", function(event)\n    __witness = (__witness or 0) + 1\n    event.out = { fluid = \"test:fluid1\", amount = 8, components = { testkey = 13 } }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut out: Option<NativeFluidStack> = None;
+            dispatch_custom_fluid_drain(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &NativeFluidDrain::Any(9),
+                NativeFluidAction::Execute,
+                &mut out,
+            );
+            assert_eq!(
+                out,
+                Some(NativeFluidStack {
+                    fluid: "test:fluid0".into(),
+                    amount: 7,
+                    components: Compound::from([("testkey".into(), Tag::Int(12))])
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_custom_fluid_drain_duo_a2",
+            "horizon.on(\"custom_fluid_drain\", function(event)\n    __witness = (__witness or 0) + 1\n    event.out = { fluid = \"test:fluid0\", amount = 7, components = { testkey = 12 } }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_custom_fluid_drain_duo_b2",
+            "horizon.on(\"custom_fluid_drain\", function(event)\n    __witness = (__witness or 0) + 1\n    event.out = { fluid = \"test:fluid1\", amount = 8, components = { testkey = 13 } }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut out: Option<NativeFluidStack> = None;
+            dispatch_custom_fluid_drain(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &NativeFluidDrain::Any(9),
+                NativeFluidAction::Execute,
+                &mut out,
+            );
+            assert_eq!(
+                out,
+                Some(NativeFluidStack {
+                    fluid: "test:fluid1".into(),
+                    amount: 8,
+                    components: Compound::from([("testkey".into(), Tag::Int(13))])
+                })
+            );
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_custom_fluid_drain_duo_b3",
+            "horizon.on(\"custom_fluid_drain\", function(event)\n    __witness = (__witness or 0) + 1\n    event.out = { fluid = \"test:fluid1\", amount = 8, components = { testkey = 13 } }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_custom_fluid_drain_duo_e3",
+            "horizon.on(\"custom_fluid_drain\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut out: Option<NativeFluidStack> = None;
+            dispatch_custom_fluid_drain(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &NativeFluidDrain::Any(9),
+                NativeFluidAction::Execute,
+                &mut out,
+            );
+            assert_eq!(
+                out,
+                Some(NativeFluidStack {
+                    fluid: "test:fluid1".into(),
+                    amount: 8,
+                    components: Compound::from([("testkey".into(), Tag::Int(13))])
+                })
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_custom_payload_from_client() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_custom_payload_from_client",
@@ -12058,6 +33364,45 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_custom_payload_from_client_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_custom_payload_from_client_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_custom_payload_from_client(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:channel",
+                &[116u8, 0u8, 159u8],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "custom_payload_from_client read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "custom_payload_from_client read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "custom_payload_from_client read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -12123,6 +33468,90 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_entity_change_block_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_change_block_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_change_block_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                None,
+                "test:kind",
+                [4, 5, 6],
+                "test:from",
+                "test:to",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_change_block_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_change_block_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_change_block_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_change_block_v2_cost_kind",
+            "horizon.on(\"entity_change_block_v2\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_change_block_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                None,
+                "minecraft:zombie",
+                [4, 5, 6],
+                "test:from",
+                "test:to",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_change_block_v2 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_change_block_v2 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_change_block_v2 read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -12237,6 +33666,96 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_interact_specific_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_interact_specific_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut claimed = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_interact_specific(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                }),
+                [4.0, 5.0, 6.0],
+                &mut claimed,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_interact_specific read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_interact_specific read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_interact_specific read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_interact_specific_cost_kind",
+            "horizon.on(\"entity_interact_specific\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut claimed = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_interact_specific(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                }),
+                [4.0, 5.0, 6.0],
+                &mut claimed,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_interact_specific read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_interact_specific read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_interact_specific read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_entity_outline() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_outline",
@@ -12270,6 +33789,82 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_outline_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_outline_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut outline = Some(9);
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_outline(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                &mut outline,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_outline read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_outline read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_outline read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_outline_cost_kind",
+            "horizon.on(\"entity_outline\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut outline = Some(9);
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_entity_outline(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &mut outline,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_outline read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_outline read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_outline read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_fishing_hook_landed() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_fishing_hook_landed",
@@ -12287,6 +33882,47 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_fishing_hook_landed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_fishing_hook_landed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_fishing_hook_landed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                8,
+                "test:dimension",
+                [4, 5, 6],
+                [5, 6, 7],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "fishing_hook_landed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "fishing_hook_landed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "fishing_hook_landed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -12334,6 +33970,37 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_handshake_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_handshake_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut host = "test:host".to_owned();
+            let mut reason = None;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_handshake(
+                &firing_mods,
+                "127.0.0.1:25565".parse().unwrap(),
+                &mut host,
+                9,
+                &mut reason,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "handshake read the host with no handler");
+            assert_eq!(host_reads(), 0, "handshake read the host with no handler");
+            assert_eq!(level_reads(), 0, "handshake read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -12443,6 +34110,86 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_interact_entity_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_interact_entity_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_interact_entity_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                Hand::Main,
+                None,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "interact_entity_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "interact_entity_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "interact_entity_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_interact_entity_v2_cost_kind",
+            "horizon.on(\"interact_entity_v2\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_interact_entity_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                Hand::Main,
+                None,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "interact_entity_v2 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "interact_entity_v2 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "interact_entity_v2 read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_inventory_click() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_inventory_click",
@@ -12491,6 +34238,50 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_inventory_click_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_inventory_click_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_inventory_click(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+                11,
+                12,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "inventory_click read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "inventory_click read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "inventory_click read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_inventory_drag() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_inventory_drag",
@@ -12534,6 +34325,49 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_inventory_drag_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_inventory_drag_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_inventory_drag(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+                &[8, 13],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "inventory_drag read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "inventory_drag read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "inventory_drag read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -12668,6 +34502,110 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_item_after_vertical_collision_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_after_vertical_collision_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut stack = ItemStack {
+                item: "test:stack".into(),
+                count: 7,
+                damage: 6,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 26,
+                    ..Default::default()
+                })),
+            };
+            let mut discard = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_after_vertical_collision(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                false,
+                9,
+                BlockStateId(11),
+                [5, 6, 7],
+                [6.0, 7.0, 8.0],
+                &mut stack,
+                &mut discard,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "item_after_vertical_collision read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_after_vertical_collision read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_after_vertical_collision read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_after_vertical_collision_cost_kind",
+            "horizon.on(\"item_after_vertical_collision\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut stack = ItemStack {
+                item: "test:stack".into(),
+                count: 7,
+                damage: 6,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 26,
+                    ..Default::default()
+                })),
+            };
+            let mut discard = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_after_vertical_collision(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                false,
+                11,
+                BlockStateId(11),
+                [5, 6, 7],
+                [6.0, 7.0, 8.0],
+                &mut stack,
+                &mut discard,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                2,
+                "item_after_vertical_collision read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "item_after_vertical_collision read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_after_vertical_collision read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_item_dropped_v2() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_dropped_v2",
@@ -12715,6 +34653,51 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_item_dropped_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_dropped_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_dropped_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: None,
+                },
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "item_dropped_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_dropped_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_dropped_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -12798,6 +34781,197 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_item_interact_mob_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_interact_mob_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut swing: Option<bool> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_interact_mob(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                }),
+                &mut swing,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "item_interact_mob read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_interact_mob read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_interact_mob read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_interact_mob_cost_kind",
+            "horizon.on(\"item_interact_mob\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut swing: Option<bool> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_interact_mob(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                }),
+                &mut swing,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "item_interact_mob read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_interact_mob read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_interact_mob read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_item_interact_mob_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_item_interact_mob_duo_a1",
+            "horizon.on(\"item_interact_mob\", function(event)\n    __witness = (__witness or 0) + 1\n    event.swing = true\nend, \"minecraft:zombie\")",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_item_interact_mob_duo_b1",
+            "horizon.on(\"item_interact_mob\", function(event)\n    __witness = (__witness or 0) + 1\n    event.swing = false\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut swing: Option<bool> = None;
+            dispatch_item_interact_mob(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                }),
+                &mut swing,
+            );
+            assert_eq!(swing, Some(true));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_item_interact_mob_duo_a2",
+            "horizon.on(\"item_interact_mob\", function(event)\n    __witness = (__witness or 0) + 1\n    event.swing = true\nend, \"minecraft:zombie\")",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_item_interact_mob_duo_b2",
+            "horizon.on(\"item_interact_mob\", function(event)\n    __witness = (__witness or 0) + 1\n    event.swing = false\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut swing: Option<bool> = None;
+            dispatch_item_interact_mob(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                }),
+                &mut swing,
+            );
+            assert_eq!(swing, Some(false));
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_item_interact_mob_duo_b3",
+            "horizon.on(\"item_interact_mob\", function(event)\n    __witness = (__witness or 0) + 1\n    event.swing = false\nend, \"minecraft:zombie\")",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_item_interact_mob_duo_e3",
+            "horizon.on(\"item_interact_mob\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut swing: Option<bool> = None;
+            dispatch_item_interact_mob(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                }),
+                &mut swing,
+            );
+            assert_eq!(swing, Some(false));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_item_picked_up_v2() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_picked_up_v2",
@@ -12849,6 +35023,53 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_item_picked_up_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_picked_up_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_item_picked_up_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: None,
+                },
+                Some(9),
+                [4.0, 5.0, 6.0],
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "item_picked_up_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_picked_up_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_picked_up_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -12911,6 +35132,86 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_change_target_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_change_target_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_change_target(
+                &firing_mods,
+                "test:dimension",
+                8,
+                "test:kind",
+                None,
+                Some(11),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_change_target read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_change_target read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_change_target read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_change_target_cost_kind",
+            "horizon.on(\"living_change_target\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_change_target(
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+                None,
+                Some(11),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_change_target read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_change_target read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_change_target read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_living_damage_pre() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_damage_pre",
@@ -12948,6 +35249,86 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_damage_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_damage_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 6.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_damage_pre(
+                &firing_mods,
+                7,
+                "test:kind",
+                "test:damage_type",
+                10,
+                11,
+                &mut amount,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_damage_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_damage_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_damage_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_damage_pre_cost_kind",
+            "horizon.on(\"living_damage_pre\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 6.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_damage_pre(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:damage_type",
+                10,
+                11,
+                &mut amount,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_damage_pre read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_damage_pre read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_damage_pre read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_living_damage_post() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_damage_post",
@@ -12979,6 +35360,84 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_damage_post_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_damage_post_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_damage_post(
+                &firing_mods,
+                7,
+                "test:kind",
+                "test:damage_type",
+                10,
+                11,
+                6.5,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_damage_post read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_damage_post read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_damage_post read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_damage_post_cost_kind",
+            "horizon.on(\"living_damage_post\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_damage_post(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:damage_type",
+                10,
+                11,
+                6.5,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_damage_post read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_damage_post read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_damage_post read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -13054,6 +35513,94 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_incoming_damage_v3_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_incoming_damage_v3_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 8.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_incoming_damage_v3(
+                &firing_mods,
+                7,
+                None,
+                "test:kind",
+                None,
+                Some(11),
+                None,
+                "test:damage_type",
+                &mut amount,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_incoming_damage_v3 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_incoming_damage_v3 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_incoming_damage_v3 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_incoming_damage_v3_cost_kind",
+            "horizon.on(\"living_incoming_damage_v3\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 8.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_living_incoming_damage_v3(
+                &firing_mods,
+                7,
+                None,
+                "minecraft:zombie",
+                None,
+                Some(11),
+                None,
+                "test:damage_type",
+                &mut amount,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_incoming_damage_v3 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_incoming_damage_v3 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_incoming_damage_v3 read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_log_line() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_log_line",
@@ -13069,6 +35616,33 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_log_line_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_log_line_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_log_line(
+                &firing_mods,
+                "test:level",
+                "test:thread",
+                "test:message",
+                "test:line",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "log_line read the host with no handler");
+            assert_eq!(host_reads(), 0, "log_line read the host with no handler");
+            assert_eq!(level_reads(), 0, "log_line read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -13119,6 +35693,288 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_menu_input_closed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_menu_input_closed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut slots = vec![
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                }),
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 23,
+                        ..Default::default()
+                    })),
+                }),
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_menu_input_closed(&mut FakeHost::empty(), &firing_mods, 7, 8, &mut slots);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "menu_input_closed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "menu_input_closed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "menu_input_closed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_menu_input_closed_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_menu_input_closed_duo_a1",
+            "horizon.on(\"menu_input_closed\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.slots, { id = \"test:slots\", count = 53, damage = 52, extra = { [\"minecraft:repair_cost\"] = 72 }, plain = false })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_menu_input_closed_duo_b1",
+            "horizon.on(\"menu_input_closed\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.slots, { id = \"test:slots\", count = 54, damage = 53, extra = { [\"minecraft:repair_cost\"] = 73 }, plain = false })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut slots = vec![
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                }),
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 23,
+                        ..Default::default()
+                    })),
+                }),
+            ];
+            dispatch_menu_input_closed(&mut FakeHost::empty(), &firing_mods, 7, 8, &mut slots);
+            let mut expected_slots = vec![
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                }),
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 23,
+                        ..Default::default()
+                    })),
+                }),
+            ];
+            expected_slots.push(Some(ItemStack {
+                item: "test:slots".into(),
+                count: 53,
+                damage: 52,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 72,
+                    ..Default::default()
+                })),
+            }));
+            expected_slots.push(Some(ItemStack {
+                item: "test:slots".into(),
+                count: 54,
+                damage: 53,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 73,
+                    ..Default::default()
+                })),
+            }));
+            assert_eq!(format!("{:?}", slots), format!("{:?}", expected_slots));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_menu_input_closed_duo_a2",
+            "horizon.on(\"menu_input_closed\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.slots, { id = \"test:slots\", count = 53, damage = 52, extra = { [\"minecraft:repair_cost\"] = 72 }, plain = false })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_menu_input_closed_duo_b2",
+            "horizon.on(\"menu_input_closed\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.slots, { id = \"test:slots\", count = 54, damage = 53, extra = { [\"minecraft:repair_cost\"] = 73 }, plain = false })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut slots = vec![
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                }),
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 23,
+                        ..Default::default()
+                    })),
+                }),
+            ];
+            dispatch_menu_input_closed(&mut FakeHost::empty(), &firing_mods, 7, 8, &mut slots);
+            let mut expected_slots = vec![
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                }),
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 23,
+                        ..Default::default()
+                    })),
+                }),
+            ];
+            expected_slots.push(Some(ItemStack {
+                item: "test:slots".into(),
+                count: 54,
+                damage: 53,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 73,
+                    ..Default::default()
+                })),
+            }));
+            expected_slots.push(Some(ItemStack {
+                item: "test:slots".into(),
+                count: 53,
+                damage: 52,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 72,
+                    ..Default::default()
+                })),
+            }));
+            assert_eq!(format!("{:?}", slots), format!("{:?}", expected_slots));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_menu_input_closed_duo_b3",
+            "horizon.on(\"menu_input_closed\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.slots, { id = \"test:slots\", count = 54, damage = 53, extra = { [\"minecraft:repair_cost\"] = 73 }, plain = false })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_menu_input_closed_duo_e3",
+            "horizon.on(\"menu_input_closed\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut slots = vec![
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                }),
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 23,
+                        ..Default::default()
+                    })),
+                }),
+            ];
+            dispatch_menu_input_closed(&mut FakeHost::empty(), &firing_mods, 7, 8, &mut slots);
+            let mut expected_slots = vec![
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                }),
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 23,
+                        ..Default::default()
+                    })),
+                }),
+            ];
+            expected_slots.push(Some(ItemStack {
+                item: "test:slots".into(),
+                count: 54,
+                damage: 53,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 73,
+                    ..Default::default()
+                })),
+            }));
+            assert_eq!(format!("{:?}", slots), format!("{:?}", expected_slots));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_menu_links() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_links",
@@ -13137,6 +35993,140 @@ mod generated_tests {
         assert_eq!(format!("{:?}", links), format!("{:?}", vec![[64, 65, 66]]));
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_menu_links_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_menu_links_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut links = vec![[4, 5, 6], [5, 6, 7]];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_menu_links(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                [3, 4, 5],
+                &mut links,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "menu_links read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "menu_links read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "menu_links read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_menu_links_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_menu_links_duo_a1",
+            "horizon.on(\"menu_links\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.links, { x = 64, y = 65, z = 66 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_menu_links_duo_b1",
+            "horizon.on(\"menu_links\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.links, { x = 65, y = 66, z = 67 })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut links = vec![[4, 5, 6], [5, 6, 7]];
+            dispatch_menu_links(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                [3, 4, 5],
+                &mut links,
+            );
+            assert_eq!(
+                format!("{:?}", &links[links.len() - 2..]),
+                format!("{:?}", vec![[64, 65, 66], [65, 66, 67]])
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_menu_links_duo_a2",
+            "horizon.on(\"menu_links\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.links, { x = 64, y = 65, z = 66 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_menu_links_duo_b2",
+            "horizon.on(\"menu_links\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.links, { x = 65, y = 66, z = 67 })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut links = vec![[4, 5, 6], [5, 6, 7]];
+            dispatch_menu_links(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                [3, 4, 5],
+                &mut links,
+            );
+            assert_eq!(
+                format!("{:?}", &links[links.len() - 2..]),
+                format!("{:?}", vec![[65, 66, 67], [64, 65, 66]])
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_menu_links_duo_b3",
+            "horizon.on(\"menu_links\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.links, { x = 65, y = 66, z = 67 })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_menu_links_duo_e3",
+            "horizon.on(\"menu_links\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut links = vec![[4, 5, 6], [5, 6, 7]];
+            dispatch_menu_links(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                [3, 4, 5],
+                &mut links,
+            );
+            assert_eq!(
+                format!("{:?}", &links[links.len() - 1..]),
+                format!("{:?}", vec![[65, 66, 67]])
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -13161,6 +36151,135 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_permission_check_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_permission_check_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut result: Option<bool> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_permission_check(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:node",
+                9,
+                &mut result,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "permission_check read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "permission_check read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "permission_check read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_permission_check_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_permission_check_duo_a1",
+            "horizon.on(\"permission_check\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_permission_check_duo_b1",
+            "horizon.on(\"permission_check\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = false\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut result: Option<bool> = None;
+            dispatch_permission_check(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:node",
+                9,
+                &mut result,
+            );
+            assert_eq!(result, Some(true));
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_permission_check_duo_a2",
+            "horizon.on(\"permission_check\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = true\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_permission_check_duo_b2",
+            "horizon.on(\"permission_check\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = false\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut result: Option<bool> = None;
+            dispatch_permission_check(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:node",
+                9,
+                &mut result,
+            );
+            assert_eq!(result, Some(false));
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_permission_check_duo_b3",
+            "horizon.on(\"permission_check\", function(event)\n    __witness = (__witness or 0) + 1\n    event.result = false\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_permission_check_duo_e3",
+            "horizon.on(\"permission_check\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut result: Option<bool> = None;
+            dispatch_permission_check(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:node",
+                9,
+                &mut result,
+            );
+            assert_eq!(result, Some(false));
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_player_register_channels() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_register_channels",
@@ -13177,6 +36296,46 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_register_channels_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_register_channels_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_register_channels(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &["test:seed".to_owned(), "test:seed2".to_owned()],
+                false,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_register_channels read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_register_channels read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_register_channels read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -13198,6 +36357,47 @@ mod generated_tests {
         assert_eq!(level, 53);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_command_level_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_command_level_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut level = 10;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_command_level(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:command",
+                &mut level,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_command_level read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_command_level read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_command_level read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -13235,6 +36435,158 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_commands_sent_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_commands_sent_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            let mut names_hidden = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_commands_sent_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut names,
+                &mut names_hidden,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_commands_sent_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_commands_sent_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_commands_sent_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_player_commands_sent_v2_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_player_commands_sent_v2_duo_a1",
+            "horizon.on(\"player_commands_sent_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.names, \"test:duo_a\")\n    table.insert(event.names_hidden, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_player_commands_sent_v2_duo_b1",
+            "horizon.on(\"player_commands_sent_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.names, \"test:duo_b\")\n    table.insert(event.names_hidden, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            let mut names_hidden = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_player_commands_sent_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut names,
+                &mut names_hidden,
+            );
+            let mut expected_names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_names.push("test:duo_a".to_owned());
+            expected_names.push("test:duo_b".to_owned());
+            assert_eq!(names, expected_names);
+            let mut expected_names_hidden = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_names_hidden.push("test:duo_a".to_owned());
+            expected_names_hidden.push("test:duo_b".to_owned());
+            assert_eq!(names_hidden, expected_names_hidden);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_player_commands_sent_v2_duo_a2",
+            "horizon.on(\"player_commands_sent_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.names, \"test:duo_a\")\n    table.insert(event.names_hidden, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_player_commands_sent_v2_duo_b2",
+            "horizon.on(\"player_commands_sent_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.names, \"test:duo_b\")\n    table.insert(event.names_hidden, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            let mut names_hidden = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_player_commands_sent_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut names,
+                &mut names_hidden,
+            );
+            let mut expected_names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_names.push("test:duo_b".to_owned());
+            expected_names.push("test:duo_a".to_owned());
+            assert_eq!(names, expected_names);
+            let mut expected_names_hidden = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_names_hidden.push("test:duo_b".to_owned());
+            expected_names_hidden.push("test:duo_a".to_owned());
+            assert_eq!(names_hidden, expected_names_hidden);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_player_commands_sent_v2_duo_b3",
+            "horizon.on(\"player_commands_sent_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.names, \"test:duo_b\")\n    table.insert(event.names_hidden, \"test:duo_b\")\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_player_commands_sent_v2_duo_e3",
+            "horizon.on(\"player_commands_sent_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            let mut names_hidden = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_player_commands_sent_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut names,
+                &mut names_hidden,
+            );
+            let mut expected_names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_names.push("test:duo_b".to_owned());
+            assert_eq!(names, expected_names);
+            let mut expected_names_hidden = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_names_hidden.push("test:duo_b".to_owned());
+            assert_eq!(names_hidden, expected_names_hidden);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -13279,6 +36631,48 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_fish_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_fish_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_fish_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                Hand::Off,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_fish_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_fish_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_fish_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -13330,6 +36724,51 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_hurt_by_player_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_hurt_by_player_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 7.5;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_hurt_by_player(
+                &firing_mods,
+                7,
+                8,
+                9,
+                10,
+                "test:source",
+                "test:damage_type",
+                &mut amount,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_hurt_by_player read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_hurt_by_player read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_hurt_by_player read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -13385,6 +36824,52 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_launch_projectile_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_launch_projectile_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_launch_projectile_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_launch_projectile_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_launch_projectile_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_launch_projectile_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_logging_out() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_logging_out",
@@ -13394,6 +36879,39 @@ mod generated_tests {
         dispatch_player_logging_out(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_logging_out_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_logging_out_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_logging_out(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_logging_out read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_logging_out read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_logging_out read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -13448,6 +36966,47 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_move_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_move_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut to = [4.0, 5.0, 6.0];
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_move(
+                &firing_mods,
+                7,
+                "test:name",
+                [3.0, 4.0, 5.0],
+                &mut to,
+                5.5,
+                6.5,
+                true,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_move read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "player_move read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_move read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_pre_login() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_pre_login",
@@ -13465,6 +37024,151 @@ mod generated_tests {
         assert_eq!(defer.len(), 1);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_pre_login_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_pre_login_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut defer = Vec::new();
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_pre_login(
+                &firing_mods,
+                7,
+                "test:name",
+                "127.0.0.1:25567".parse().unwrap(),
+                &mut defer,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_pre_login read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_pre_login read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_pre_login read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_player_pre_login_two_mods_refusals_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_player_pre_login_duo_a1",
+            "horizon.on(\"player_pre_login\", function(event)\n    __witness = (__witness or 0) + 1\n    event.defer = { refuse = \"test:duo_a\" }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_player_pre_login_duo_b1",
+            "horizon.on(\"player_pre_login\", function(event)\n    __witness = (__witness or 0) + 1\n    event.defer = { refuse = \"test:duo_b\" }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut defer = Vec::new();
+            dispatch_player_pre_login(
+                &firing_mods,
+                7,
+                "test:name",
+                "127.0.0.1:25567".parse().unwrap(),
+                &mut defer,
+            );
+            assert_eq!(defer.len(), 2);
+            assert_eq!(
+                defer[0].try_recv().unwrap().unwrap_err().plain(),
+                "test:duo_a"
+            );
+            assert_eq!(
+                defer[1].try_recv().unwrap().unwrap_err().plain(),
+                "test:duo_b"
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_player_pre_login_duo_a2",
+            "horizon.on(\"player_pre_login\", function(event)\n    __witness = (__witness or 0) + 1\n    event.defer = { refuse = \"test:duo_a\" }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_player_pre_login_duo_b2",
+            "horizon.on(\"player_pre_login\", function(event)\n    __witness = (__witness or 0) + 1\n    event.defer = { refuse = \"test:duo_b\" }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut defer = Vec::new();
+            dispatch_player_pre_login(
+                &firing_mods,
+                7,
+                "test:name",
+                "127.0.0.1:25567".parse().unwrap(),
+                &mut defer,
+            );
+            assert_eq!(defer.len(), 2);
+            assert_eq!(
+                defer[0].try_recv().unwrap().unwrap_err().plain(),
+                "test:duo_b"
+            );
+            assert_eq!(
+                defer[1].try_recv().unwrap().unwrap_err().plain(),
+                "test:duo_a"
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_player_pre_login_duo_b3",
+            "horizon.on(\"player_pre_login\", function(event)\n    __witness = (__witness or 0) + 1\n    event.defer = { refuse = \"test:duo_b\" }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_player_pre_login_duo_e3",
+            "horizon.on(\"player_pre_login\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut defer = Vec::new();
+            dispatch_player_pre_login(
+                &firing_mods,
+                7,
+                "test:name",
+                "127.0.0.1:25567".parse().unwrap(),
+                &mut defer,
+            );
+            assert_eq!(defer.len(), 1);
+            assert_eq!(
+                defer[0].try_recv().unwrap().unwrap_err().plain(),
+                "test:duo_b"
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -13497,6 +37201,52 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_respawn_position_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_respawn_position_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut dimension = "test:dimension".to_owned();
+            let mut pos = [4.0, 5.0, 6.0];
+            let mut yaw = 5.5;
+            let mut pitch = 6.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_respawn_position(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut dimension,
+                &mut pos,
+                &mut yaw,
+                &mut pitch,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_respawn_position read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_respawn_position read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_respawn_position read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_spawn_location() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_spawn_location",
@@ -13520,6 +37270,50 @@ mod generated_tests {
         assert_eq!(rotation, [15.0, 16.0]);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_spawn_location_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_spawn_location_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut dimension = "test:dimension".to_owned();
+            let mut position = [4.0, 5.0, 6.0];
+            let mut rotation = [5.0, 6.0];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_spawn_location(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut dimension,
+                &mut position,
+                &mut rotation,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_spawn_location read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_spawn_location read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_spawn_location read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -13579,6 +37373,53 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_teleport_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_teleport_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut to = [7.0, 8.0, 9.0];
+            let mut relative = 14;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_teleport(
+                &firing_mods,
+                7,
+                "test:name",
+                "test:cause",
+                "test:from_dimension",
+                [5.0, 6.0, 7.0],
+                "test:to_dimension",
+                &mut to,
+                &mut relative,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_teleport read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_teleport read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_teleport read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_tick_pre() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_tick_pre",
@@ -13588,6 +37429,39 @@ mod generated_tests {
         dispatch_player_tick_pre(&mut FakeHost::empty(), &firing_mods);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_tick_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_tick_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_player_tick_pre(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_tick_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_tick_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_tick_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -13634,6 +37508,90 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_projectile_world_border_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_projectile_world_border_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut pos = [4.0, 5.0, 6.0];
+            let mut velocity = [5.0, 6.0, 7.0];
+            let mut collide = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_projectile_world_border(
+                &firing_mods,
+                "test:dimension",
+                8,
+                "test:kind",
+                &mut pos,
+                &mut velocity,
+                &mut collide,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "projectile_world_border read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "projectile_world_border read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "projectile_world_border read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_projectile_world_border_cost_kind",
+            "horizon.on(\"projectile_world_border\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut pos = [4.0, 5.0, 6.0];
+            let mut velocity = [5.0, 6.0, 7.0];
+            let mut collide = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_projectile_world_border(
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+                &mut pos,
+                &mut velocity,
+                &mut collide,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "projectile_world_border read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "projectile_world_border read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "projectile_world_border read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_recipe_sources() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_recipe_sources",
@@ -13658,6 +37616,144 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_recipe_sources_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_recipe_sources_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut sources = vec![[4, 5, 6], [5, 6, 7]];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_recipe_sources(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                [3, 4, 5],
+                &mut sources,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "recipe_sources read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "recipe_sources read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "recipe_sources read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_recipe_sources_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_recipe_sources_duo_a1",
+            "horizon.on(\"recipe_sources\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.sources, { x = 64, y = 65, z = 66 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_recipe_sources_duo_b1",
+            "horizon.on(\"recipe_sources\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.sources, { x = 65, y = 66, z = 67 })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut sources = vec![[4, 5, 6], [5, 6, 7]];
+            dispatch_recipe_sources(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                [3, 4, 5],
+                &mut sources,
+            );
+            assert_eq!(
+                format!("{:?}", &sources[sources.len() - 2..]),
+                format!("{:?}", vec![[64, 65, 66], [65, 66, 67]])
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_recipe_sources_duo_a2",
+            "horizon.on(\"recipe_sources\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.sources, { x = 64, y = 65, z = 66 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_recipe_sources_duo_b2",
+            "horizon.on(\"recipe_sources\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.sources, { x = 65, y = 66, z = 67 })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut sources = vec![[4, 5, 6], [5, 6, 7]];
+            dispatch_recipe_sources(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                [3, 4, 5],
+                &mut sources,
+            );
+            assert_eq!(
+                format!("{:?}", &sources[sources.len() - 2..]),
+                format!("{:?}", vec![[65, 66, 67], [64, 65, 66]])
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_recipe_sources_duo_b3",
+            "horizon.on(\"recipe_sources\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.sources, { x = 65, y = 66, z = 67 })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_recipe_sources_duo_e3",
+            "horizon.on(\"recipe_sources\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut sources = vec![[4, 5, 6], [5, 6, 7]];
+            dispatch_recipe_sources(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                [3, 4, 5],
+                &mut sources,
+            );
+            assert_eq!(
+                format!("{:?}", &sources[sources.len() - 1..]),
+                format!("{:?}", vec![[65, 66, 67]])
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_resource_pack_status_v2() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_resource_pack_status_v2",
@@ -13674,6 +37770,46 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_resource_pack_status_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_resource_pack_status_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_resource_pack_status_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "resource_pack_status_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "resource_pack_status_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "resource_pack_status_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -13716,6 +37852,47 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_right_click_block_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_right_click_block_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_right_click_block_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                [2, 3, 4],
+                Hand::Main,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "right_click_block_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "right_click_block_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "right_click_block_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -13765,6 +37942,49 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_screen_mouse_dragged_pre_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_mouse_dragged_pre_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_screen_mouse_dragged_pre_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:screen",
+                [2.5, 3.5],
+                9,
+                [4.5, 5.5],
+                11,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "screen_mouse_dragged_pre_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_mouse_dragged_pre_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_mouse_dragged_pre_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_screen_mouse_scrolled_pre_v2() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_screen_mouse_scrolled_pre_v2",
@@ -13809,6 +38029,48 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_screen_mouse_scrolled_pre_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_mouse_scrolled_pre_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_screen_mouse_scrolled_pre_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:screen",
+                [2.5, 3.5],
+                [3.5, 4.5],
+                10,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "screen_mouse_scrolled_pre_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_mouse_scrolled_pre_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_mouse_scrolled_pre_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_server_tick_timed() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_server_tick_timed",
@@ -13840,6 +38102,58 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_server_tick_timed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_tick_timed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_server_tick_timed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                None,
+                &[
+                    TickSpan {
+                        name: "test:span2",
+                        ms: 3.5,
+                        cpu_ms: 0.5,
+                        depth: 0,
+                    },
+                    TickSpan {
+                        name: "test:span3",
+                        ms: 4.5,
+                        cpu_ms: 0.5,
+                        depth: 0,
+                    },
+                ],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "server_tick_timed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "server_tick_timed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_tick_timed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_stateful_block_entity() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_stateful_block_entity",
@@ -13856,6 +38170,45 @@ mod generated_tests {
         assert!(stateful);
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_stateful_block_entity_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_stateful_block_entity_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut stateful = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_stateful_block_entity(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut stateful,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "stateful_block_entity read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "stateful_block_entity read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "stateful_block_entity read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -13881,6 +38234,145 @@ mod generated_tests {
         );
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_entity_from_state_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_entity_from_state_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut entity: Option<(String, Compound)> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_block_entity_from_state(
+                &firing_mods,
+                "test:block",
+                &BlockProperties::new(),
+                &mut entity,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_entity_from_state read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_entity_from_state read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_entity_from_state read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_block_entity_from_state_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_block_entity_from_state_duo_a1",
+            "horizon.on(\"block_entity_from_state\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity = { name = \"test:entity0\", tag = { testkey = 7 } }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_block_entity_from_state_duo_b1",
+            "horizon.on(\"block_entity_from_state\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity = { name = \"test:entity1\", tag = { testkey = 8 } }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut entity: Option<(String, Compound)> = None;
+            dispatch_block_entity_from_state(
+                &firing_mods,
+                "test:block",
+                &BlockProperties::new(),
+                &mut entity,
+            );
+            assert_eq!(
+                entity,
+                Some((
+                    "test:entity0".to_owned(),
+                    Compound::from([("testkey".into(), Tag::Int(7))])
+                ))
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_block_entity_from_state_duo_a2",
+            "horizon.on(\"block_entity_from_state\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity = { name = \"test:entity0\", tag = { testkey = 7 } }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_block_entity_from_state_duo_b2",
+            "horizon.on(\"block_entity_from_state\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity = { name = \"test:entity1\", tag = { testkey = 8 } }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut entity: Option<(String, Compound)> = None;
+            dispatch_block_entity_from_state(
+                &firing_mods,
+                "test:block",
+                &BlockProperties::new(),
+                &mut entity,
+            );
+            assert_eq!(
+                entity,
+                Some((
+                    "test:entity1".to_owned(),
+                    Compound::from([("testkey".into(), Tag::Int(8))])
+                ))
+            );
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_block_entity_from_state_duo_b3",
+            "horizon.on(\"block_entity_from_state\", function(event)\n    __witness = (__witness or 0) + 1\n    event.entity = { name = \"test:entity1\", tag = { testkey = 8 } }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_block_entity_from_state_duo_e3",
+            "horizon.on(\"block_entity_from_state\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut entity: Option<(String, Compound)> = None;
+            dispatch_block_entity_from_state(
+                &firing_mods,
+                "test:block",
+                &BlockProperties::new(),
+                &mut entity,
+            );
+            assert_eq!(
+                entity,
+                Some((
+                    "test:entity1".to_owned(),
+                    Compound::from([("testkey".into(), Tag::Int(8))])
+                ))
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -13931,6 +38423,276 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_tab_complete_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tab_complete_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut suggestions = vec![
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+                Suggestion {
+                    range: (7 + 6, 12 + 6),
+                    text: "test:suggestion6".into(),
+                    tooltip: Some("test:tooltip6".into()),
+                    int_value: Some(36),
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_tab_complete_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:label",
+                &["test:seed".to_owned(), "test:seed2".to_owned()],
+                [11, 16],
+                &mut suggestions,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "tab_complete_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "tab_complete_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "tab_complete_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_tab_complete_v2_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_tab_complete_v2_duo_a1",
+            "horizon.on(\"tab_complete_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.suggestions, { range = { start = 62, [\"end\"] = 67 }, text = \"test:suggestion55\", tooltip = \"test:tooltip55\", int_value = 85 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_tab_complete_v2_duo_b1",
+            "horizon.on(\"tab_complete_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.suggestions, { range = { start = 63, [\"end\"] = 68 }, text = \"test:suggestion56\", tooltip = \"test:tooltip56\", int_value = 86 })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut suggestions = vec![
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+                Suggestion {
+                    range: (7 + 6, 12 + 6),
+                    text: "test:suggestion6".into(),
+                    tooltip: Some("test:tooltip6".into()),
+                    int_value: Some(36),
+                },
+            ];
+            dispatch_tab_complete_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:label",
+                &["test:seed".to_owned(), "test:seed2".to_owned()],
+                [11, 16],
+                &mut suggestions,
+            );
+            let mut expected_suggestions = vec![
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+                Suggestion {
+                    range: (7 + 6, 12 + 6),
+                    text: "test:suggestion6".into(),
+                    tooltip: Some("test:tooltip6".into()),
+                    int_value: Some(36),
+                },
+            ];
+            expected_suggestions.push(Suggestion {
+                range: (7 + 55, 12 + 55),
+                text: "test:suggestion55".into(),
+                tooltip: Some("test:tooltip55".into()),
+                int_value: Some(85),
+            });
+            expected_suggestions.push(Suggestion {
+                range: (7 + 56, 12 + 56),
+                text: "test:suggestion56".into(),
+                tooltip: Some("test:tooltip56".into()),
+                int_value: Some(86),
+            });
+            assert_eq!(
+                format!("{:?}", suggestions),
+                format!("{:?}", expected_suggestions)
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_tab_complete_v2_duo_a2",
+            "horizon.on(\"tab_complete_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.suggestions, { range = { start = 62, [\"end\"] = 67 }, text = \"test:suggestion55\", tooltip = \"test:tooltip55\", int_value = 85 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_tab_complete_v2_duo_b2",
+            "horizon.on(\"tab_complete_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.suggestions, { range = { start = 63, [\"end\"] = 68 }, text = \"test:suggestion56\", tooltip = \"test:tooltip56\", int_value = 86 })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut suggestions = vec![
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+                Suggestion {
+                    range: (7 + 6, 12 + 6),
+                    text: "test:suggestion6".into(),
+                    tooltip: Some("test:tooltip6".into()),
+                    int_value: Some(36),
+                },
+            ];
+            dispatch_tab_complete_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:label",
+                &["test:seed".to_owned(), "test:seed2".to_owned()],
+                [11, 16],
+                &mut suggestions,
+            );
+            let mut expected_suggestions = vec![
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+                Suggestion {
+                    range: (7 + 6, 12 + 6),
+                    text: "test:suggestion6".into(),
+                    tooltip: Some("test:tooltip6".into()),
+                    int_value: Some(36),
+                },
+            ];
+            expected_suggestions.push(Suggestion {
+                range: (7 + 56, 12 + 56),
+                text: "test:suggestion56".into(),
+                tooltip: Some("test:tooltip56".into()),
+                int_value: Some(86),
+            });
+            expected_suggestions.push(Suggestion {
+                range: (7 + 55, 12 + 55),
+                text: "test:suggestion55".into(),
+                tooltip: Some("test:tooltip55".into()),
+                int_value: Some(85),
+            });
+            assert_eq!(
+                format!("{:?}", suggestions),
+                format!("{:?}", expected_suggestions)
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_tab_complete_v2_duo_b3",
+            "horizon.on(\"tab_complete_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.suggestions, { range = { start = 63, [\"end\"] = 68 }, text = \"test:suggestion56\", tooltip = \"test:tooltip56\", int_value = 86 })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_tab_complete_v2_duo_e3",
+            "horizon.on(\"tab_complete_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut suggestions = vec![
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+                Suggestion {
+                    range: (7 + 6, 12 + 6),
+                    text: "test:suggestion6".into(),
+                    tooltip: Some("test:tooltip6".into()),
+                    int_value: Some(36),
+                },
+            ];
+            dispatch_tab_complete_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:label",
+                &["test:seed".to_owned(), "test:seed2".to_owned()],
+                [11, 16],
+                &mut suggestions,
+            );
+            let mut expected_suggestions = vec![
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+                Suggestion {
+                    range: (7 + 6, 12 + 6),
+                    text: "test:suggestion6".into(),
+                    tooltip: Some("test:tooltip6".into()),
+                    int_value: Some(36),
+                },
+            ];
+            expected_suggestions.push(Suggestion {
+                range: (7 + 56, 12 + 56),
+                text: "test:suggestion56".into(),
+                tooltip: Some("test:tooltip56".into()),
+                int_value: Some(86),
+            });
+            assert_eq!(
+                format!("{:?}", suggestions),
+                format!("{:?}", expected_suggestions)
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_toast_add() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_toast_add",
@@ -13968,6 +38730,34 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_toast_add_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_toast_add_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_toast_add(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:kind",
+                "test:id",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "toast_add read the host with no handler");
+            assert_eq!(host_reads(), 0, "toast_add read the host with no handler");
+            assert_eq!(level_reads(), 0, "toast_add read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -14027,6 +38817,74 @@ mod generated_tests {
         assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_trample_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_trample_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_trample(
+                &firing_mods,
+                "test:dimension",
+                8,
+                "test:kind",
+                [4, 5, 6],
+                5.5,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(entity_reads(), 0, "trample read the host with no handler");
+            assert_eq!(host_reads(), 0, "trample read the host with no handler");
+            assert_eq!(level_reads(), 0, "trample read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_trample_cost_kind",
+            "horizon.on(\"trample\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_trample(
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+                [4, 5, 6],
+                5.5,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "trample read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "trample read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "trample read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -14099,6 +38957,92 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_vehicle_moved_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vehicle_moved_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut to = [6.0, 7.0, 8.0];
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_vehicle_moved_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:dimension",
+                9,
+                "test:kind",
+                [5.0, 6.0, 7.0],
+                &mut to,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "vehicle_moved_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vehicle_moved_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vehicle_moved_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vehicle_moved_v2_cost_kind",
+            "horizon.on(\"vehicle_moved_v2\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut to = [6.0, 7.0, 8.0];
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_vehicle_moved_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:dimension",
+                9,
+                "minecraft:zombie",
+                [5.0, 6.0, 7.0],
+                &mut to,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "vehicle_moved_v2 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vehicle_moved_v2 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vehicle_moved_v2 read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_wind_burst() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_wind_burst",
@@ -14116,6 +39060,136 @@ mod generated_tests {
         assert_eq!(format!("{:?}", blocks), format!("{:?}", vec![[63, 64, 65]]));
         assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
+    }
+
+    #[test]
+    fn generated_wind_burst_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_wind_burst_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut blocks = vec![[3, 4, 5], [4, 5, 6]];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            dispatch_wind_burst(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                &mut blocks,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "wind_burst read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "wind_burst read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "wind_burst read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_wind_burst_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_wind_burst_duo_a1",
+            "horizon.on(\"wind_burst\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.blocks, { x = 63, y = 64, z = 65 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_wind_burst_duo_b1",
+            "horizon.on(\"wind_burst\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.blocks, { x = 64, y = 65, z = 66 })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut blocks = vec![[3, 4, 5], [4, 5, 6]];
+            dispatch_wind_burst(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                &mut blocks,
+            );
+            assert_eq!(
+                format!("{:?}", &blocks[blocks.len() - 2..]),
+                format!("{:?}", vec![[63, 64, 65], [64, 65, 66]])
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_wind_burst_duo_a2",
+            "horizon.on(\"wind_burst\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.blocks, { x = 63, y = 64, z = 65 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_wind_burst_duo_b2",
+            "horizon.on(\"wind_burst\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.blocks, { x = 64, y = 65, z = 66 })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut blocks = vec![[3, 4, 5], [4, 5, 6]];
+            dispatch_wind_burst(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                &mut blocks,
+            );
+            assert_eq!(
+                format!("{:?}", &blocks[blocks.len() - 2..]),
+                format!("{:?}", vec![[64, 65, 66], [63, 64, 65]])
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_wind_burst_duo_b3",
+            "horizon.on(\"wind_burst\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.blocks, { x = 64, y = 65, z = 66 })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_wind_burst_duo_e3",
+            "horizon.on(\"wind_burst\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut blocks = vec![[3, 4, 5], [4, 5, 6]];
+            dispatch_wind_burst(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                &mut blocks,
+            );
+            assert_eq!(
+                format!("{:?}", &blocks[blocks.len() - 1..]),
+                format!("{:?}", vec![[64, 65, 66]])
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]

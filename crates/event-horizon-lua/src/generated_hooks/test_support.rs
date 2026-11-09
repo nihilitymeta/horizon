@@ -13,7 +13,13 @@ use horizon_mods::Package;
 use mlua::Lua;
 use std::path::PathBuf;
 
-pub const MANIFEST_TEXT: &str = "id = \"ruby\"\nname = \"Ruby\"\nversion = \"0.1.0\"\napi = \"0.2\"\nside = \"both\"\ncapabilities = [\"scripts\"]\nexperimental = [\"scripts\"]\n";
+/// One mod per name, so duo tests loading two mods get two status rows:
+/// the manifest id is the test's name, and every status lookup keys on it.
+fn manifest_text(name: &str) -> String {
+    format!(
+        "id = \"{name}\"\nname = \"Ruby\"\nversion = \"0.1.0\"\napi = \"0.2\"\nside = \"both\"\ncapabilities = [\"scripts\"]\nexperimental = [\"scripts\"]\n"
+    )
+}
 
 pub fn hmod(name: &str, lua: &str) -> (PathBuf, PathBuf) {
     let dir = std::env::temp_dir().join(format!("horizon-lua-gen-{name}-{}", std::process::id()));
@@ -22,7 +28,12 @@ pub fn hmod(name: &str, lua: &str) -> (PathBuf, PathBuf) {
     let path = dir.join("ruby.hmod");
     std::fs::write(
         &path,
-        Package::write_files(MANIFEST_TEXT, None, &[("scripts/init.lua", lua.as_bytes())]).unwrap(),
+        Package::write_files(
+            &manifest_text(name),
+            None,
+            &[("scripts/init.lua", lua.as_bytes())],
+        )
+        .unwrap(),
     )
     .unwrap();
     (dir, path)
@@ -69,6 +80,25 @@ pub fn drop_dir(dir: PathBuf) {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// An `error` row for `id`: the handler failed loudly, as a duo test's
+/// erroring mod must (its failure must not hide the other mod's result).
+pub fn has_error(id: &str) {
+    assert!(
+        status()
+            .into_iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.error)
+            .is_some(),
+        "expected an error row for {id}"
+    );
+}
+
+/// Two mods in load order, for the duo tests: the native dispatch hears
+/// both, in order.
+pub fn duo_boxed(a: LuaMod, b: LuaMod) -> Vec<Box<dyn Hooks>> {
+    vec![Box::new(a) as Box<dyn Hooks>, Box::new(b) as Box<dyn Hooks>]
+}
+
 /// No `error` row for `id`: every `assert` in its handlers held.
 pub fn no_error(id: &str) {
     assert!(
@@ -105,6 +135,34 @@ pub fn reset_entity_reads() {
 }
 fn count_entity_read() {
     ENTITY_READS.with(|reads| reads.set(reads.get() + 1));
+    count_host_read();
+}
+
+thread_local! {
+    static HOST_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static LEVEL_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+/// Every `Host` call the fake host answered since `reset_host_reads`:
+/// an unregistered hook must make none.
+pub fn host_reads() -> usize {
+    HOST_READS.with(|reads| reads.get())
+}
+pub fn reset_host_reads() {
+    HOST_READS.with(|reads| reads.set(0));
+}
+fn count_host_read() {
+    HOST_READS.with(|reads| reads.set(reads.get() + 1));
+}
+/// Every `LevelHost` call the fake level answered since
+/// `reset_level_reads`: an unregistered hook must make none.
+pub fn level_reads() -> usize {
+    LEVEL_READS.with(|reads| reads.get())
+}
+pub fn reset_level_reads() {
+    LEVEL_READS.with(|reads| reads.set(0));
+}
+fn count_level_read() {
+    LEVEL_READS.with(|reads| reads.set(reads.get() + 1));
 }
 impl FakeHost {
     pub fn empty() -> Self {
@@ -113,10 +171,12 @@ impl FakeHost {
 }
 impl Host for FakeHost {
     fn level_players(&self) -> Vec<NativeServerPlayer> {
+        count_host_read();
         Vec::new()
     }
 
     fn state_name(&self, state: BlockStateId) -> String {
+        count_host_read();
         stone_or_state(state)
     }
 
@@ -149,21 +209,27 @@ fn stone_or_state(state: BlockStateId) -> String {
 pub struct FakeLevel;
 impl LevelHost for FakeLevel {
     fn block_state(&self, _: [i32; 3]) -> BlockStateId {
+        count_level_read();
         BlockStateId(7)
     }
     fn is_client_side(&self) -> bool {
+        count_level_read();
         false
     }
     fn state_with_property(&self, _: BlockStateId, _: &str, _: &str) -> Option<BlockStateId> {
+        count_level_read();
         None
     }
     fn mod_block_entity_data(&self, _: [i32; 3]) -> Option<Compound> {
+        count_level_read();
         None
     }
     fn state_block(&self, state: BlockStateId) -> Option<String> {
+        count_level_read();
         Some(stone_or_state(state))
     }
     fn state_properties(&self, _: BlockStateId) -> Vec<(String, String)> {
+        count_level_read();
         Vec::new()
     }
 }
