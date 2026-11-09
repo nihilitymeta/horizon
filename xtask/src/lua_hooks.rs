@@ -17,8 +17,8 @@
 
 use crate::lua_model::{
     Class, Conv, Field, HookClass, Host, Kind, Model, ReplaceRead, assert_lines, canonical_elem,
-    classify, declaration_served, deferred_outcomes, dup_leaf, lua_read, mutate_line,
-    replace_sample, sample, table_leaves,
+    classify, declaration_served, deferred_outcomes, dup_leaf, listened_flag, lua_read,
+    mutate_line, replace_sample, sample, table_leaves,
 };
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -351,6 +351,15 @@ fn extra_tags(model: &Model) -> Vec<String> {
 }
 
 fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
+    // A listened game query answers from its sibling hook's registry: no
+    // event table, no handlers of its own.
+    if let Some(sibling) = listened_flag(&model.name) {
+        return format!(
+            "    gen_listened_flag!({}, {}, {sibling:?});",
+            model.name,
+            event_ty(model),
+        );
+    }
     // Three hooks run bespoke arms: the server tick suppresses unknown
     // phases and reloads on request, loot filters by its context's block or
     // entity with the absent-both early-out, the data-pack collect runs
@@ -2026,6 +2035,21 @@ fn declaration_served_tests(model: &Model, _tys: &BTreeMap<String, String>) -> V
     }
 }
 
+/// A listened game query's test: the flag stays unset with no sibling
+/// handler (and the query builds no event table and reads nothing), and is
+/// set with one, whether the sibling handler is bare or kind-filtered. The
+/// query itself never runs a handler: the sibling's handlers stay quiet.
+fn listened_flag_tests(model: &Model) -> Vec<String> {
+    let sibling = listened_flag(&model.name).unwrap_or("?");
+    let name = model.name.as_str();
+    let some_lua = format!(
+        "horizon.on(\"{sibling}\", function(event) __witness = (__witness or 0) + 1 end, \"minecraft:zombie\")\nhorizon.on(\"{sibling}\", function(event) end)"
+    );
+    vec![format!(
+        "#[test]\nfn generated_{name}_answers_from_{sibling}_handlers() {{\n    let (m, id, dir, lua) = loaded_tracked(\"gen_{name}_none\", \"horizon.on(\\\"tick\\\", function(event) end)\");\n    let firing_mods = boxed(m);\n    {{\n    let mut listened = false;\n    reset_entity_reads();\n    reset_host_reads();\n    reset_level_reads();\n    reset_event_tables();\n    dispatch_{name}(&mut FakeHost::empty(), &firing_mods, &mut listened);\n    assert!(!listened, \"no {sibling} handler: nobody listens\");\n    assert_eq!(witness(&lua), 0, \"the query ran no handler\");\n    assert_eq!(event_tables(), 0, \"the query built no event table\");\n    assert_eq!(entity_reads(), 0, \"{name} read no entity unheard\");\n    assert_eq!(host_reads(), 0, \"{name} read the host unheard\");\n    assert_eq!(level_reads(), 0, \"{name} read the level unheard\");\n    }}\n    no_error(&id);\n    drop_dir(dir);\n    let (m, id, dir, lua) = loaded_tracked(\"gen_{name}_some\", {some_lua:?});\n    let firing_mods = boxed(m);\n    {{\n    let mut listened = false;\n    reset_entity_reads();\n    reset_host_reads();\n    reset_level_reads();\n    reset_event_tables();\n    dispatch_{name}(&mut FakeHost::empty(), &firing_mods, &mut listened);\n    assert!(listened, \"a {sibling} handler: somebody listens\");\n    assert_eq!(witness(&lua), 0, \"the query ran no handler\");\n    assert_eq!(event_tables(), 0, \"the query built no event table\");\n    }}\n    no_error(&id);\n    drop_dir(dir);\n}}\n",
+    )]
+}
+
 /// The declaration-served hooks' cost: a served dispatch builds no event
 /// table and reads nothing, heard or not (there is nothing to hear).
 fn declaration_served_cost_test(model: &Model, _tys: &BTreeMap<String, String>) -> String {
@@ -3593,17 +3617,28 @@ pub fn run(check: bool) -> Result<(), String> {
             .collect();
         // Declaration-served hooks take no `horizon.on` registration (the
         // runtime refuses them, as before), so they stay out of the
-        // generated names the registry accepts; their arms still exist.
-        if !declaration_served(&model.name) {
+        // generated names the registry accepts; their arms still exist. A
+        // listened game query is likewise no script hook: registering for
+        // it would silently never fire, so the runtime refuses it too.
+        if !declaration_served(&model.name) && listened_flag(&model.name).is_none() {
             names.push(model.name.clone());
         }
         // `perform_command` filters by the dispatched command words (its
         // kind has no event field, so the model carries `Kind::None`): a
         // kind through `horizon.on` or `horizon.command` still filters.
-        if !matches!(model.kind, Kind::None) || model.name == "perform_command" {
+        if (!matches!(model.kind, Kind::None) || model.name == "perform_command")
+            && listened_flag(&model.name).is_none()
+        {
             kind_names.push(model.name.clone());
         }
         invocations.push(invocation(model, &tys));
+        // A listened game query answers from its sibling's registry: bespoke
+        // tests pin the flag, never an event table. The stock gates below
+        // (field assertions, cost, duo) assume a table-firing arm.
+        if listened_flag(&model.name).is_some() {
+            tests.extend(listened_flag_tests(model));
+            continue;
+        }
         let spike = SPIKE_HOOKS.contains(&model.name.as_str());
         // `perform_command` answers `(player, args)` with a dispatched kind:
         // bespoke tests pin that contract instead of the stock event-table

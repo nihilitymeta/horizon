@@ -26,7 +26,6 @@ export type BlockEntity = { id: string, data: Data }
 export type Component = { text: string?, translate: string?, color: string?, bold: boolean?, italic: boolean?, underlined: boolean?, strikethrough: boolean?, obfuscated: boolean?, extra: { Component }? }
 export type Vec2 = { x: number, y: number }
 export type Chunk = { x: number, z: number }
-export type DeathCause = { damage_type: string, causing: number, player: PlayerRef? }
 export type Hit = { x: number, y: number, z: number, entity: number?, entity_kind: string?, block: Block?, face: Vec3? }
 export type Time = { dimension: string, day_time: number, day: number, time_of_day: number, rain: number, thunder: number }
 export type Raycast = { id: string, x: number, y: number, z: number, block: Vec3 }
@@ -166,6 +165,7 @@ export type EntityDropItemEvent = { entity: number, item: string, count: number,
 export type EntityEnterBlockEvent = { entity: number, kind: string, pos: Vec3, block: string }
 export type EntityEnterLoveModeEvent = { entity: number, kind: string, player: string? }
 export type EntityInteractSpecificEvent = { entity: number, kind: string, stack: Item?, location: Vec3 }
+export type EntityJoinLevelEvent = { dimension: string, entity: number, kind: string, pos: Vec3, loaded_from_disk: boolean }
 export type EntityLeaveLevelEvent = { dimension: string, entity: number, kind: string }
 export type EntityMountEvent = { dimension: string, entity: number, kind: string, vehicle: number, vehicle_kind: string, mounting: boolean }
 export type EntityOutlineEvent = { entity_id: number, kind: string, outline: number? }
@@ -174,6 +174,7 @@ export type EntityPoseChangeEvent = { player: PlayerRef, from: string, to: strin
 export type EntityShootBowEvent = { player: PlayerRef, projectile: number, force: number }
 export type EntityTameEvent = { entity: number, kind: string, owner: string? }
 export type EntityTeleportEvent = { dimension: string, entity: number, from: Vec3, to: Vec3 }
+export type EntityTickPostEvent = { dimension: string, entity: number, kind: string }
 export type EntityTickPreEvent = { dimension: string, entity: number, kind: string }
 export type EntityToggleGlideEvent = { player: PlayerRef, gliding: boolean }
 export type EntityTransformEvent = { entity: number, kind: string, transformed: number, transformed_kind: string }
@@ -208,6 +209,7 @@ export type HopperPickupItemEvent = { dimension: string, pos: Vec3, item: string
 export type HudEvent = { batch: HudBatch, corners: HudCorners }
 export type IngredientEvent = { kind: string, data: Data, items: { string } }
 export type IngredientTestEvent = { kind: string, data: Data, stack: Item, accept: boolean }
+export type InteractEntityEvent = { entity: number, kind: string, stack: Item? }
 export type InteractEntityV2Event = { entity: number, kind: string, hand: "main" | "off", stack: Item? }
 export type InteractionKeyEvent = { button: number, key_mapping: string, hand: "main" | "off", swing_hand: boolean }
 export type InventoryBlockStartEvent = { player: PlayerRef, pos: Vec3 }
@@ -247,10 +249,15 @@ export type LivingDeathEvent = { entity: number, kind: string, damage_type: stri
 export type LivingDrownEvent = { entity: number, kind: string, is_drowning: boolean, damage_amount: number, bubble_count: number }
 export type LivingEntityUseItemStopEvent = { stack: Item, entity: number?, hand: "main" | "off", duration: number }
 export type LivingEntityUseItemTickEvent = { stack: Item, entity: number?, hand: "main" | "off", duration: number }
+export type LivingEquipmentChangeEvent = { entity: number, kind: string, slot: string, from: Item?, to: Item? }
+export type LivingFallEvent = { entity: number, kind: string, distance: number, multiplier: number }
 export type LivingGetProjectileEvent = { player: PlayerRef?, entity: number?, kind: string, weapon: Item, projectile: Item? }
+export type LivingHealEvent = { entity: number, amount: number }
+export type LivingIncomingDamageEvent = { entity: number, kind: string, damage_type: string, causing: number, direct: number, amount: number }
 export type LivingIncomingDamageV2Event = { entity: number, kind: string, damage_type: string, causing: number, source_position: Vec3?, victim_position: Vec3, victim_view: Vec3, weapon: Item?, amount: number }
 export type LivingIncomingDamageV3Event = { victim: number, victim_uuid: string?, kind: string, attacker: number?, attacker_uuid: string?, direct: number?, damage_type: string, amount: number }
 export type LivingJumpEvent = { entity: number, kind: string }
+export type LivingKnockbackEvent = { entity: number, kind: string, damage_type: string, causing: number, direct: number, strength: number, x: number, z: number }
 export type LivingKnockbackV2Event = { entity: number, kind: string, attacker: number, attacker_main: Item?, attacker_off: Item?, strength: number, x: number, z: number }
 export type LogLineEvent = { level: string, thread: string, message: string, line: string }
 export type LootDropsEvent = { table: string, dimension: string, origin: Vec3, block: LootBlock?, entity: IdKind?, player: PlayerRef?, tool: Item?, explosion: number?, used: boolean, drops: { Item } }
@@ -268,7 +275,10 @@ export type MenuSlotRulesEvent = { menu: string, slot: number, stack: Item, may_
 export type MerchantOfferTradedEvent = { merchant: number, kind: string, offer: { base_cost_a: { stack: Item }, cost_b: { stack: Item }?, result: Item, uses: number, max_uses: number, reward_exp: boolean, special_price_diff: number, demand: number, price_multiplier: number, xp: number } }
 export type MinimapEvent = { minimap: { corner: string, size: number, blocks_per_pixel: number, rotate: boolean, round: boolean }?? }
 export type MobAiRegisterEvent = { mob: MobView }
+export type MobDiedEvent = { dimension: string, entity: number, kind: string, damage_type: string, causing: number, player: string? }
 export type MobEffectAddedEvent = { effect: string, entity: number?, amplifier: number }
+export type MobKilledEvent = { player: number, entity: number, kind: string }
+export type MobSpawnedEvent = { dimension: string, kind: string, pos: Vec3, natural: boolean }
 export type MobSplitEvent = { parent: number, kind: string, size: number, child_size: number, count: number }
 export type ModContainerViewersEvent = { dimension: string, pos: Vec3, viewers: number, previous: number }
 export type ModifyDefaultComponentsEvent = { item: string, components: Data }
@@ -468,22 +478,7 @@ export type ZoomEvent = { zoom: { factor: number, smooth: boolean, turn: number 
 
 -- `horizon.on(name, fn[, kind])`: one overload per hook, with its handler's signature.
 export type HorizonOn =
-    ((name: "mob_spawned", fn: (dimension: string, kind: string, x: number, y: number, z: number, natural: boolean) -> (), kind: string?) -> ()) &
     ((name: "right_click_block", fn: (x: number, y: number, z: number, block: string, face: Vec3, player: Player, held: Held?, data: Data?) -> (), kind: string?) -> ()) &
-    ((name: "mob_hurt", fn: (mob: IdKind, damage_type: string, causing: number, direct: number, amount: number) -> (), kind: string?) -> ()) &
-    ((name: "player_hurt", fn: (player: IdKind, damage_type: string, causing: number, direct: number, amount: number) -> (), kind: string?) -> ()) &
-    ((name: "mob_killed", fn: (dimension: string, mob: IdKind, killer: Player, data: Data?) -> (), kind: string?) -> ()) &
-    ((name: "mob_interact", fn: (dimension: string, mob: MobView, player: Player, held: Held?, data: Data?) -> (), kind: string?) -> ()) &
-    ((name: "entity_interact", fn: (dimension: string, entity: IdKind, player: Player, held: Held?) -> (), kind: string?) -> ()) &
-    ((name: "mob_tick", fn: (dimension: string, mob: MobView, data: Data?) -> (), kind: string?) -> ()) &
-    ((name: "mob_died", fn: (dimension: string, mob: IdKind, cause: DeathCause, data: Data?) -> (), kind: string?) -> ()) &
-    ((name: "mob_fall", fn: (mob: IdKind, distance: number, multiplier: number) -> (), kind: string?) -> ()) &
-    ((name: "player_fall", fn: (player: IdKind, distance: number, multiplier: number) -> (), kind: string?) -> ()) &
-    ((name: "mob_heal", fn: (mob: { id: number }, amount: number) -> (), kind: string?) -> ()) &
-    ((name: "mob_knockback", fn: (mob: IdKind, damage_type: string, causing: number, direct: number, strength: number, x: number, z: number) -> (), kind: string?) -> ()) &
-    ((name: "player_knockback", fn: (player: IdKind, damage_type: string, causing: number, direct: number, strength: number, x: number, z: number) -> (), kind: string?) -> ()) &
-    ((name: "mob_equipped", fn: (mob: MobView | IdKind, slot: string, from: Item?, to: Item?) -> (), kind: string?) -> ()) &
-    ((name: "entity_joined", fn: (dimension: string, id: number, kind: string, x: number, y: number, z: number, loaded: boolean) -> (), kind: string?) -> ()) &
     ((name: "item_use", fn: (item: Item, player: Player) -> (), kind: string?) -> ()) &
     ((name: "item_use_on", fn: (item: Item, player: Player, block: Block, face: Vec3) -> (), kind: string?) -> ()) &
     ((name: "item_hit", fn: (item: HitItem, player: Player, target: Target) -> (), kind: string?) -> ()) &
@@ -616,6 +611,7 @@ export type HorizonOn =
     ((name: "entity_enter_block", fn: (event: EntityEnterBlockEvent) -> (), kind: string?) -> ()) &
     ((name: "entity_enter_love_mode", fn: (event: EntityEnterLoveModeEvent) -> (), kind: string?) -> ()) &
     ((name: "entity_interact_specific", fn: (event: EntityInteractSpecificEvent) -> (), kind: string?) -> ()) &
+    ((name: "entity_join_level", fn: (event: EntityJoinLevelEvent) -> (), kind: string?) -> ()) &
     ((name: "entity_leave_level", fn: (event: EntityLeaveLevelEvent) -> (), kind: string?) -> ()) &
     ((name: "entity_mount", fn: (event: EntityMountEvent) -> (), kind: string?) -> ()) &
     ((name: "entity_outline", fn: (event: EntityOutlineEvent) -> (), kind: string?) -> ()) &
@@ -624,6 +620,7 @@ export type HorizonOn =
     ((name: "entity_shoot_bow", fn: (event: EntityShootBowEvent) -> (), kind: string?) -> ()) &
     ((name: "entity_tame", fn: (event: EntityTameEvent) -> (), kind: string?) -> ()) &
     ((name: "entity_teleport", fn: (event: EntityTeleportEvent) -> (), kind: string?) -> ()) &
+    ((name: "entity_tick_post", fn: (event: EntityTickPostEvent) -> (), kind: string?) -> ()) &
     ((name: "entity_tick_pre", fn: (event: EntityTickPreEvent) -> (), kind: string?) -> ()) &
     ((name: "entity_toggle_glide", fn: (event: EntityToggleGlideEvent) -> ()) -> ()) &
     ((name: "entity_transform", fn: (event: EntityTransformEvent) -> (), kind: string?) -> ()) &
@@ -658,6 +655,7 @@ export type HorizonOn =
     ((name: "hud", fn: (event: HudEvent) -> ()) -> ()) &
     ((name: "ingredient", fn: (event: IngredientEvent) -> ()) -> ()) &
     ((name: "ingredient_test", fn: (event: IngredientTestEvent) -> ()) -> ()) &
+    ((name: "interact_entity", fn: (event: InteractEntityEvent) -> (), kind: string?) -> ()) &
     ((name: "interact_entity_v2", fn: (event: InteractEntityV2Event) -> (), kind: string?) -> ()) &
     ((name: "interaction_key", fn: (event: InteractionKeyEvent) -> ()) -> ()) &
     ((name: "inventory_block_start", fn: (event: InventoryBlockStartEvent) -> ()) -> ()) &
@@ -697,10 +695,15 @@ export type HorizonOn =
     ((name: "living_drown", fn: (event: LivingDrownEvent) -> (), kind: string?) -> ()) &
     ((name: "living_entity_use_item_stop", fn: (event: LivingEntityUseItemStopEvent) -> (), kind: string?) -> ()) &
     ((name: "living_entity_use_item_tick", fn: (event: LivingEntityUseItemTickEvent) -> (), kind: string?) -> ()) &
+    ((name: "living_equipment_change", fn: (event: LivingEquipmentChangeEvent) -> (), kind: string?) -> ()) &
+    ((name: "living_fall", fn: (event: LivingFallEvent) -> (), kind: string?) -> ()) &
     ((name: "living_get_projectile", fn: (event: LivingGetProjectileEvent) -> (), kind: string?) -> ()) &
+    ((name: "living_heal", fn: (event: LivingHealEvent) -> ()) -> ()) &
+    ((name: "living_incoming_damage", fn: (event: LivingIncomingDamageEvent) -> (), kind: string?) -> ()) &
     ((name: "living_incoming_damage_v2", fn: (event: LivingIncomingDamageV2Event) -> (), kind: string?) -> ()) &
     ((name: "living_incoming_damage_v3", fn: (event: LivingIncomingDamageV3Event) -> (), kind: string?) -> ()) &
     ((name: "living_jump", fn: (event: LivingJumpEvent) -> (), kind: string?) -> ()) &
+    ((name: "living_knockback", fn: (event: LivingKnockbackEvent) -> (), kind: string?) -> ()) &
     ((name: "living_knockback_v2", fn: (event: LivingKnockbackV2Event) -> (), kind: string?) -> ()) &
     ((name: "log_line", fn: (event: LogLineEvent) -> ()) -> ()) &
     ((name: "loot_drops", fn: (event: LootDropsEvent) -> (), kind: string?) -> ()) &
@@ -718,7 +721,10 @@ export type HorizonOn =
     ((name: "merchant_offer_traded", fn: (event: MerchantOfferTradedEvent) -> (), kind: string?) -> ()) &
     ((name: "minimap", fn: (event: MinimapEvent) -> ()) -> ()) &
     ((name: "mob_ai_register", fn: (event: MobAiRegisterEvent) -> (), kind: string?) -> ()) &
+    ((name: "mob_died", fn: (event: MobDiedEvent) -> (), kind: string?) -> ()) &
     ((name: "mob_effect_added", fn: (event: MobEffectAddedEvent) -> (), kind: string?) -> ()) &
+    ((name: "mob_killed", fn: (event: MobKilledEvent) -> (), kind: string?) -> ()) &
+    ((name: "mob_spawned", fn: (event: MobSpawnedEvent) -> (), kind: string?) -> ()) &
     ((name: "mob_split", fn: (event: MobSplitEvent) -> (), kind: string?) -> ()) &
     ((name: "mod_container_viewers", fn: (event: ModContainerViewersEvent) -> ()) -> ()) &
     ((name: "modify_default_components", fn: (event: ModifyDefaultComponentsEvent) -> ()) -> ()) &

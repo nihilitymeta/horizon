@@ -77,10 +77,6 @@ const TYPES: &[(&str, &str)] = &[
     ("Vec2", "{ x: number, y: number }"),
     ("Chunk", "{ x: number, z: number }"),
     (
-        "DeathCause",
-        "{ damage_type: string, causing: number, player: PlayerRef? }",
-    ),
-    (
         "Hit",
         "{ x: number, y: number, z: number, entity: number?, entity_kind: string?, block: Block?, face: Vec3? }",
     ),
@@ -121,65 +117,8 @@ const HOOKS: &[(&str, &str)] = &[
     // declaration-served `block_entity` and `block_entity_ticks` take no
     // `horizon.on` registration, so they have no overload.
     (
-        "mob_spawned",
-        "(dimension: string, kind: string, x: number, y: number, z: number, natural: boolean) -> ()",
-    ),
-    (
         "right_click_block",
         "(x: number, y: number, z: number, block: string, face: Vec3, player: Player, held: Held?, data: Data?) -> ()",
-    ),
-    (
-        "mob_hurt",
-        "(mob: IdKind, damage_type: string, causing: number, direct: number, amount: number) -> ()",
-    ),
-    (
-        "player_hurt",
-        "(player: IdKind, damage_type: string, causing: number, direct: number, amount: number) -> ()",
-    ),
-    (
-        "mob_killed",
-        "(dimension: string, mob: IdKind, killer: Player, data: Data?) -> ()",
-    ),
-    (
-        "mob_interact",
-        "(dimension: string, mob: MobView, player: Player, held: Held?, data: Data?) -> ()",
-    ),
-    (
-        "entity_interact",
-        "(dimension: string, entity: IdKind, player: Player, held: Held?) -> ()",
-    ),
-    (
-        "mob_tick",
-        "(dimension: string, mob: MobView, data: Data?) -> ()",
-    ),
-    (
-        "mob_died",
-        "(dimension: string, mob: IdKind, cause: DeathCause, data: Data?) -> ()",
-    ),
-    (
-        "mob_fall",
-        "(mob: IdKind, distance: number, multiplier: number) -> ()",
-    ),
-    (
-        "player_fall",
-        "(player: IdKind, distance: number, multiplier: number) -> ()",
-    ),
-    ("mob_heal", "(mob: { id: number }, amount: number) -> ()"),
-    (
-        "mob_knockback",
-        "(mob: IdKind, damage_type: string, causing: number, direct: number, strength: number, x: number, z: number) -> ()",
-    ),
-    (
-        "player_knockback",
-        "(player: IdKind, damage_type: string, causing: number, direct: number, strength: number, x: number, z: number) -> ()",
-    ),
-    (
-        "mob_equipped",
-        "(mob: MobView | IdKind, slot: string, from: Item?, to: Item?) -> ()",
-    ),
-    (
-        "entity_joined",
-        "(dimension: string, id: number, kind: string, x: number, y: number, z: number, loaded: boolean) -> ()",
     ),
     ("item_use", "(item: Item, player: Player) -> ()"),
     (
@@ -294,8 +233,11 @@ fn generated_hooks() -> Result<Vec<GeneratedHook>, String> {
             continue;
         };
         // Declaration-served hooks take no `horizon.on` registration, so
-        // they have neither an event type nor an overload.
-        if super::lua_model::declaration_served(&model.name) {
+        // they have neither an event type nor an overload. A listened game
+        // query is likewise no script hook, so it has neither either.
+        if super::lua_model::declaration_served(&model.name)
+            || super::lua_model::listened_flag(&model.name).is_some()
+        {
             continue;
         }
         let event_ty = event_name(&model.name);

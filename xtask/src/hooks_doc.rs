@@ -27,33 +27,33 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "mob_spawned",
-        "`mob_spawned(dimension, kind, x, y, z, natural)`, by kind",
+        "an event table with `dimension`, `kind`, `pos` and `natural`, by kind",
     ),
     ("mob_ai_register", "an event table with `mob`, by kind"),
     ("register_goals", "an event table with `mob`, by kind"),
     (
         "living_incoming_damage",
-        "`mob_hurt(mob, damage_type, causing, direct, amount)`, by kind; `player_hurt(player, ...)` for a player",
+        "an event table with `entity`, `kind`, `damage_type`, `causing`, `direct` and `amount`, by kind",
     ),
     (
         "mob_killed",
-        "`mob_killed(dimension, mob, killer, data)`, by kind",
+        "an event table with `player`, `entity` and `kind`, by kind",
     ),
     (
         "mob_died",
-        "`mob_died(dimension, mob, cause, data)`, by kind",
+        "an event table with `dimension`, `entity`, `kind`, `damage_type`, `causing` and `player`, by kind",
     ),
     (
         "interact_entity",
-        "`entity_interact(dimension, entity, player, held)` for any entity, by kind, then `mob_interact(dimension, mob, player, held, data)`, by kind",
+        "an event table with `entity`, `kind` and `stack`, by kind",
     ),
     (
         "entity_tick_post",
-        "`mob_tick(dimension, mob, data)`, by kind",
+        "an event table with `dimension`, `entity` and `kind`, by kind",
     ),
     (
         "entity_tick_listened",
-        "answered while a `mob_tick` handler exists",
+        "answered while an `entity_tick_post` handler exists",
     ),
     (
         "random_tick",
@@ -117,12 +117,12 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ("player_tick", "`player_tick(player)`"),
     (
         "living_fall",
-        "`mob_fall(mob, distance, multiplier)`, by kind; `player_fall(player, distance, multiplier)`",
+        "an event table with `entity`, `kind`, `distance` and `multiplier`, by kind",
     ),
-    ("living_heal", "`mob_heal(mob, amount)`"),
+    ("living_heal", "an event table with `entity` and `amount`"),
     (
         "living_knockback",
-        "`mob_knockback(mob, damage_type, causing, direct, strength, x, z)`, by kind; `player_knockback(...)`",
+        "an event table with `entity`, `kind`, `damage_type`, `causing`, `direct`, `strength`, `x` and `z`, by kind",
     ),
     ("player_chat", "`player_chat(player, line)`"),
     ("player_command", "`player_command(player, line)`"),
@@ -174,15 +174,15 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "living_equipment_listened",
-        "true while a script watches `mob_equipped`",
+        "true while a `living_equipment_change` handler exists",
     ),
     (
         "living_equipment_change",
-        "`mob_equipped(mob, slot, from, to)`, by kind",
+        "an event table with `entity`, `kind`, `slot`, `from` and `to`, by kind",
     ),
     (
         "entity_join_level",
-        "`entity_joined(dimension, id, kind, x, y, z, loaded)`, by kind",
+        "an event table with `dimension`, `entity`, `kind`, `pos` and `loaded_from_disk`, by kind",
     ),
     (
         "hurt_enemy",

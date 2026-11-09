@@ -301,6 +301,19 @@ pub fn declaration_served(name: &str) -> bool {
     matches!(name, "block_entity" | "block_entity_ticks")
 }
 
+/// A `<hook>_listened` game query answered from its sibling hook's handler
+/// registry (never a script hook): the game asks whether to keep the firing
+/// list, and scripts only ever register for the sibling. Without this the
+/// generated arm would answer from the query's own (always empty) registry
+/// and the sibling hook would silently never fire.
+pub fn listened_flag(name: &str) -> Option<&'static str> {
+    match name {
+        "entity_tick_listened" => Some("entity_tick_post"),
+        "living_equipment_listened" => Some("living_equipment_change"),
+        _ => None,
+    }
+}
+
 /// A generated hook's model: everything the emitters need.
 #[derive(Clone, Debug)]
 pub struct Model {

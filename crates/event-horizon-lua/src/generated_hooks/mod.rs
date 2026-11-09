@@ -112,14 +112,8 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "player_died",
         "cannot: player_died: unsupported: the hand-written hook keeps this name (removing it is #44)",
     ),
-    (
-        "mob_spawned",
-        "cannot: mob_spawned: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
-    (
-        "mob_killed",
-        "cannot: mob_killed: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("mob_spawned", "generated"),
+    ("mob_killed", "generated"),
     (
         "item_dropped",
         "cannot: item_dropped: unsupported: the hand-written hook keeps this name (removing it is #44)",
@@ -143,23 +137,14 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "health_hud",
         "adapter: health_hud: adapter: a replace out needs its table form",
     ),
-    (
-        "interact_entity",
-        "cannot: interact_entity: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("interact_entity", "generated"),
     ("left_click_block", "generated"),
     (
         "player_tick",
         "cannot: player_tick: unsupported: the hand-written hook keeps this name (removing it is #44)",
     ),
-    (
-        "entity_join_level",
-        "cannot: entity_join_level: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
-    (
-        "living_incoming_damage",
-        "cannot: living_incoming_damage: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("entity_join_level", "generated"),
+    ("living_incoming_damage", "generated"),
     (
         "menu_button_v2",
         "handle: menu_button_v2: a ModBlockEntity handle needs its own design",
@@ -331,10 +316,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "cannot: screen_mouse_dragged_pre: unsupported: NativeScreenView borrows render state (render thread)",
     ),
     ("mod_container_viewers", "generated"),
-    (
-        "living_knockback",
-        "cannot: living_knockback: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("living_knockback", "generated"),
     ("experience_orb_can_merge", "generated"),
     ("experience_orb_merge", "generated"),
     ("menu_slot_rules", "generated"),
@@ -384,23 +366,11 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "adapter: items: adapter: an item list needs its table form",
     ),
     ("entity_tick_pre", "generated"),
-    (
-        "entity_tick_post",
-        "cannot: entity_tick_post: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
-    (
-        "entity_tick_listened",
-        "cannot: entity_tick_listened: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("entity_tick_post", "generated"),
+    ("entity_tick_listened", "generated"),
     ("item_fluid_tank", "generated"),
-    (
-        "living_equipment_change",
-        "cannot: living_equipment_change: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
-    (
-        "living_equipment_listened",
-        "cannot: living_equipment_listened: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("living_equipment_change", "generated"),
+    ("living_equipment_listened", "generated"),
     (
         "player_submit",
         "cannot: player_submit: unsupported: NativeMobRender borrows render state (render thread); player_submit: unsupported: NativePlayerRender borrows render state (render thread); player_submit: unsupported: BlockEntityDraw borrows render state (render thread)",
@@ -633,14 +603,8 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("world_border_bounds_change_finish", "generated"),
     ("world_saved", "generated"),
     ("living_drown", "generated"),
-    (
-        "living_fall",
-        "cannot: living_fall: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
-    (
-        "living_heal",
-        "cannot: living_heal: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("living_fall", "generated"),
+    ("living_heal", "generated"),
     ("living_jump", "generated"),
     ("arrow_nock", "generated"),
     ("baby_entity_spawn", "generated"),
@@ -779,10 +743,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("menu_input_closed", "generated"),
     ("menu_links", "generated"),
     ("mob_ai_register", "generated"),
-    (
-        "mob_died",
-        "cannot: mob_died: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("mob_died", "generated"),
     (
         "layer_definitions",
         "adapter: layer_definitions: adapter: a tuple needs its table form",
@@ -906,10 +867,15 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "fill_bucket",
     "net_from_client",
     "net_from_server",
+    "mob_spawned",
+    "mob_killed",
     "on_equip",
     "block_signal",
     "is_signal_source",
+    "interact_entity",
     "left_click_block",
+    "entity_join_level",
+    "living_incoming_damage",
     "entity_leave_level",
     "block_entity_fluids",
     "should_apply_effect_tick_this_tick",
@@ -953,6 +919,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "recipes_received",
     "mouse_scrolling",
     "mod_container_viewers",
+    "living_knockback",
     "experience_orb_can_merge",
     "experience_orb_merge",
     "menu_slot_rules",
@@ -974,7 +941,9 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "data_map_types",
     "living_breathe",
     "entity_tick_pre",
+    "entity_tick_post",
     "item_fluid_tank",
+    "living_equipment_change",
     "player_render_listened",
     "sign_changed",
     "standalone_models",
@@ -1171,6 +1140,8 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "world_border_bounds_change_finish",
     "world_saved",
     "living_drown",
+    "living_fall",
+    "living_heal",
     "living_jump",
     "arrow_nock",
     "baby_entity_spawn",
@@ -1245,6 +1216,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "menu_input_closed",
     "menu_links",
     "mob_ai_register",
+    "mob_died",
     "permission_check",
     "player_register_channels",
     "player_command_level",
@@ -1283,11 +1255,17 @@ pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
     "tick_block",
     "block_entity_tick",
     "perform_command",
+    "mob_spawned",
+    "mob_killed",
+    "interact_entity",
+    "entity_join_level",
+    "living_incoming_damage",
     "entity_leave_level",
     "apply_effect_tick",
     "on_effect_added",
     "mob_effect_added",
     "loot_drops",
+    "living_knockback",
     "living_entity_use_item_tick",
     "on_use_tick",
     "living_entity_use_item_stop",
@@ -1297,6 +1275,8 @@ pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
     "player_stop_tracking",
     "living_breathe",
     "entity_tick_pre",
+    "entity_tick_post",
+    "living_equipment_change",
     "block_shear_entity",
     "creeper_ignite",
     "creeper_power",
@@ -1334,6 +1314,7 @@ pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
     "player_unleash_entity",
     "trade_with_villager",
     "living_drown",
+    "living_fall",
     "living_jump",
     "baby_entity_spawn",
     "explosion_knockback",
@@ -1359,6 +1340,7 @@ pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
     "living_damage_post",
     "living_incoming_damage_v3",
     "mob_ai_register",
+    "mob_died",
     "projectile_world_border",
     "register_goals",
     "trample",
@@ -1407,10 +1389,15 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(fill_bucket, game_mut, horizon_client::mod_api::FillBucketEvent<'_>, (none), [stack: item, pos: pos]);
     gen_listen!(net_from_client, game_mut, horizon_client::mod_api::NetFromClientEvent<'_>, (none), [player: copy, channel: cloned, data: s_bytes]);
     gen_listen!(net_from_server, game_mut, horizon_client::mod_api::NetFromServerEvent<'_>, (none), [channel: cloned, data: s_bytes]);
+    gen_listen!(mob_spawned, game_mut, horizon_client::mod_api::MobSpawnedEvent<'_>, (field kind), [dimension: cloned, kind: cloned, pos: vec3, natural: copy]);
+    gen_listen!(mob_killed, game_mut, horizon_client::mod_api::MobKilledEvent<'_>, (field kind), [player: copy, entity: copy, kind: cloned]);
     gen_listen!(on_equip, game_mut, horizon_client::mod_api::OnEquipEvent<'_>, (none), [slot: cloned, new: opt_item]);
     gen_listen!(block_signal, level, horizon_client::mod_api::BlockSignalEvent, (none), [dimension: dim, pos: pos_struct, state: state_level, face: s_val(horizon_client::mod_api::Direction), direct: copy, signal: copy => mut_scalar, state_props: state_props_note]);
     gen_listen!(is_signal_source, level, horizon_client::mod_api::IsSignalSourceEvent, (none), [state: state_level, source: copy => mut_scalar, state_props: state_props_note]);
+    gen_cancel!(interact_entity, game_mut, horizon_client::mod_api::InteractEntityEvent<'_>, (field kind), [entity: copy, kind: cloned, stack: opt_item]);
     gen_cancel!(left_click_block, game_mut, horizon_client::mod_api::LeftClickBlockEvent, (none), [pos: pos, face: pos, state: state_game, state_props: state_props_note]);
+    gen_cancel!(entity_join_level, game_mut, horizon_client::mod_api::EntityJoinLevelEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, pos: vec3, loaded_from_disk: copy]);
+    gen_cancel!(living_incoming_damage, none, horizon_client::mod_api::LivingIncomingDamageEvent<'_>, (field kind), [entity: copy, kind: cloned, damage_type: cloned, causing: copy, direct: copy, amount: copy => mut_scalar]);
     gen_listen!(entity_leave_level, game_mut, horizon_client::mod_api::EntityLeaveLevelEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned]);
     gen_replace!(block_entity_fluids, game_ref, horizon_client::mod_api::BlockEntityFluidsEvent<'_>, (none), [block: cloned], fluids : struct_out(horizon_client::mod_api::ModFluidTanks), Option<horizon_client::mod_api::ModFluidTanks>);
     gen_listen!(should_apply_effect_tick_this_tick, game_ref, horizon_client::mod_api::ShouldApplyEffectTickThisTickEvent<'_>, (none), [effect: cloned, tick_count: copy, amplifier: copy, apply: copy => mut_scalar]);
@@ -1454,6 +1441,7 @@ macro_rules! impl_generated_hooks {
     gen_listen!(recipes_received, game_mut, horizon_client::mod_api::RecipesReceivedEvent<'_>, (none), [recipe_types: str_seq]);
     gen_cancel!(mouse_scrolling, game_mut, horizon_client::mod_api::MouseScrollingEvent, (none), [scroll: pair64, accumulated: s_val([i32;2]), buttons: s_val([bool;3]), cursor: pair, modifiers: copy]);
     gen_listen!(mod_container_viewers, game_mut, horizon_client::mod_api::ModContainerViewersEvent<'_>, (none), [dimension: cloned, pos: pos, viewers: copy, previous: copy]);
+    gen_cancel!(living_knockback, none, horizon_client::mod_api::LivingKnockbackEvent<'_>, (field kind), [entity: copy, kind: cloned, damage_type: cloned, causing: copy, direct: copy, strength: copy => mut_scalar, x: copy => mut_scalar, z: copy => mut_scalar]);
     gen_listen!(experience_orb_can_merge, game_mut, horizon_client::mod_api::ExperienceOrbCanMergeEvent<'_>, (none), [dimension: cloned, into: copy, from: copy, into_value: copy, from_value: copy, can_merge: copy => mut_scalar]);
     gen_cancel!(experience_orb_merge, game_mut, horizon_client::mod_api::ExperienceOrbMergeEvent<'_>, (none), [dimension: cloned, into: copy, from: copy, from_value: copy]);
     gen_listen!(menu_slot_rules, none, horizon_client::mod_api::MenuSlotRulesEvent<'_>, (none), [menu: cloned, slot: copy, stack: item, may_place: copy => mut_scalar, max_stack: copy => mut_scalar]);
@@ -1475,7 +1463,11 @@ macro_rules! impl_generated_hooks {
     gen_collect!(data_map_types, game_ref, horizon_client::mod_api::DataMapTypesEvent<'_>, (none), [types: s_vec(horizon_client::mod_api::NativeDataMapType) => w_vec(horizon_client::mod_api::NativeDataMapType)]);
     gen_listen!(living_breathe, none, horizon_client::mod_api::LivingBreatheEvent<'_>, (field kind), [entity: copy, kind: cloned, can_breathe: copy => mut_scalar, consume: copy => mut_scalar, refill: copy => mut_scalar]);
     gen_cancel!(entity_tick_pre, game_mut, horizon_client::mod_api::EntityTickPreEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned]);
+    gen_listen!(entity_tick_post, game_mut, horizon_client::mod_api::EntityTickPostEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned]);
+    gen_listened_flag!(entity_tick_listened, horizon_client::mod_api::EntityTickListenedEvent, "entity_tick_post");
     gen_replace!(item_fluid_tank, game_ref, horizon_client::mod_api::ItemFluidTankEvent<'_>, (none), [item: cloned], capacity : value, Option<i32>);
+    gen_listen!(living_equipment_change, game_mut, horizon_client::mod_api::LivingEquipmentChangeEvent<'_>, (field kind), [entity: copy, kind: cloned, slot: cloned, from: opt_item, to: opt_item]);
+    gen_listened_flag!(living_equipment_listened, horizon_client::mod_api::LivingEquipmentListenedEvent, "living_equipment_change");
     gen_collect!(player_render_listened, game_ref, horizon_client::mod_api::PlayerRenderListenedEvent, (none), [listened: copy => mut_scalar]);
     gen_cancel!(sign_changed, game_mut, horizon_client::mod_api::SignChangedEvent<'_>, (none), [player: player, dimension: cloned, pos: pos, front: copy, lines: str_seq => mut_strvec]);
     gen_collect!(standalone_models, none, horizon_client::mod_api::StandaloneModelsEvent<'_>, (none), [models: str_seq => mut_strvec]);
@@ -1672,6 +1664,8 @@ macro_rules! impl_generated_hooks {
     gen_listen!(world_border_bounds_change_finish, game_mut, horizon_client::mod_api::WorldBorderBoundsChangeFinishEvent, (none), []);
     gen_listen!(world_saved, game_mut, horizon_client::mod_api::WorldSavedEvent, (none), [wait: copy]);
     gen_cancel!(living_drown, none, horizon_client::mod_api::LivingDrownEvent<'_>, (field kind), [entity: copy, kind: cloned, is_drowning: copy => mut_scalar, damage_amount: copy => mut_scalar, bubble_count: copy]);
+    gen_cancel!(living_fall, none, horizon_client::mod_api::LivingFallEvent<'_>, (field kind), [entity: copy, kind: cloned, distance: copy => mut_scalar, multiplier: copy => mut_scalar]);
+    gen_cancel!(living_heal, none, horizon_client::mod_api::LivingHealEvent, (none), [entity: copy, amount: copy => mut_scalar]);
     gen_listen!(living_jump, none, horizon_client::mod_api::LivingJumpEvent<'_>, (field kind), [entity: copy, kind: cloned]);
     gen_cancel!(arrow_nock, game_mut, horizon_client::mod_api::ArrowNockEvent<'_>, (none), [player: player, bow: item, hand: s_val(horizon_client::mod_api::Hand), has_ammo: copy]);
     gen_cancel!(baby_entity_spawn, game_mut, horizon_client::mod_api::BabyEntitySpawnEvent<'_>, (field kind), [parent: copy, partner: copy, player: copy, kind: cloned]);
@@ -1746,6 +1740,7 @@ macro_rules! impl_generated_hooks {
     gen_collect!(menu_input_closed, game_mut, horizon_client::mod_api::MenuInputClosedEvent<'_>, (none), [uuid: copy, window: copy, slots: s_vec(horizon_client::mod_api::Option<ItemStack>) => w_vec(horizon_client::mod_api::Option<ItemStack>)]);
     gen_collect!(menu_links, game_mut, horizon_client::mod_api::MenuLinksEvent<'_>, (none), [player: copy, menu: cloned, pos: pos, links: s_vec([i32;3]) => w_vec([i32;3])]);
     gen_mob_ai_register!(mob_ai_register, none, horizon_client::mod_api::MobAiRegisterEvent<'_>, (mob mob), [mob: mob_view]);
+    gen_listen!(mob_died, game_mut, horizon_client::mod_api::MobDiedEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, damage_type: cloned, causing: copy, player: opt_uuid]);
     gen_replace!(permission_check, game_ref, horizon_client::mod_api::PermissionCheckEvent<'_>, (none), [player: copy, node: cloned, default_level: copy], result : value, Option<bool>);
     gen_listen!(player_register_channels, game_mut, horizon_client::mod_api::PlayerRegisterChannelsEvent<'_>, (none), [player: player, channels: str_seq, register: copy]);
     gen_listen!(player_command_level, game_mut, horizon_client::mod_api::PlayerCommandLevelEvent<'_>, (none), [player: player, command: cloned, level: copy => mut_scalar]);
@@ -9039,6 +9034,299 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_mob_spawned() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_spawned",
+            "horizon.on(\"mob_spawned\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3.0, \"pos\")\n    assert(event.pos.y == 4.0, \"pos\")\n    assert(event.pos.z == 5.0, \"pos\")\n    assert(event.natural == false, \"natural\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            dispatch_mob_spawned(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                "minecraft:skeleton",
+                [3.0, 4.0, 5.0],
+                false,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        dispatch_mob_spawned(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            "minecraft:zombie",
+            [3.0, 4.0, 5.0],
+            false,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_mob_spawned_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_spawned_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_spawned(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                "test:kind",
+                [3.0, 4.0, 5.0],
+                false,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mob_spawned read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "mob_spawned read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_spawned read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_spawned_cost_kind",
+            "horizon.on(\"mob_spawned\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_spawned(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                "minecraft:zombie",
+                [3.0, 4.0, 5.0],
+                false,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mob_spawned read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mob_spawned read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_spawned read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_spawned_cost_live",
+            "horizon.on(\"mob_spawned\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_spawned(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                "minecraft:zombie",
+                [3.0, 4.0, 5.0],
+                false,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "mob_spawned built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mob_spawned read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_spawned read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_mob_killed() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_killed",
+            "horizon.on(\"mob_killed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            dispatch_mob_killed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                8,
+                "minecraft:skeleton",
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        dispatch_mob_killed(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            8,
+            "minecraft:zombie",
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_mob_killed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_killed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_killed(&mut FakeHost::empty(), &firing_mods, 7, 8, "test:kind");
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mob_killed read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "mob_killed read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_killed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_killed_cost_kind",
+            "horizon.on(\"mob_killed\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_killed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                8,
+                "minecraft:zombie",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mob_killed read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mob_killed read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_killed read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_killed_cost_live",
+            "horizon.on(\"mob_killed\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_killed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                8,
+                "minecraft:zombie",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "mob_killed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mob_killed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_killed read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_on_equip() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_on_equip",
@@ -9322,6 +9610,254 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_interact_entity() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_interact_entity",
+            "horizon.on(\"interact_entity\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 3, \"stack\")\n    assert(event.stack.damage == 2, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut claimed = false;
+            dispatch_interact_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                }),
+                &mut claimed,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut claimed = false;
+        dispatch_interact_entity(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            Some(&ItemStack {
+                item: "test:stack".into(),
+                count: 3,
+                damage: 2,
+                extra: None,
+            }),
+            &mut claimed,
+        );
+        assert!(claimed, "claimed not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_interact_entity_opt_item() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_interact_entity_optitem",
+            "horizon.on(\"interact_entity\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack == nil, \"stack\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut claimed = false;
+            dispatch_interact_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                None,
+                &mut claimed,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut claimed = false;
+        dispatch_interact_entity(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            None,
+            &mut claimed,
+        );
+        assert!(claimed, "claimed not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_interact_entity_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_interact_entity_nocancel",
+            "horizon.on(\"interact_entity\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 3, \"stack\")\n    assert(event.stack.damage == 2, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut claimed = false;
+        dispatch_interact_entity(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            Some(&ItemStack {
+                item: "test:stack".into(),
+                count: 3,
+                damage: 2,
+                extra: None,
+            }),
+            &mut claimed,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!claimed, "claimed set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_interact_entity_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_interact_entity_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut claimed = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_interact_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                }),
+                &mut claimed,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "interact_entity read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "interact_entity read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "interact_entity read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_interact_entity_cost_kind",
+            "horizon.on(\"interact_entity\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut claimed = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_interact_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                }),
+                &mut claimed,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "interact_entity read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "interact_entity read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "interact_entity read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_interact_entity_cost_live",
+            "horizon.on(\"interact_entity\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut claimed = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_interact_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                }),
+                &mut claimed,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "interact_entity built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "interact_entity read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "interact_entity read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_left_click_block() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_left_click_block",
@@ -9440,6 +9976,403 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "left_click_block read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_entity_join_level() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_entity_join_level",
+            "horizon.on(\"entity_join_level\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4.0, \"pos\")\n    assert(event.pos.y == 5.0, \"pos\")\n    assert(event.pos.z == 6.0, \"pos\")\n    assert(event.loaded_from_disk == true, \"loaded_from_disk\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut canceled = false;
+            dispatch_entity_join_level(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:skeleton",
+                [4.0, 5.0, 6.0],
+                true,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut canceled = false;
+        dispatch_entity_join_level(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            8,
+            "minecraft:zombie",
+            [4.0, 5.0, 6.0],
+            true,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_entity_join_level_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_entity_join_level_nocancel",
+            "horizon.on(\"entity_join_level\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4.0, \"pos\")\n    assert(event.pos.y == 5.0, \"pos\")\n    assert(event.pos.z == 6.0, \"pos\")\n    assert(event.loaded_from_disk == true, \"loaded_from_disk\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_entity_join_level(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            8,
+            "minecraft:zombie",
+            [4.0, 5.0, 6.0],
+            true,
+            &mut canceled,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_entity_join_level_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_join_level_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_join_level(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "test:kind",
+                [4.0, 5.0, 6.0],
+                true,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_join_level read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_join_level read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_join_level read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_join_level_cost_kind",
+            "horizon.on(\"entity_join_level\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_join_level(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+                [4.0, 5.0, 6.0],
+                true,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_join_level read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_join_level read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_join_level read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_join_level_cost_live",
+            "horizon.on(\"entity_join_level\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_join_level(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+                [4.0, 5.0, 6.0],
+                true,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_join_level built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_join_level read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_join_level read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_living_incoming_damage() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_living_incoming_damage",
+            "horizon.on(\"living_incoming_damage\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.direct == 11, \"direct\")\n    assert(event.amount == 6.5, \"amount\")\n    event.amount = 20.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut amount = 6.5;
+            let mut canceled = false;
+            dispatch_living_incoming_damage(
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                "test:damage_type",
+                10,
+                11,
+                &mut amount,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut amount = 6.5;
+        let mut canceled = false;
+        dispatch_living_incoming_damage(
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            "test:damage_type",
+            10,
+            11,
+            &mut amount,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(amount, 20.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_incoming_damage_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_living_incoming_damage_nocancel",
+            "horizon.on(\"living_incoming_damage\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.direct == 11, \"direct\")\n    assert(event.amount == 6.5, \"amount\")\n    event.amount = 20.5\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut amount = 6.5;
+        let mut canceled = false;
+        dispatch_living_incoming_damage(
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            "test:damage_type",
+            10,
+            11,
+            &mut amount,
+            &mut canceled,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_incoming_damage_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_incoming_damage_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 6.5;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_incoming_damage(
+                &firing_mods,
+                7,
+                "test:kind",
+                "test:damage_type",
+                10,
+                11,
+                &mut amount,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_incoming_damage read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_incoming_damage read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_incoming_damage read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_incoming_damage_cost_kind",
+            "horizon.on(\"living_incoming_damage\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 6.5;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_incoming_damage(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:damage_type",
+                10,
+                11,
+                &mut amount,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_incoming_damage read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_incoming_damage read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_incoming_damage read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_incoming_damage_cost_live",
+            "horizon.on(\"living_incoming_damage\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 6.5;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_incoming_damage(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:damage_type",
+                10,
+                11,
+                &mut amount,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_incoming_damage built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_incoming_damage read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_incoming_damage read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -16140,6 +17073,234 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_knockback() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_living_knockback",
+            "horizon.on(\"living_knockback\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.direct == 11, \"direct\")\n    assert(event.strength == 6.5, \"strength\")\n    event.strength = 20.5\n    assert(event.x == 7.5, \"x\")\n    event.x = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut strength = 6.5;
+            let mut x = 7.5;
+            let mut z = 8.5;
+            let mut canceled = false;
+            dispatch_living_knockback(
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                "test:damage_type",
+                10,
+                11,
+                &mut strength,
+                &mut x,
+                &mut z,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut strength = 6.5;
+        let mut x = 7.5;
+        let mut z = 8.5;
+        let mut canceled = false;
+        dispatch_living_knockback(
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            "test:damage_type",
+            10,
+            11,
+            &mut strength,
+            &mut x,
+            &mut z,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(strength, 20.5);
+        assert_eq!(x, 21.5);
+        assert_eq!(z, 22.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_knockback_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_living_knockback_nocancel",
+            "horizon.on(\"living_knockback\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.direct == 11, \"direct\")\n    assert(event.strength == 6.5, \"strength\")\n    event.strength = 20.5\n    assert(event.x == 7.5, \"x\")\n    event.x = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut strength = 6.5;
+        let mut x = 7.5;
+        let mut z = 8.5;
+        let mut canceled = false;
+        dispatch_living_knockback(
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            "test:damage_type",
+            10,
+            11,
+            &mut strength,
+            &mut x,
+            &mut z,
+            &mut canceled,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_knockback_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_knockback_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut strength = 6.5;
+            let mut x = 7.5;
+            let mut z = 8.5;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_knockback(
+                &firing_mods,
+                7,
+                "test:kind",
+                "test:damage_type",
+                10,
+                11,
+                &mut strength,
+                &mut x,
+                &mut z,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_knockback read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_knockback read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_knockback read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_knockback_cost_kind",
+            "horizon.on(\"living_knockback\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut strength = 6.5;
+            let mut x = 7.5;
+            let mut z = 8.5;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_knockback(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:damage_type",
+                10,
+                11,
+                &mut strength,
+                &mut x,
+                &mut z,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_knockback read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_knockback read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_knockback read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_knockback_cost_live",
+            "horizon.on(\"living_knockback\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut strength = 6.5;
+            let mut x = 7.5;
+            let mut z = 8.5;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_knockback(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:damage_type",
+                10,
+                11,
+                &mut strength,
+                &mut x,
+                &mut z,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_knockback built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_knockback read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_knockback read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_experience_orb_can_merge() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_experience_orb_can_merge",
@@ -19718,6 +20879,212 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_tick_post() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_entity_tick_post",
+            "horizon.on(\"entity_tick_post\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            dispatch_entity_tick_post(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:skeleton",
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        dispatch_entity_tick_post(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            8,
+            "minecraft:zombie",
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_entity_tick_post_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_tick_post_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_tick_post(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "test:kind",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_tick_post read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_tick_post read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_tick_post read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_tick_post_cost_kind",
+            "horizon.on(\"entity_tick_post\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_tick_post(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_tick_post read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_tick_post read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_tick_post read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_tick_post_cost_live",
+            "horizon.on(\"entity_tick_post\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_tick_post(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_tick_post built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_tick_post read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_tick_post read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_entity_tick_listened_answers_from_entity_tick_post_handlers() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_tick_listened_none",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut listened = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_tick_listened(&mut FakeHost::empty(), &firing_mods, &mut listened);
+            assert!(!listened, "no entity_tick_post handler: nobody listens");
+            assert_eq!(witness(&lua), 0, "the query ran no handler");
+            assert_eq!(event_tables(), 0, "the query built no event table");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_tick_listened read no entity unheard"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_tick_listened read the host unheard"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_tick_listened read the level unheard"
+            );
+        }
+        no_error(&id);
+        drop_dir(dir);
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_tick_listened_some",
+            "horizon.on(\"entity_tick_post\", function(event) __witness = (__witness or 0) + 1 end, \"minecraft:zombie\")\nhorizon.on(\"entity_tick_post\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut listened = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_tick_listened(&mut FakeHost::empty(), &firing_mods, &mut listened);
+            assert!(listened, "a entity_tick_post handler: somebody listens");
+            assert_eq!(witness(&lua), 0, "the query ran no handler");
+            assert_eq!(event_tables(), 0, "the query built no event table");
+        }
+        no_error(&id);
+        drop_dir(dir);
+    }
+
+    #[test]
     fn generated_item_fluid_tank_unregistered_costs_nothing() {
         let (m, id, dir, lua) = loaded_tracked(
             "gen_item_fluid_tank_cost",
@@ -19852,6 +21219,297 @@ mod generated_tests {
         no_error(&b_id);
         drop_dir(e_dir);
         drop_dir(b_dir);
+    }
+
+    #[test]
+    fn generated_living_equipment_change() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_living_equipment_change",
+            "horizon.on(\"living_equipment_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.slot == \"test:slot\", \"slot\")\n    assert(event.from == nil, \"from\")\n    assert(event.to.id == \"test:to\", \"to\")\n    assert(event.to.count == 5, \"to\")\n    assert(event.to.damage == 4, \"to\")\n    assert(event.to.extra == nil, \"to\")\n    assert(event.to.plain == true, \"to\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            dispatch_living_equipment_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                "test:slot",
+                None,
+                Some(&ItemStack {
+                    item: "test:to".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                }),
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        dispatch_living_equipment_change(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            "test:slot",
+            None,
+            Some(&ItemStack {
+                item: "test:to".into(),
+                count: 5,
+                damage: 4,
+                extra: None,
+            }),
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_equipment_change_opt_item() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_living_equipment_change_optitem",
+            "horizon.on(\"living_equipment_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.slot == \"test:slot\", \"slot\")\n    assert(event.from.id == \"test:from\", \"from\")\n    assert(event.from.count == 5, \"from\")\n    assert(event.from.damage == 4, \"from\")\n    assert(event.from.extra == nil, \"from\")\n    assert(event.from.plain == true, \"from\")\n    assert(event.to == nil, \"to\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            dispatch_living_equipment_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                "test:slot",
+                Some(&ItemStack {
+                    item: "test:from".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                }),
+                None,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        dispatch_living_equipment_change(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            "test:slot",
+            Some(&ItemStack {
+                item: "test:from".into(),
+                count: 5,
+                damage: 4,
+                extra: None,
+            }),
+            None,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_equipment_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_equipment_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_equipment_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                "test:slot",
+                None,
+                Some(&ItemStack {
+                    item: "test:to".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                }),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_equipment_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_equipment_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_equipment_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_equipment_change_cost_kind",
+            "horizon.on(\"living_equipment_change\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_equipment_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:slot",
+                None,
+                Some(&ItemStack {
+                    item: "test:to".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                }),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_equipment_change read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_equipment_change read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_equipment_change read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_equipment_change_cost_live",
+            "horizon.on(\"living_equipment_change\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_equipment_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:slot",
+                None,
+                Some(&ItemStack {
+                    item: "test:to".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                }),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_equipment_change built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_equipment_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_equipment_change read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_living_equipment_listened_answers_from_living_equipment_change_handlers() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_equipment_listened_none",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut listened = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_equipment_listened(&mut FakeHost::empty(), &firing_mods, &mut listened);
+            assert!(
+                !listened,
+                "no living_equipment_change handler: nobody listens"
+            );
+            assert_eq!(witness(&lua), 0, "the query ran no handler");
+            assert_eq!(event_tables(), 0, "the query built no event table");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_equipment_listened read no entity unheard"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_equipment_listened read the host unheard"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_equipment_listened read the level unheard"
+            );
+        }
+        no_error(&id);
+        drop_dir(dir);
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_equipment_listened_some",
+            "horizon.on(\"living_equipment_change\", function(event) __witness = (__witness or 0) + 1 end, \"minecraft:zombie\")\nhorizon.on(\"living_equipment_change\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut listened = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_equipment_listened(&mut FakeHost::empty(), &firing_mods, &mut listened);
+            assert!(
+                listened,
+                "a living_equipment_change handler: somebody listens"
+            );
+            assert_eq!(witness(&lua), 0, "the query ran no handler");
+            assert_eq!(event_tables(), 0, "the query built no event table");
+        }
+        no_error(&id);
+        drop_dir(dir);
     }
 
     #[test]
@@ -43745,6 +45403,298 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_fall() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_living_fall",
+            "horizon.on(\"living_fall\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.distance == 3.5, \"distance\")\n    event.distance = 17.5\n    assert(event.multiplier == 4.5, \"multiplier\")\n    event.multiplier = 18.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut distance = 3.5;
+            let mut multiplier = 4.5;
+            let mut cancel = false;
+            dispatch_living_fall(
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                &mut distance,
+                &mut multiplier,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut distance = 3.5;
+        let mut multiplier = 4.5;
+        let mut cancel = false;
+        dispatch_living_fall(
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            &mut distance,
+            &mut multiplier,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(distance, 17.5);
+        assert_eq!(multiplier, 18.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_fall_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_living_fall_nocancel",
+            "horizon.on(\"living_fall\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.distance == 3.5, \"distance\")\n    event.distance = 17.5\n    assert(event.multiplier == 4.5, \"multiplier\")\n    event.multiplier = 18.5\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut distance = 3.5;
+        let mut multiplier = 4.5;
+        let mut cancel = false;
+        dispatch_living_fall(
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            &mut distance,
+            &mut multiplier,
+            &mut cancel,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_fall_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_fall_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut distance = 3.5;
+            let mut multiplier = 4.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_fall(
+                &firing_mods,
+                7,
+                "test:kind",
+                &mut distance,
+                &mut multiplier,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_fall read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "living_fall read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_fall read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_fall_cost_kind",
+            "horizon.on(\"living_fall\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut distance = 3.5;
+            let mut multiplier = 4.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_fall(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &mut distance,
+                &mut multiplier,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_fall read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_fall read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_fall read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_fall_cost_live",
+            "horizon.on(\"living_fall\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut distance = 3.5;
+            let mut multiplier = 4.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_fall(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &mut distance,
+                &mut multiplier,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_fall built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_fall read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_fall read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_living_heal() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_living_heal",
+            "horizon.on(\"living_heal\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.amount == 2.5, \"amount\")\n    event.amount = 16.5\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut amount = 2.5;
+        let mut cancel = false;
+        dispatch_living_heal(&firing_mods, 7, &mut amount, &mut cancel);
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(amount, 16.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_heal_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_living_heal_nocancel",
+            "horizon.on(\"living_heal\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.amount == 2.5, \"amount\")\n    event.amount = 16.5\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut amount = 2.5;
+        let mut cancel = false;
+        dispatch_living_heal(&firing_mods, 7, &mut amount, &mut cancel);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_heal_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_heal_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 2.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_heal(&firing_mods, 7, &mut amount, &mut cancel);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_heal read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "living_heal read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_heal read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_heal_cost_live",
+            "horizon.on(\"living_heal\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 2.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_heal(&firing_mods, 7, &mut amount, &mut cancel);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_heal built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_heal read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_heal read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_living_jump() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_jump",
@@ -56849,6 +58799,160 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_mob_died() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_died",
+            "horizon.on(\"mob_died\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 11, \"causing\")\n    assert(event.player == nil, \"player\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            dispatch_mob_died(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:skeleton",
+                "test:damage_type",
+                11,
+                None,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        dispatch_mob_died(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            8,
+            "minecraft:zombie",
+            "test:damage_type",
+            11,
+            None,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_mob_died_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_died_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_died(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "test:kind",
+                "test:damage_type",
+                11,
+                None,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(entity_reads(), 0, "mob_died read the host with no handler");
+            assert_eq!(host_reads(), 0, "mob_died read the host with no handler");
+            assert_eq!(level_reads(), 0, "mob_died read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_died_cost_kind",
+            "horizon.on(\"mob_died\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_died(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+                "test:damage_type",
+                11,
+                None,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mob_died read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mob_died read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_died read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_died_cost_live",
+            "horizon.on(\"mob_died\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_died(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+                "test:damage_type",
+                11,
+                None,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "mob_died built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mob_died read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_died read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_permission_check() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_permission_check",
@@ -62016,6 +64120,21 @@ mod generated_tests {
                 &[116u8, 0u8, 159u8],
             );
         }
+        // mob_spawned: unregistered, nothing runs.
+        {
+            dispatch_mob_spawned(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                "test:kind",
+                [3.0, 4.0, 5.0],
+                false,
+            );
+        }
+        // mob_killed: unregistered, nothing runs.
+        {
+            dispatch_mob_killed(&mut FakeHost::empty(), &firing_mods, 7, 8, "test:kind");
+        }
         // on_equip: unregistered, nothing runs.
         {
             dispatch_on_equip(&mut FakeHost::empty(), &firing_mods, "test:slot", None);
@@ -62039,6 +64158,24 @@ mod generated_tests {
             let mut source = false;
             dispatch_is_signal_source(&FakeLevel, &firing_mods, BlockStateId(8), &mut source);
         }
+        // interact_entity: unregistered, nothing runs.
+        {
+            let mut claimed = false;
+            dispatch_interact_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                }),
+                &mut claimed,
+            );
+            assert!(!claimed, "claimed changed with no handler");
+        }
         // left_click_block: unregistered, nothing runs.
         {
             let mut canceled = false;
@@ -62048,6 +64185,37 @@ mod generated_tests {
                 [1, 2, 3],
                 [2, 3, 4],
                 BlockStateId(10),
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
+        // entity_join_level: unregistered, nothing runs.
+        {
+            let mut canceled = false;
+            dispatch_entity_join_level(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "test:kind",
+                [4.0, 5.0, 6.0],
+                true,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
+        // living_incoming_damage: unregistered, nothing runs.
+        {
+            let mut amount = 6.5;
+            let mut canceled = false;
+            dispatch_living_incoming_damage(
+                &firing_mods,
+                7,
+                "test:kind",
+                "test:damage_type",
+                10,
+                11,
+                &mut amount,
                 &mut canceled,
             );
             assert!(!canceled, "canceled changed with no handler");
@@ -62555,6 +64723,26 @@ mod generated_tests {
                 10,
             );
         }
+        // living_knockback: unregistered, nothing runs.
+        {
+            let mut strength = 6.5;
+            let mut x = 7.5;
+            let mut z = 8.5;
+            let mut canceled = false;
+            dispatch_living_knockback(
+                &firing_mods,
+                7,
+                "test:kind",
+                "test:damage_type",
+                10,
+                11,
+                &mut strength,
+                &mut x,
+                &mut z,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
         // experience_orb_can_merge: unregistered, nothing runs.
         {
             let mut can_merge = false;
@@ -62836,10 +65024,37 @@ mod generated_tests {
             );
             assert!(!canceled, "canceled changed with no handler");
         }
+        // entity_tick_post: unregistered, nothing runs.
+        {
+            dispatch_entity_tick_post(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "test:kind",
+            );
+        }
         // item_fluid_tank: unregistered, nothing runs.
         {
             let mut capacity: Option<i32> = None;
             dispatch_item_fluid_tank(&FakeHost::empty(), &firing_mods, "test:item", &mut capacity);
+        }
+        // living_equipment_change: unregistered, nothing runs.
+        {
+            dispatch_living_equipment_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                "test:slot",
+                None,
+                Some(&ItemStack {
+                    item: "test:to".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                }),
+            );
         }
         // player_render_listened: unregistered, nothing runs.
         {
@@ -64910,6 +67125,28 @@ mod generated_tests {
             );
             assert!(!cancel, "cancel changed with no handler");
         }
+        // living_fall: unregistered, nothing runs.
+        {
+            let mut distance = 3.5;
+            let mut multiplier = 4.5;
+            let mut cancel = false;
+            dispatch_living_fall(
+                &firing_mods,
+                7,
+                "test:kind",
+                &mut distance,
+                &mut multiplier,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
+        }
+        // living_heal: unregistered, nothing runs.
+        {
+            let mut amount = 2.5;
+            let mut cancel = false;
+            dispatch_living_heal(&firing_mods, 7, &mut amount, &mut cancel);
+            assert!(!cancel, "cancel changed with no handler");
+        }
         // living_jump: unregistered, nothing runs.
         {
             dispatch_living_jump(&firing_mods, 7, "test:kind");
@@ -65972,6 +68209,19 @@ mod generated_tests {
         {
             let mut mob = test_mob("test:mob0");
             dispatch_mob_ai_register(&firing_mods, &mut mob);
+        }
+        // mob_died: unregistered, nothing runs.
+        {
+            dispatch_mob_died(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "test:kind",
+                "test:damage_type",
+                11,
+                None,
+            );
         }
         // permission_check: unregistered, nothing runs.
         {

@@ -69,10 +69,10 @@ This script counts natural zombie spawns:
 ```lua
 -- scripts/init.lua
 local spawns = 0
-horizon.on("mob_spawned", function(dimension, kind, x, y, z, natural)
-  if kind == "minecraft:zombie" and natural then
+horizon.on("mob_spawned", function(event)
+  if event.kind == "minecraft:zombie" and event.natural then
     spawns = spawns + 1
-    horizon.log(("zombie %d at %.0f %.0f %.0f"):format(spawns, x, y, z))
+    horizon.log(("zombie %d at %.0f %.0f %.0f"):format(spawns, event.pos.x, event.pos.y, event.pos.z))
   end
 end)
 ```
@@ -205,8 +205,9 @@ docs, and a test keeps it current. It is the place to look for what the hooks be
 
 Calls that act on the world are *actions*: they are queued, and run after the handler returns. Calls that read the
 world are *reads*: they answer at once, from the hook's host, for the length of the call. Both need a hook with a
-host. `mob_hurt`, `mob_ai_register` and goal functions have no host; a goal reads its `mob` view instead. A level hook
-(`random_tick`, `tick_block`) reads blocks only.
+host. `living_incoming_damage`, `living_fall`, `living_heal`, `living_knockback`, `mob_ai_register` and goal
+functions have no host; a goal reads its `mob` view instead. A level hook (`random_tick`, `tick_block`) reads blocks
+only.
 
 An action called where no hook's handlers run is an error at the call. This covers a goal function, which acts
 through its `out` table, and the top level of `init.lua`, which registers handlers. Nothing would run the action,
@@ -419,7 +420,7 @@ A handler receives the hook's arguments. Some hooks let it change the event, wit
 | `world_lifecycle(event)` | the world opens or closes; `event.phase` names the phase, `event.error_text` carries a failure's text (empty otherwise), with the context |
 | `data_pack_files(event)` | the data packs load, the first load included: `event.files` is the packs' files in load order, a sequence of `{path, data}` byte strings. Append entries and they join the load. From the second load on (such as `/reload`), the mod's scripts run again first, so an edited script is live for the load |
 | `explosion(dimension, center, blocks)` | an explosion is about to break *blocks*, a sequence of `{x, y, z}`. Remove entries to spare those blocks: they keep their block and get no fire |
-| `entity_joined(dimension, id, kind, x, y, z, loaded)` | any entity joins the level, such as `minecraft:item`, `minecraft:arrow` or a mob; *loaded* is true for one that comes back with its chunk. By kind. `cancel()` keeps it out. `mob_spawned` stays for mobs |
+| `entity_join_level(event)` | any entity joins the level, such as `minecraft:item`, `minecraft:arrow` or a mob. The event holds `dimension`, `entity` (its id), `kind`, `pos` (`{x, y, z}`) and `loaded_from_disk`, true for one that comes back with its chunk. `mob_spawned` fires for mobs too. `horizon.cancel()` keeps it out. Register it by kind |
 | `projectile_launched(projectile, kind, player)` | a projectile is added to the level; *player* is the shooter's table, or nil for a mob's or a dispenser's. By projectile kind. It only listens |
 | `projectile_impact(projectile, kind, owner, hit)` | a projectile, such as an arrow, a snowball, an egg, a potion or a fireball, hits something, before the hit acts. *owner* is the shooter's entity id, or 0. *hit* has `x`, `y`, `z`, and either `entity` and `entity_kind`, or `block` (`{x, y, z, id}`) and `face`. By projectile kind. `cancel()` and it flies on. The engine keeps the copy each impact needs only while a script listens |
 
@@ -427,19 +428,18 @@ A handler receives the hook's arguments. Some hooks let it change the event, wit
 
 | Hook | Called when |
 |---|---|
-| `mob_spawned(dimension, kind, x, y, z, natural)` | a mob spawns |
+| `mob_spawned(event)` | a mob spawns. The event holds `dimension`, `kind`, `pos` (`{x, y, z}`) and `natural`. A mob that loads with its chunk is not told. Register it by kind |
 | `mob_ai_register(event)` | a mob's goals are set up, once, on the side that runs its AI. Register it by kind. The event holds `mob`, the mob's view as its goals see it. Handlers call `horizon.add_goal`, `horizon.add_target_goal`, the clears and `horizon.set_body_rotation`, which run on the mob after the call |
 | `register_goals(event)` | a mob's species goals are registered, before `mob_ai_register`. Register it by kind. The event holds `mob`, and the same five calls run on the mob after the call. It fires during species goal registration, for a client's copies of a server's mobs too, and before a `"goals": "none"` mob's selectors are wiped: goals added here on such a mob are gone by `mob_ai_register`. Handlers on both hooks append, so a script that calls `horizon.add_goal` in both attaches the goal twice |
-| `mob_tick(dimension, mob, data)` | a mob has ticked (`entity_tick_post`). *mob* is its view without the fields that need the world (`nearby` is empty, `target_position` is nil). The host actions work. Register it by kind: a handler for every kind hears every mob of the level each tick |
-| `entity_interact(dimension, entity, player, held)` | a player right-clicks any entity, players and entities that are not mobs included, before `mob_interact` and before the entity and the item act. *entity* is `{id, kind}`, and *held* is the stack of the hand being tried, main then off. `cancel()` takes the click, and `mob_interact` is not told |
-| `mob_interact(dimension, mob, player, held, data)` | a player right-clicks a mob, before the mob and the item act. *mob* is its view, without `nearby` and `target_position`; a mob the host has no view of, because it is dead or gone, is not reported. *held* is the stack of the hand being tried, main then off. `cancel()` takes the click. The host actions work |
-| `mob_hurt(mob, damage_type, causing, direct, amount)` | a mob is about to take damage (`living_incoming_damage`). *mob* is `{id, kind}` only; the game is in the middle of the hit, so there is no host, no view and no data. *damage_type* is such as `minecraft:mob_attack` or `minecraft:on_fire`; *causing* and *direct* are the entities behind it, or -1. `set_amount(n)` and `cancel()`. The host actions are dropped |
-| `mob_killed(dimension, mob, killer, data)` | a player's melee blow kills a mob. *mob* is `{id, kind}`, and *killer* the player's table. `mob_died` covers every other cause |
-| `mob_died(dimension, mob, cause, data)` | a mob dies, by any cause: a blow, an arrow, fire, a fall or `/kill`. *mob* is `{id, kind}`. *cause* is `{damage_type, causing, player}`: *causing* is the mob behind it or 0, and *player* the player credited with the kill, or nil. *data* is the mod's data while the game still holds it. By kind |
-| `mob_fall(mob, distance, multiplier)` | a living entity is about to handle a fall. No host; *mob* is `{id, kind}`. `set_distance(n)`, `set_multiplier(n)`, and `cancel()` for no fall damage. By kind |
-| `mob_heal(mob, amount)` | a living entity is about to heal. No host; *mob* is `{id}`, because the engine names no kind here, so every handler hears every entity, players too. `set_amount(n)` and `cancel()` |
-| `mob_knockback(mob, damage_type, causing, direct, strength, x, z)` | a living entity is about to be knocked back. No host. *strength* is the raw value, and *x* and *z* the direction. `set_strength(n)` and `cancel()`. By kind |
-| `mob_equipped(mob, slot, from, to)` | an equipment slot of a mob (`mainhand`, `offhand`, `feet`, `legs`, `chest`, `head`, `body` or `saddle`) takes a different stack. *from* and *to* are item tables, or nil. By kind. It only listens |
+| `entity_tick_post(event)` | a mob has ticked. The event holds `dimension`, `entity` (its id) and `kind`. The host actions and reads work, but there is no mob view and no saved data: read the mob with `horizon.mob(id)` when needed. Register it by kind: a handler for every kind hears every mob of the level each tick. The engine keeps the ticking list only while a handler is registered |
+| `interact_entity(event)` | a player right-clicks an entity, mobs included: one hook for every entity, even one the host has no view of, dead or gone. The event holds `entity` (its id), `kind` and `stack` (the hand's stack `{id, count, damage, plain}`, or nil). It carries no player and no dimension: the acting player and the level come from the host reads. `horizon.cancel()` takes the click, and the hand still swings. The host actions and reads work. Register it by kind |
+| `living_incoming_damage(event)` | a living entity is about to take damage, a mob or a player (kind `minecraft:player`). The event holds `entity`, `kind`, `damage_type` (such as `minecraft:mob_attack` or `minecraft:on_fire`), `causing` and `direct` (the entities behind it, or -1) and `amount`. No host: set `event.amount`, or `horizon.cancel()` to refuse the hit; other queued actions are dropped. Register it by kind |
+| `mob_killed(event)` | a player's melee blow kills a mob. The event holds `player` (the killer's entity id), `entity` and `kind`. `mob_died` covers every other cause. The host actions work. Register it by kind |
+| `mob_died(event)` | a mob dies, by any cause: a blow, an arrow, fire, a fall or `/kill`. The event holds `dimension`, `entity`, `kind`, `damage_type`, `causing` (the mob behind it, or 0) and `player` (the credited player's uuid text, or nil). It only hears. Register it by kind |
+| `living_fall(event)` | a living entity is about to handle a fall, a mob or a player (kind `minecraft:player`). The event holds `entity`, `kind`, `distance` and `multiplier`. No host: set the fields, or `horizon.cancel()` for no fall damage. Register it by kind |
+| `living_heal(event)` | a living entity is about to heal. The event holds `entity` and `amount`. No host: every handler hears every entity, players too. Set `event.amount`, or `horizon.cancel()` |
+| `living_knockback(event)` | a living entity is about to be knocked back, a mob or a player (kind `minecraft:player`). The event holds `entity`, `kind`, `damage_type`, `causing`, `direct`, `strength`, `x` and `z`. No host: set `event.strength` (and `x`/`z` to steer), or `horizon.cancel()`. Register it by kind |
+| `living_equipment_change(event)` | an equipment slot of a mob (`mainhand`, `offhand`, `feet`, `legs`, `chest`, `head`, `body` or `saddle`) takes a different stack. The event holds `entity`, `kind`, `slot`, `from` and `to` (item tables `{id, count, damage, plain}`, or nil). It only hears. Register it by kind. The engine keeps the equipment watch only while a handler is registered |
 | `loot_drops(event)` | a block broken by a player, an explosion or a mob, or a mob that died, is about to drop its loot. By block id or mob kind. The loot context is flat on the event: `table` (the loot table's id), `dimension`, `origin`, and `block` (`{x, y, z, id, state}`) or `entity` (`{id, kind}`), `player` (the one credited, or nil), `tool` (an item table, or nil), `explosion` (a radius, or nil) and `used`. *drops* (`event.drops`) is a sequence of `{id, count, damage, plain}`: change it in place, and it is written back after the call. An entry whose id matches the stack at that place keeps the stack's components |
 
 ### Blocks
@@ -480,9 +480,9 @@ that is the same when done twice, such as lighting a lamp rather than toggling i
 | `player_respawned(player)` | a player respawns after a death |
 | `player_died(player, cause)` | a player dies. *cause* is the death message's key, such as `death.attack.lava`, or nil |
 | `player_tick(player)` | a living player's server tick has ended. Every player, every tick, with the host actions and the reads. Keep it light. It takes no `kind` |
-| `player_hurt(player, damage_type, causing, direct, amount)` | a player is about to take damage, as `mob_hurt` reports it for a mob. *player* is `{id, kind}` only, with no host and no name. `set_amount(n)` and `cancel()` |
-| `player_fall(player, distance, multiplier)` | as `mob_fall`, for players |
-| `player_knockback(...)` | as `mob_knockback`, for players |
+| `living_incoming_damage(event)` with kind `minecraft:player` | a player is about to take damage. The event holds `entity`, `kind`, `damage_type`, `causing`, `direct` and `amount`. No host and no name: set `event.amount`, or `horizon.cancel()` |
+| `living_fall(event)` with kind `minecraft:player` | a player is about to handle a fall. The event holds `entity`, `kind`, `distance` and `multiplier`. No host: set the fields, or `horizon.cancel()` for no fall damage |
+| `living_knockback(event)` with kind `minecraft:player` | a player is about to be knocked back. The event holds `entity`, `kind`, `damage_type`, `causing`, `direct`, `strength`, `x` and `z`. No host: set `event.strength` (and `x`/`z` to steer), or `horizon.cancel()` |
 | `player_command(player, line)` | a player types any command, before it runs. *line* has no slash. `cancel()` and nothing runs. `reply(text)` answers them; no player's state is in place here, so `tell` and the item functions reach nobody |
 | `player_chat(player, line)` | a player's chat line is about to go to everyone, after the chat filter. *player* is `{uuid, name}`; there is no host, because the hub is in the middle of a packet. `reply(text)` sends a line back to the sender. `cancel()` and nobody sees it, the sender included. The line itself can't change, because a signed message would no longer verify; the hook point is upstream's `native_player_chat`. Commands go to `player_command` |
 | `player_changed_dimension(player, from, to)` | a player's move to another level has ended: a portal, `/execute in ... run tp`, or a respawn elsewhere. The engine reports it on a dedicated server only |
@@ -508,11 +508,7 @@ an earlier player hook reported.
 
 ### Saved tables
 
-A mob's `data` is the mod's own saved table on the mob, empty at first. It is kept with the mob as the engine's
-attachment under the mod's id (`horizon:attachments` in its NBT), so it survives a save and a restart, and other
-mods' data stays apart. It is nil when the host has no such mob.
-
-A saved table, whether a mob's `data`, a block entity's, `world_data`, `player_data` or `save_config`'s, follows
+A saved table, whether a block entity's, `world_data`, `player_data` or `save_config`'s, follows
 these rules:
 
 - It is written back after the call. A number keeps its NBT type, and a key set to nil is removed.

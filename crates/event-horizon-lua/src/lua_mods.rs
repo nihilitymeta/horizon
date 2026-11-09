@@ -23,23 +23,19 @@ use horizon_client::dev_input::mods::{
 };
 use horizon_client::mod_api::NativeCommand;
 use horizon_client::mod_api::{
-    AttachmentCodec, AttachmentType, BlockStateId, Compound, EntityTickListenedEvent,
-    EntityTickPostEvent, Flow, Holder, Hooks, Host, InteractEntityEvent, LevelDimension, LevelHost,
-    LevelWriteHost, LivingIncomingDamageEvent, MobKilledEvent, MobSpawnedEvent, MobView,
-    RightClickBlockEvent,
+    AttachmentCodec, AttachmentType, BlockStateId, Compound, Flow, Holder, Hooks, Host,
+    LevelDimension, LevelHost, LevelWriteHost, MobView, RightClickBlockEvent,
 };
 use horizon_client::mod_api::{
     AttackEntityEvent, DestroyBlockEvent, InventoryTickEvent, ItemPickedUpEvent, ItemStack,
-    LivingEntityUseItemFinishEvent, MobDiedEvent, PlaceBlockEvent, PlayerDiedEvent,
-    PlayerLoggedInEvent, PlayerLoggedOutEvent, PlayerRespawnedEvent, UseItemEvent, UseItemOnEvent,
+    LivingEntityUseItemFinishEvent, PlaceBlockEvent, PlayerDiedEvent, PlayerLoggedInEvent,
+    PlayerLoggedOutEvent, PlayerRespawnedEvent, UseItemEvent, UseItemOnEvent,
 };
 use horizon_client::mod_api::{
-    EntityJoinLevelEvent, ExplosionDetonateEvent, HearsProjectileImpactsEvent, HurtEnemyEvent,
-    ItemCraftedEvent, ItemDroppedEvent, LivingEntityUseItemStartEvent, LivingEquipmentChangeEvent,
-    LivingEquipmentListenedEvent, LivingFallEvent, LivingHealEvent, LivingKnockbackEvent,
-    PlayerBedEnterEvent, PlayerChangedDimensionEvent, PlayerChatEvent, PlayerCommandEvent,
-    PlayerContainerOpenEvent, PlayerExpChangeEvent, PlayerTickEvent, ProjectileImpactEvent,
-    ProjectileLaunchEvent,
+    ExplosionDetonateEvent, HearsProjectileImpactsEvent, HurtEnemyEvent, ItemCraftedEvent,
+    ItemDroppedEvent, LivingEntityUseItemStartEvent, PlayerBedEnterEvent,
+    PlayerChangedDimensionEvent, PlayerChatEvent, PlayerCommandEvent, PlayerContainerOpenEvent,
+    PlayerExpChangeEvent, PlayerTickEvent, ProjectileImpactEvent, ProjectileLaunchEvent,
 };
 use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
@@ -131,22 +127,7 @@ pub const ENTRY: &str = horizon_mods::content::SCRIPT_ENTRY;
 /// (`generated_hooks::GENERATED_HOOK_NAMES`) register too; the script
 /// commands' own hook is `perform_command` (`horizon.command` declares).
 pub const LUA_HOOK_NAMES: &[&str] = &[
-    "mob_spawned",
     "right_click_block",
-    "mob_hurt",
-    "player_hurt",
-    "mob_killed",
-    "mob_interact",
-    "entity_interact",
-    "mob_tick",
-    "mob_died",
-    "mob_fall",
-    "player_fall",
-    "mob_heal",
-    "mob_knockback",
-    "player_knockback",
-    "mob_equipped",
-    "entity_joined",
     "item_use",
     "item_use_on",
     "item_hit",
@@ -234,7 +215,7 @@ return function(slot, horizon)
   local function read(what, ...)
     local f = slot[1]
     if f == nil then
-      error("horizon." .. what .. ": reads work inside a hook with a host (not in mob_hurt, mob_ai_register or a goal)", 3)
+      error("horizon." .. what .. ": reads work inside a hook with a host (not in a hostless hook or a goal)", 3)
     end
     return f(what, ...)
   end
@@ -311,7 +292,7 @@ end
 /// It reaches Lua as a function of the call's scope (`Lua::scope`), gone
 /// when the call returns, whatever kept it.
 pub(crate) enum Reader<'a> {
-    /// A hook without a host (`mob_hurt`, `mob_ai_register`): reads fail.
+    /// A hook without a host (a `none`-host generated arm): reads fail.
     None,
     Host(&'a mut dyn Host),
     /// A draw hook (`hud`, `gui_layer_post`): the hook's `&dyn Host`,
@@ -989,9 +970,6 @@ pub struct LuaMod {
     /// handler that keeps missing `FRAME_BUDGET` is disabled after
     /// `FRAME_OVERRUNS_UNTIL_DISABLED`, until `/reload`.
     frame_overruns: Mutex<HashMap<String, u32>>,
-    /// The mod's saved data on a mob (`data` in the mob hooks): the engine's
-    /// attachment under the mod's id, saved with the mob.
-    attachment: AttachmentType<Compound>,
     /// The mod's saved data on the world (`horizon.world_data()`) and on a
     /// player (`horizon.player_data(who)`): attachments on the level and
     /// the player, under the mod's id.
@@ -1025,13 +1003,7 @@ pub(crate) fn qualify(kind: &str) -> String {
     }
 }
 
-/// The mod's attachment on mobs: its saved data, a compound under the mod's
-/// id in the engine's `horizon:attachments`, kept on disk as it is.
-fn mod_attachment(id: &str) -> AttachmentType<Compound> {
-    mod_attachment_named(id, "data")
-}
-
-/// [`mod_attachment`] under another name: one per holder kind.
+/// The mod's attachment under another name: one per holder kind.
 fn mod_attachment_named(id: &str, name: &'static str) -> AttachmentType<Compound> {
     AttachmentType {
         namespace: horizon_client::mobs::native_goal::intern(id),
@@ -1416,7 +1388,6 @@ impl LuaMod {
         lua.set_memory_limit(MEMORY).map_err(|e| e.to_string())?;
         let budget = Budget::default();
         budget.install(&lua);
-        let attachment = mod_attachment(&id);
         let world_attachment = mod_attachment_named(&id, "world");
         let player_attachment = mod_attachment_named(&id, "player");
         let config_path = config_dir.map(|d| d.join(format!("{id}.json")));
@@ -1437,7 +1408,6 @@ impl LuaMod {
             budget,
             kinds: Kinds::default(),
             frame_overruns: Mutex::default(),
-            attachment,
             world_attachment,
             player_attachment,
             config_path,
@@ -2132,27 +2102,6 @@ impl LuaMod {
         Ok(t)
     }
 
-    /// Mob `id` of `kind` as a table for a handler: its view (`goals::view_table`)
-    /// while the host has it alive, else just `id` and `kind` (a mob that has
-    /// died, or a host without the level).
-    fn mob_table(
-        &self,
-        host: &dyn Host,
-        dimension: &str,
-        id: u32,
-        kind: &str,
-    ) -> mlua::Result<Table> {
-        match host.mob_view(dimension, id) {
-            Some(view) => goals::view_table(&self.lua, &view),
-            None => {
-                let t = self.lua.create_table()?;
-                t.set("id", id)?;
-                t.set("kind", kind)?;
-                Ok(t)
-            }
-        }
-    }
-
     /// The player `uuid` as a table: the world's record when they are on,
     /// else just `uuid` and `name` (the one given, else the one a player
     /// hook told before).
@@ -2218,43 +2167,6 @@ impl LuaMod {
         }
     }
 
-    /// The mod's saved data on mob `id`, as the compound it is and as a table
-    /// for a handler (an empty one for a mob without any yet); none when the
-    /// host has no such mob (a client's copy, a mob already gone).
-    fn mob_data(&self, host: &mut dyn Host, id: u32) -> mlua::Result<Option<(Compound, Table)>> {
-        let before = match self.attachment.get_existing(host, Holder::Entity(id)) {
-            Ok(Some(c)) => c,
-            Ok(None) => Compound::default(),
-            Err(_) => return Ok(None),
-        };
-        let table = nbt::compound_to_table(&self.lua, &before)?;
-        Ok(Some((before, table)))
-    }
-
-    /// Stores what a handler changed in a mob's data (`mob_data`).
-    fn store_mob_data(
-        &self,
-        host: &mut dyn Host,
-        hook: &str,
-        id: u32,
-        data: Option<(Compound, Table)>,
-    ) {
-        let Some((before, table)) = data else {
-            return;
-        };
-        match nbt::table_to_compound(&table, Some(&before)) {
-            Ok(after) if after != before => {
-                if let Err(e) = self.attachment.set(host, Holder::Entity(id), after) {
-                    log::debug!("[lua:{}] {hook}: mob {id}'s data not kept: {e:?}", self.id);
-                }
-            }
-            Ok(_) => {}
-            Err(e) => {
-                self.hook_error(hook, e);
-            }
-        }
-    }
-
     /// Writes a block entity's data table back through `host` when the
     /// handlers changed it.
     fn store_data(
@@ -2312,29 +2224,6 @@ impl LuaMod {
         self.error(format!(
             "{hook}: disabled after {misses} consecutive overruns of the frame budget; /reload enables it again"
         ));
-    }
-
-    /// `call_bare`/`call_kind` for a hook about a mob of `kind`: its handlers
-    /// are those for every kind and those watching `kind`.
-    fn call_for(
-        &self,
-        host: Option<&mut dyn Host>,
-        hook: &str,
-        kind: Option<&str>,
-        args: impl mlua::IntoLuaMulti,
-    ) {
-        let r = match host {
-            Some(host) => self.call_kind(hook, kind, host, args, &mut |host, action, a| {
-                self.run_action(host, action, a)
-            }),
-            None => self.call_bare(hook, kind, args, &mut |action, _| {
-                self.warn(format!("{hook}: {action} needs a host; dropped"));
-                Ok(())
-            }),
-        };
-        if let Err(e) = r {
-            self.error(format!("{hook}: {e}"));
-        }
     }
 
     /// Call the handlers of `hook` (those for every kind and those watching
@@ -2874,113 +2763,6 @@ pub(crate) fn dimension_id(dimension: LevelDimension) -> &'static str {
     }
 }
 
-impl LuaMod {
-    /// A player right-clicks any entity, players and entities that are not
-    /// mobs included: `entity_interact(dimension, entity, player, held)`,
-    /// `entity` its `{id, kind}`, before `mob_interact` and before the entity
-    /// and the item act. `horizon.cancel()` takes the click, and
-    /// `mob_interact` is not told. Asked once per hand, as vanilla tries the
-    /// main hand and then the off hand.
-    fn entity_interact(&self, host: &mut dyn Host, event: &mut InteractEntityEvent<'_>) -> Flow {
-        let hook = "entity_interact";
-        let kind = qualify(event.kind);
-        if !self.watches(hook, &kind) {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let r = (|| -> mlua::Result<()> {
-            let player = self.player_table(host)?;
-            let held = match event.stack {
-                Some(stack) => {
-                    let t = self.lua.create_table()?;
-                    t.set("item", &*stack.item)?;
-                    t.set("count", stack.count)?;
-                    t.set("plain", stack.extra.is_none())?;
-                    Value::Table(t)
-                }
-                None => Value::Nil,
-            };
-            let entity = self.lua.create_table()?;
-            entity.set("id", event.entity)?;
-            entity.set("kind", kind.as_str())?;
-            let dimension = host.dimension().to_owned();
-            self.call_kind(
-                hook,
-                Some(&kind),
-                host,
-                (dimension, entity, player, held),
-                &mut |host, action, args| {
-                    match action {
-                        "cancel" => cancel = true,
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )
-        })();
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-    /// `mob_interact(dimension, mob, player, held, data)`.
-    fn mob_interact(&self, host: &mut dyn Host, event: &mut InteractEntityEvent<'_>) -> Flow {
-        let hook = "mob_interact";
-        let kind = qualify(event.kind);
-        if !self.watches(hook, &kind) {
-            return Flow::Continue;
-        }
-        let Ok(id) = u32::try_from(event.entity) else {
-            return Flow::Continue;
-        };
-        let mut cancel = false;
-        let r = (|| -> mlua::Result<()> {
-            let player = self.player_table(host)?;
-            let held = match event.stack {
-                Some(stack) => {
-                    let t = self.lua.create_table()?;
-                    t.set("item", &*stack.item)?;
-                    t.set("count", stack.count)?;
-                    t.set("plain", stack.extra.is_none())?;
-                    Value::Table(t)
-                }
-                None => Value::Nil,
-            };
-            let dimension = host.dimension().to_owned();
-            let Some(view) = host.mob_view(&dimension, id) else {
-                return Ok(());
-            };
-            let mob = goals::view_table(&self.lua, &view)?;
-            let data = self.mob_data(host, id)?;
-            self.call_kind(
-                hook,
-                Some(&kind),
-                host,
-                (
-                    dimension,
-                    mob,
-                    player,
-                    held,
-                    data.as_ref().map(|(_, t)| t.clone()),
-                ),
-                &mut |host, action, args| {
-                    match action {
-                        "cancel" => cancel = true,
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )?;
-            self.store_mob_data(host, hook, id, data);
-            Ok(())
-        })();
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-}
-
 impl Hooks for LuaMod {
     /// A player right-clicks a block: `right_click_block(x, y, z, block, face,
     /// player, held)`, `face` and `player.position` as `{x, y, z}`, `player`
@@ -3045,22 +2827,7 @@ impl Hooks for LuaMod {
         self.store_data(host, hook, event.pos, before, data);
         if cancel { Flow::Cancel } else { Flow::Continue }
     }
-    fn mob_spawned(&self, host: &mut dyn Host, event: &mut MobSpawnedEvent<'_>) {
-        let MobSpawnedEvent {
-            dimension,
-            kind,
-            pos,
-            natural,
-            ..
-        } = *event;
-        let kind = qualify(kind);
-        self.call_for(
-            Some(host),
-            "mob_spawned",
-            Some(&kind),
-            (dimension, kind.as_str(), pos[0], pos[1], pos[2], natural),
-        );
-    }
+
     /// A player right-clicks with an item, in the air or on a block the block
     /// let through: `item_use(item, player)`, `item` `{id, count, damage,
     /// plain}`; `horizon.cancel()` takes the use (the hand swings, the item's
@@ -3287,47 +3054,7 @@ impl Hooks for LuaMod {
             self.hook_error(hook, e);
         }
     }
-    /// A mob died, by any cause: `mob_died(dimension, mob, cause, data)`,
-    /// `mob` its `{id, kind}` (gone: no view), `cause` `{damage_type,
-    /// causing, player}` (`causing` the mob behind it or 0, `player` the
-    /// player credited with the kill, or nil), `data` the mod's saved data
-    /// on it while the game still holds it. Register by kind.
-    fn mob_died(&self, host: &mut dyn Host, event: &mut MobDiedEvent<'_>) {
-        let hook = "mob_died";
-        let kind = qualify(event.kind);
-        if !self.watches(hook, &kind) {
-            return;
-        }
-        let id = event.entity;
-        let r = (|| -> mlua::Result<()> {
-            let lua = &self.lua;
-            let mob = self.mob_table(host, event.dimension, id, &kind)?;
-            let cause = lua.create_table()?;
-            cause.set("damage_type", event.damage_type)?;
-            cause.set("causing", event.causing)?;
-            if let Some(uuid) = event.player {
-                cause.set("player", self.player_by_uuid(host, uuid, None)?)?;
-            }
-            let data = self.mob_data(host, id)?;
-            self.call_kind(
-                hook,
-                Some(&kind),
-                host,
-                (
-                    event.dimension,
-                    mob,
-                    cause,
-                    data.as_ref().map(|(_, t)| t.clone()),
-                ),
-                &mut |host, action, args| self.run_action(host, action, args),
-            )?;
-            self.store_mob_data(host, hook, id, data);
-            Ok(())
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
-    }
+
     /// A player joined the game: `player_joined(player)`.
     fn player_logged_in(&self, host: &mut dyn Host, event: &mut PlayerLoggedInEvent<'_>) {
         self.player_hook(host, "player_joined", event.player, event.name, None);
@@ -3451,141 +3178,7 @@ impl Hooks for LuaMod {
             self.hook_error(hook, e);
         }
     }
-    /// A living entity is about to handle a fall: `mob_fall(mob, distance,
-    /// multiplier)` by kind (`player_fall` for a player), `mob` its `{id,
-    /// kind}` (no host). Handlers may queue `set_distance(n)`,
-    /// `set_multiplier(n)` and `cancel()` (no fall damage).
-    fn living_fall(&self, event: &mut LivingFallEvent<'_>) -> Flow {
-        let kind = qualify(event.kind);
-        let (hook, by_kind) = if kind == "minecraft:player" {
-            ("player_fall", None)
-        } else {
-            ("mob_fall", Some(kind.as_str()))
-        };
-        if by_kind.is_some_and(|k| !self.watches(hook, k))
-            || (by_kind.is_none() && !self.has_handlers(hook))
-        {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let (mut distance, mut multiplier) = (event.distance, event.multiplier);
-        let mob = match self.id_kind_table(event.entity, &kind) {
-            Ok(t) => t,
-            Err(e) => return self.hook_error(hook, e),
-        };
-        let r = self.call_bare(
-            hook,
-            by_kind,
-            (mob, event.distance, event.multiplier),
-            &mut |action, args| {
-                match action {
-                    "set_distance" => distance = args.get::<f64>(1)?,
-                    "set_multiplier" => multiplier = args.get::<f32>(1)?,
-                    "cancel" => cancel = true,
-                    other => {
-                        log::warn!("[lua:{}] {hook}: {other} needs a host; dropped", self.id)
-                    }
-                }
-                Ok(())
-            },
-        );
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if distance.is_finite() {
-            event.distance = distance.max(0.0);
-        }
-        if multiplier.is_finite() {
-            event.multiplier = multiplier.max(0.0);
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-    /// A living entity is about to heal: `mob_heal(mob, amount)`, `mob` its
-    /// `{id}` (the engine names no kind here, so every handler hears every
-    /// entity; no host). Handlers may queue `set_amount(n)` and `cancel()`.
-    fn living_heal(&self, event: &mut LivingHealEvent) -> Flow {
-        let hook = "mob_heal";
-        if !self.has_handlers(hook) {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let mut amount = event.amount;
-        let mob = match self.lua.create_table().and_then(|t| {
-            t.set("id", event.entity)?;
-            Ok(t)
-        }) {
-            Ok(t) => t,
-            Err(e) => return self.hook_error(hook, e),
-        };
-        let r = self.call_bare(hook, None, (mob, event.amount), &mut |action, args| {
-            match action {
-                "set_amount" => amount = args.get::<f32>(1)?,
-                "cancel" => cancel = true,
-                other => log::warn!("[lua:{}] {hook}: {other} needs a host; dropped", self.id),
-            }
-            Ok(())
-        });
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if amount.is_finite() {
-            event.amount = amount.max(0.0);
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-    /// A living entity is about to be knocked back: `mob_knockback(mob,
-    /// damage_type, causing, direct, strength, x, z)` by kind
-    /// (`player_knockback` for a player), `mob` its `{id, kind}` (mid-hit: no
-    /// host). Handlers may queue `set_strength(n)` and `cancel()`.
-    fn living_knockback(&self, event: &mut LivingKnockbackEvent<'_>) -> Flow {
-        let kind = qualify(event.kind);
-        let (hook, by_kind) = if kind == "minecraft:player" {
-            ("player_knockback", None)
-        } else {
-            ("mob_knockback", Some(kind.as_str()))
-        };
-        if by_kind.is_some_and(|k| !self.watches(hook, k))
-            || (by_kind.is_none() && !self.has_handlers(hook))
-        {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let mut strength = event.strength;
-        let mob = match self.id_kind_table(event.entity.max(0) as u32, &kind) {
-            Ok(t) => t,
-            Err(e) => return self.hook_error(hook, e),
-        };
-        let r = self.call_bare(
-            hook,
-            by_kind,
-            (
-                mob,
-                event.damage_type,
-                event.causing,
-                event.direct,
-                event.strength,
-                event.x,
-                event.z,
-            ),
-            &mut |action, args| {
-                match action {
-                    "set_strength" => strength = args.get::<f64>(1)?,
-                    "cancel" => cancel = true,
-                    other => {
-                        log::warn!("[lua:{}] {hook}: {other} needs a host; dropped", self.id)
-                    }
-                }
-                Ok(())
-            },
-        );
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if strength.is_finite() {
-            event.strength = strength.max(0.0);
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
+
     /// A player's chat line is about to go to everyone:
     /// `player_chat(player, line)`, `player` their `{uuid, name}` (the hub
     /// is mid-packet: no host). Handlers may queue `cancel()` (nobody sees
@@ -3966,92 +3559,6 @@ impl Hooks for LuaMod {
             self.hook_error(hook, e);
         }
     }
-    /// Equipment changes are watched while a script watches `mob_equipped`.
-    fn living_equipment_listened(
-        &self,
-        _host: &mut dyn Host,
-        event: &mut LivingEquipmentListenedEvent,
-    ) {
-        if self
-            .kinds
-            .lock()
-            .is_ok_and(|k| k.get("mob_equipped").is_some_and(|s| !s.is_empty()))
-        {
-            event.listened = true;
-        }
-    }
-    /// A mob's equipment slot changed: `mob_equipped(mob, slot, from, to)`
-    /// by kind, `mob` its view, `from` and `to` item tables or nil.
-    fn living_equipment_change(
-        &self,
-        host: &mut dyn Host,
-        event: &mut LivingEquipmentChangeEvent<'_>,
-    ) {
-        let hook = "mob_equipped";
-        let kind = qualify(event.kind);
-        if !self.watches(hook, &kind) {
-            return;
-        }
-        let r = (|| -> mlua::Result<()> {
-            let lua = &self.lua;
-            let dimension = host.dimension().to_owned();
-            let mob = self.mob_table(host, &dimension, event.entity, &kind)?;
-            let stack = |s: Option<&ItemStack>| -> mlua::Result<Value> {
-                Ok(match s {
-                    Some(s) => Value::Table(item_table_of(lua, s)?),
-                    None => Value::Nil,
-                })
-            };
-            let (from, to) = (stack(event.from)?, stack(event.to)?);
-            self.call_kind(
-                hook,
-                Some(&kind),
-                host,
-                (mob, event.slot, from, to),
-                &mut |host, action, args| self.run_action(host, action, args),
-            )
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
-    }
-    /// An entity joins the level: `entity_joined(dimension, id, kind, x, y,
-    /// z, loaded)` by kind (`minecraft:item`, `minecraft:arrow`, a mob),
-    /// `loaded` true for one coming back with its chunk. `horizon.cancel()`
-    /// keeps it out.
-    fn entity_join_level(&self, host: &mut dyn Host, event: &mut EntityJoinLevelEvent<'_>) -> Flow {
-        let hook = "entity_joined";
-        let kind = qualify(event.kind);
-        if !self.watches(hook, &kind) {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let r = self.call_kind(
-            hook,
-            Some(&kind),
-            host,
-            (
-                event.dimension,
-                event.entity,
-                kind.as_str(),
-                event.pos[0],
-                event.pos[1],
-                event.pos[2],
-                event.loaded_from_disk,
-            ),
-            &mut |host, action, args| {
-                match action {
-                    "cancel" => cancel = true,
-                    other => self.run_action(host, other, args)?,
-                }
-                Ok(())
-            },
-        );
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
     /// A player's blow landed on a mob: `item_hurt_enemy(item, player,
     /// target)` by the held item's id (`item_hit` is before the blow). It
     /// only hears.
@@ -4122,149 +3629,7 @@ impl Hooks for LuaMod {
     // (`generated_hooks`, `gen_register_commands` and
     // `gen_perform_command`): the collect appends the declared commands,
     // and the command arm longest-match dispatches to `fn(player, args)`.
-    /// A mob is about to take damage: `mob_hurt(mob, damage_type, causing,
-    /// direct, amount)`, `mob` just `{id, kind}` (the game is mid-hit: no
-    /// host, so no view, no data, and the host actions are dropped),
-    /// `causing` and `direct` entity ids (-1: none). Handlers may queue
-    /// `horizon.set_amount(n)` and `horizon.cancel()` (the hit is refused).
-    fn living_incoming_damage(&self, event: &mut LivingIncomingDamageEvent<'_>) -> Flow {
-        let kind = qualify(event.kind);
-        // A player is told as `player_hurt(player, ...)`, `player` their
-        // `{id, kind}` (mid-hit: no host, so no name); a mob as `mob_hurt`.
-        let (hook, by_kind) = if kind == "minecraft:player" {
-            ("player_hurt", None)
-        } else {
-            ("mob_hurt", Some(kind.as_str()))
-        };
-        if by_kind.is_some_and(|k| !self.watches(hook, k))
-            || (by_kind.is_none() && !self.has_handlers(hook))
-        {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let mut amount = event.amount;
-        let mob = match self.id_kind_table(event.entity.max(0) as u32, &kind) {
-            Ok(t) => t,
-            Err(e) => return self.hook_error(hook, e),
-        };
-        let r = self.call_bare(
-            hook,
-            by_kind,
-            (
-                mob,
-                event.damage_type,
-                event.causing,
-                event.direct,
-                event.amount,
-            ),
-            &mut |action, args| {
-                match action {
-                    "set_amount" => amount = args.get::<f32>(1)?,
-                    "cancel" => cancel = true,
-                    other => self.warn(format!("{hook}: {other} needs a host; dropped")),
-                }
-                Ok(())
-            },
-        );
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if amount.is_finite() {
-            event.amount = amount.max(0.0);
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-    /// A player's blow killed a mob: `mob_killed(dimension, mob, killer,
-    /// data)`, `mob` its `{id, kind}` (it is dead: no view), `killer` the
-    /// player's table, `data` the mod's saved data on the mob (written back,
-    /// though the mob is going).
-    fn mob_killed(&self, host: &mut dyn Host, event: &mut MobKilledEvent<'_>) {
-        let hook = "mob_killed";
-        let kind = qualify(event.kind);
-        if !self.watches(hook, &kind) {
-            return;
-        }
-        let id = event.entity;
-        let r = (|| -> mlua::Result<()> {
-            let killer = self.player_table(host)?;
-            let dimension = host.dimension().to_owned();
-            let mob = self.mob_table(host, &dimension, id, &kind)?;
-            let data = self.mob_data(host, id)?;
-            self.call_kind(
-                hook,
-                Some(&kind),
-                host,
-                (
-                    dimension,
-                    mob,
-                    killer,
-                    data.as_ref().map(|(_, t)| t.clone()),
-                ),
-                &mut |host, action, args| self.run_action(host, action, args),
-            )?;
-            self.store_mob_data(host, hook, id, data);
-            Ok(())
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
-    }
-    /// A player right-clicks a mob: `mob_interact(dimension, mob, player,
-    /// held, data)`, before the mob and the item act; `mob` is its view (a
-    /// mob the host has no view of, dead or gone, is not told).
-    /// `horizon.cancel()` takes the click (the hand swings, nothing else
-    /// happens); `data` is written back.
-    fn interact_entity(&self, host: &mut dyn Host, event: &mut InteractEntityEvent<'_>) -> Flow {
-        if self.entity_interact(host, event) == Flow::Cancel {
-            return Flow::Cancel;
-        }
-        self.mob_interact(host, event)
-    }
-    /// The game keeps the list of ticking entities only while a mod listens:
-    /// this one does while a `mob_tick` handler is registered.
-    fn entity_tick_listened(&self, _host: &mut dyn Host, event: &mut EntityTickListenedEvent) {
-        if self.has_handlers("mob_tick")
-            || self
-                .kinds
-                .lock()
-                .ok()
-                .is_some_and(|k| k.get("mob_tick").is_some_and(|set| !set.is_empty()))
-        {
-            event.listened = true;
-        }
-    }
-    /// A mob ticked: `mob_tick(dimension, mob, data)` for the
-    /// handlers watching `kind` (`horizon.on("mob_tick", fn, kind)`; one for
-    /// every kind hears every mob, so register by kind). `mob` is the mob's
-    /// view without the fields that need the world (`nearby`,
-    /// `target_position`), `data` the mod's saved data on it, written back.
-    fn entity_tick_post(&self, host: &mut dyn Host, event: &mut EntityTickPostEvent<'_>) {
-        let hook = "mob_tick";
-        let kind = qualify(event.kind);
-        if !self.watches(hook, &kind) {
-            return;
-        }
-        let (dimension, id) = (event.dimension, event.entity);
-        let Some(view) = host.mob_view(dimension, id) else {
-            return;
-        };
-        let r = (|| -> mlua::Result<()> {
-            let view = goals::view_table(&self.lua, &view)?;
-            let data = self.mob_data(host, id)?;
-            self.call_kind(
-                hook,
-                Some(&kind),
-                host,
-                (dimension, view, data.as_ref().map(|(_, t)| t.clone())),
-                &mut |host, action, args| self.run_action(host, action, args),
-            )?;
-            self.store_mob_data(host, hook, id, data);
-            Ok(())
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
-    }
+
     // The generated hooks (`generated_hooks.rs`): one method per hook above,
     // wired the same way, with one event table each.
     impl_generated_hooks!();
@@ -5300,9 +4665,6 @@ experimental = ["scripts"]
                 br#"
                 LOG = {}
                 local function log(s) LOG[#LOG + 1] = s end
-                horizon.on("mob_died", function(dimension, mob, cause, data)
-                  log("died " .. mob.kind .. " " .. mob.id .. " by " .. cause.damage_type .. " causing " .. cause.causing .. " credited " .. (cause.player and cause.player.name or "nobody"))
-                end, "cow")
                 horizon.on("player_joined", function(player) log("joined " .. player.name .. " hp " .. player.health) end)
                 horizon.on("player_left", function(player) log("left " .. player.name) end)
                 horizon.on("player_respawned", function(player) log("respawned " .. player.name) end)
@@ -5332,28 +4694,6 @@ experimental = ["scripts"]
             player: Default::default(),
         };
         let steve = 0x123e4567_e89b_12d3_a456_426614174000;
-        m.mob_died(
-            &mut host,
-            &mut test_events::mob_died_event(
-                "minecraft:overworld",
-                7,
-                "cow",
-                "minecraft:on_fire",
-                0,
-                Some(steve),
-            ),
-        );
-        m.mob_died(
-            &mut host,
-            &mut test_events::mob_died_event(
-                "minecraft:overworld",
-                9,
-                "minecraft:zombie",
-                "minecraft:fall",
-                0,
-                None,
-            ),
-        );
         m.player_logged_in(
             &mut host,
             &mut test_events::player_logged_in_event(steve, "steve"),
@@ -5417,7 +4757,6 @@ experimental = ["scripts"]
         assert_eq!(
             log,
             [
-                "died minecraft:cow 7 by minecraft:on_fire causing 0 credited steve",
                 "joined steve hp 20",
                 "left alex",
                 "respawned steve",
@@ -5426,6 +4765,73 @@ experimental = ["scripts"]
                 "broke minecraft:stone at 1,2,3 by steve",
                 "placed minecraft:stone with ruby:wand x3",
                 "pickup ruby:wand x2 by steve",
+            ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn mob_died_reports_cause_and_credit_through_the_native_hook() {
+        let (dir, path) = hmod(
+            "died-hooks",
+            &[(
+                "scripts/init.lua",
+                br#"
+                LOG = {}
+                local function log(s) LOG[#LOG + 1] = s end
+                horizon.on("mob_died", function(event)
+                  log("died " .. event.kind .. " " .. event.entity .. " by " .. event.damage_type .. " causing " .. event.causing .. " credited " .. (event.player or "nobody"))
+                end, "minecraft:cow")
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let steve = 0x123e4567_e89b_12d3_a456_426614174000;
+        m.mob_died(
+            &mut host,
+            &mut test_events::mob_died_event(
+                "minecraft:overworld",
+                7,
+                "minecraft:cow",
+                "minecraft:on_fire",
+                0,
+                Some(steve),
+            ),
+        );
+        // A zombie is nobody's business: the kind filter stays quiet.
+        m.mob_died(
+            &mut host,
+            &mut test_events::mob_died_event(
+                "minecraft:overworld",
+                9,
+                "minecraft:zombie",
+                "minecraft:fall",
+                0,
+                None,
+            ),
+        );
+        let log: Vec<String> = m
+            .lua
+            .globals()
+            .get::<Table>("LOG")
+            .unwrap()
+            .sequence_values()
+            .map(|v| v.unwrap())
+            .collect();
+        // One entry: the cow's death ran the handler, the zombie stayed quiet.
+        assert_eq!(
+            log,
+            [
+                "died minecraft:cow 7 by minecraft:on_fire causing 0 credited 123e4567-e89b-12d3-a456-426614174000"
             ]
         );
         std::fs::remove_dir_all(&dir).unwrap();
@@ -5447,15 +4853,15 @@ experimental = ["scripts"]
                 end)
                 horizon.every(2, function() N = N + 1 end)
                 horizon.every(1, function() error("a timer that fails") end)
-                horizon.on("mob_interact", function(dimension, mob, player, held, data)
+                horizon.on("interact_entity", function(event)
                   local w = horizon.world_data()
                   w.clicks = (w.clicks or 0) + 1
-                  local p = horizon.player_data(player.uuid)
+                  local p = horizon.player_data("steve")
                   p.pets = (p.pets or 0) + 1
                   local again = horizon.player_data("steve")
                   again.pets = again.pets + 1
                   PD = horizon.player_data("alex")
-                end, "cow")
+                end, "minecraft:cow")
                 "#,
             )],
         );
@@ -5504,7 +4910,7 @@ experimental = ["scripts"]
         for _ in 0..2 {
             m.interact_entity(
                 &mut host,
-                &mut test_events::interact_entity_event(7, "cow", None),
+                &mut test_events::interact_entity_event(7, "minecraft:cow", None),
             );
         }
         let world = m
@@ -6001,8 +5407,8 @@ experimental = ["scripts"]
                 br#"
                 horizon.goal("idle", { can_use = function() return false end })
                 horizon.on("mob_ai_register", function(event) horizon.add_goal(1, "idle") end)
-                horizon.on("mob_spawned", function(dimension, kind, x, y, z, natural)
-                  horizon.broadcast("spawned " .. kind .. " at " .. x)
+                horizon.on("mob_spawned", function(event)
+                  horizon.broadcast("spawned " .. event.kind .. " at " .. event.pos.x)
                   SPAWN_READ = horizon.block(1, 2, 3)
                 end, "ruby:crawler")
                 horizon.command("nest", 0, function(player, args)
@@ -6077,7 +5483,7 @@ experimental = ["scripts"]
     }
 
     #[test]
-    fn the_player_fall_loot_projectile_and_menu_hooks_reach_their_handlers() {
+    fn the_loot_projectile_and_menu_hooks_reach_their_handlers() {
         let (dir, path) = hmod(
             "events",
             &[(
@@ -6088,17 +5494,6 @@ experimental = ["scripts"]
                 NOTES = {}
                 local function note(line) NOTES[#NOTES + 1] = line end
                 horizon.on("player_tick", function(player) say("tick " .. player.name .. " " .. tostring(player.held.item)) end)
-                horizon.on("player_hurt", function(player, damage_type, causing, direct, amount)
-                  note(("hurt %d %s %s %.1f"):format(player.id, player.kind, damage_type, amount)); horizon.set_amount(amount / 2)
-                end)
-                horizon.on("mob_fall", function(mob, distance, multiplier)
-                  note(("fall %s %.1f x%.1f"):format(mob.kind, distance, multiplier)); horizon.set_distance(1.5)
-                end, "minecraft:cow")
-                horizon.on("player_fall", function(player, distance) note("player fall " .. distance); horizon.cancel() end)
-                horizon.on("mob_heal", function(mob, amount) note("heal " .. mob.id .. " " .. amount); horizon.set_amount(amount + 1) end)
-                horizon.on("mob_knockback", function(mob, damage_type, causing, direct, strength, x, z)
-                  note(("knockback %s %s %.1f %.1f %.1f"):format(mob.kind, damage_type, strength, x, z)); horizon.set_strength(0.25)
-                end, "minecraft:cow")
                 horizon.on("player_chat", function(player, line)
                   note("chat " .. player.name .. " " .. line)
                   if line == "shh" then horizon.cancel() else horizon.reply("heard " .. line) end
@@ -6131,10 +5526,6 @@ experimental = ["scripts"]
                 horizon.on("player_bed_enter", function(player, x, y, z) say(("bed %s %d,%d,%d"):format(player.name, x, y, z)); horizon.cancel() end)
                 horizon.on("player_exp_change", function(player, amount) say("exp " .. amount); horizon.set_amount(amount * 2) end)
                 horizon.on("player_container_open", function(player, menu, pos) say("menu " .. menu .. " " .. (pos and pos.x or "nowhere")) end)
-                horizon.on("mob_equipped", function(mob, slot, from, to) say(("equipped %d %s %s > %s"):format(mob.id, slot, from and from.id or "none", to and to.id or "none")) end, "minecraft:cow")
-                horizon.on("entity_joined", function(dimension, id, kind, x, y, z, loaded)
-                  say(("joined %d %s at %.0f loaded=%s"):format(id, kind, x, tostring(loaded))); if id == 99 then horizon.cancel() end
-                end, "minecraft:arrow")
                 horizon.on("item_hurt_enemy", function(item, player, target) say(("landed %s on %d %s by %s"):format(item.id, target.id, target.kind, player.name)) end, "ruby:wand")
                 horizon.on("item_use_start", function(item, player, hand, duration)
                   say(("use start %s %s %d"):format(item.id, hand, duration)); horizon.set_duration(10)
@@ -6154,36 +5545,6 @@ experimental = ["scripts"]
         };
         let steve = host.acting_player().unwrap();
         m.player_tick(&mut host, &mut test_events::player_tick_event());
-        let mut hit = test_events::living_incoming_damage_event(
-            5,
-            "minecraft:player",
-            "minecraft:fall",
-            -1,
-            -1,
-            6.0,
-        );
-        assert_eq!(m.living_incoming_damage(&mut hit), Flow::Continue);
-        assert_eq!(hit.amount, 3.0);
-        let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
-        assert_eq!(m.living_fall(&mut fall), Flow::Continue);
-        assert_eq!(fall.distance, 1.5);
-        let mut fall = test_events::living_fall_event(5, "minecraft:player", 9.0, 1.0);
-        assert_eq!(m.living_fall(&mut fall), Flow::Cancel);
-        let mut heal = test_events::living_heal_event(7, 2.0);
-        assert_eq!(m.living_heal(&mut heal), Flow::Continue);
-        assert_eq!(heal.amount, 3.0);
-        let mut knock = test_events::living_knockback_event(
-            7,
-            "minecraft:cow",
-            "minecraft:player_attack",
-            5,
-            5,
-            0.4,
-            1.0,
-            0.0,
-        );
-        assert_eq!(m.living_knockback(&mut knock), Flow::Continue);
-        assert_eq!(knock.strength, 0.25);
         let mut replies = Vec::new();
         assert_eq!(
             m.player_chat(&mut test_events::player_chat_event(
@@ -6296,9 +5657,6 @@ experimental = ["scripts"]
         let mut hears = test_events::hears_projectile_impacts_event(false);
         m.hears_projectile_impacts(&host, &mut hears);
         assert!(hears.hears);
-        let mut listened = test_events::living_equipment_listened_event(false);
-        m.living_equipment_listened(&mut host, &mut listened);
-        assert!(listened.listened);
         let mut impact = test_events::projectile_impact_event(
             "minecraft:overworld",
             30,
@@ -6363,35 +5721,6 @@ experimental = ["scripts"]
                 Some([7, 8, 9]),
             ),
         );
-        let sword = ItemStack {
-            item: "minecraft:iron_sword".into(),
-            count: 1,
-            damage: 0,
-            extra: None,
-        };
-        m.living_equipment_change(
-            &mut host,
-            &mut test_events::living_equipment_change_event(
-                7,
-                "minecraft:cow",
-                "mainhand",
-                None,
-                Some(&sword),
-            ),
-        );
-        assert_eq!(
-            m.entity_join_level(
-                &mut host,
-                &mut test_events::entity_join_level_event(
-                    "minecraft:overworld",
-                    99,
-                    "minecraft:arrow",
-                    [1.0, 64.0, 1.0],
-                    false
-                )
-            ),
-            Flow::Cancel
-        );
         m.hurt_enemy(
             &mut host,
             &mut test_events::hurt_enemy_event(&wand(), 7, "minecraft:cow"),
@@ -6426,10 +5755,141 @@ experimental = ["scripts"]
                 "bed steve 4,5,6",
                 "exp 3",
                 "menu minecraft:generic_9x3 7",
-                "equipped 7 mainhand none > minecraft:iron_sword",
-                "joined 99 minecraft:arrow at 1 loaded=false",
                 "landed ruby:wand on 7 minecraft:cow by steve",
                 "use start ruby:wand off 32",
+            ]
+        );
+        assert_eq!(
+            m.lua.globals().get::<Vec<String>>("NOTES").unwrap(),
+            ["chat steve hello all", "chat steve shh"]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_mob_fall_heal_knockback_hurt_equip_and_join_hooks_reach_their_handlers() {
+        let (dir, path) = hmod(
+            "mob-events",
+            &[(
+                "scripts/init.lua",
+                br#"
+                local function say(line) horizon.broadcast(line) end
+                -- The hooks without a host (mid-hit) have no broadcast: they note.
+                NOTES = {}
+                local function note(line) NOTES[#NOTES + 1] = line end
+                horizon.on("living_incoming_damage", function(event)
+                  note(("hurt %d %s %s %.1f"):format(event.entity, event.kind, event.damage_type, event.amount)); event.amount = event.amount / 2
+                end)
+                horizon.on("living_fall", function(event)
+                  note(("fall %s %.1f x%.1f"):format(event.kind, event.distance, event.multiplier)); event.distance = 1.5
+                end, "minecraft:cow")
+                horizon.on("living_fall", function(event) note("player fall " .. event.distance); horizon.cancel() end, "minecraft:player")
+                horizon.on("living_heal", function(event) note("heal " .. event.entity .. " " .. event.amount); event.amount = event.amount + 1 end)
+                horizon.on("living_knockback", function(event)
+                  note(("knockback %s %s %.1f %.1f %.1f"):format(event.kind, event.damage_type, event.strength, event.x, event.z)); event.strength = 0.25
+                end, "minecraft:cow")
+                horizon.on("living_equipment_change", function(event)
+                  say(("equipped %d %s %s > %s"):format(event.entity, event.slot, event.from and event.from.id or "none", event.to and event.to.id or "none"))
+                end, "minecraft:cow")
+                horizon.on("entity_join_level", function(event)
+                  say(("joined %d %s at %.0f loaded=%s"):format(event.entity, event.kind, event.pos.x, tostring(event.loaded_from_disk))); if event.entity == 99 then horizon.cancel() end
+                end, "minecraft:arrow")
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let mut hit = test_events::living_incoming_damage_event(
+            5,
+            "minecraft:player",
+            "minecraft:fall",
+            -1,
+            -1,
+            6.0,
+        );
+        assert_eq!(m.living_incoming_damage(&mut hit), Flow::Continue);
+        assert_eq!(hit.amount, 3.0);
+        let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+        assert_eq!(m.living_fall(&mut fall), Flow::Continue);
+        assert_eq!(fall.distance, 1.5);
+        let mut fall = test_events::living_fall_event(5, "minecraft:player", 9.0, 1.0);
+        assert_eq!(m.living_fall(&mut fall), Flow::Cancel);
+        let mut heal = test_events::living_heal_event(7, 2.0);
+        assert_eq!(m.living_heal(&mut heal), Flow::Continue);
+        assert_eq!(heal.amount, 3.0);
+        let mut knock = test_events::living_knockback_event(
+            7,
+            "minecraft:cow",
+            "minecraft:player_attack",
+            5,
+            5,
+            0.4,
+            1.0,
+            0.0,
+        );
+        assert_eq!(m.living_knockback(&mut knock), Flow::Continue);
+        assert_eq!(knock.strength, 0.25);
+        // The equipment query is answered from the change hook's registry:
+        // a registered change handler counts as listening.
+        let mut listened = test_events::living_equipment_listened_event(false);
+        m.living_equipment_listened(&mut host, &mut listened);
+        assert!(listened.listened);
+        let sword = ItemStack {
+            item: "minecraft:iron_sword".into(),
+            count: 1,
+            damage: 0,
+            extra: None,
+        };
+        m.living_equipment_change(
+            &mut host,
+            &mut test_events::living_equipment_change_event(
+                7,
+                "minecraft:cow",
+                "mainhand",
+                None,
+                Some(&sword),
+            ),
+        );
+        assert_eq!(
+            m.entity_join_level(
+                &mut host,
+                &mut test_events::entity_join_level_event(
+                    "minecraft:overworld",
+                    99,
+                    "minecraft:arrow",
+                    [1.0, 64.0, 1.0],
+                    false
+                )
+            ),
+            Flow::Cancel
+        );
+        assert_eq!(
+            m.entity_join_level(
+                &mut host,
+                &mut test_events::entity_join_level_event(
+                    "minecraft:overworld",
+                    100,
+                    "minecraft:arrow",
+                    [2.0, 64.0, 2.0],
+                    true
+                )
+            ),
+            Flow::Continue
+        );
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            [
+                "equipped 7 mainhand none > minecraft:iron_sword",
+                "joined 99 minecraft:arrow at 1 loaded=false",
+                "joined 100 minecraft:arrow at 2 loaded=true",
             ]
         );
         assert_eq!(
@@ -6440,59 +5900,57 @@ experimental = ["scripts"]
                 "player fall 9",
                 "heal 7 2",
                 "knockback minecraft:cow minecraft:player_attack 0.4 1.0 0.0",
-                "chat steve hello all",
-                "chat steve shh",
             ]
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
-    fn the_mob_hooks_reach_the_handlers_of_their_kind_with_the_mobs_saved_data() {
-        use horizon_world::nbt::Tag;
+    fn the_mob_damage_tick_kill_and_click_hooks_reach_their_kind_handlers() {
         let (dir, path) = hmod(
             "mob-hooks",
             &[(
                 "scripts/init.lua",
                 br#"
                 HURT = {}
-                horizon.on("mob_hurt", function(mob, damage_type, causing, direct, amount)
-                  HURT[#HURT + 1] = mob.kind .. ":" .. damage_type
+                horizon.on("living_incoming_damage", function(event)
+                  HURT[#HURT + 1] = event.kind .. ":" .. event.damage_type
                   HURT_READ = pcall(horizon.block, 1, 2, 3)
-                  if damage_type == "minecraft:on_fire" then horizon.cancel() end
-                  horizon.set_amount(amount * 2)
-                end, "cow")
-                horizon.on("mob_tick", function(dimension, mob, data)
-                  data.ticks = (data.ticks or 0) + 1
-                  if data.ticks == 2 then horizon.set_mob_health(dimension, mob.id, mob.max_health - 1) end
-                  if mob.position.x ~= 2 then error("view") end
+                  if event.damage_type == "minecraft:on_fire" then horizon.cancel() end
+                  event.amount = event.amount * 2
                 end, "minecraft:cow")
-                horizon.on("mob_killed", function(dimension, mob, killer, data)
-                  horizon.broadcast(killer.name .. " killed " .. mob.kind .. " " .. mob.id .. " after " .. data.ticks .. " ticks")
+                TICKS = 0
+                horizon.on("entity_tick_post", function(event)
+                  TICKS = TICKS + 1
+                  if TICKS == 2 then horizon.set_mob_health(event.dimension, event.entity, horizon.mob(event.entity).max_health - 1) end
+                  local seen = horizon.mob(event.entity)
+                  if seen ~= nil and seen.position.x ~= 2 then error("view") end
                 end, "minecraft:cow")
-                horizon.on("mob_interact", function(dimension, mob, player, held, data)
-                  data.pets = (data.pets or 0) + 1
-                  if mob.health ~= 10 then error("view") end
-                  data.block = horizon.block(1, 2, 3) .. "," .. horizon.block(0, 0, 0)
-                  data.facing = horizon.block_property(1, 2, 3, "facing") or "none"
-                  data.players = #horizon.players() .. ":" .. horizon.players()[1].name .. ":" .. (horizon.player("steve") and "found" or "lost") .. ":" .. (horizon.player(player.uuid) and "found" or "lost") .. ":" .. (horizon.player("alex") and "found" or "lost")
+                horizon.on("mob_killed", function(event)
+                  horizon.broadcast("killed " .. event.kind .. " " .. event.entity)
+                end, "minecraft:cow")
+                horizon.on("interact_entity", function(event)
+                  local mob = horizon.mob(event.entity)
+                  if mob ~= nil and mob.health ~= 10 then error("view") end
+                  horizon.broadcast("block " .. horizon.block(1, 2, 3) .. "," .. horizon.block(0, 0, 0))
+                  horizon.broadcast("facing " .. (horizon.block_property(1, 2, 3, "facing") or "none"))
+                  horizon.broadcast("players " .. #horizon.players() .. ":" .. horizon.players()[1].name .. ":" .. (horizon.player("steve") and "found" or "lost") .. ":" .. (horizon.player("alex") and "found" or "lost"))
                   local t = horizon.time()
-                  data.time = t.day .. ":" .. t.time_of_day .. ":" .. t.rain .. ":" .. t.dimension
-                  data.mobs = #horizon.mobs() .. ":" .. horizon.mob(7).max_health .. ":" .. tostring(horizon.mob(8))
-                  local hit = horizon.raycast(player.uuid, 8)
-                  data.hit = hit.id .. ":" .. hit.block.y .. ":" .. hit.x .. ":" .. tostring(horizon.raycast("alex", 8))
+                  horizon.broadcast("time " .. t.day .. ":" .. t.time_of_day .. ":" .. t.rain .. ":" .. t.dimension)
+                  horizon.broadcast("mobs " .. #horizon.mobs() .. ":" .. horizon.mob(7).max_health .. ":" .. tostring(horizon.mob(8)))
+                  local hit = horizon.raycast("steve", 8)
+                  horizon.broadcast("hit " .. hit.id .. ":" .. hit.block.y .. ":" .. hit.x .. ":" .. tostring(horizon.raycast("alex", 8)))
                   KEPT = horizon.block
-                  if held and held.item == "minecraft:wheat" then horizon.cancel() end
+                  if event.stack and event.stack.id == "minecraft:wheat" then horizon.cancel() end
                 end, "minecraft:cow")
                 "#,
             )],
         );
         let m = LuaMod::load(&path, &[]).unwrap();
-        let key = |k: &str| horizon_world::nbt::JavaString::from(k);
         // A hurt zombie is nobody's business; the cow's hit is doubled, fire refused.
         let mut hit = test_events::living_incoming_damage_event(
             9,
-            "zombie",
+            "minecraft:zombie",
             "minecraft:mob_attack",
             1,
             1,
@@ -6500,7 +5958,7 @@ experimental = ["scripts"]
         );
         assert_eq!(m.living_incoming_damage(&mut hit), Flow::Continue);
         assert_eq!(hit.amount, 3.0);
-        hit.kind = "cow";
+        hit.kind = "minecraft:cow";
         assert_eq!(m.living_incoming_damage(&mut hit), Flow::Continue);
         assert_eq!(hit.amount, 6.0);
         hit.damage_type = "minecraft:on_fire";
@@ -6520,13 +5978,13 @@ experimental = ["scripts"]
                 "minecraft:cow:minecraft:on_fire"
             ]
         );
-        // The mod listens to entity ticks: it has a mob_tick handler.
+        // The mod listens to entity ticks: it has an entity_tick_post handler.
         // No host mid-hit: the reads refuse there.
         assert!(!m.lua.globals().get::<bool>("HURT_READ").unwrap());
         let mut listened = test_events::entity_tick_listened_event(false);
         m.entity_tick_listened(&mut NoHost, &mut listened);
         assert!(listened.listened);
-        // Ticks count in the mob's saved data; the second one sets its health.
+        // Ticks count per firing; the second one sets the mob's health.
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -6539,25 +5997,32 @@ experimental = ["scripts"]
         for _ in 0..3 {
             m.entity_tick_post(
                 &mut host,
-                &mut test_events::entity_tick_post_event("minecraft:overworld", 7, "cow"),
-            );
-            m.entity_tick_post(
-                &mut host,
-                &mut test_events::entity_tick_post_event("minecraft:overworld", 8, "cow"),
+                &mut test_events::entity_tick_post_event("minecraft:overworld", 7, "minecraft:cow"),
             );
         }
+        // A mob the host has no view of is told all the same now: one hook
+        // and no view check, where the old mob hook stayed silent.
+        m.entity_tick_post(
+            &mut host,
+            &mut test_events::entity_tick_post_event("minecraft:overworld", 8, "minecraft:cow"),
+        );
         assert_eq!(host.health, [(7, 9.0)]);
-        let saved = m
-            .attachment
-            .get_existing(&mut host as &mut dyn Host, Holder::Entity(7))
-            .unwrap()
-            .unwrap();
-        assert_eq!(saved.get(&key("ticks")), Some(&Tag::Int(3)));
-        // A click keeps count too, and wheat is taken.
+        assert_eq!(m.lua.globals().get::<i64>("TICKS").unwrap(), 4);
+        // A skeleton's tick is nobody's business: the kind filter stays quiet.
+        m.entity_tick_post(
+            &mut host,
+            &mut test_events::entity_tick_post_event(
+                "minecraft:overworld",
+                7,
+                "minecraft:skeleton",
+            ),
+        );
+        assert_eq!(m.lua.globals().get::<i64>("TICKS").unwrap(), 4);
+        // A click without wheat passes through; wheat is taken.
         assert_eq!(
             m.interact_entity(
                 &mut host,
-                &mut test_events::interact_entity_event(7, "cow", None)
+                &mut test_events::interact_entity_event(7, "minecraft:cow", None)
             ),
             Flow::Continue
         );
@@ -6570,55 +6035,81 @@ experimental = ["scripts"]
         assert_eq!(
             m.interact_entity(
                 &mut host,
-                &mut test_events::interact_entity_event(7, "cow", Some(&wheat))
+                &mut test_events::interact_entity_event(7, "minecraft:cow", Some(&wheat))
             ),
             Flow::Cancel
         );
-        // A click on a mob the host has no view of (dead, gone) is not told.
+        // A click on a mob the host has no view of (dead, gone) is told all
+        // the same now: one hook and no view check, where the old mob hook
+        // stayed silent — so wheat is taken there too.
         assert_eq!(
             m.interact_entity(
                 &mut host,
-                &mut test_events::interact_entity_event(8, "cow", Some(&wheat))
+                &mut test_events::interact_entity_event(8, "minecraft:cow", Some(&wheat))
             ),
-            Flow::Continue
+            Flow::Cancel
         );
-        let saved = m
-            .attachment
-            .get_existing(&mut host as &mut dyn Host, Holder::Entity(7))
-            .unwrap()
-            .unwrap();
-        assert_eq!(saved.get(&key("pets")), Some(&Tag::Int(2)));
-        assert_eq!(saved.get(&key("ticks")), Some(&Tag::Int(3)));
-        // The reads answered from the host during the click; a read kept
+        // The reads answered from the host during the clicks; a read kept
         // past the call is refused.
-        let text = |k: &str| match saved.get(&key(k)) {
-            Some(Tag::String(s)) => s.to_string().unwrap(),
-            other => panic!("{k}: {other:?}"),
-        };
-        assert_eq!(text("block"), "minecraft:stone,minecraft:air");
-        assert_eq!(text("facing"), "north");
-        assert_eq!(text("players"), "1:steve:found:found:lost");
-        assert_eq!(text("time"), "1:6000:0.5:minecraft:overworld");
-        assert_eq!(text("mobs"), "1:10:nil");
-        assert_eq!(text("hit"), "minecraft:dirt:5:4.5:nil");
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            [
+                "block minecraft:stone,minecraft:air",
+                "facing north",
+                "players 1:steve:found:lost",
+                "time 1:6000:0.5:minecraft:overworld",
+                "mobs 1:10:nil",
+                "hit minecraft:dirt:5:4.5:nil",
+                "block minecraft:stone,minecraft:air",
+                "facing north",
+                "players 1:steve:found:lost",
+                "time 1:6000:0.5:minecraft:overworld",
+                "mobs 1:10:nil",
+                "hit minecraft:dirt:5:4.5:nil",
+                "block minecraft:stone,minecraft:air",
+                "facing north",
+                "players 1:steve:found:lost",
+                "time 1:6000:0.5:minecraft:overworld",
+                "mobs 1:10:nil",
+                "hit minecraft:dirt:5:4.5:nil",
+            ]
+        );
         let kept: Function = m.lua.globals().get("KEPT").unwrap();
         let e = kept.call::<String>((1, 2, 3)).unwrap_err().to_string();
         assert!(e.contains("inside a hook with a host"), "{e}");
-        // The kill hears the player and the data.
+        // The kill reaches the host; a zombie's death is nobody's business.
         m.mob_killed(
             &mut host,
             &mut test_events::mob_killed_event(1, 7, "minecraft:cow"),
         );
+        m.mob_killed(
+            &mut host,
+            &mut test_events::mob_killed_event(1, 9, "minecraft:zombie"),
+        );
         assert_eq!(
             *host.lines.lock().unwrap(),
-            ["steve killed minecraft:cow 7 after 3 ticks"]
+            [
+                "block minecraft:stone,minecraft:air",
+                "facing north",
+                "players 1:steve:found:lost",
+                "time 1:6000:0.5:minecraft:overworld",
+                "mobs 1:10:nil",
+                "hit minecraft:dirt:5:4.5:nil",
+                "block minecraft:stone,minecraft:air",
+                "facing north",
+                "players 1:steve:found:lost",
+                "time 1:6000:0.5:minecraft:overworld",
+                "mobs 1:10:nil",
+                "hit minecraft:dirt:5:4.5:nil",
+                "block minecraft:stone,minecraft:air",
+                "facing north",
+                "players 1:steve:found:lost",
+                "time 1:6000:0.5:minecraft:overworld",
+                "mobs 1:10:nil",
+                "hit minecraft:dirt:5:4.5:nil",
+                "killed minecraft:cow 7",
+            ]
         );
-        // Without a host that knows the mob there is no data, and nothing breaks.
-        m.mob_killed(
-            &mut NoHost,
-            &mut test_events::mob_killed_event(1, 7, "minecraft:cow"),
-        );
-        assert_eq!(host.lines.lock().unwrap().len(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -7626,6 +7117,12 @@ experimental = ["scripts"]
         fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
             Vec::new()
         }
+        fn day_time(&self) -> i64 {
+            30000
+        }
+        fn weather(&self) -> (f32, f32) {
+            (0.5, 0.0)
+        }
         fn held(&self) -> Option<(String, u32, bool)> {
             Some(("horizon_modkit:inspect_stick".into(), 1, true))
         }
@@ -7649,13 +7146,15 @@ experimental = ["scripts"]
                 "scripts/init.lua",
                 br#"
                 HEARD = {}
-                horizon.on("entity_interact", function(dimension, entity, player, held)
-                  HEARD[#HEARD + 1] = dimension .. ":" .. entity.kind .. ":" .. entity.id .. ":" .. player.name
-                  if held and held.item == "horizon_modkit:inspect_stick" and horizon.dev.inspect(player, entity.id) then
+                horizon.on("interact_entity", function(event)
+                  -- No player table any more: the acting player's uuid text,
+                  -- as the old table carried it.
+                  local inspected = horizon.dev.inspect("123e4567-e89b-12d3-a456-426614174000", event.entity)
+                  HEARD[#HEARD + 1] = horizon.time().dimension .. ":" .. event.kind .. ":" .. event.entity .. ":" .. tostring(inspected)
+                  if event.stack and event.stack.id == "horizon_modkit:inspect_stick" and inspected then
                     horizon.cancel()
                   end
                 end)
-                horizon.on("mob_interact", function() MOB = true end)
                 horizon.on("right_click_block", function(x, y, z, block, face, player, held)
                   if horizon.dev.inspect(player, { x = x, y = y, z = z, face = face }) then horizon.cancel() end
                 end)
@@ -7670,13 +7169,13 @@ experimental = ["scripts"]
             extra: None,
         };
         let _ = observe::take_requests();
-        // In creative with permission 2, an item frame (no mob) is heard, the
-        // click is the stick's, and mob_interact is not told.
+        // In creative with permission 2, an item frame (no mob) is heard and
+        // the click is the stick's.
         let mut op = StickHost {
             game_mode: 1,
             permission: 2,
         };
-        let mut frame = test_events::interact_entity_event(9, "item_frame", Some(&stick));
+        let mut frame = test_events::interact_entity_event(9, "minecraft:item_frame", Some(&stick));
         assert_eq!(m.interact_entity(&mut op, &mut frame), Flow::Cancel);
         let mut block = test_events::right_click_block_event([4, 70, -2], [0, 0, -1]);
         assert_eq!(m.right_click_block(&mut op, &mut block), Flow::Cancel);
@@ -7698,7 +7197,7 @@ experimental = ["scripts"]
             ]
         );
         // In survival, or without the permission, the stick is any item:
-        // nothing asked, nothing cancelled, the mob hook told.
+        // nothing asked, nothing cancelled.
         for (game_mode, permission) in [(0, 4), (1, 1)] {
             let mut host = StickHost {
                 game_mode,
@@ -7709,10 +7208,13 @@ experimental = ["scripts"]
         }
         assert!(observe::take_requests().is_empty());
         let heard: Vec<String> = m.lua.globals().get::<Vec<String>>("HEARD").unwrap();
-        assert_eq!(heard.len(), 3);
         assert_eq!(
-            heard[0],
-            "minecraft:the_nether:minecraft:item_frame:9:steve"
+            heard,
+            [
+                "minecraft:the_nether:minecraft:item_frame:9:true",
+                "minecraft:the_nether:minecraft:item_frame:9:false",
+                "minecraft:the_nether:minecraft:item_frame:9:false",
+            ]
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }
