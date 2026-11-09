@@ -325,7 +325,28 @@ pub(crate) enum Reader<'a> {
     /// A hook without a host (`mob_hurt`, `mob_ai_register`): reads fail.
     None,
     Host(&'a mut dyn Host),
+    /// A draw hook (`hud`, `gui_layer_post`): the hook's `&dyn Host`,
+    /// shared with the draw closures. Every `&self` read works through it;
+    /// reads that need `&mut` (saved data, the acting player's stacks, a
+    /// direct summon) fail with a draw-hook error.
+    Shared(&'a dyn Host),
     Level(&'a dyn LevelHost),
+}
+
+impl Reader<'_> {
+    /// Whether this reader serves a draw hook (`hud`, `gui_layer_post`).
+    fn is_draw(&self) -> bool {
+        matches!(self, Reader::Shared(_))
+    }
+
+    /// The hook's host for a `&self` read, when the reader has one.
+    fn host(&self) -> Option<&dyn Host> {
+        match self {
+            Reader::None | Reader::Level(_) => None,
+            Reader::Host(h) => Some(&**h),
+            Reader::Shared(s) => Some(*s),
+        }
+    }
 }
 
 /// A saved table a call handed out (`horizon.world_data`,
@@ -455,11 +476,20 @@ impl LuaMod {
             ))
         };
         let no_host = || mlua::Error::runtime(format!("horizon.{what}: no host"));
+        // A read that needs `&mut` from a draw hook (`hud`,
+        // `gui_layer_post`): names the helper, as an ordinary handler
+        // error (it resets the frame-overrun count, like any error).
+        let draw_unavailable = || {
+            mlua::Error::runtime(format!(
+                "horizon.{what}: not available in draw hooks (hud, gui_layer_post)"
+            ))
+        };
         Ok(match what {
             "block" => {
                 let (x, y, z): (i32, i32, i32) = FromLuaMulti::from_lua_multi(rest, lua)?;
                 let id = match reader {
                     Reader::Host(h) => h.block([x, y, z]),
+                    Reader::Shared(s) => s.block([x, y, z]),
                     Reader::Level(l) => l
                         .state_block(l.block_state([x, y, z]))
                         .unwrap_or_else(|| "minecraft:air".to_owned()),
@@ -472,6 +502,7 @@ impl LuaMod {
                     FromLuaMulti::from_lua_multi(rest, lua)?;
                 let value = match reader {
                     Reader::Host(h) => h.block_property([x, y, z], &key),
+                    Reader::Shared(s) => s.block_property([x, y, z], &key),
                     Reader::Level(l) => l
                         .state_properties(l.block_state([x, y, z]))
                         .into_iter()
@@ -485,6 +516,11 @@ impl LuaMod {
                 }
             }
             "world_data" | "player_data" => {
+                // Saved tables are written back through `&mut`: a draw hook
+                // cannot lend it.
+                if reader.is_draw() {
+                    return Err(draw_unavailable());
+                }
                 let Reader::Host(h) = reader else {
                     return Err(level_only());
                 };
@@ -521,10 +557,13 @@ impl LuaMod {
                 Value::Table(table)
             }
             _ => {
-                let Reader::Host(h) = reader else {
+                // A draw hook reads through the shared host: every `&self`
+                // read below works through it. The acting player's stacks
+                // and a direct summon need `&mut` and fail with a
+                // draw-hook error in their own arms.
+                let Some(h) = reader.host() else {
                     return Err(level_only());
                 };
-                let h: &dyn Host = &**h;
                 match what {
                     "mob" => {
                         let id: u32 = FromLuaMulti::from_lua_multi(rest, lua)?;
@@ -674,6 +713,13 @@ impl LuaMod {
                         // own slots); another player's are read from the server's
                         // records.
                         let acting = h.acting_player().is_some_and(|p| p.uuid == uuid);
+                        // The acting player's stacks live in the host's own
+                        // slots: reading them needs `&mut`, which a draw
+                        // hook cannot lend. Another player's stacks come
+                        // from the server's records and work shared.
+                        if acting && reader.is_draw() {
+                            return Err(draw_unavailable());
+                        }
                         let Reader::Host(h) = reader else {
                             unreachable!()
                         };
@@ -728,8 +774,10 @@ impl LuaMod {
                     "summon" => {
                         let (dimension, kind, x, y, z): (String, String, f64, f64, f64) =
                             FromLuaMulti::from_lua_multi(rest, lua)?;
+                        // A direct summon writes: a draw hook names the
+                        // helper and fails instead of queueing one.
                         let Reader::Host(h) = reader else {
-                            unreachable!()
+                            return Err(draw_unavailable());
                         };
                         match h.summon(&dimension, &qualify(&kind), [x, y, z], Default::default()) {
                             Some(id) => Value::Integer(i64::from(id)),
@@ -2520,7 +2568,11 @@ impl LuaMod {
                     },
                 )?),
             };
-            let full = matches!(&*reader.borrow(), Reader::Host(_));
+            // A draw hook reads through the shared host: `full`, so its
+            // `horizon.summon` takes the direct read (which fails with a
+            // draw-hook error) instead of queueing a summon for later.
+            // Only the summon wrapper reads the slot's second entry.
+            let full = matches!(&*reader.borrow(), Reader::Host(_) | Reader::Shared(_));
             let mut args = args.into_lua_multi(lua)?;
             args.push_front(Value::Boolean(full));
             args.push_front(read);

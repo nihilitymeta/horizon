@@ -16,10 +16,11 @@
 //!   (every helper takes `&self`): nothing is queued. Other actions a
 //!   handler queues (`horizon.broadcast`...) run after the call, with the
 //!   hook's `&mut dyn Host`, through `run_action`.
-//! * Handlers get no `horizon.block` reads (`Reader::None`, like `mob_hurt`):
-//!   the hook's `&mut dyn Host` cannot be shared with the draw closures and
-//!   the reader at once, and drawing is the point. A read is a Lua error
-//!   naming the hook.
+//! * Handlers read through the hook's `&dyn Host` (`Reader::Shared`),
+//!   shared with the draw closures: every `&self` read (`horizon.player`,
+//!   `horizon.time`, `horizon.mob`...) answers at once. Reads that need
+//!   `&mut` (`world_data`, `player_data`, the acting player's inventory,
+//!   a direct summon) are a Lua error naming the helper.
 //! * A hook that fires every frame gets `FRAME_BUDGET`, not `HANDLER_BUDGET`.
 //!   A handler that keeps missing it is disabled after
 //!   `FRAME_OVERRUNS_UNTIL_DISABLED` consecutive misses, until `/reload`.
@@ -255,7 +256,7 @@ pub(crate) fn hud(mod_: &LuaMod, host: &mut dyn Host, event: &mut HudEvent<'_>) 
         corners_table.set("place", scope.create_function(place_fn(&corners))?)?;
         corners_table.set("shown", scope.create_function(shown_fn(shared))?)?;
         table.set("corners", corners_table)?;
-        mod_.run_handlers_with(hook, None, Reader::None, table, FRAME_BUDGET)
+        mod_.run_handlers_with(hook, None, Reader::Shared(shared), table, FRAME_BUDGET)
     });
     finish(mod_, host, hook, outcome);
 }
@@ -294,7 +295,7 @@ pub(crate) fn gui_layer_post(
         batch_table.set("quad", scope.create_function(quad_fn(shared, &batch))?)?;
         batch_table.set("text_width", scope.create_function(text_width_fn(shared))?)?;
         table.set("batch", batch_table)?;
-        mod_.run_handlers_with(hook, None, Reader::None, table, FRAME_BUDGET)
+        mod_.run_handlers_with(hook, None, Reader::Shared(shared), table, FRAME_BUDGET)
     });
     finish(mod_, host, hook, outcome);
 }
@@ -304,10 +305,13 @@ mod tests {
     use super::*;
     use crate::lua_mods::LuaMod;
     use horizon_client::dev_input::mods::{ModStatus, set_status, status};
+    use horizon_client::mobs::{Mob, MobType};
     use horizon_client::mod_api::{
-        BlockStateId, EntityRef, Hooks, NativeServerPlayer, NativeWorldEpoch, Text,
+        BlockStateId, EntityRef, Hooks, MobView, NativeServerPlayer, NativeWorldEpoch, Text,
         dispatch_gui_layer_post, dispatch_hud, dispatch_mob_spawned,
     };
+    use horizon_client::test_events;
+    use horizon_core::geometry::Vec3;
     use horizon_mods::Package;
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
@@ -315,16 +319,26 @@ mod tests {
 
     /// A game host that records what the handler drew instead of drawing
     /// it: every draw helper appends a line, `broadcast` counts, `text`
-    /// is 6 pixels a character, and only `top_left` is shown.
+    /// is 6 pixels a character, and only `top_left` is shown. The reads a
+    /// draw hook may serve come from `players` (the first one acts),
+    /// `day_time`, `weather` and one cow (mob 7); `tell` appends a line.
     #[derive(Default)]
     struct RecordingHost {
         draws: Mutex<Vec<String>>,
         broadcasts: Mutex<u64>,
+        tells: Mutex<Vec<String>>,
+        players: Vec<NativeServerPlayer>,
+        day_time: i64,
+        weather: (f32, f32),
     }
 
     impl Host for RecordingHost {
+        fn dimension(&self) -> &'static str {
+            "minecraft:overworld"
+        }
+
         fn level_players(&self) -> Vec<NativeServerPlayer> {
-            Vec::new()
+            self.players.clone()
         }
 
         fn state_name(&self, state: BlockStateId) -> String {
@@ -340,7 +354,33 @@ mod tests {
         }
 
         fn acting_player(&self) -> Option<NativeServerPlayer> {
-            None
+            self.players.first().cloned()
+        }
+
+        fn day_time(&self) -> i64 {
+            self.day_time
+        }
+
+        fn weather(&self) -> (f32, f32) {
+            self.weather
+        }
+
+        fn mob_view(&self, dimension: &str, id: u32) -> Option<MobView> {
+            (dimension == "minecraft:overworld" && id == 7).then(|| {
+                MobView::of(
+                    &Mob::new(7, MobType::cow_for_tests(), Vec3::new(2.0, 64.0, 3.0), 0.0),
+                    None,
+                )
+            })
+        }
+
+        fn mob_views(&self, dimension: &str) -> Vec<MobView> {
+            self.mob_view(dimension, 7).into_iter().collect()
+        }
+
+        fn tell(&mut self, uuid: u128, line: Text) -> bool {
+            self.tells.lock().unwrap().push(format!("{uuid} {line:?}"));
+            true
         }
 
         fn fill(&self, _batch: &mut HudBatch, rect: [f32; 4], argb: u32) {
@@ -460,6 +500,24 @@ mod tests {
             .into_iter()
             .find(|s| s.id == id)
             .and_then(|s| s.error)
+    }
+
+    /// The player the draw-hook reads answer with: values off every
+    /// default, so a test can tell a real answer from an empty one.
+    fn draw_player() -> NativeServerPlayer {
+        test_events::native_server_player(
+            0x123e4567_e89b_12d3_a456_426614174001,
+            "draw_steve".into(),
+            0,
+            "minecraft:overworld".into(),
+            [10.5, 65.0, -3.25],
+            0,
+            20.0,
+            0.0,
+            0.0,
+            0,
+            String::new(),
+        )
     }
 
     fn boxed(m: LuaMod) -> Vec<Box<dyn Hooks>> {
@@ -839,6 +897,182 @@ mod tests {
             per_call < Duration::from_millis(50),
             "50 fills cost {per_call:?} a frame"
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_hud_handler_reads_the_player_and_the_time() {
+        let (m, id, dir) = hmod(
+            "reads",
+            "ruby_hud_reads",
+            r#"
+            horizon.on("hud", function(event)
+              local p = horizon.player("draw_steve")
+              local t = horizon.time()
+              event.batch.text(p.name .. "@" .. t.day .. "/" .. t.time_of_day .. "/" .. t.rain, 10, 20, 16777215, true)
+            end)
+            "#,
+        );
+        let mods = boxed(m);
+        let mut host = RecordingHost {
+            players: vec![draw_player()],
+            ..Default::default()
+        };
+        // Off midnight, noon and the default 0: day 1, 6001 ticks in.
+        host.day_time = 30001;
+        host.weather = (0.25, 0.0);
+        let mut batch = HudBatch::new([800, 600]);
+        let mut corners = Corners::new(800.0, 600.0, 0.0);
+        dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+        no_error(&id);
+        assert_eq!(
+            *host.draws.lock().unwrap(),
+            ["text \"draw_steve@1/6001/0.25\" at [10.0, 20.0] 0xffffff true"]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_gui_layer_post_handler_reads_mobs() {
+        let (m, id, dir) = hmod(
+            "mobreads",
+            "ruby_hud_mobreads",
+            r##"
+            horizon.on("gui_layer_post", function(event)
+              local one = horizon.mob(7)
+              local all = horizon.mobs()
+              local n = #all
+              event.batch.text(one.kind .. "#" .. one.id .. "x" .. n, 1, 2, 16777215, false)
+            end)
+            "##,
+        );
+        let mods = boxed(m);
+        let mut host = RecordingHost::default();
+        let mut batch = HudBatch::new([800, 600]);
+        dispatch_gui_layer_post(&mut host, &mods, "test:layer", &mut batch);
+        no_error(&id);
+        assert_eq!(
+            *host.draws.lock().unwrap(),
+            ["text \"minecraft:cow#7x1\" at [1.0, 2.0] 0xffffff false"]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn draw_hooks_refuse_mutating_reads() {
+        // Every read that needs `&mut`: the Lua call naming it, and what
+        // the handler error must name.
+        for (helper, call) in [
+            ("world_data", "horizon.world_data()"),
+            ("player_data", "horizon.player_data(\"draw_steve\")"),
+            ("inventory", "horizon.inventory(\"draw_steve\")"),
+            (
+                "count_items",
+                "horizon.count_items(\"draw_steve\", \"minecraft:stick\")",
+            ),
+            ("carried_items", "horizon.carried_items(\"draw_steve\")"),
+            (
+                "summon",
+                "horizon.summon(\"minecraft:overworld\", \"minecraft:cow\", 0.5, 64.0, 0.5)",
+            ),
+        ] {
+            let (m, id, dir) = hmod(
+                &format!("refused-{helper}"),
+                &format!("ruby_hud_refused_{helper}"),
+                &format!(
+                    "horizon.on(\"hud\", function(event) event.batch.fill(0, 0, 1, 1, 4278190080) {call} end)"
+                ),
+            );
+            let mods = boxed(m);
+            // The first player acts, so the inventory reads take the
+            // `&mut` path (the server's records would answer for anyone
+            // else).
+            let mut host = RecordingHost {
+                players: vec![draw_player()],
+                ..Default::default()
+            };
+            for _ in 0..2 {
+                let mut batch = HudBatch::new([800, 600]);
+                let mut corners = Corners::new(800.0, 600.0, 0.0);
+                dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+                let e = last_error(&id).expect("a &mut-only read failed");
+                assert!(e.contains(helper), "{e}");
+                assert!(!e.contains("disabled"), "{e}");
+                assert!(!e.contains("ran over its time budget"), "{e}");
+            }
+            // The hook ran again next frame: both frames drew before the
+            // read failed.
+            assert_eq!(host.draws.lock().unwrap().len(), 2);
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_draw_read_error_resets_the_overrun_count() {
+        let (m, id, dir) = hmod(
+            "reset",
+            "ruby_hud_reset",
+            r#"
+            horizon.on("hud", function(event)
+              N = (N or 0) + 1
+              if N == 1 then horizon.world_data() end
+              while true do end
+            end)
+            "#,
+        );
+        let mods = boxed(m);
+        let mut host = RecordingHost::default();
+        for n in 1..=4 {
+            let mut batch = HudBatch::new([800, 600]);
+            let mut corners = Corners::new(800.0, 600.0, 0.0);
+            dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+            let e = last_error(&id).expect("the handler failed");
+            if n == 1 {
+                // An ordinary failure: named, not an overrun.
+                assert!(e.contains("world_data"), "{e}");
+                assert!(!e.contains("ran over its time budget"), "{e}");
+                assert!(!e.contains("disabled"), "{e}");
+            } else if n < 4 {
+                assert!(e.contains("ran over its time budget"), "{e}");
+                assert!(!e.contains("disabled"), "{e}");
+            } else {
+                // The third consecutive overrun disables: had the read
+                // error counted, this would have fired a frame earlier.
+                assert!(e.contains("disabled"), "{e}");
+            }
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_write_queued_from_hud_lands_after_the_call() {
+        let (m, id, dir) = hmod(
+            "queued",
+            "ruby_hud_queued",
+            r#"
+            horizon.on("hud", function(event)
+              event.batch.fill(0, 0, 1, 1, 4278190080)
+              horizon.tell("draw_steve", "hello from hud")
+            end)
+            "#,
+        );
+        let mods = boxed(m);
+        let mut host = RecordingHost {
+            players: vec![draw_player()],
+            ..Default::default()
+        };
+        let mut batch = HudBatch::new([800, 600]);
+        let mut corners = Corners::new(800.0, 600.0, 0.0);
+        dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+        no_error(&id);
+        assert_eq!(
+            *host.draws.lock().unwrap(),
+            ["fill [0.0, 0.0, 1.0, 1.0] 0xff000000"]
+        );
+        // The tell queued during the call ran after it, with `&mut`.
+        let tells = host.tells.lock().unwrap();
+        assert_eq!(tells.len(), 1);
+        assert!(tells[0].contains("hello from hud"), "{}", tells[0]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
