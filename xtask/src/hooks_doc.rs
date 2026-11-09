@@ -29,7 +29,8 @@ const LUA_HOOKS: &[(&str, &str)] = &[
         "mob_spawned",
         "`mob_spawned(dimension, kind, x, y, z, natural)`, by kind",
     ),
-    ("mob_ai_register", "`mob_ai_register(mob)`, by kind"),
+    ("mob_ai_register", "an event table with `mob`, by kind"),
+    ("register_goals", "an event table with `mob`, by kind"),
     (
         "living_incoming_damage",
         "`mob_hurt(mob, damage_type, causing, direct, amount)`, by kind; `player_hurt(player, ...)` for a player",

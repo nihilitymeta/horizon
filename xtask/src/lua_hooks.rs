@@ -63,6 +63,9 @@ fn kind_tt(model: &Model) -> String {
         // A block-entity tick filters by its entity's own id (served from
         // the declarations beside it).
         Kind::BlockEntity { field } => format!("(block_entity {field})"),
+        // A mob hook filters by the registering mob's own kind id,
+        // qualified.
+        Kind::Mob { field } => format!("(mob {field})"),
     }
 }
 
@@ -143,6 +146,9 @@ fn seed_tag(conv: &Conv, ty: &str, key: Option<&str>) -> String {
         // its inline entity table and host dimension the same way.
         Conv::BlockEntity => "block_entity",
         Conv::HostDimension => "host_dimension",
+        // Documentary tag only: the bespoke mob arm seeds the event's
+        // `mob` table from the registering mob's view inline.
+        Conv::Mob => "mob_view",
         Conv::MutScalar => {
             if owned_mut_scalar(ty) {
                 "copy"
@@ -357,6 +363,9 @@ fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
     // dimension inline, with `set_block_property` on the host and the
     // before-template writeback through `entity.nbt`; the provider and ticks
     // never invoke handlers (their field tags only document the parameters).
+    // A mob hook seeds the event's `mob` table from the registering mob's
+    // view and runs the queued goal/body actions on the mob after a
+    // successful call; its field tag only documents the parameter.
     let bespoke = match model.name.as_str() {
         "server_tick" => Some("gen_server_tick"),
         "loot_drops" => Some("gen_loot_drops"),
@@ -378,6 +387,8 @@ fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
             })
         } else if matches!(model.kind, Kind::BlockEntity { .. }) {
             Some("gen_block_entity_tick")
+        } else if matches!(model.kind, Kind::Mob { .. }) {
+            Some("gen_mob_ai_register")
         } else {
             None
         }
@@ -606,6 +617,22 @@ fn kind_values(model: &Model) -> Option<KindPlan> {
                 assert_kind: Some("\"minecraft:stone\"".to_owned()),
             })
         }
+        // A mob hook filters by the registering mob's own kind id. K1 is
+        // the watched cow, so the K1 firing's asserts match it exactly; K2
+        // is a mob of another kind, which stays quiet. There is no gone
+        // firing: a kind is never absent, and the bespoke kind test pins
+        // that a non-matching kind builds no event table.
+        Kind::Mob { .. } => {
+            let k1 = "&mut test_mob(\"minecraft:cow\")".to_owned();
+            let k2 = "&mut test_mob(\"test:other\")".to_owned();
+            Some(KindPlan {
+                k1,
+                k2,
+                gone: None,
+                register: "minecraft:cow".to_owned(),
+                assert_kind: Some("\"minecraft:cow\"".to_owned()),
+            })
+        }
         // Loot filters by the block id or entity kind of its context. K1
         // is the `n = 0` dispatch sample (a stone break), so the K1
         // firing's asserts match it exactly; K2 is a skeleton death, which
@@ -668,6 +695,13 @@ fn param_asserts(
                 format!("    assert({e}.id == {kind}, \"kind\")"),
                 format!("    assert(next({e}.data) == nil, \"data\")"),
             ];
+        }
+        // A mob hook filters by the registering mob's own kind: the kind
+        // line pins the view's `kind` leaf, not the view itself. The
+        // bespoke view test pins every other leaf with literal values.
+        if field.conv == Conv::Mob {
+            let e = lua_read(&field.name);
+            return vec![format!("    assert({e}.kind == {kind}, \"kind\")")];
         }
         // Loot filters by the block id or entity kind of its context: the
         // kind line pins the block the K1 sample breaks, beside the full
@@ -1780,6 +1814,181 @@ fn block_entity_tick_two_mods_test(name: &str) -> String {
     );
     format!(
         "#[test]\nfn generated_{name}_two_mods_share_a_tick() {{\n    let (a, a_id, _a_dir, a_lua) = loaded_tracked(\"gen_{name}_duo_a\", {lua_a:?});\n    let (b, b_id, _b_dir, b_lua) = loaded_tracked(\"gen_{name}_duo_b\", {lua_b:?});\n    let firing_mods = duo_boxed(a, b);\n    let mut entity = test_block_entity(\"minecraft:stone\");\n    reset_host_writes();\n    {{\n    dispatch_block_entity_tick(&mut FakeHost::empty(), &firing_mods, [1, 2, 3], &mut entity);\n    }}\n    assert_eq!(witness(&a_lua), 1, \"the kind-filtered mod ran\");\n    assert_eq!(witness(&b_lua), 1, \"the every-block mod ran\");\n    assert_eq!(host_writes(), [([1, 2, 3], \"a\".to_owned(), \"1\".to_owned()), ([1, 2, 3], \"b\".to_owned(), \"2\".to_owned())], \"both mods wrote in load order\");\n    assert_eq!(entity.nbt.get(&horizon_world::nbt::JavaString::from(\"a\")), Some(&horizon_world::nbt::Tag::String(\"1\".into())), \"the first mod's data edit lands\");\n    assert_eq!(entity.nbt.get(&horizon_world::nbt::JavaString::from(\"b\")), Some(&horizon_world::nbt::Tag::String(\"2\".into())), \"the second mod's data edit lands\");\n    no_error(&a_id);\n    no_error(&b_id);\n}}\n",
+    )
+}
+
+/// A mob hook's own contract, beside the stock event-table firing: the
+/// handler sees the registering mob as `event.mob` with every view leaf,
+/// the five queued actions mutate the mob's selectors and body, a bad
+/// rotation mode or rate is the handler's error with the legacy message, a
+/// later handler's error drops the earlier handler's queued goals, an
+/// unknown goal name is the handler's error, a non-matching kind builds no
+/// event table, and two mods share one register in load order.
+fn mob_ai_register_tests(model: &Model) -> Vec<String> {
+    let name = model.name.as_str();
+    vec![
+        mob_ai_register_view_test(name),
+        mob_ai_register_goals_test(name),
+        mob_ai_register_clear_test(name),
+        mob_ai_register_body_rotation_test(name),
+        mob_ai_register_bad_mode_test(name),
+        mob_ai_register_bad_rate_test(name),
+        mob_ai_register_error_drops_test(name),
+        mob_ai_register_unknown_goal_test(name),
+        mob_ai_register_kind_no_table_test(name),
+        mob_ai_register_two_mods_test(name),
+    ]
+}
+
+/// One mob-hook firing at a fresh cow: the id the legacy tests registered.
+fn mob_ai_register_fire(name: &str) -> String {
+    format!(
+        "    let mut mob = horizon_client::mobs::Mob::new_client(1, horizon_client::mobs::MobType::cow_for_tests(), horizon_core::geometry::Vec3::ZERO, 0.0);\n    dispatch_{name}(&firing_mods, &mut mob);\n"
+    )
+}
+
+/// The handler reads the registering mob as `event.mob`: every view leaf
+/// with the fresh cow's literal values (a client-side cow with no world, so
+/// `target_position`, `nearest_player` and `home` stay absent and `nearby`
+/// stays empty).
+fn mob_ai_register_view_test(name: &str) -> String {
+    let lua = format!(
+        "horizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    local mob = event.mob\n    assert(mob.id == 1, \"id\")\n    assert(mob.kind == \"minecraft:cow\", \"kind\")\n    assert(mob.position.x == 0 and mob.position.y == 0 and mob.position.z == 0, \"position\")\n    assert(mob.velocity.x == 0 and mob.velocity.y == 0 and mob.velocity.z == 0, \"velocity\")\n    assert(mob.yaw == 0, \"yaw\")\n    assert(mob.head_pitch == 0, \"head_pitch\")\n    assert(mob.health == 10, \"health\")\n    assert(mob.max_health == 10, \"max_health\")\n    assert(mob.age == 0, \"age\")\n    assert(mob.on_ground == false, \"on_ground\")\n    assert(mob.in_water == false, \"in_water\")\n    assert(mob.in_lava == false, \"in_lava\")\n    assert(mob.hurt_time == 0, \"hurt_time\")\n    assert(mob.last_hurt_by == nil, \"last_hurt_by\")\n    assert(mob.target == nil, \"target\")\n    assert(mob.target_position == nil, \"target_position\")\n    assert(mob.target_in_melee_range == false, \"target_in_melee_range\")\n    assert(mob.navigation_done == true, \"navigation_done\")\n    assert(mob.nearest_player == nil, \"nearest_player\")\n    assert(mob.home == nil, \"home\")\n    assert(next(mob.nearby) == nil, \"nearby\")\nend, \"minecraft:cow\")"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_view_sees_every_leaf() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_view\", {lua:?});\n    let firing_mods = boxed(m);\n{dispatch}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    no_error(&id);\n}}\n",
+        dispatch = mob_ai_register_fire(name),
+    )
+}
+
+/// The queued goal actions attach: a goal and a target goal land in the
+/// mob's selectors at the priorities the handler passed. The handler clears
+/// the vanilla selectors first, so the asserts name exactly what attached
+/// (a defined goal attaches as `{mod}:{name}`).
+fn mob_ai_register_goals_test(name: &str) -> String {
+    let lua = format!(
+        "horizon.goal(\"stalk\", {{ can_use = function() return false end }})\nhorizon.goal(\"prowl\", {{ can_use = function() return false end }})\nhorizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    local mob = event.mob\n    assert(mob.kind == \"minecraft:cow\", \"kind\")\n    horizon.clear_goals()\n    horizon.add_goal(2, \"stalk\")\n    horizon.clear_target_goals()\n    horizon.add_target_goal(1, \"prowl\")\nend, \"minecraft:cow\")"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_goals_attach() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_attach\", {lua:?});\n    let firing_mods = boxed(m);\n{dispatch}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    let goals: Vec<(i32, String)> = mob.ai.goals.entries().map(|(p, n, _, _)| (p, n.to_owned())).collect();\n    assert_eq!(goals, [(2, \"gen_{name}_attach:stalk\".to_owned())], \"the goal attached at its priority\");\n    let targets: Vec<(i32, String)> = mob.ai.targets.entries().map(|(p, n, _, _)| (p, n.to_owned())).collect();\n    assert_eq!(targets, [(1, \"gen_{name}_attach:prowl\".to_owned())], \"the target goal attached at its priority\");\n    no_error(&id);\n}}\n",
+        dispatch = mob_ai_register_fire(name),
+    )
+}
+
+/// The queued clears empty the selectors first: goals the same handler
+/// attached before the clear are gone, while one attached after stays.
+fn mob_ai_register_clear_test(name: &str) -> String {
+    let lua = format!(
+        "horizon.goal(\"stalk\", {{ can_use = function() return false end }})\nhorizon.goal(\"prowl\", {{ can_use = function() return false end }})\nhorizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.add_goal(2, \"stalk\")\n    horizon.add_target_goal(1, \"prowl\")\n    horizon.clear_goals()\n    horizon.clear_target_goals()\n    horizon.add_goal(3, \"stalk\")\nend, \"minecraft:cow\")"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_clear_empties_then_adds() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_clear\", {lua:?});\n    let firing_mods = boxed(m);\n{dispatch}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    let goals: Vec<(i32, String)> = mob.ai.goals.entries().map(|(p, n, _, _)| (p, n.to_owned())).collect();\n    assert_eq!(goals, [(3, \"gen_{name}_clear:stalk\".to_owned())], \"the clear dropped the earlier goal, not the later one\");\n    let targets: Vec<(i32, String)> = mob.ai.targets.entries().map(|(p, n, _, _)| (p, n.to_owned())).collect();\n    assert!(targets.is_empty(), \"the clear dropped the target goal\");\n    no_error(&id);\n}}\n",
+        dispatch = mob_ai_register_fire(name),
+    )
+}
+
+/// The body rotation settles: an explicit smooth rate, frozen, and the
+/// smooth default of five degrees a tick.
+fn mob_ai_register_body_rotation_test(name: &str) -> String {
+    let smooth_lua = format!(
+        "horizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_body_rotation(\"smooth\", 7)\nend, \"minecraft:cow\")"
+    );
+    let frozen_lua = format!(
+        "horizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_body_rotation(\"frozen\")\nend, \"minecraft:cow\")"
+    );
+    let default_lua = format!(
+        "horizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_body_rotation(\"smooth\")\nend, \"minecraft:cow\")"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_body_rotation_settles() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_smooth\", {smooth_lua:?});\n    let firing_mods = boxed(m);\n{dispatch}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    assert_eq!(mob.ai.body.mode, horizon_client::mobs::control::BodyRotationMode::Smooth {{ degrees_per_tick: 7.0 }}, \"the smooth rate sticks\");\n    no_error(&id);\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_frozen\", {frozen_lua:?});\n    let firing_mods = boxed(m);\n{dispatch}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    assert_eq!(mob.ai.body.mode, horizon_client::mobs::control::BodyRotationMode::Frozen, \"frozen sticks\");\n    no_error(&id);\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_rate_default\", {default_lua:?});\n    let firing_mods = boxed(m);\n{dispatch}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    assert_eq!(mob.ai.body.mode, horizon_client::mobs::control::BodyRotationMode::Smooth {{ degrees_per_tick: 5.0 }}, \"a smooth body turns five degrees a tick by default\");\n    no_error(&id);\n}}\n",
+        dispatch = mob_ai_register_fire(name),
+    )
+}
+
+/// The status row a failing hook leaves, with the handler's error text: the
+/// legacy unknown-mode message names the accepted modes, and the mob stays
+/// vanilla.
+fn mob_error_row() -> String {
+    "    let e = horizon_client::dev_input::mods::status().into_iter().find(|s| s.id == id).and_then(|s| s.error).expect(\"the failed rotation is recorded\");\n"
+        .to_owned()
+}
+
+/// An unknown body rotation mode is the handler's error, not a panic: the
+/// legacy message names the accepted modes, and the mob stays vanilla.
+fn mob_ai_register_bad_mode_test(name: &str) -> String {
+    let lua = format!(
+        "horizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_body_rotation(\"swivel\")\nend, \"minecraft:cow\")"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_bad_body_mode_is_the_handlers_error() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_badmode\", {lua:?});\n    let firing_mods = boxed(m);\n{dispatch}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    assert_eq!(mob.ai.body.mode, horizon_client::mobs::control::BodyRotationMode::Vanilla, \"the mob stays vanilla\");\n{row}    assert!(e.contains(\"no such body rotation\"), \"{{e}}\");\n    assert!(e.contains(\"vanilla\"), \"{{e}}\");\n    has_error(&id);\n}}\n",
+        dispatch = mob_ai_register_fire(name),
+        row = mob_error_row(),
+    )
+}
+
+/// A smooth rate outside 0.1..=90.0 is the handler's error with the legacy
+/// message, and the mob stays vanilla.
+fn mob_ai_register_bad_rate_test(name: &str) -> String {
+    let lua = format!(
+        "horizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_body_rotation(\"smooth\", 900)\nend, \"minecraft:cow\")"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_out_of_bounds_rate_is_the_handlers_error() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_badrate\", {lua:?});\n    let firing_mods = boxed(m);\n{dispatch}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    assert_eq!(mob.ai.body.mode, horizon_client::mobs::control::BodyRotationMode::Vanilla, \"the mob stays vanilla\");\n{row}    assert!(e.contains(\"the smooth rate stays within 0.1..=90.0\"), \"{{e}}\");\n    has_error(&id);\n}}\n",
+        dispatch = mob_ai_register_fire(name),
+        row = mob_error_row(),
+    )
+}
+
+/// A later handler's error drops the earlier handler's queued goals: both
+/// handlers ran, but nothing attached.
+fn mob_ai_register_error_drops_test(name: &str) -> String {
+    let lua = format!(
+        "horizon.goal(\"idle\", {{ can_use = function() return false end }})\nhorizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.add_goal(1, \"idle\")\nend, \"minecraft:cow\")\nhorizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 10\n    error(\"boom\")\nend, \"minecraft:cow\")"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_later_error_drops_queued_goals() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_errordrops\", {lua:?});\n    let firing_mods = boxed(m);\n{dispatch}\n    assert_eq!(witness(&lua), 11, \"both handlers ran\");\n    assert!(!mob.ai.goals.entries().any(|(_, n, _, _)| n == \"gen_{name}_errordrops:idle\"), \"the queued goal was dropped\");\n    has_error(&id);\n}}\n",
+        dispatch = mob_ai_register_fire(name),
+    )
+}
+
+/// An unknown goal name is the handler's error with the legacy text: the
+/// action names itself, its priority and the quoted goal, and points at
+/// `horizon.goal`.
+fn mob_ai_register_unknown_goal_test(name: &str) -> String {
+    let lua = format!(
+        "horizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.add_goal(1, \"missing\")\nend, \"minecraft:cow\")"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_unknown_goal_is_the_handlers_error() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_ungoal\", {lua:?});\n    let firing_mods = boxed(m);\n{dispatch}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    assert!(!mob.ai.goals.entries().any(|(_, n, _, _)| n == \"gen_{name}_ungoal:missing\"), \"nothing attached\");\n{row}    assert!(e.contains(\"no such goal\"), \"{{e}}\");\n    assert!(e.contains(\"define it with horizon.goal\"), \"{{e}}\");\n    has_error(&id);\n}}\n",
+        dispatch = mob_ai_register_fire(name),
+        row = mob_error_row(),
+    )
+}
+
+/// A mob of a kind the handler does not watch runs no handler and builds
+/// no event table: the kind check turns the dispatch away before the seed,
+/// with no reads (the kind comes from the mob itself, not a host).
+fn mob_ai_register_kind_no_table_test(name: &str) -> String {
+    let lua = format!(
+        "horizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:cow\")"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_unwatched_kind_builds_no_table() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_watchedaway\", {lua:?});\n    let firing_mods = boxed(m);\n    let mut mob = test_mob(\"test:other\");\n    {{\n    reset_entity_reads();\n    reset_host_reads();\n    reset_level_reads();\n    reset_event_tables();\n    dispatch_{name}(&firing_mods, &mut mob);\n    assert_eq!(witness(&lua), 0, \"the unwatched kind runs no handler\");\n    assert_eq!(event_tables(), 0, \"no event table was built for an unwatched kind\");\n    assert_eq!(entity_reads(), 0, \"the unwatched dispatch read no entity\");\n    assert_eq!(host_reads(), 0, \"the unwatched dispatch read the host\");\n    assert_eq!(level_reads(), 0, \"the unwatched dispatch read the level\");\n    }}\n    no_error(&id);\n}}\n",
+    )
+}
+
+/// Two mods share one register in load order: the kind-filtered mod and
+/// the every-kind mod both hear the cow dispatch, and both goals attach.
+fn mob_ai_register_two_mods_test(name: &str) -> String {
+    let lua_a = format!(
+        "horizon.goal(\"stalk\", {{ can_use = function() return false end }})\nhorizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.add_goal(1, \"stalk\")\nend, \"minecraft:cow\")"
+    );
+    let lua_b = format!(
+        "horizon.goal(\"prowl\", {{ can_use = function() return false end }})\nhorizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.add_target_goal(2, \"prowl\")\nend)"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_two_mods_share_a_register() {{\n    let (a, a_id, _a_dir, a_lua) = loaded_tracked(\"gen_{name}_duo_a\", {lua_a:?});\n    let (b, b_id, _b_dir, b_lua) = loaded_tracked(\"gen_{name}_duo_b\", {lua_b:?});\n    let firing_mods = duo_boxed(a, b);\n{dispatch}\n    assert_eq!(witness(&a_lua), 1, \"the kind-filtered mod ran\");\n    assert_eq!(witness(&b_lua), 1, \"the every-kind mod ran\");\n    assert!(mob.ai.goals.entries().any(|(p, n, _, _)| (p, n) == (1, \"gen_{name}_duo_a:stalk\")), \"the first mod's goal attached\");\n    assert!(mob.ai.targets.entries().any(|(p, n, _, _)| (p, n) == (2, \"gen_{name}_duo_b:prowl\")), \"the second mod's target goal attached\");\n    no_error(&a_id);\n    no_error(&b_id);\n}}\n",
+        dispatch = mob_ai_register_fire(name),
     )
 }
 
@@ -3403,6 +3612,13 @@ pub fn run(check: bool) -> Result<(), String> {
         // beside the stock event-table firing.
         if matches!(model.kind, Kind::BlockEntity { .. }) {
             tests.extend(block_entity_tick_tests(model, &tys));
+        }
+        // A mob hook seeds the event's `mob` table from the view and runs
+        // the queued goal/body actions on the mob after a successful call:
+        // bespoke tests pin that contract beside the stock event-table
+        // firing.
+        if matches!(model.kind, Kind::Mob { .. }) {
+            tests.extend(mob_ai_register_tests(model));
         }
         // The second firing covers the optional-stack state the dispatch
         // index misses (odd is always nil): the name cannot collide with a

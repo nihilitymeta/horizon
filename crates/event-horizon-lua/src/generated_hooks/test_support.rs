@@ -5,15 +5,18 @@
 
 use crate::lua_mods::LuaMod;
 use horizon_client::dev_input::mods::{ModStatus, set_status, status};
+use horizon_client::mobs::{Mob, MobType};
 use horizon_client::mod_api::{
     AttachmentError, Attachments, BlockStateId, Compound, EntityRef, Holder, Hooks, Host,
     LegacyRandom, LevelHost, LevelRandomHost, LevelTicksHost, LevelWriteHost, ModBlockEntity,
     NativeServerPlayer, NativeWorldEpoch, ParticleOptions, Text,
 };
+use horizon_core::geometry::Vec3;
 use horizon_mods::Package;
 use mlua::Lua;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// One mod per name, so duo tests loading two mods get two status rows:
 /// the manifest id is the test's name, and every status lookup keys on it.
@@ -274,6 +277,17 @@ fn stone_or_state(state: BlockStateId) -> String {
     } else {
         format!("test:state{}", state.0)
     }
+}
+
+/// A mob of `kind` for the generated mob-hook tests: a cow with the id
+/// swapped, so K1/K2 differ only in the kind the filter reads. Built with
+/// `new_client`, which tells no global dispatch (the tests dispatch the
+/// arm themselves).
+pub fn test_mob(kind: &str) -> Mob {
+    let cow = MobType::cow_for_tests();
+    let mut swapped = (*cow).clone();
+    swapped.id = kind.to_owned();
+    Mob::new_client(7, Arc::new(swapped), Vec3::ZERO, 0.0)
 }
 
 /// The state id the fake knows nothing about (`state_block` returns

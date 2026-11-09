@@ -267,6 +267,7 @@ export type MenuLinksEvent = { player: number, menu: string, pos: Vec3, links: {
 export type MenuSlotRulesEvent = { menu: string, slot: number, stack: Item, may_place: boolean, max_stack: number }
 export type MerchantOfferTradedEvent = { merchant: number, kind: string, offer: { base_cost_a: { stack: Item }, cost_b: { stack: Item }?, result: Item, uses: number, max_uses: number, reward_exp: boolean, special_price_diff: number, demand: number, price_multiplier: number, xp: number } }
 export type MinimapEvent = { minimap: { corner: string, size: number, blocks_per_pixel: number, rotate: boolean, round: boolean }?? }
+export type MobAiRegisterEvent = { mob: MobView }
 export type MobEffectAddedEvent = { effect: string, entity: number?, amplifier: number }
 export type MobSplitEvent = { parent: number, kind: string, size: number, child_size: number, count: number }
 export type ModContainerViewersEvent = { dimension: string, pos: Vec3, viewers: number, previous: number }
@@ -395,6 +396,7 @@ export type RecipeSourcesEvent = { player: number, menu: string, pos: Vec3, sour
 export type RecipesReceivedEvent = { recipe_types: { string } }
 export type RegisterCommandsEvent = { commands: { { usage: string, level: number, permission: string? } } }
 export type RegisterConfigsEvent = { configs: { { mod_id: string, kind: string, file: string, default: string } } }
+export type RegisterGoalsEvent = { mob: MobView }
 export type ReleaseUsingEvent = { stack: Item, entity: number?, time_left: number, used: boolean }
 export type RenderHandEvent = { hand: "main" | "off", stack: Item?, partial: number, swing: number, equip: number }
 export type RenderHandPoseEvent = { hand: "main" | "off", stack: Item?, partial: number, swing: number, equip: number, x: number, y: number, z: number, pitch: number, yaw: number, roll: number, scale: number }
@@ -467,7 +469,6 @@ export type ZoomEvent = { zoom: { factor: number, smooth: boolean, turn: number 
 -- `horizon.on(name, fn[, kind])`: one overload per hook, with its handler's signature.
 export type HorizonOn =
     ((name: "mob_spawned", fn: (dimension: string, kind: string, x: number, y: number, z: number, natural: boolean) -> (), kind: string?) -> ()) &
-    ((name: "mob_ai_register", fn: (mob: MobView) -> (), kind: string?) -> ()) &
     ((name: "right_click_block", fn: (x: number, y: number, z: number, block: string, face: Vec3, player: Player, held: Held?, data: Data?) -> (), kind: string?) -> ()) &
     ((name: "mob_hurt", fn: (mob: IdKind, damage_type: string, causing: number, direct: number, amount: number) -> (), kind: string?) -> ()) &
     ((name: "player_hurt", fn: (player: IdKind, damage_type: string, causing: number, direct: number, amount: number) -> (), kind: string?) -> ()) &
@@ -716,6 +717,7 @@ export type HorizonOn =
     ((name: "menu_slot_rules", fn: (event: MenuSlotRulesEvent) -> ()) -> ()) &
     ((name: "merchant_offer_traded", fn: (event: MerchantOfferTradedEvent) -> (), kind: string?) -> ()) &
     ((name: "minimap", fn: (event: MinimapEvent) -> ()) -> ()) &
+    ((name: "mob_ai_register", fn: (event: MobAiRegisterEvent) -> (), kind: string?) -> ()) &
     ((name: "mob_effect_added", fn: (event: MobEffectAddedEvent) -> (), kind: string?) -> ()) &
     ((name: "mob_split", fn: (event: MobSplitEvent) -> (), kind: string?) -> ()) &
     ((name: "mod_container_viewers", fn: (event: ModContainerViewersEvent) -> ()) -> ()) &
@@ -844,6 +846,7 @@ export type HorizonOn =
     ((name: "recipes_received", fn: (event: RecipesReceivedEvent) -> ()) -> ()) &
     ((name: "register_commands", fn: (event: RegisterCommandsEvent) -> ()) -> ()) &
     ((name: "register_configs", fn: (event: RegisterConfigsEvent) -> ()) -> ()) &
+    ((name: "register_goals", fn: (event: RegisterGoalsEvent) -> (), kind: string?) -> ()) &
     ((name: "release_using", fn: (event: ReleaseUsingEvent) -> (), kind: string?) -> ()) &
     ((name: "render_hand", fn: (event: RenderHandEvent) -> ()) -> ()) &
     ((name: "render_hand_pose", fn: (event: RenderHandPoseEvent) -> ()) -> ()) &

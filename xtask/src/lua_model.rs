@@ -75,6 +75,13 @@ pub enum Kind {
         /// The dispatch parameter the entity id derives from (`entity`).
         field: String,
     },
+    /// A mob hook's kind: the registering `mob`'s own kind id (`mob.kind`),
+    /// qualified. Hostless, so nothing resolves through a host: the kind
+    /// comes from the mob itself, and an unheard hook builds no table.
+    Mob {
+        /// The dispatch parameter the kind id derives from (`mob`).
+        field: String,
+    },
 }
 
 /// One converter tag per event-table field: the seed expression, the
@@ -205,6 +212,13 @@ pub enum Conv {
     /// a script cannot tell which level). A documentary tag: the bespoke
     /// arm seeds it inline.
     HostDimension,
+    /// A mob hook's `mob`: the event table carries it as `mob`, the
+    /// `goals::view_table` snapshot of the registering mob. A documentary
+    /// tag: the bespoke arm seeds it inline, and runs the queued goal/body
+    /// actions on the mob after a successful call. Only the two mob hooks
+    /// classify a live `&mut Mob` (no other native hook takes one: the
+    /// survey is in the H4 report), so the stock arms must never see it.
+    Mob,
 }
 
 /// How a `replace` out value reads back: nil stays `None`, a table or value
@@ -256,6 +270,7 @@ impl Model {
             Kind::Loot => Some("context"),
             Kind::Block { field } => Some(field.as_str()),
             Kind::BlockEntity { field } => Some(field.as_str()),
+            Kind::Mob { field } => Some(field.as_str()),
             Kind::None => None,
         }
     }
@@ -990,6 +1005,15 @@ fn mut_of(
     // `menu_button`'s, stays a handle): the stock arms must never see it.
     if hook == "block_entity_tick" && is_path(elem, "ModBlockEntity") {
         return FieldOutcome::Conv(Conv::BlockEntity, "BlockEntity".into());
+    }
+    // A mob hook's mob: the event table carries it as `mob`, seeded from
+    // the registering mob's view by the bespoke arm, with the queued
+    // goal/body actions applied after a successful call. Only the two mob
+    // hooks (`mob_ai_register`, `register_goals`) take a live `&mut Mob`
+    // — every other `Mob` in the natives is an id, a view or a return —
+    // so the shape alone gates this: the stock arms must never see it.
+    if is_path(elem, "Mob") {
+        return FieldOutcome::Conv(Conv::Mob, "MobView".into());
     }
     opaque_of(hook, elem, adapter, cannot)
 }
@@ -3315,6 +3339,13 @@ fn model_of(
         Kind::BlockEntity {
             field: field.name.clone(),
         }
+    } else if let Some(field) = fields.iter().find(|f| f.conv == Conv::Mob) {
+        // A mob hook filters by the registering mob's own kind id. The
+        // converter only arises on the two mob hooks, so no other hook can
+        // take this branch.
+        Kind::Mob {
+            field: field.name.clone(),
+        }
     } else if params.iter().any(|(n, t)| n == "kind" && is_str_ref(t))
         && !NON_ENTITY_KINDS.iter().any(|(n, _)| n == &name)
     {
@@ -3560,6 +3591,10 @@ pub fn assert_lines(
         // A block-entity tick's dimension is the host's (`host.dimension()`):
         // the fake host is always the overworld.
         Conv::HostDimension => vec![a(&format!("{e} == \"minecraft:overworld\""))],
+        // A mob hook's mob, reached only without a kind filter (mob hooks
+        // always filter, so the kind line above carries this): the sample
+        // mob's kind, like the kind line pins it.
+        Conv::Mob => vec![a(&format!("{e}.kind == {lua}"))],
         Conv::Bytes | Conv::PathStr => vec![a(&format!("{e} == {lua}"))],
         Conv::Player | Conv::PlayerOpt => vec![
             a(&format!("{e}.uuid == {lua}")),
@@ -4066,6 +4101,13 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
         Conv::BlockEntity => plain(
             format!("test_block_entity(\"test:entity{n}\")"),
             format!("\"test:entity{n}\""),
+        ),
+        // A mob hook's mob: a cow with the id swapped, so the stock
+        // firings build a mob of a deterministic kind (the bespoke view
+        // test seeds its own mob and pins every leaf).
+        Conv::Mob => plain(
+            format!("test_mob(\"test:mob{n}\")"),
+            format!("\"test:mob{n}\""),
         ),
         // A block-entity tick's dimension seeds inline in the bespoke arm
         // (its tag only documents the seed): sampling one is a model bug.
@@ -4638,6 +4680,25 @@ mod tests {
                 );
             }
             class => panic!("block_entity_tick should generate, got {class:?}"),
+        }
+        // H4: the two mob hooks generate through no host, filtering by the
+        // registering mob's own kind id, with the mob as a view table.
+        for name in ["mob_ai_register", "register_goals"] {
+            match class_of(name) {
+                Class::Generated(model) => {
+                    assert_eq!(model.host, Host::None, "{name} host");
+                    assert_eq!(model.contract, "listen", "{name} contract");
+                    assert!(
+                        matches!(model.kind, Kind::Mob { .. }),
+                        "{name} kind filters by mob kind"
+                    );
+                    assert!(
+                        model.fields.iter().any(|f| f.conv == Conv::Mob),
+                        "{name} seeds its mob view"
+                    );
+                }
+                class => panic!("{name} should generate, got {class:?}"),
+            }
         }
         // A plain `ticks` number never meant the level-tick host.
         match class_of("player_item_cooldown") {

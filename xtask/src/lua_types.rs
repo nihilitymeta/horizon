@@ -115,15 +115,15 @@ const TYPES: &[(&str, &str)] = &[
 /// its handler's type; the runtime's `LUA_HOOK_NAMES` names the same hooks.
 const HOOKS: &[(&str, &str)] = &[
     // `server_tick`, `world_lifecycle`, `loot_drops`, `random_tick`,
-    // `tick_block` and `block_entity_tick` are generated now (an event table
-    // each): their overloads come from the model below. The
-    // declaration-served `block_entity` and `block_entity_ticks` take no
-    // `horizon.on` registration, so they have no overload.
+    // `tick_block`, `block_entity_tick`, `mob_ai_register` and
+    // `register_goals` are generated now (an event table each): their
+    // overloads come from the model below. The declaration-served
+    // `block_entity` and `block_entity_ticks` take no `horizon.on`
+    // registration, so they have no overload.
     (
         "mob_spawned",
         "(dimension: string, kind: string, x: number, y: number, z: number, natural: boolean) -> ()",
     ),
-    ("mob_ai_register", "(mob: MobView) -> ()"),
     (
         "right_click_block",
         "(x: number, y: number, z: number, block: string, face: Vec3, player: Player, held: Held?, data: Data?) -> ()",

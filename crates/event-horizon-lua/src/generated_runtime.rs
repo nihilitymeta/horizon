@@ -305,6 +305,12 @@ macro_rules! gen_kind {
     ((block_entity $f:ident), $host:expr, $event:ident) => {
         Some($event.$f.id.clone())
     };
+    // A mob hook filters by the registering mob's own kind id, qualified.
+    // The kind comes from the mob itself, with no host to read through, so
+    // a filtered-away dispatch builds no table and reads nothing.
+    ((mob $f:ident), $host:expr, $event:ident) => {
+        Some(qualify(&$event.$f.kind.id))
+    };
 }
 
 /// One _event-table field's seed: the value the handler is told. The host
@@ -1449,6 +1455,114 @@ macro_rules! gen_block_entity_ticks {
                 .is_some_and(|d| d.get(_event.block).is_some_and(|decl| decl.ticks))
             {
                 _event.ticks = true;
+            }
+        }
+    };
+}
+
+/// A mob's registering AI: like a hostless listen hook, but the event
+/// carries the mob as `mob` (the `goals::view_table` snapshot of the
+/// registering mob), and the queued goal/body actions run on the mob after
+/// a successful call. The registering mob's own kind id filters the
+/// handlers, qualified, with no host to resolve through (the kind comes
+/// from the mob itself, so an unheard hook does no Lua work and a
+/// filtered-away dispatch builds no table and reads nothing).
+///
+/// The five queued names stay the apply closure's, moved from the
+/// hand-written hook: `add_goal`/`add_target_goal` resolve the defined goal
+/// (`GoalDef::parse` through the mod's `Budget`), `clear_goals` and
+/// `clear_target_goals` empty a selector, and `set_body_rotation` checks the
+/// mode and its smooth rate bounds; anything else warns that it needs a
+/// host and is dropped. A handler error — or a seed or apply-closure
+/// conversion failure — only logs, as the old `hook_error` did: `call_bare`
+/// hands over actions only on success, so a later handler's error drops the
+/// earlier handler's queued goals.
+///
+/// The field list only documents the parameter; the arm seeds inline, as
+/// the level-tick arm does.
+macro_rules! gen_mob_ai_register {
+    ($name:ident, none, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(($st:ty))? $(=> $write:ident $(($wt:ty))?)?),* $(,)?]) => {
+        fn $name(&self, _event: &mut $event) {
+            let hook = stringify!($name);
+            if !self.has_any_handlers(hook) {
+                return;
+            }
+            // The registering mob's own kind filters the handlers.
+            let kind: Option<String> = gen_kind!($kind, (), _event);
+            let Some(kind) = kind else {
+                return;
+            };
+            if !self.watches(hook, &kind) {
+                return;
+            }
+            let mob = &mut *_event.mob;
+            let outcome = (|| -> mlua::Result<()> {
+                let lua = &self.lua;
+                let table = lua.create_table()?;
+                #[cfg(test)]
+                crate::generated_runtime::note_event_table();
+                table.set("mob", goals::view_table(lua, &MobView::of(mob, None))?)?;
+                self.call_bare(hook, Some(&kind), table, &mut |action, args| {
+                    match action {
+                        "add_goal" | "add_target_goal" => {
+                            let (priority, name): (i32, String) = (args.get(1)?, args.get(2)?);
+                            let def = self
+                                .goals
+                                .lock()
+                                .ok()
+                                .and_then(|g| g.get(&name).cloned())
+                                .ok_or_else(|| {
+                                    mlua::Error::runtime(format!(
+                                        "{action}({priority}, {name:?}): no such goal; define it with horizon.goal"
+                                    ))
+                                })?;
+                            let goal = def.goal(self.lua.clone(), &self.id, self.budget.clone())?;
+                            if action == "add_goal" {
+                                mob.ai.goals.add(priority, goal);
+                            } else {
+                                mob.ai.targets.add(priority, goal);
+                            }
+                        }
+                        "clear_goals" => mob.ai.goals.clear(),
+                        "clear_target_goals" => mob.ai.targets.clear(),
+                        "set_body_rotation" => {
+                            use horizon_client::mobs::control::BodyRotationMode as Mode;
+                            let (mode, rate): (String, Option<f64>) =
+                                (args.get(1)?, args.get(2)?);
+                            const ACCEPTED: &str = "`vanilla`, `smooth` or `frozen`";
+                            mob.ai.body.mode = match mode.as_str() {
+                                "vanilla" => Mode::Vanilla,
+                                "smooth" => {
+                                    let rate = rate.unwrap_or(5.0) as f32;
+                                    if rate.is_finite() && (0.1..=90.0).contains(&rate) {
+                                        Mode::Smooth {
+                                            degrees_per_tick: rate,
+                                        }
+                                    } else {
+                                        return Err(mlua::Error::runtime(format!(
+                                            "set_body_rotation({mode:?}, {rate}): the smooth rate stays within 0.1..=90.0"
+                                        )));
+                                    }
+                                }
+                                "frozen" => Mode::Frozen,
+                                _ => {
+                                    return Err(mlua::Error::runtime(format!(
+                                        "set_body_rotation({mode:?}): no such body rotation; use {ACCEPTED}"
+                                    )));
+                                }
+                            };
+                        }
+                        other => self.warn(format!("{hook}: {other} needs a host; dropped")),
+                    }
+                    Ok(())
+                })?;
+                Ok(())
+            })();
+            // Any failure — the seed, a handler, or an apply-closure
+            // conversion — only logs, as the old `hook_error` did: the
+            // queued actions apply only on the success path above.
+            if let Err(e) = outcome {
+                self.error(format!("{hook}: {e}"));
             }
         }
     };

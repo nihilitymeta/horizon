@@ -25,8 +25,8 @@ use horizon_client::mod_api::NativeCommand;
 use horizon_client::mod_api::{
     AttachmentCodec, AttachmentType, BlockStateId, Compound, EntityTickListenedEvent,
     EntityTickPostEvent, Flow, Holder, Hooks, Host, InteractEntityEvent, LevelDimension, LevelHost,
-    LevelWriteHost, LivingIncomingDamageEvent, MobAiRegisterEvent, MobKilledEvent, MobSpawnedEvent,
-    MobView, RightClickBlockEvent,
+    LevelWriteHost, LivingIncomingDamageEvent, MobKilledEvent, MobSpawnedEvent, MobView,
+    RightClickBlockEvent,
 };
 use horizon_client::mod_api::{
     AttackEntityEvent, DestroyBlockEvent, InventoryTickEvent, ItemPickedUpEvent, ItemStack,
@@ -132,7 +132,6 @@ pub const ENTRY: &str = horizon_mods::content::SCRIPT_ENTRY;
 /// commands' own hook is `perform_command` (`horizon.command` declares).
 pub const LUA_HOOK_NAMES: &[&str] = &[
     "mob_spawned",
-    "mob_ai_register",
     "right_click_block",
     "mob_hurt",
     "player_hurt",
@@ -3048,78 +3047,6 @@ impl Hooks for LuaMod {
         self.store_data(host, hook, event.pos, before, data);
         if cancel { Flow::Cancel } else { Flow::Continue }
     }
-    /// A mob's goals as its species set them up: handlers see the mob's view
-    /// and add Lua goals (`horizon.add_goal(priority, name)`,
-    /// `horizon.add_target_goal`) or clear the selectors first
-    /// (`horizon.clear_goals()`, `horizon.clear_target_goals()`). Handlers
-    /// can also set how a stationary mob's body follows its head
-    /// (`horizon.set_body_rotation(mode, rate)` with `mode` one of
-    /// `vanilla`, `smooth` or `frozen` and `rate` the smooth degrees a tick).
-    fn mob_ai_register(&self, event: &mut MobAiRegisterEvent<'_>) {
-        let mob = &mut *event.mob;
-        let view = match goals::view_table(&self.lua, &MobView::of(mob, None)) {
-            Ok(view) => view,
-            Err(e) => return self.error(format!("mob_ai_register: {e}")),
-        };
-        let kind = qualify(&mob.kind.id);
-        let r = self.call_bare("mob_ai_register", Some(&kind), view, &mut |action, args| {
-            match action {
-                "add_goal" | "add_target_goal" => {
-                    let (priority, name): (i32, String) = (args.get(1)?, args.get(2)?);
-                    let def = self
-                        .goals
-                        .lock()
-                        .ok()
-                        .and_then(|g| g.get(&name).cloned())
-                        .ok_or_else(|| {
-                            mlua::Error::runtime(format!(
-                                "{action}({priority}, {name:?}): no such goal; define it with horizon.goal"
-                            ))
-                        })?;
-                    let goal = def.goal(self.lua.clone(), &self.id, self.budget.clone())?;
-                    if action == "add_goal" {
-                        mob.ai.goals.add(priority, goal);
-                    } else {
-                        mob.ai.targets.add(priority, goal);
-                    }
-                }
-                "clear_goals" => mob.ai.goals.clear(),
-                "clear_target_goals" => mob.ai.targets.clear(),
-                "set_body_rotation" => {
-                    use horizon_client::mobs::control::BodyRotationMode as Mode;
-                    let (mode, rate): (String, Option<f64>) =
-                        (args.get(1)?, args.get(2)?);
-                    const ACCEPTED: &str = "`vanilla`, `smooth` or `frozen`";
-                    mob.ai.body.mode = match mode.as_str() {
-                        "vanilla" => Mode::Vanilla,
-                        "smooth" => {
-                            let rate = rate.unwrap_or(5.0) as f32;
-                            if rate.is_finite() && (0.1..=90.0).contains(&rate) {
-                                Mode::Smooth {
-                                    degrees_per_tick: rate,
-                                }
-                            } else {
-                                return Err(mlua::Error::runtime(format!(
-                                    "set_body_rotation({mode:?}, {rate}): the smooth rate stays within 0.1..=90.0"
-                                )));
-                            }
-                        }
-                        "frozen" => Mode::Frozen,
-                        _ => {
-                            return Err(mlua::Error::runtime(format!(
-                                "set_body_rotation({mode:?}): no such body rotation; use {ACCEPTED}"
-                            )));
-                        }
-                    };
-                }
-                other => self.warn(format!("mob_ai_register: {other} needs a host; dropped")),
-            }
-            Ok(())
-        });
-        if let Err(e) = r {
-            self.error(format!("mob_ai_register: {e}"));
-        }
-    }
     fn mob_spawned(&self, host: &mut dyn Host, event: &mut MobSpawnedEvent<'_>) {
         let MobSpawnedEvent {
             dimension,
@@ -4433,7 +4360,8 @@ experimental = ["scripts"]
                   can_use = function(mob, state, out) return mob.nearest_player ~= nil end,
                   tick = function(mob, state, out) out.look_at(0, 0, 0) end,
                 })
-                horizon.on("mob_ai_register", function(mob)
+                horizon.on("mob_ai_register", function(event)
+                  local mob = event.mob
                   if mob.kind == "minecraft:cow" then
                     horizon.clear_goals()
                     horizon.add_goal(2, "stalk")
@@ -4444,34 +4372,41 @@ experimental = ["scripts"]
             )],
         );
         let m = LuaMod::load(&path, &[]).unwrap();
-        let view = m.lua.create_table().unwrap();
-        view.set("kind", "minecraft:cow").unwrap();
-        let mut seen = Vec::new();
-        let r = m.call_bare("mob_ai_register", None, view, &mut |action, args| {
-            let name: Option<String> = args.get(2)?;
-            if let Some(name) = &name {
-                // The game resolves the goal here; a missing one is the handler's error.
-                let def = m.goals.lock().unwrap().get(name).cloned();
-                let def = def.ok_or_else(|| mlua::Error::runtime(format!("no goal {name}")))?;
-                let goal = def.goal(m.lua.clone(), m.id(), m.budget.clone()).unwrap();
-                assert!(!goal.state().started());
-                assert_eq!(
-                    def.flags,
-                    horizon_client::mod_api::GOAL_MOVE | horizon_client::mod_api::GOAL_LOOK
-                );
-            }
-            seen.push((action.to_owned(), args.get::<Option<i32>>(1)?, name));
-            Ok(())
+        // `load` leaves a status row behind, so a later `error`-like lookup
+        // sees this mod; the handler then runs against a real mob. The
+        // defined goal attaches at its priority, and the missing goal is the
+        // handler's error.
+        set_status(ModStatus {
+            id: m.id().into(),
+            ..Default::default()
         });
-        assert_eq!(
-            seen,
-            [
-                ("clear_goals".to_owned(), None, None),
-                ("add_goal".to_owned(), Some(2), Some("stalk".to_owned())),
-            ]
+        let mut mob = horizon_client::mobs::Mob::new(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
         );
-        let e = r.unwrap_err().to_string();
-        assert!(e.contains("no goal missing"), "{e}");
+        m.mob_ai_register(&mut test_events::mob_ai_register_event(&mut mob));
+        let goals: Vec<(i32, String, bool)> = mob
+            .ai
+            .goals
+            .entries()
+            .map(|(p, name, running, _)| (p, name.to_owned(), running))
+            .collect();
+        assert_eq!(goals, [(2, "ruby:stalk".to_owned(), false)]);
+        assert!(mob.ai.targets.entries().next().is_none());
+        let def = m.goals.lock().unwrap().get("stalk").cloned().unwrap();
+        assert_eq!(
+            def.flags,
+            horizon_client::mod_api::GOAL_MOVE | horizon_client::mod_api::GOAL_LOOK
+        );
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == m.id())
+            .and_then(|s| s.error)
+            .expect("the missing goal is recorded");
+        assert!(e.contains("no such goal"), "{e}");
+        assert!(e.contains("missing"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -4482,7 +4417,8 @@ experimental = ["scripts"]
             &[(
                 "scripts/init.lua",
                 br#"
-                horizon.on("mob_ai_register", function(mob)
+                horizon.on("mob_ai_register", function(event)
+                  local mob = event.mob
                   if mob.kind == "minecraft:cow" then
                     horizon.set_body_rotation("smooth", 7)
                   end
@@ -4518,7 +4454,7 @@ experimental = ["scripts"]
             &[(
                 "scripts/init.lua",
                 br#"
-                horizon.on("mob_ai_register", function(mob)
+                horizon.on("mob_ai_register", function(event)
                   horizon.set_body_rotation("swivel")
                 end)
                 "#,
@@ -6023,7 +5959,7 @@ experimental = ["scripts"]
                 "scripts/init.lua",
                 br#"
                 horizon.goal("idle", { can_use = function() return false end })
-                horizon.on("mob_ai_register", function(mob) horizon.add_goal(1, "idle") end)
+                horizon.on("mob_ai_register", function(event) horizon.add_goal(1, "idle") end)
                 horizon.on("mob_spawned", function(dimension, kind, x, y, z, natural)
                   horizon.broadcast("spawned " .. kind .. " at " .. x)
                   SPAWN_READ = horizon.block(1, 2, 3)

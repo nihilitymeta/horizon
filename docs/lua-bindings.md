@@ -245,7 +245,8 @@ horizon.goal("stalk", {
     if mob.navigation_done then out.navigate_to(p.x, p.y, p.z, 1.1) end
   end,
 })
-horizon.on("mob_ai_register", function(mob)
+horizon.on("mob_ai_register", function(event)
+  local mob = event.mob
   if mob.kind == "minecraft:zombie" then horizon.add_goal(3, "stalk") end
 end)
 ```
@@ -427,7 +428,7 @@ A handler receives the hook's arguments. Some hooks let it change the event, wit
 | Hook | Called when |
 |---|---|
 | `mob_spawned(dimension, kind, x, y, z, natural)` | a mob spawns |
-| `mob_ai_register(mob)` | a mob's goals are set up. Handlers call `horizon.add_goal`, the other goal functions and `horizon.set_body_rotation` |
+| `mob_ai_register(event)` | a mob's goals are set up. Register it by kind. The event holds `mob`, the mob's view as its goals see it. Handlers call `horizon.add_goal`, `horizon.add_target_goal`, the clears and `horizon.set_body_rotation`, which run on the mob after the call |
 | `mob_tick(dimension, mob, data)` | a mob has ticked (`entity_tick_post`). *mob* is its view without the fields that need the world (`nearby` is empty, `target_position` is nil). The host actions work. Register it by kind: a handler for every kind hears every mob of the level each tick |
 | `entity_interact(dimension, entity, player, held)` | a player right-clicks any entity, players and entities that are not mobs included, before `mob_interact` and before the entity and the item act. *entity* is `{id, kind}`, and *held* is the stack of the hand being tried, main then off. `cancel()` takes the click, and `mob_interact` is not told |
 | `mob_interact(dimension, mob, player, held, data)` | a player right-clicks a mob, before the mob and the item act. *mob* is its view, without `nearby` and `target_position`; a mob the host has no view of, because it is dead or gone, is not reported. *held* is the stack of the hand being tried, main then off. `cancel()` takes the click. The host actions work |

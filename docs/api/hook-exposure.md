@@ -4,7 +4,7 @@
 
 Every native hook lands in exactly one class: `generated` (a zero-hand-work event table under the native name), `adapter` (a hand-written converter would unblock it), `handle` or `protocol` (a live handle or raw packets, each needing its own design), `tick` (the level-tick host the Lua runtime does not implement), or `cannot` (no event-table mapping exists, with the reason). `HOOK_CLASSIFICATION` in `crates/event-horizon-lua/src/generated_hooks/mod.rs` is the machine-readable record; this page is its human-readable form, so a hook is never silently missing from Lua: it is either generated or listed here with its reason. The two declaration-served hooks (`block_entity` and `block_entity_ticks`) are generated and omitted from the event-table list below: they are served from the `horizon.block_entity` declarations, build no event table, and take no `horizon.on` registration.
 
-403 hooks are generated and omitted below. The rest:
+405 hooks are generated and omitted below. The rest:
 
 ## Deferred to #44 (name kept by a hand-written hook; would be exposable) (41)
 
@@ -54,7 +54,7 @@ These names stay with the hand-written hooks for now; removing the old hook is #
 | `use_item` | the hand-written hook keeps this name (removing it is #44) |
 | `use_item_on` | the hand-written hook keeps this name (removing it is #44) |
 
-## Deferred to #44 AND not exposable (3)
+## Deferred to #44 AND not exposable (2)
 
 These names stay with the hand-written hooks for now (removing the old hook is #44), and the model says no event-table mapping exists for them either. Each row carries the model's own reason, copied from the classifier, not rewritten.
 
@@ -62,7 +62,6 @@ These names stay with the hand-written hooks for now (removing the old hook is #
 | --- | --- |
 | `gui_layer_post` | HudBatch borrows render state (render thread) |
 | `hud` | HudBatch borrows render state (render thread); Corners borrows render state (render thread) |
-| `mob_ai_register` | a Mob handle needs its own design |
 
 ## Borrows render state (render thread) (38)
 
@@ -156,7 +155,7 @@ Not event tables yet: a hand-written converter would unblock these.
 | `player_profile` | a property list needs its table form |
 | `sound_play` | a playback only the game constructs |
 
-## Handle hooks (7)
+## Handle hooks (6)
 
 Not event tables: a live handle only a design of its own can expose.
 
@@ -168,7 +167,6 @@ Not event tables: a live handle only a design of its own can expose.
 | `menu_button` | a ModBlockEntity handle needs its own design |
 | `menu_button_v2` | a ModBlockEntity handle needs its own design |
 | `menu_quick_move` | a ModBlockEntity handle needs its own design |
-| `register_goals` | a Mob handle needs its own design |
 
 ## Protocol hooks (3)
 

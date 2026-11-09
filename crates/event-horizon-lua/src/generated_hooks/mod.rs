@@ -784,10 +784,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("log_line", "generated"),
     ("menu_input_closed", "generated"),
     ("menu_links", "generated"),
-    (
-        "mob_ai_register",
-        "cannot: mob_ai_register: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("mob_ai_register", "generated"),
     (
         "mob_died",
         "cannot: mob_died: unsupported: the hand-written hook keeps this name (removing it is #44)",
@@ -816,10 +813,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("player_tick_pre", "generated"),
     ("projectile_world_border", "generated"),
     ("recipe_sources", "generated"),
-    (
-        "register_goals",
-        "handle: register_goals: a Mob handle needs its own design",
-    ),
+    ("register_goals", "generated"),
     ("resource_pack_status_v2", "generated"),
     ("right_click_block_v2", "generated"),
     ("screen_mouse_dragged_pre_v2", "generated"),
@@ -1254,6 +1248,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "log_line",
     "menu_input_closed",
     "menu_links",
+    "mob_ai_register",
     "permission_check",
     "player_register_channels",
     "player_command_level",
@@ -1270,6 +1265,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "player_tick_pre",
     "projectile_world_border",
     "recipe_sources",
+    "register_goals",
     "resource_pack_status_v2",
     "right_click_block_v2",
     "screen_mouse_dragged_pre_v2",
@@ -1366,7 +1362,9 @@ pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
     "living_damage_pre",
     "living_damage_post",
     "living_incoming_damage_v3",
+    "mob_ai_register",
     "projectile_world_border",
+    "register_goals",
     "trample",
     "vehicle_moved_v2",
 ];
@@ -1749,6 +1747,7 @@ macro_rules! impl_generated_hooks {
     gen_listen!(log_line, none, horizon_client::mod_api::LogLineEvent<'_>, (none), [level: cloned, thread: cloned, message: cloned, line: cloned]);
     gen_collect!(menu_input_closed, game_mut, horizon_client::mod_api::MenuInputClosedEvent<'_>, (none), [uuid: copy, window: copy, slots: s_vec(horizon_client::mod_api::Option<ItemStack>) => w_vec(horizon_client::mod_api::Option<ItemStack>)]);
     gen_collect!(menu_links, game_mut, horizon_client::mod_api::MenuLinksEvent<'_>, (none), [player: copy, menu: cloned, pos: pos, links: s_vec([i32;3]) => w_vec([i32;3])]);
+    gen_mob_ai_register!(mob_ai_register, none, horizon_client::mod_api::MobAiRegisterEvent<'_>, (mob mob), [mob: mob_view]);
     gen_replace!(permission_check, game_ref, horizon_client::mod_api::PermissionCheckEvent<'_>, (none), [player: copy, node: cloned, default_level: copy], result : value, Option<bool>);
     gen_listen!(player_register_channels, game_mut, horizon_client::mod_api::PlayerRegisterChannelsEvent<'_>, (none), [player: player, channels: str_seq, register: copy]);
     gen_listen!(player_command_level, game_mut, horizon_client::mod_api::PlayerCommandLevelEvent<'_>, (none), [player: player, command: cloned, level: copy => mut_scalar]);
@@ -1765,6 +1764,7 @@ macro_rules! impl_generated_hooks {
     gen_listen!(player_tick_pre, game_mut, horizon_client::mod_api::PlayerTickPreEvent, (none), []);
     gen_listen!(projectile_world_border, none, horizon_client::mod_api::ProjectileWorldBorderEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, pos: s_mut([f64;3]) => w_mut([f64;3]), velocity: s_mut([f64;3]) => w_mut([f64;3]), collide: copy => mut_scalar]);
     gen_collect!(recipe_sources, game_mut, horizon_client::mod_api::RecipeSourcesEvent<'_>, (none), [player: copy, menu: cloned, pos: pos, sources: s_vec([i32;3]) => w_vec([i32;3])]);
+    gen_mob_ai_register!(register_goals, none, horizon_client::mod_api::RegisterGoalsEvent<'_>, (mob mob), [mob: mob_view]);
     gen_listen!(resource_pack_status_v2, game_mut, horizon_client::mod_api::ResourcePackStatusV2Event<'_>, (none), [player: player, pack: copy, status: copy]);
     gen_cancel!(right_click_block_v2, game_mut, horizon_client::mod_api::RightClickBlockV2Event, (none), [pos: pos, face: pos, hand: s_val(horizon_client::mod_api::Hand)]);
     gen_cancel!(screen_mouse_dragged_pre_v2, game_mut, horizon_client::mod_api::ScreenMouseDraggedPreV2Event<'_>, (none), [screen: cloned, mouse: pair, button: copy, delta: pair, modifiers: copy]);
@@ -56201,6 +56201,479 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_mob_ai_register() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_ai_register",
+            "horizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.mob.kind == \"minecraft:cow\", \"kind\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            dispatch_mob_ai_register(&firing_mods, &mut test_mob("test:other"));
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        dispatch_mob_ai_register(&firing_mods, &mut test_mob("minecraft:cow"));
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_mob_ai_register_view_sees_every_leaf() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_ai_register_view",
+            "horizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 1\n    local mob = event.mob\n    assert(mob.id == 1, \"id\")\n    assert(mob.kind == \"minecraft:cow\", \"kind\")\n    assert(mob.position.x == 0 and mob.position.y == 0 and mob.position.z == 0, \"position\")\n    assert(mob.velocity.x == 0 and mob.velocity.y == 0 and mob.velocity.z == 0, \"velocity\")\n    assert(mob.yaw == 0, \"yaw\")\n    assert(mob.head_pitch == 0, \"head_pitch\")\n    assert(mob.health == 10, \"health\")\n    assert(mob.max_health == 10, \"max_health\")\n    assert(mob.age == 0, \"age\")\n    assert(mob.on_ground == false, \"on_ground\")\n    assert(mob.in_water == false, \"in_water\")\n    assert(mob.in_lava == false, \"in_lava\")\n    assert(mob.hurt_time == 0, \"hurt_time\")\n    assert(mob.last_hurt_by == nil, \"last_hurt_by\")\n    assert(mob.target == nil, \"target\")\n    assert(mob.target_position == nil, \"target_position\")\n    assert(mob.target_in_melee_range == false, \"target_in_melee_range\")\n    assert(mob.navigation_done == true, \"navigation_done\")\n    assert(mob.nearest_player == nil, \"nearest_player\")\n    assert(mob.home == nil, \"home\")\n    assert(next(mob.nearby) == nil, \"nearby\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_mob_ai_register(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_mob_ai_register_goals_attach() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_ai_register_attach",
+            "horizon.goal(\"stalk\", { can_use = function() return false end })\nhorizon.goal(\"prowl\", { can_use = function() return false end })\nhorizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 1\n    local mob = event.mob\n    assert(mob.kind == \"minecraft:cow\", \"kind\")\n    horizon.clear_goals()\n    horizon.add_goal(2, \"stalk\")\n    horizon.clear_target_goals()\n    horizon.add_target_goal(1, \"prowl\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_mob_ai_register(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        let goals: Vec<(i32, String)> = mob
+            .ai
+            .goals
+            .entries()
+            .map(|(p, n, _, _)| (p, n.to_owned()))
+            .collect();
+        assert_eq!(
+            goals,
+            [(2, "gen_mob_ai_register_attach:stalk".to_owned())],
+            "the goal attached at its priority"
+        );
+        let targets: Vec<(i32, String)> = mob
+            .ai
+            .targets
+            .entries()
+            .map(|(p, n, _, _)| (p, n.to_owned()))
+            .collect();
+        assert_eq!(
+            targets,
+            [(1, "gen_mob_ai_register_attach:prowl".to_owned())],
+            "the target goal attached at its priority"
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_mob_ai_register_clear_empties_then_adds() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_ai_register_clear",
+            "horizon.goal(\"stalk\", { can_use = function() return false end })\nhorizon.goal(\"prowl\", { can_use = function() return false end })\nhorizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.add_goal(2, \"stalk\")\n    horizon.add_target_goal(1, \"prowl\")\n    horizon.clear_goals()\n    horizon.clear_target_goals()\n    horizon.add_goal(3, \"stalk\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_mob_ai_register(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        let goals: Vec<(i32, String)> = mob
+            .ai
+            .goals
+            .entries()
+            .map(|(p, n, _, _)| (p, n.to_owned()))
+            .collect();
+        assert_eq!(
+            goals,
+            [(3, "gen_mob_ai_register_clear:stalk".to_owned())],
+            "the clear dropped the earlier goal, not the later one"
+        );
+        let targets: Vec<(i32, String)> = mob
+            .ai
+            .targets
+            .entries()
+            .map(|(p, n, _, _)| (p, n.to_owned()))
+            .collect();
+        assert!(targets.is_empty(), "the clear dropped the target goal");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_mob_ai_register_body_rotation_settles() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_ai_register_smooth",
+            "horizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_body_rotation(\"smooth\", 7)\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_mob_ai_register(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            mob.ai.body.mode,
+            horizon_client::mobs::control::BodyRotationMode::Smooth {
+                degrees_per_tick: 7.0
+            },
+            "the smooth rate sticks"
+        );
+        no_error(&id);
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_ai_register_frozen",
+            "horizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_body_rotation(\"frozen\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_mob_ai_register(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            mob.ai.body.mode,
+            horizon_client::mobs::control::BodyRotationMode::Frozen,
+            "frozen sticks"
+        );
+        no_error(&id);
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_ai_register_rate_default",
+            "horizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_body_rotation(\"smooth\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_mob_ai_register(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            mob.ai.body.mode,
+            horizon_client::mobs::control::BodyRotationMode::Smooth {
+                degrees_per_tick: 5.0
+            },
+            "a smooth body turns five degrees a tick by default"
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_mob_ai_register_bad_body_mode_is_the_handlers_error() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_ai_register_badmode",
+            "horizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_body_rotation(\"swivel\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_mob_ai_register(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            mob.ai.body.mode,
+            horizon_client::mobs::control::BodyRotationMode::Vanilla,
+            "the mob stays vanilla"
+        );
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.error)
+            .expect("the failed rotation is recorded");
+        assert!(e.contains("no such body rotation"), "{e}");
+        assert!(e.contains("vanilla"), "{e}");
+        has_error(&id);
+    }
+
+    #[test]
+    fn generated_mob_ai_register_out_of_bounds_rate_is_the_handlers_error() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_ai_register_badrate",
+            "horizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_body_rotation(\"smooth\", 900)\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_mob_ai_register(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            mob.ai.body.mode,
+            horizon_client::mobs::control::BodyRotationMode::Vanilla,
+            "the mob stays vanilla"
+        );
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.error)
+            .expect("the failed rotation is recorded");
+        assert!(e.contains("the smooth rate stays within 0.1..=90.0"), "{e}");
+        has_error(&id);
+    }
+
+    #[test]
+    fn generated_mob_ai_register_later_error_drops_queued_goals() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_ai_register_errordrops",
+            "horizon.goal(\"idle\", { can_use = function() return false end })\nhorizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.add_goal(1, \"idle\")\nend, \"minecraft:cow\")\nhorizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 10\n    error(\"boom\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_mob_ai_register(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 11, "both handlers ran");
+        assert!(
+            !mob.ai
+                .goals
+                .entries()
+                .any(|(_, n, _, _)| n == "gen_mob_ai_register_errordrops:idle"),
+            "the queued goal was dropped"
+        );
+        has_error(&id);
+    }
+
+    #[test]
+    fn generated_mob_ai_register_unknown_goal_is_the_handlers_error() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_ai_register_ungoal",
+            "horizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.add_goal(1, \"missing\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_mob_ai_register(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(
+            !mob.ai
+                .goals
+                .entries()
+                .any(|(_, n, _, _)| n == "gen_mob_ai_register_ungoal:missing"),
+            "nothing attached"
+        );
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.error)
+            .expect("the failed rotation is recorded");
+        assert!(e.contains("no such goal"), "{e}");
+        assert!(e.contains("define it with horizon.goal"), "{e}");
+        has_error(&id);
+    }
+
+    #[test]
+    fn generated_mob_ai_register_unwatched_kind_builds_no_table() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_ai_register_watchedaway",
+            "horizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = test_mob("test:other");
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_ai_register(&firing_mods, &mut mob);
+            assert_eq!(witness(&lua), 0, "the unwatched kind runs no handler");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built for an unwatched kind"
+            );
+            assert_eq!(entity_reads(), 0, "the unwatched dispatch read no entity");
+            assert_eq!(host_reads(), 0, "the unwatched dispatch read the host");
+            assert_eq!(level_reads(), 0, "the unwatched dispatch read the level");
+        }
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_mob_ai_register_two_mods_share_a_register() {
+        let (a, a_id, _a_dir, a_lua) = loaded_tracked(
+            "gen_mob_ai_register_duo_a",
+            "horizon.goal(\"stalk\", { can_use = function() return false end })\nhorizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.add_goal(1, \"stalk\")\nend, \"minecraft:cow\")",
+        );
+        let (b, b_id, _b_dir, b_lua) = loaded_tracked(
+            "gen_mob_ai_register_duo_b",
+            "horizon.goal(\"prowl\", { can_use = function() return false end })\nhorizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.add_target_goal(2, \"prowl\")\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_mob_ai_register(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&a_lua), 1, "the kind-filtered mod ran");
+        assert_eq!(witness(&b_lua), 1, "the every-kind mod ran");
+        assert!(
+            mob.ai
+                .goals
+                .entries()
+                .any(|(p, n, _, _)| (p, n) == (1, "gen_mob_ai_register_duo_a:stalk")),
+            "the first mod's goal attached"
+        );
+        assert!(
+            mob.ai
+                .targets
+                .entries()
+                .any(|(p, n, _, _)| (p, n) == (2, "gen_mob_ai_register_duo_b:prowl")),
+            "the second mod's target goal attached"
+        );
+        no_error(&a_id);
+        no_error(&b_id);
+    }
+
+    #[test]
+    fn generated_mob_ai_register_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_ai_register_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut mob = test_mob("test:mob0");
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_ai_register(&firing_mods, &mut mob);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mob_ai_register read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mob_ai_register read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_ai_register read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_ai_register_cost_kind",
+            "horizon.on(\"mob_ai_register\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_ai_register(&firing_mods, &mut test_mob("minecraft:cow"));
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mob_ai_register read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mob_ai_register read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_ai_register read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_ai_register_cost_live",
+            "horizon.on(\"mob_ai_register\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_ai_register(&firing_mods, &mut test_mob("minecraft:cow"));
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "mob_ai_register built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mob_ai_register read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_ai_register read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_permission_check() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_permission_check",
@@ -58522,6 +58995,479 @@ mod generated_tests {
         no_error(&b_id);
         drop_dir(e_dir);
         drop_dir(b_dir);
+    }
+
+    #[test]
+    fn generated_register_goals() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_register_goals",
+            "horizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.mob.kind == \"minecraft:cow\", \"kind\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            dispatch_register_goals(&firing_mods, &mut test_mob("test:other"));
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        dispatch_register_goals(&firing_mods, &mut test_mob("minecraft:cow"));
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_register_goals_view_sees_every_leaf() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_register_goals_view",
+            "horizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 1\n    local mob = event.mob\n    assert(mob.id == 1, \"id\")\n    assert(mob.kind == \"minecraft:cow\", \"kind\")\n    assert(mob.position.x == 0 and mob.position.y == 0 and mob.position.z == 0, \"position\")\n    assert(mob.velocity.x == 0 and mob.velocity.y == 0 and mob.velocity.z == 0, \"velocity\")\n    assert(mob.yaw == 0, \"yaw\")\n    assert(mob.head_pitch == 0, \"head_pitch\")\n    assert(mob.health == 10, \"health\")\n    assert(mob.max_health == 10, \"max_health\")\n    assert(mob.age == 0, \"age\")\n    assert(mob.on_ground == false, \"on_ground\")\n    assert(mob.in_water == false, \"in_water\")\n    assert(mob.in_lava == false, \"in_lava\")\n    assert(mob.hurt_time == 0, \"hurt_time\")\n    assert(mob.last_hurt_by == nil, \"last_hurt_by\")\n    assert(mob.target == nil, \"target\")\n    assert(mob.target_position == nil, \"target_position\")\n    assert(mob.target_in_melee_range == false, \"target_in_melee_range\")\n    assert(mob.navigation_done == true, \"navigation_done\")\n    assert(mob.nearest_player == nil, \"nearest_player\")\n    assert(mob.home == nil, \"home\")\n    assert(next(mob.nearby) == nil, \"nearby\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_register_goals(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_register_goals_goals_attach() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_register_goals_attach",
+            "horizon.goal(\"stalk\", { can_use = function() return false end })\nhorizon.goal(\"prowl\", { can_use = function() return false end })\nhorizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 1\n    local mob = event.mob\n    assert(mob.kind == \"minecraft:cow\", \"kind\")\n    horizon.clear_goals()\n    horizon.add_goal(2, \"stalk\")\n    horizon.clear_target_goals()\n    horizon.add_target_goal(1, \"prowl\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_register_goals(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        let goals: Vec<(i32, String)> = mob
+            .ai
+            .goals
+            .entries()
+            .map(|(p, n, _, _)| (p, n.to_owned()))
+            .collect();
+        assert_eq!(
+            goals,
+            [(2, "gen_register_goals_attach:stalk".to_owned())],
+            "the goal attached at its priority"
+        );
+        let targets: Vec<(i32, String)> = mob
+            .ai
+            .targets
+            .entries()
+            .map(|(p, n, _, _)| (p, n.to_owned()))
+            .collect();
+        assert_eq!(
+            targets,
+            [(1, "gen_register_goals_attach:prowl".to_owned())],
+            "the target goal attached at its priority"
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_register_goals_clear_empties_then_adds() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_register_goals_clear",
+            "horizon.goal(\"stalk\", { can_use = function() return false end })\nhorizon.goal(\"prowl\", { can_use = function() return false end })\nhorizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.add_goal(2, \"stalk\")\n    horizon.add_target_goal(1, \"prowl\")\n    horizon.clear_goals()\n    horizon.clear_target_goals()\n    horizon.add_goal(3, \"stalk\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_register_goals(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        let goals: Vec<(i32, String)> = mob
+            .ai
+            .goals
+            .entries()
+            .map(|(p, n, _, _)| (p, n.to_owned()))
+            .collect();
+        assert_eq!(
+            goals,
+            [(3, "gen_register_goals_clear:stalk".to_owned())],
+            "the clear dropped the earlier goal, not the later one"
+        );
+        let targets: Vec<(i32, String)> = mob
+            .ai
+            .targets
+            .entries()
+            .map(|(p, n, _, _)| (p, n.to_owned()))
+            .collect();
+        assert!(targets.is_empty(), "the clear dropped the target goal");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_register_goals_body_rotation_settles() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_register_goals_smooth",
+            "horizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_body_rotation(\"smooth\", 7)\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_register_goals(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            mob.ai.body.mode,
+            horizon_client::mobs::control::BodyRotationMode::Smooth {
+                degrees_per_tick: 7.0
+            },
+            "the smooth rate sticks"
+        );
+        no_error(&id);
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_register_goals_frozen",
+            "horizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_body_rotation(\"frozen\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_register_goals(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            mob.ai.body.mode,
+            horizon_client::mobs::control::BodyRotationMode::Frozen,
+            "frozen sticks"
+        );
+        no_error(&id);
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_register_goals_rate_default",
+            "horizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_body_rotation(\"smooth\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_register_goals(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            mob.ai.body.mode,
+            horizon_client::mobs::control::BodyRotationMode::Smooth {
+                degrees_per_tick: 5.0
+            },
+            "a smooth body turns five degrees a tick by default"
+        );
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_register_goals_bad_body_mode_is_the_handlers_error() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_register_goals_badmode",
+            "horizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_body_rotation(\"swivel\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_register_goals(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            mob.ai.body.mode,
+            horizon_client::mobs::control::BodyRotationMode::Vanilla,
+            "the mob stays vanilla"
+        );
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.error)
+            .expect("the failed rotation is recorded");
+        assert!(e.contains("no such body rotation"), "{e}");
+        assert!(e.contains("vanilla"), "{e}");
+        has_error(&id);
+    }
+
+    #[test]
+    fn generated_register_goals_out_of_bounds_rate_is_the_handlers_error() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_register_goals_badrate",
+            "horizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_body_rotation(\"smooth\", 900)\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_register_goals(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            mob.ai.body.mode,
+            horizon_client::mobs::control::BodyRotationMode::Vanilla,
+            "the mob stays vanilla"
+        );
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.error)
+            .expect("the failed rotation is recorded");
+        assert!(e.contains("the smooth rate stays within 0.1..=90.0"), "{e}");
+        has_error(&id);
+    }
+
+    #[test]
+    fn generated_register_goals_later_error_drops_queued_goals() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_register_goals_errordrops",
+            "horizon.goal(\"idle\", { can_use = function() return false end })\nhorizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.add_goal(1, \"idle\")\nend, \"minecraft:cow\")\nhorizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 10\n    error(\"boom\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_register_goals(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 11, "both handlers ran");
+        assert!(
+            !mob.ai
+                .goals
+                .entries()
+                .any(|(_, n, _, _)| n == "gen_register_goals_errordrops:idle"),
+            "the queued goal was dropped"
+        );
+        has_error(&id);
+    }
+
+    #[test]
+    fn generated_register_goals_unknown_goal_is_the_handlers_error() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_register_goals_ungoal",
+            "horizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.add_goal(1, \"missing\")\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_register_goals(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(
+            !mob.ai
+                .goals
+                .entries()
+                .any(|(_, n, _, _)| n == "gen_register_goals_ungoal:missing"),
+            "nothing attached"
+        );
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.error)
+            .expect("the failed rotation is recorded");
+        assert!(e.contains("no such goal"), "{e}");
+        assert!(e.contains("define it with horizon.goal"), "{e}");
+        has_error(&id);
+    }
+
+    #[test]
+    fn generated_register_goals_unwatched_kind_builds_no_table() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_register_goals_watchedaway",
+            "horizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        let mut mob = test_mob("test:other");
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_register_goals(&firing_mods, &mut mob);
+            assert_eq!(witness(&lua), 0, "the unwatched kind runs no handler");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built for an unwatched kind"
+            );
+            assert_eq!(entity_reads(), 0, "the unwatched dispatch read no entity");
+            assert_eq!(host_reads(), 0, "the unwatched dispatch read the host");
+            assert_eq!(level_reads(), 0, "the unwatched dispatch read the level");
+        }
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_register_goals_two_mods_share_a_register() {
+        let (a, a_id, _a_dir, a_lua) = loaded_tracked(
+            "gen_register_goals_duo_a",
+            "horizon.goal(\"stalk\", { can_use = function() return false end })\nhorizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.add_goal(1, \"stalk\")\nend, \"minecraft:cow\")",
+        );
+        let (b, b_id, _b_dir, b_lua) = loaded_tracked(
+            "gen_register_goals_duo_b",
+            "horizon.goal(\"prowl\", { can_use = function() return false end })\nhorizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.add_target_goal(2, \"prowl\")\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        let mut mob = horizon_client::mobs::Mob::new_client(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        dispatch_register_goals(&firing_mods, &mut mob);
+
+        assert_eq!(witness(&a_lua), 1, "the kind-filtered mod ran");
+        assert_eq!(witness(&b_lua), 1, "the every-kind mod ran");
+        assert!(
+            mob.ai
+                .goals
+                .entries()
+                .any(|(p, n, _, _)| (p, n) == (1, "gen_register_goals_duo_a:stalk")),
+            "the first mod's goal attached"
+        );
+        assert!(
+            mob.ai
+                .targets
+                .entries()
+                .any(|(p, n, _, _)| (p, n) == (2, "gen_register_goals_duo_b:prowl")),
+            "the second mod's target goal attached"
+        );
+        no_error(&a_id);
+        no_error(&b_id);
+    }
+
+    #[test]
+    fn generated_register_goals_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_register_goals_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut mob = test_mob("test:mob0");
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_register_goals(&firing_mods, &mut mob);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "register_goals read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "register_goals read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "register_goals read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_register_goals_cost_kind",
+            "horizon.on(\"register_goals\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_register_goals(&firing_mods, &mut test_mob("minecraft:cow"));
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "register_goals read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "register_goals read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "register_goals read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_register_goals_cost_live",
+            "horizon.on(\"register_goals\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:cow\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_register_goals(&firing_mods, &mut test_mob("minecraft:cow"));
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "register_goals built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "register_goals read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "register_goals read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -64826,6 +65772,11 @@ mod generated_tests {
                 &mut links,
             );
         }
+        // mob_ai_register: unregistered, nothing runs.
+        {
+            let mut mob = test_mob("test:mob0");
+            dispatch_mob_ai_register(&firing_mods, &mut mob);
+        }
         // permission_check: unregistered, nothing runs.
         {
             let mut result: Option<bool> = None;
@@ -65036,6 +65987,11 @@ mod generated_tests {
                 [3, 4, 5],
                 &mut sources,
             );
+        }
+        // register_goals: unregistered, nothing runs.
+        {
+            let mut mob = test_mob("test:mob0");
+            dispatch_register_goals(&firing_mods, &mut mob);
         }
         // resource_pack_status_v2: unregistered, nothing runs.
         {
