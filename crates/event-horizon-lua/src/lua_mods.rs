@@ -4411,6 +4411,54 @@ experimental = ["scripts"]
     }
 
     #[test]
+    fn two_add_goal_calls_without_a_clear_keep_both_goals_in_order() {
+        let (dir, path) = hmod(
+            "goals-two",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.goal("alpha", { can_use = function() return false end })
+                horizon.goal("beta", { can_use = function() return false end })
+                horizon.on("mob_ai_register", function(event)
+                  local mob = event.mob
+                  if mob.kind == "minecraft:cow" then
+                    horizon.add_goal(2, "alpha")
+                    horizon.add_goal(1, "beta")
+                  end
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        set_status(ModStatus {
+            id: m.id().into(),
+            ..Default::default()
+        });
+        let mut mob = horizon_client::mobs::Mob::new(
+            1,
+            horizon_client::mobs::MobType::cow_for_tests(),
+            horizon_core::geometry::Vec3::ZERO,
+            0.0,
+        );
+        m.mob_ai_register(&mut test_events::mob_ai_register_event(&mut mob));
+        // Both adds append after the species' own goals, in call order: an
+        // arm that replaced the list would leave only the second goal.
+        let names: Vec<String> = mob
+            .ai
+            .goals
+            .entries()
+            .map(|(_, name, _, _)| name.to_owned())
+            .collect();
+        let added: Vec<&str> = names
+            .iter()
+            .filter(|n| *n == "ruby:alpha" || *n == "ruby:beta")
+            .map(|n| n.as_str())
+            .collect();
+        assert_eq!(added, ["ruby:alpha", "ruby:beta"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn a_script_sets_a_mobs_body_rotation_from_mob_ai_register() {
         let (dir, path) = hmod(
             "rotation",
@@ -5887,6 +5935,7 @@ experimental = ["scripts"]
         lines: Mutex<Vec<String>>,
         m: Option<Arc<LuaMod>>,
         world: horizon_client::mod_api::Attachments,
+        summoned_goals: Mutex<Vec<String>>,
     }
     impl Host for ReentrantHost {
         fn dimension(&self) -> &'static str {
@@ -5943,6 +5992,12 @@ experimental = ["scripts"]
                 0.0,
             );
             m.mob_ai_register(&mut test_events::mob_ai_register_event(&mut mob));
+            *self.summoned_goals.lock().unwrap() = mob
+                .ai
+                .goals
+                .entries()
+                .map(|(_, name, _, _)| name.to_owned())
+                .collect();
             m.mob_spawned(
                 self,
                 &mut test_events::mob_spawned_event("minecraft:overworld", kind, pos, false),
@@ -5985,6 +6040,7 @@ experimental = ["scripts"]
             lines: Mutex::new(Vec::new()),
             m: Some(m.clone()),
             world: Default::default(),
+            summoned_goals: Mutex::new(Vec::new()),
         };
         let steve = host.acting_player().unwrap();
         assert_eq!(
@@ -6000,6 +6056,10 @@ experimental = ["scripts"]
             *host.lines.lock().unwrap(),
             ["spawned ruby:crawler at 5", "before", "after 42"]
         );
+        // The nested summon's `mob_ai_register` attached the idle goal: a
+        // no-op `add_goal` leaves this empty.
+        let summoned: Vec<String> = host.summoned_goals.lock().unwrap().clone();
+        assert!(summoned.contains(&"ruby:idle".to_owned()), "{summoned:?}");
         let g = m.lua.globals();
         assert_eq!(g.get::<String>("SPAWN_READ").unwrap(), "minecraft:stone");
         assert_eq!(g.get::<String>("AFTER_READ").unwrap(), "minecraft:stone");

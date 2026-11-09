@@ -231,9 +231,9 @@ Some functions take a *player*. A player is a `player` table that a hook handed 
 | Function | Description |
 |---|---|
 | `horizon.goal(name, def)` | Defines a mob goal. *def* has `flags` (any of `"move"`, `"look"`, `"jump"` and `"target"`), `every_tick`, `interruptable`, and the functions `can_use(mob, state, out)` (required), `can_continue`, `start`, `tick` and `stop`. *mob* is the [mob view](#the-mob-view), *state* a table of the goal's own that lives with the mob, and *out* the [goal actions](#goal-actions). Call it at load |
-| `horizon.add_goal(priority, name)`, `horizon.add_target_goal(priority, name)` | Adds a defined goal to the mob's goal selector or target selector. In `mob_ai_register` |
-| `horizon.clear_goals()`, `horizon.clear_target_goals()` | Removes every goal from a selector. In `mob_ai_register` |
-| `horizon.set_body_rotation(mode, rate)` | Sets how a stationary mob's body follows its head. In `mob_ai_register`. *mode* is `"vanilla"` (the default ramp), `"smooth"` (the body turns towards the head by at most *rate* degrees a tick, default `5`) or `"frozen"` (the body never turns). *rate* stays within `0.1` to `90` |
+| `horizon.add_goal(priority, name)`, `horizon.add_target_goal(priority, name)` | Adds a defined goal to the mob's goal selector or target selector. In `mob_ai_register` or `register_goals` |
+| `horizon.clear_goals()`, `horizon.clear_target_goals()` | Removes every goal from a selector. In `mob_ai_register` or `register_goals` |
+| `horizon.set_body_rotation(mode, rate)` | Sets how a stationary mob's body follows its head. In `mob_ai_register` or `register_goals`. *mode* is `"vanilla"` (the default ramp), `"smooth"` (the body turns towards the head by at most *rate* degrees a tick, default `5`) or `"frozen"` (the body never turns). *rate* stays within `0.1` to `90` |
 
 ```lua
 horizon.goal("stalk", {
@@ -428,7 +428,8 @@ A handler receives the hook's arguments. Some hooks let it change the event, wit
 | Hook | Called when |
 |---|---|
 | `mob_spawned(dimension, kind, x, y, z, natural)` | a mob spawns |
-| `mob_ai_register(event)` | a mob's goals are set up. Register it by kind. The event holds `mob`, the mob's view as its goals see it. Handlers call `horizon.add_goal`, `horizon.add_target_goal`, the clears and `horizon.set_body_rotation`, which run on the mob after the call |
+| `mob_ai_register(event)` | a mob's goals are set up, once, on the side that runs its AI. Register it by kind. The event holds `mob`, the mob's view as its goals see it. Handlers call `horizon.add_goal`, `horizon.add_target_goal`, the clears and `horizon.set_body_rotation`, which run on the mob after the call |
+| `register_goals(event)` | a mob's species goals are registered, before `mob_ai_register`. Register it by kind. The event holds `mob`, and the same five calls run on the mob after the call. It fires during species goal registration, for a client's copies of a server's mobs too, and before a `"goals": "none"` mob's selectors are wiped: goals added here on such a mob are gone by `mob_ai_register`. Handlers on both hooks append, so a script that calls `horizon.add_goal` in both attaches the goal twice |
 | `mob_tick(dimension, mob, data)` | a mob has ticked (`entity_tick_post`). *mob* is its view without the fields that need the world (`nearby` is empty, `target_position` is nil). The host actions work. Register it by kind: a handler for every kind hears every mob of the level each tick |
 | `entity_interact(dimension, entity, player, held)` | a player right-clicks any entity, players and entities that are not mobs included, before `mob_interact` and before the entity and the item act. *entity* is `{id, kind}`, and *held* is the stack of the hand being tried, main then off. `cancel()` takes the click, and `mob_interact` is not told |
 | `mob_interact(dimension, mob, player, held, data)` | a player right-clicks a mob, before the mob and the item act. *mob* is its view, without `nearby` and `target_position`; a mob the host has no view of, because it is dead or gone, is not reported. *held* is the stack of the hand being tried, main then off. `cancel()` takes the click. The host actions work |

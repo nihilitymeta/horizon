@@ -151,7 +151,9 @@ Wherever the species decides (`Mob::species`), the mob is its template's species
 and breeding.
 
 With `"goals": "none"`, `Mob::new` clears both goal selectors after the species has filled them. `mob_ai_register`,
-and a script's `horizon.add_goal`, then see empty selectors with the species' controls.
+and a script's `horizon.add_goal`, then see empty selectors with the species' controls. `register_goals` is the earlier
+of the two hooks: it runs at the end of species goal registration, before this wipe, so a goal a script adds there on
+such a mob is cleared before `mob_ai_register` sees it.
 
 The mob drops its own loot table, `<id>:entities/<name>`, when the table exists, and the template's otherwise.
 

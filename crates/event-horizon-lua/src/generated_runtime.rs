@@ -1558,9 +1558,10 @@ macro_rules! gen_mob_ai_register {
                 })?;
                 Ok(())
             })();
-            // Any failure — the seed, a handler, or an apply-closure
-            // conversion — only logs, as the old `hook_error` did: the
-            // queued actions apply only on the success path above.
+            // Any failure only logs, as the old `hook_error` did. A handler's
+            // error drops the whole queue: the apply closure runs only after
+            // every handler returns. An error from inside the apply closure
+            // keeps the actions it already applied, as before.
             if let Err(e) = outcome {
                 self.error(format!("{hook}: {e}"));
             }
