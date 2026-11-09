@@ -351,11 +351,16 @@ fn extra_tags(model: &Model) -> Vec<String> {
 }
 
 fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
-    // A listened game query answers from its sibling hook's registry: no
+    // A listened game query answers from its sibling hooks' registries: no
     // event table, no handlers of its own.
-    if let Some(sibling) = listened_flag(&model.name) {
+    if let Some(siblings) = listened_flag(&model.name) {
+        let list = siblings
+            .iter()
+            .map(|s| format!("{s:?}"))
+            .collect::<Vec<_>>()
+            .join(", ");
         return format!(
-            "    gen_listened_flag!({}, {}, {sibling:?});",
+            "    gen_listened_flag!({}, {}, [{list}]);",
             model.name,
             event_ty(model),
         );
@@ -2035,19 +2040,63 @@ fn declaration_served_tests(model: &Model, _tys: &BTreeMap<String, String>) -> V
     }
 }
 
-/// A listened game query's test: the flag stays unset with no sibling
-/// handler (and the query builds no event table and reads nothing), and is
-/// set with one, whether the sibling handler is bare or kind-filtered. The
-/// query itself never runs a handler: the sibling's handlers stay quiet.
+/// A listened game query's test: the flag stays unset with a handler on an
+/// unrelated hook only (and the query builds no event table and reads
+/// nothing), and is set with a sibling handler, whether that handler is
+/// kind-filtered or bare, and whichever sibling it is on. The
+/// query itself never runs a handler: the siblings' handlers stay quiet.
+/// Each case is its own Lua mod and dispatch, so dropping a sibling from
+/// the list, or the kinds half of `has_any_handlers`, fails exactly its case.
 fn listened_flag_tests(model: &Model) -> Vec<String> {
-    let sibling = listened_flag(&model.name).unwrap_or("?");
+    let siblings: &[&str] = listened_flag(&model.name).unwrap_or(&[]);
     let name = model.name.as_str();
-    let some_lua = format!(
-        "horizon.on(\"{sibling}\", function(event) __witness = (__witness or 0) + 1 end, \"minecraft:zombie\")\nhorizon.on(\"{sibling}\", function(event) end)"
-    );
-    vec![format!(
-        "#[test]\nfn generated_{name}_answers_from_{sibling}_handlers() {{\n    let (m, id, dir, lua) = loaded_tracked(\"gen_{name}_none\", \"horizon.on(\\\"tick\\\", function(event) end)\");\n    let firing_mods = boxed(m);\n    {{\n    let mut listened = false;\n    reset_entity_reads();\n    reset_host_reads();\n    reset_level_reads();\n    reset_event_tables();\n    dispatch_{name}(&mut FakeHost::empty(), &firing_mods, &mut listened);\n    assert!(!listened, \"no {sibling} handler: nobody listens\");\n    assert_eq!(witness(&lua), 0, \"the query ran no handler\");\n    assert_eq!(event_tables(), 0, \"the query built no event table\");\n    assert_eq!(entity_reads(), 0, \"{name} read no entity unheard\");\n    assert_eq!(host_reads(), 0, \"{name} read the host unheard\");\n    assert_eq!(level_reads(), 0, \"{name} read the level unheard\");\n    }}\n    no_error(&id);\n    drop_dir(dir);\n    let (m, id, dir, lua) = loaded_tracked(\"gen_{name}_some\", {some_lua:?});\n    let firing_mods = boxed(m);\n    {{\n    let mut listened = false;\n    reset_entity_reads();\n    reset_host_reads();\n    reset_level_reads();\n    reset_event_tables();\n    dispatch_{name}(&mut FakeHost::empty(), &firing_mods, &mut listened);\n    assert!(listened, \"a {sibling} handler: somebody listens\");\n    assert_eq!(witness(&lua), 0, \"the query ran no handler\");\n    assert_eq!(event_tables(), 0, \"the query built no event table\");\n    }}\n    no_error(&id);\n    drop_dir(dir);\n}}\n",
-    )]
+    // Kind-only and bare-only register on the last sibling (the long-heard
+    // one); every earlier sibling gets its own bare-only case, so no gated
+    // hook can fall out of the list unnoticed.
+    let main = siblings.last().copied().unwrap_or("?");
+    let mut cases: Vec<(String, String, bool, String)> = vec![
+        (
+            "none".into(),
+            "horizon.on(\"tick\", function(event) end)".into(),
+            false,
+            "a handler on another hook: nobody listens".into(),
+        ),
+        (
+            "kind".into(),
+            format!(
+                "horizon.on(\"{main}\", function(event) __witness = (__witness or 0) + 1 end, \"minecraft:zombie\")"
+            ),
+            true,
+            format!("a kind-filtered {main} handler: somebody listens"),
+        ),
+        (
+            "bare".into(),
+            format!("horizon.on(\"{main}\", function(event) end)"),
+            true,
+            format!("a bare {main} handler: somebody listens"),
+        ),
+    ];
+    for other in &siblings[..siblings.len().saturating_sub(1)] {
+        cases.push((
+            format!("only_{other}"),
+            format!("horizon.on(\"{other}\", function(event) end)"),
+            true,
+            format!("a bare {other} handler: somebody listens"),
+        ));
+    }
+    let mut out = format!("#[test]\nfn generated_{name}_answers_from_sibling_handlers() {{\n");
+    for (case, lua_src, heard, msg) in &cases {
+        let assertion = if *heard {
+            format!("    assert!(listened, \"{msg}\");")
+        } else {
+            format!("    assert!(!listened, \"{msg}\");")
+        };
+        out.push_str(&format!(
+            "    let (m, id, dir, lua) = loaded_tracked(\"gen_{name}_{case}\", {lua_src:?});\n    let firing_mods = boxed(m);\n    {{\n    let mut listened = false;\n    reset_entity_reads();\n    reset_host_reads();\n    reset_level_reads();\n    reset_event_tables();\n    dispatch_{name}(&mut FakeHost::empty(), &firing_mods, &mut listened);\n{assertion}\n    assert_eq!(witness(&lua), 0, \"the query ran no handler\");\n    assert_eq!(event_tables(), 0, \"the query built no event table\");\n    assert_eq!(entity_reads(), 0, \"{name} read no entity unheard\");\n    assert_eq!(host_reads(), 0, \"{name} read the host unheard\");\n    assert_eq!(level_reads(), 0, \"{name} read the level unheard\");\n    }}\n    no_error(&id);\n    drop_dir(dir);\n"
+        ));
+    }
+    out.push_str("}\n");
+    vec![out]
 }
 
 /// The declaration-served hooks' cost: a served dispatch builds no event
@@ -3632,7 +3681,7 @@ pub fn run(check: bool) -> Result<(), String> {
             kind_names.push(model.name.clone());
         }
         invocations.push(invocation(model, &tys));
-        // A listened game query answers from its sibling's registry: bespoke
+        // A listened game query answers from its siblings' registries: bespoke
         // tests pin the flag, never an event table. The stock gates below
         // (field assertions, cost, duo) assume a table-firing arm.
         if listened_flag(&model.name).is_some() {

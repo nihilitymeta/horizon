@@ -53,7 +53,7 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "entity_tick_listened",
-        "answered while an `entity_tick_post` handler exists",
+        "answered while an `entity_tick_pre` or `entity_tick_post` handler exists",
     ),
     (
         "random_tick",
@@ -178,7 +178,7 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "living_equipment_change",
-        "an event table with `entity`, `kind`, `slot`, `from` and `to`, by kind",
+        "an event table with `entity`, `kind`, `slot`, `from` and `to`, by kind (also fires for players, kind `minecraft:player`; `native_on_equip` is the other hook)",
     ),
     (
         "entity_join_level",
@@ -211,7 +211,7 @@ const LUA_HELPERS: &[(&str, &str)] = &[
     ),
     (
         "attachments",
-        "`data` on a mob, `horizon.world_data()`, `horizon.player_data(player)`",
+        "`horizon.world_data()`, `horizon.player_data(player)`",
     ),
     ("block", "`horizon.block(x, y, z)`"),
     ("block_property", "`horizon.block_property(x, y, z, key)`"),
@@ -253,7 +253,7 @@ const LUA_HELPERS: &[(&str, &str)] = &[
         "mob_effect",
         "`horizon.effect(id, name, ticks[, amplifier])`",
     ),
-    ("mob_view", "`horizon.mob(id)`, `mob` in the mob hooks"),
+    ("mob_view", "`horizon.mob(id)`"),
     ("mob_views", "`horizon.mobs()`"),
     ("mod_block_entity_data", "`data` in the block hooks"),
     (

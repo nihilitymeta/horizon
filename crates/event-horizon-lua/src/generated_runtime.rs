@@ -1099,13 +1099,13 @@ macro_rules! gen_collect {
 
 /// A `<hook>_listened` game query: no event table, no handlers of its own.
 /// The game asks whether to keep the firing list; the answer comes from the
-/// sibling hook's registry (bare or kind-filtered), so a script that only
-/// registers for the sibling still fires. On any Err there is nothing to
+/// sibling hooks' registries (bare or kind-filtered), so a script that only
+/// registers for a sibling still fires. On any Err there is nothing to
 /// do: the flag stays unset, exactly as the hand-written listened hooks did.
 macro_rules! gen_listened_flag {
-    ($name:ident, $event:ty, $sibling:expr) => {
+    ($name:ident, $event:ty, [$($sibling:expr),* $(,)?]) => {
         fn $name(&self, _host: &mut dyn horizon_client::mod_api::Host, _event: &mut $event) {
-            if self.has_any_handlers($sibling) {
+            if false $(|| self.has_any_handlers($sibling))* {
                 _event.listened = true;
             }
         }

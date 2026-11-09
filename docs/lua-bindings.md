@@ -385,8 +385,10 @@ Timers run at the end of a tick while the world runs, as a `server_tick` handler
 actions work in them. A timer that fails is logged, a repeating one is kept, and the timers after it run as usual.
 `/reload` drops the timers with the handlers.
 
-The saved tables start empty. They are written back after the call, like a mob's `data`, and kept through saves as
+The saved tables start empty. They are written back after the call and kept through saves as
 the engine's attachments under the mod's id (`horizon:attachments`, names `world` and `player`).
+Saved per-entity tables are no longer reachable from Lua: only `horizon.world_data()` and
+`horizon.player_data(player)` read saved tables.
 
 `horizon.config` and `horizon.save_config` work at load, in `init.lua`, with no host. A mod reads its settings, fills
 in the defaults and saves them, so the file is there to edit after the first run.
@@ -434,7 +436,7 @@ A handler receives the hook's arguments. Some hooks let it change the event, wit
 | `entity_tick_post(event)` | a mob has ticked. The event holds `dimension`, `entity` (its id) and `kind`. The host actions and reads work, but there is no mob view and no saved data: read the mob with `horizon.mob(id)` when needed. Register it by kind: a handler for every kind hears every mob of the level each tick. The engine keeps the ticking list only while a handler is registered |
 | `interact_entity(event)` | a player right-clicks an entity, mobs included: one hook for every entity, even one the host has no view of, dead or gone. The event holds `entity` (its id), `kind` and `stack` (the hand's stack `{id, count, damage, plain}`, or nil). It carries no player and no dimension: the acting player and the level come from the host reads. `horizon.cancel()` takes the click, and the hand still swings. The host actions and reads work. Register it by kind |
 | `living_incoming_damage(event)` | a living entity is about to take damage, a mob or a player (kind `minecraft:player`). The event holds `entity`, `kind`, `damage_type` (such as `minecraft:mob_attack` or `minecraft:on_fire`), `causing` and `direct` (the entities behind it, or -1) and `amount`. No host: set `event.amount`, or `horizon.cancel()` to refuse the hit; other queued actions are dropped. Register it by kind |
-| `mob_killed(event)` | a player's melee blow kills a mob. The event holds `player` (the killer's entity id), `entity` and `kind`. `mob_died` covers every other cause. The host actions work. Register it by kind |
+| `mob_killed(event)` | a player's melee blow kills a mob. The event holds `player` (the killer's uuid text), `entity` and `kind`. `mob_died` covers every other cause. The host actions work. Register it by kind |
 | `mob_died(event)` | a mob dies, by any cause: a blow, an arrow, fire, a fall or `/kill`. The event holds `dimension`, `entity`, `kind`, `damage_type`, `causing` (the mob behind it, or 0) and `player` (the credited player's uuid text, or nil). It only hears. Register it by kind |
 | `living_fall(event)` | a living entity is about to handle a fall, a mob or a player (kind `minecraft:player`). The event holds `entity`, `kind`, `distance` and `multiplier`. No host: set the fields, or `horizon.cancel()` for no fall damage. Register it by kind |
 | `living_heal(event)` | a living entity is about to heal. The event holds `entity` and `amount`. No host: every handler hears every entity, players too. Set `event.amount`, or `horizon.cancel()` |

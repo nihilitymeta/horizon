@@ -301,15 +301,19 @@ pub fn declaration_served(name: &str) -> bool {
     matches!(name, "block_entity" | "block_entity_ticks")
 }
 
-/// A `<hook>_listened` game query answered from its sibling hook's handler
-/// registry (never a script hook): the game asks whether to keep the firing
-/// list, and scripts only ever register for the sibling. Without this the
+/// A `<hook>_listened` game query answered from its sibling hooks' handler
+/// registries (never a script hook): the game asks whether to keep the firing
+/// list, and scripts only ever register for the siblings. Without this the
 /// generated arm would answer from the query's own (always empty) registry
-/// and the sibling hook would silently never fire.
-pub fn listened_flag(name: &str) -> Option<&'static str> {
+/// and the sibling hooks would silently never fire. Every hook the game
+/// query gates is listed: `entity_tick_listened` gates both `entity_tick_pre`
+/// and `entity_tick_post` (`native_tick_round` skips the pair when the flag
+/// is false), while `living_equipment_listened` gates only
+/// `living_equipment_change` (both equipment scans dispatch just that one).
+pub fn listened_flag(name: &str) -> Option<&'static [&'static str]> {
     match name {
-        "entity_tick_listened" => Some("entity_tick_post"),
-        "living_equipment_listened" => Some("living_equipment_change"),
+        "entity_tick_listened" => Some(&["entity_tick_pre", "entity_tick_post"]),
+        "living_equipment_listened" => Some(&["living_equipment_change"]),
         _ => None,
     }
 }
@@ -524,6 +528,9 @@ pub fn ty_str(ty: &syn::Type) -> String {
 }
 
 /// Whether `ty` is a plain scalar the table copies: numbers and bools.
+/// `u128` is NOT one: a bare `u128` is a UUID and seeds as its
+/// `uuid_text` (`Conv::Uuid`), since a Lua number (f64) cannot hold 128
+/// bits. (`i128` stays plain: no hook carries one today.)
 fn is_plain_scalar(ty: &syn::Type) -> bool {
     matches!(
         last_ident(ty).as_deref(),
@@ -542,7 +549,6 @@ fn is_plain_scalar(ty: &syn::Type) -> bool {
                 | "usize"
                 | "isize"
                 | "i128"
-                | "u128"
         )
     )
 }

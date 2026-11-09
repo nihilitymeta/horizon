@@ -1381,16 +1381,16 @@ macro_rules! impl_generated_hooks {
     gen_collect!(screen_tooltip, game_ref, horizon_client::mod_api::ScreenTooltipEvent<'_>, (none), [block: cloned, data: int_seq, at: pair, lines: str_seq => mut_strvec]);
     gen_register_commands!(register_commands, game_mut, horizon_client::mod_api::RegisterCommandsEvent<'_>, (none), [commands: s_vec(horizon_client::mod_api::NativeCommand) => w_vec(horizon_client::mod_api::NativeCommand)]);
     gen_perform_command!(perform_command, game_mut, horizon_client::mod_api::PerformCommandEvent<'_>, (none), [player: server_player, command: cloned]);
-    gen_listen!(menu_clicked, game_mut, horizon_client::mod_api::MenuClickedEvent, (none), [uuid: copy, window: copy, slot: copy, button: copy, mode: copy]);
-    gen_listen!(menu_closed, game_mut, horizon_client::mod_api::MenuClosedEvent, (none), [uuid: copy, window: copy]);
+    gen_listen!(menu_clicked, game_mut, horizon_client::mod_api::MenuClickedEvent, (none), [uuid: uuid, window: copy, slot: copy, button: copy, mode: copy]);
+    gen_listen!(menu_closed, game_mut, horizon_client::mod_api::MenuClosedEvent, (none), [uuid: uuid, window: copy]);
     gen_collect!(tooltip, game_ref, horizon_client::mod_api::TooltipEvent<'_>, (none), [stack: item, lines: s_vec((Text,u32)) => w_vec((Text,u32))]);
     gen_cancel!(block_spread, level, horizon_client::mod_api::BlockSpreadEvent<'_>, (none), [dimension: dim, kind: cloned, from: pos_struct, to: pos_struct]);
     gen_cancel!(piston_move, level, horizon_client::mod_api::PistonMoveEvent<'_>, (none), [dimension: dim, piston: pos_struct, direction: pos, push: s_slice(horizon_client::mod_api::BlockPos), destroy: s_slice(horizon_client::mod_api::BlockPos)]);
     gen_cancel!(fill_bucket, game_mut, horizon_client::mod_api::FillBucketEvent<'_>, (none), [stack: item, pos: pos]);
-    gen_listen!(net_from_client, game_mut, horizon_client::mod_api::NetFromClientEvent<'_>, (none), [player: copy, channel: cloned, data: s_bytes]);
+    gen_listen!(net_from_client, game_mut, horizon_client::mod_api::NetFromClientEvent<'_>, (none), [player: uuid, channel: cloned, data: s_bytes]);
     gen_listen!(net_from_server, game_mut, horizon_client::mod_api::NetFromServerEvent<'_>, (none), [channel: cloned, data: s_bytes]);
     gen_listen!(mob_spawned, game_mut, horizon_client::mod_api::MobSpawnedEvent<'_>, (field kind), [dimension: cloned, kind: cloned, pos: vec3, natural: copy]);
-    gen_listen!(mob_killed, game_mut, horizon_client::mod_api::MobKilledEvent<'_>, (field kind), [player: copy, entity: copy, kind: cloned]);
+    gen_listen!(mob_killed, game_mut, horizon_client::mod_api::MobKilledEvent<'_>, (field kind), [player: uuid, entity: copy, kind: cloned]);
     gen_listen!(on_equip, game_mut, horizon_client::mod_api::OnEquipEvent<'_>, (none), [slot: cloned, new: opt_item]);
     gen_listen!(block_signal, level, horizon_client::mod_api::BlockSignalEvent, (none), [dimension: dim, pos: pos_struct, state: state_level, face: s_val(horizon_client::mod_api::Direction), direct: copy, signal: copy => mut_scalar, state_props: state_props_note]);
     gen_listen!(is_signal_source, level, horizon_client::mod_api::IsSignalSourceEvent, (none), [state: state_level, source: copy => mut_scalar, state_props: state_props_note]);
@@ -1457,17 +1457,17 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(interaction_key, game_mut, horizon_client::mod_api::InteractionKeyEvent<'_>, (none), [button: copy, key_mapping: cloned, hand: s_val(horizon_client::mod_api::Hand), swing_hand: copy => mut_scalar]);
     gen_frame!(gui_layer_post, game_mut, horizon_client::mod_api::GuiLayerPostEvent<'_>, (none), [layer: cloned, batch: hud_batch]);
     gen_collect!(map_decorations, game_ref, horizon_client::mod_api::MapDecorationsEvent<'_>, (none), [map: s_mapinfo, decorations: s_vec(horizon_client::mod_api::NativeMapDecoration) => w_vec(horizon_client::mod_api::NativeMapDecoration)]);
-    gen_listen!(player_start_tracking, game_mut, horizon_client::mod_api::PlayerStartTrackingEvent<'_>, (field kind), [player: player, entity: copy, uuid: copy, kind: cloned]);
-    gen_listen!(player_stop_tracking, game_mut, horizon_client::mod_api::PlayerStopTrackingEvent<'_>, (field kind), [player: player, entity: copy, uuid: copy, kind: cloned]);
+    gen_listen!(player_start_tracking, game_mut, horizon_client::mod_api::PlayerStartTrackingEvent<'_>, (field kind), [player: player, entity: copy, uuid: uuid, kind: cloned]);
+    gen_listen!(player_stop_tracking, game_mut, horizon_client::mod_api::PlayerStopTrackingEvent<'_>, (field kind), [player: player, entity: copy, uuid: uuid, kind: cloned]);
     gen_replace!(block_entity_energy, game_ref, horizon_client::mod_api::BlockEntityEnergyEvent<'_>, (none), [block: cloned], energy : struct_out(horizon_client::mod_api::ModEnergyBuffer), Option<horizon_client::mod_api::ModEnergyBuffer>);
     gen_collect!(data_map_types, game_ref, horizon_client::mod_api::DataMapTypesEvent<'_>, (none), [types: s_vec(horizon_client::mod_api::NativeDataMapType) => w_vec(horizon_client::mod_api::NativeDataMapType)]);
     gen_listen!(living_breathe, none, horizon_client::mod_api::LivingBreatheEvent<'_>, (field kind), [entity: copy, kind: cloned, can_breathe: copy => mut_scalar, consume: copy => mut_scalar, refill: copy => mut_scalar]);
     gen_cancel!(entity_tick_pre, game_mut, horizon_client::mod_api::EntityTickPreEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned]);
     gen_listen!(entity_tick_post, game_mut, horizon_client::mod_api::EntityTickPostEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned]);
-    gen_listened_flag!(entity_tick_listened, horizon_client::mod_api::EntityTickListenedEvent, "entity_tick_post");
+    gen_listened_flag!(entity_tick_listened, horizon_client::mod_api::EntityTickListenedEvent, ["entity_tick_pre", "entity_tick_post"]);
     gen_replace!(item_fluid_tank, game_ref, horizon_client::mod_api::ItemFluidTankEvent<'_>, (none), [item: cloned], capacity : value, Option<i32>);
     gen_listen!(living_equipment_change, game_mut, horizon_client::mod_api::LivingEquipmentChangeEvent<'_>, (field kind), [entity: copy, kind: cloned, slot: cloned, from: opt_item, to: opt_item]);
-    gen_listened_flag!(living_equipment_listened, horizon_client::mod_api::LivingEquipmentListenedEvent, "living_equipment_change");
+    gen_listened_flag!(living_equipment_listened, horizon_client::mod_api::LivingEquipmentListenedEvent, ["living_equipment_change"]);
     gen_collect!(player_render_listened, game_ref, horizon_client::mod_api::PlayerRenderListenedEvent, (none), [listened: copy => mut_scalar]);
     gen_cancel!(sign_changed, game_mut, horizon_client::mod_api::SignChangedEvent<'_>, (none), [player: player, dimension: cloned, pos: pos, front: copy, lines: str_seq => mut_strvec]);
     gen_collect!(standalone_models, none, horizon_client::mod_api::StandaloneModelsEvent<'_>, (none), [models: str_seq => mut_strvec]);
@@ -1499,7 +1499,7 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(chorus_fruit_teleport, game_mut, horizon_client::mod_api::ChorusFruitTeleportEvent<'_>, (none), [player: player, from: vec3, target: s_mut([f64;3]) => w_mut([f64;3])]);
     gen_listen!(compost_item, game_ref, horizon_client::mod_api::CompostItemEvent<'_>, (none), [pos: pos, item: cloned]);
     gen_listen!(crafter_craft, game_ref, horizon_client::mod_api::CrafterCraftEvent<'_>, (none), [pos: pos, recipe: cloned]);
-    gen_listen!(creeper_ignite, game_mut, horizon_client::mod_api::CreeperIgniteEvent<'_>, (entity entity), [entity: copy, player: copy, item: cloned]);
+    gen_listen!(creeper_ignite, game_mut, horizon_client::mod_api::CreeperIgniteEvent<'_>, (entity entity), [entity: copy, player: uuid, item: cloned]);
     gen_listen!(creeper_power, game_mut, horizon_client::mod_api::CreeperPowerEvent, (entity entity), [entity: copy, lightning: vec3]);
     gen_listen!(critical_hit, game_mut, horizon_client::mod_api::CriticalHitEvent<'_>, (none), [target_kind: cloned, vanilla_critical: copy, critical: copy => mut_scalar, damage_multiplier: copy => mut_scalar]);
     gen_listen!(difficulty_changed, game_mut, horizon_client::mod_api::DifficultyChangedEvent<'_>, (none), [from: cloned, to: cloned]);
@@ -1524,8 +1524,8 @@ macro_rules! impl_generated_hooks {
     gen_listen!(entity_unleash, game_mut, horizon_client::mod_api::EntityUnleashEvent<'_>, (field kind), [entity: copy, kind: cloned]);
     gen_listen!(exp_bottle, game_mut, horizon_client::mod_api::ExpBottleEvent, (none), [pos: vec3, experience: copy]);
     gen_collect!(experience_orb_pickup_listened, game_ref, horizon_client::mod_api::ExperienceOrbPickupListenedEvent, (none), [listened: copy => mut_scalar]);
-    gen_cancel!(experience_orb_pickup, game_mut, horizon_client::mod_api::ExperienceOrbPickupEvent<'_>, (none), [player: copy, dimension: cloned, orb: copy, value: copy => mut_scalar, count: copy => mut_scalar]);
-    gen_listen!(mending_repair, game_mut, horizon_client::mod_api::MendingRepairEvent<'_>, (none), [player: copy, stack: item, experience: copy, repair: copy => mut_scalar]);
+    gen_cancel!(experience_orb_pickup, game_mut, horizon_client::mod_api::ExperienceOrbPickupEvent<'_>, (none), [player: uuid, dimension: cloned, orb: copy, value: copy => mut_scalar, count: copy => mut_scalar]);
+    gen_listen!(mending_repair, game_mut, horizon_client::mod_api::MendingRepairEvent<'_>, (none), [player: uuid, stack: item, experience: copy, repair: copy => mut_scalar]);
     gen_listen!(explosion_prime, game_mut, horizon_client::mod_api::ExplosionPrimeEvent, (none), [center: vec3, radius: copy]);
     gen_replace!(fire_odds, level, horizon_client::mod_api::FireOddsEvent, (none), [dimension: dim, state: state_level, state_props: state_props_note], odds : struct_out((i32,i32)), Option<(i32,i32)>);
     gen_replace!(smoke_source, level, horizon_client::mod_api::SmokeSourceEvent, (none), [dimension: dim, state: state_level, state_props: state_props_note], smoke : value, Option<bool>);
@@ -1668,7 +1668,7 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(living_heal, none, horizon_client::mod_api::LivingHealEvent, (none), [entity: copy, amount: copy => mut_scalar]);
     gen_listen!(living_jump, none, horizon_client::mod_api::LivingJumpEvent<'_>, (field kind), [entity: copy, kind: cloned]);
     gen_cancel!(arrow_nock, game_mut, horizon_client::mod_api::ArrowNockEvent<'_>, (none), [player: player, bow: item, hand: s_val(horizon_client::mod_api::Hand), has_ammo: copy]);
-    gen_cancel!(baby_entity_spawn, game_mut, horizon_client::mod_api::BabyEntitySpawnEvent<'_>, (field kind), [parent: copy, partner: copy, player: copy, kind: cloned]);
+    gen_cancel!(baby_entity_spawn, game_mut, horizon_client::mod_api::BabyEntitySpawnEvent<'_>, (field kind), [parent: copy, partner: copy, player: uuid, kind: cloned]);
     gen_listen!(can_player_sleep, game_mut, horizon_client::mod_api::CanPlayerSleepEvent<'_>, (none), [player: player, pos: pos, problem: mut_opt_string => mut_opt_string]);
     gen_collect!(explosion_knockback, game_mut, horizon_client::mod_api::ExplosionKnockbackEvent<'_>, (opt_entity entity), [dimension: cloned, center: vec3, blocks: s_slice([i32;3]), entity: copy, knockback_velocity: s_mut([f64;3]) => w_mut([f64;3])]);
     gen_listen!(ingredient_test, none, horizon_client::mod_api::IngredientTestEvent<'_>, (none), [kind: cloned, data: s_ref(serde_json::Map<String, serde_json::Value>), stack: item, accept: copy => mut_scalar]);
@@ -1684,7 +1684,7 @@ macro_rules! impl_generated_hooks {
     gen_listen!(movement_input, game_ref, horizon_client::mod_api::MovementInputEvent, (none), [forward: copy => mut_scalar, strafe: copy => mut_scalar, jump: copy => mut_scalar, sneak: copy => mut_scalar]);
     gen_cancel!(note_block_change, level, horizon_client::mod_api::NoteBlockChangeEvent<'_>, (none), [context: s_notechange, new_note: copy => mut_scalar]);
     gen_cancel!(potential_spawns, game_ref, horizon_client::mod_api::PotentialSpawnsEvent<'_>, (none), [dimension: cloned, category: cloned, pos: pos, entries: s_vec(horizon_client::mod_api::SpawnEntry) => w_vec(horizon_client::mod_api::SpawnEntry)]);
-    gen_cancel!(village_siege, game_mut, horizon_client::mod_api::VillageSiegeEvent<'_>, (none), [dimension: cloned, player: copy, attempted_pos: vec3]);
+    gen_cancel!(village_siege, game_mut, horizon_client::mod_api::VillageSiegeEvent<'_>, (none), [dimension: cloned, player: uuid, attempted_pos: vec3]);
     gen_cancel!(player_xp_change, game_mut, horizon_client::mod_api::PlayerXpChangeEvent<'_>, (none), [player: player, amount: copy => mut_scalar]);
     gen_listen!(recipe_book_categories, game_ref, horizon_client::mod_api::RecipeBookCategoriesEvent<'_>, (none), [categories: s_vec(horizon_client::mod_api::RecipeBookCategory) => w_vec(horizon_client::mod_api::RecipeBookCategory)]);
     gen_listen!(render_hand_pose, game_ref, horizon_client::mod_api::RenderHandPoseEvent<'_>, (none), [hand: s_val(horizon_client::mod_api::Hand), stack: opt_item, partial: copy, swing: copy, equip: copy, x: copy => mut_scalar, y: copy => mut_scalar, z: copy => mut_scalar, pitch: copy => mut_scalar, yaw: copy => mut_scalar, roll: copy => mut_scalar, scale: copy => mut_scalar]);
@@ -1692,8 +1692,8 @@ macro_rules! impl_generated_hooks {
     gen_listen!(render_name_tag, game_ref, horizon_client::mod_api::RenderNameTagEvent<'_>, (field kind), [entity_id: copy, kind: cloned, vanilla_visible: copy, visible: copy => mut_scalar, text: mut_opt_string => mut_opt_string]);
     gen_listen!(tooltip_color, game_ref, horizon_client::mod_api::TooltipColorEvent<'_>, (none), [stack: opt_item, background: copy => mut_scalar, border_top: copy => mut_scalar, border_bottom: copy => mut_scalar]);
     gen_listen!(camera_pose, game_ref, horizon_client::mod_api::CameraPoseEvent<'_>, (none), [partial: copy, position: s_mut([f64;3]) => w_mut([f64;3]), yaw: copy => mut_scalar, pitch: copy => mut_scalar]);
-    gen_cancel!(client_chat_received, game_mut, horizon_client::mod_api::ClientChatReceivedEvent<'_>, (none), [system: copy, overlay: copy, sender: copy, chat_type: copy, message: s_text => w_text]);
-    gen_replace!(menu_extra_data, game_mut, horizon_client::mod_api::MenuExtraDataEvent<'_>, (none), [player: copy, menu: cloned, block: cloned, pos: pos], data : bytes_out, Option<Vec<u8>>);
+    gen_cancel!(client_chat_received, game_mut, horizon_client::mod_api::ClientChatReceivedEvent<'_>, (none), [system: copy, overlay: copy, sender: uuid, chat_type: copy, message: s_text => w_text]);
+    gen_replace!(menu_extra_data, game_mut, horizon_client::mod_api::MenuExtraDataEvent<'_>, (none), [player: uuid, menu: cloned, block: cloned, pos: pos], data : bytes_out, Option<Vec<u8>>);
     gen_collect!(merchant_offer_traded, game_mut, horizon_client::mod_api::MerchantOfferTradedEvent<'_>, (field kind), [merchant: copy, kind: cloned, offer: s_mut(horizon_client::mod_api::MerchantOffer) => w_mut(horizon_client::mod_api::MerchantOffer)]);
     gen_collect!(add_server_reload_listeners, game_mut, horizon_client::mod_api::AddServerReloadListenersEvent<'_>, (none), [listeners: s_vec(horizon_client::mod_api::NativeReloadListener) => w_vec(horizon_client::mod_api::NativeReloadListener)]);
     gen_listen!(server_reload_listener_apply, game_mut, horizon_client::mod_api::ServerReloadListenerApplyEvent<'_>, (none), [listener: s_ref(horizon_client::mod_api::NativeReloadListener), files: s_slice((String,Value))]);
@@ -1719,46 +1719,46 @@ macro_rules! impl_generated_hooks {
     gen_replace!(custom_fluid_tanks, game_ref, horizon_client::mod_api::CustomFluidTanksEvent, (none), [pos: pos, side: s_opt(horizon_client::mod_api::Direction)], out : struct_vec_out(horizon_client::mod_api::NativeFluidTankView), Option<Vec<horizon_client::mod_api::NativeFluidTankView>>);
     gen_replace!(custom_fluid_fill, game_mut, horizon_client::mod_api::CustomFluidFillEvent<'_>, (none), [pos: pos, side: s_opt(horizon_client::mod_api::Direction), resource: s_ref(horizon_client::mod_api::NativeFluidStack), action: s_val(horizon_client::mod_api::NativeFluidAction)], out : value, Option<i32>);
     gen_replace!(custom_fluid_drain, game_mut, horizon_client::mod_api::CustomFluidDrainEvent<'_>, (none), [pos: pos, side: s_opt(horizon_client::mod_api::Direction), request: s_ref(horizon_client::mod_api::NativeFluidDrain), action: s_val(horizon_client::mod_api::NativeFluidAction)], out : struct_out(horizon_client::mod_api::NativeFluidStack), Option<horizon_client::mod_api::NativeFluidStack>);
-    gen_listen!(custom_payload_from_client, game_mut, horizon_client::mod_api::CustomPayloadFromClientEvent<'_>, (none), [player: copy, channel: cloned, data: s_bytes]);
+    gen_listen!(custom_payload_from_client, game_mut, horizon_client::mod_api::CustomPayloadFromClientEvent<'_>, (none), [player: uuid, channel: cloned, data: s_bytes]);
     gen_cancel!(entity_change_block_v2, game_mut, horizon_client::mod_api::EntityChangeBlockV2Event<'_>, (field kind), [player: opt_uuid, entity: copy, kind: cloned, pos: pos, from: cloned, to: cloned]);
     gen_cancel!(entity_interact_specific, game_mut, horizon_client::mod_api::EntityInteractSpecificEvent<'_>, (field kind), [entity: copy, kind: cloned, stack: opt_item, location: vec3]);
     gen_listen!(entity_outline, game_ref, horizon_client::mod_api::EntityOutlineEvent<'_>, (field kind), [entity_id: copy, kind: cloned, outline: copy_ref => mut_scalar_ref]);
-    gen_listen!(fishing_hook_landed, game_mut, horizon_client::mod_api::FishingHookLandedEvent<'_>, (none), [player: copy, hook: copy, dimension: cloned, block: pos, face: pos]);
+    gen_listen!(fishing_hook_landed, game_mut, horizon_client::mod_api::FishingHookLandedEvent<'_>, (none), [player: uuid, hook: copy, dimension: cloned, block: pos, face: pos]);
     gen_cancel!(handshake, none, horizon_client::mod_api::HandshakeEvent<'_>, (none), [address: s_val(std::net::SocketAddr), host: mut_string => mut_string, intent: copy, reason: s_opt_text => w_opt_text]);
     gen_cancel!(interact_entity_v2, game_mut, horizon_client::mod_api::InteractEntityV2Event<'_>, (field kind), [entity: copy, kind: cloned, hand: s_val(horizon_client::mod_api::Hand), stack: opt_item]);
     gen_cancel!(inventory_click, game_mut, horizon_client::mod_api::InventoryClickEvent<'_>, (none), [player: player, window: copy, slot: copy, button: copy, mode: copy]);
     gen_cancel!(inventory_drag, game_mut, horizon_client::mod_api::InventoryDragEvent<'_>, (none), [player: player, window: copy, kind: copy, slots: int_seq]);
     gen_cancel!(item_after_vertical_collision, game_mut, horizon_client::mod_api::ItemAfterVerticalCollisionEvent<'_>, (entity entity), [dimension: cloned, client: copy, entity: copy, state: state_game, block_pos: pos, item_pos: vec3, stack: s_mut(horizon_client::mod_api::ItemStack) => w_mut(horizon_client::mod_api::ItemStack), state_props: state_props_note]);
-    gen_cancel!(item_dropped_v2, game_mut, horizon_client::mod_api::ItemDroppedV2Event<'_>, (none), [player: copy, stack: item]);
+    gen_cancel!(item_dropped_v2, game_mut, horizon_client::mod_api::ItemDroppedV2Event<'_>, (none), [player: uuid, stack: item]);
     gen_replace!(item_interact_mob, game_mut, horizon_client::mod_api::ItemInteractMobEvent<'_>, (field kind), [entity: copy, kind: cloned, stack: opt_item], swing : value, Option<bool>);
-    gen_cancel!(item_picked_up_v2, game_mut, horizon_client::mod_api::ItemPickedUpV2Event<'_>, (none), [player: copy, stack: item, thrower: opt_uuid, position: vec3]);
+    gen_cancel!(item_picked_up_v2, game_mut, horizon_client::mod_api::ItemPickedUpV2Event<'_>, (none), [player: uuid, stack: item, thrower: opt_uuid, position: vec3]);
     gen_cancel!(living_change_target, none, horizon_client::mod_api::LivingChangeTargetEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, target: opt_uuid, target_mob: copy]);
     gen_listen!(living_damage_pre, none, horizon_client::mod_api::LivingDamagePreEvent<'_>, (field kind), [entity: copy, kind: cloned, damage_type: cloned, causing: copy, direct: copy, amount: copy => mut_scalar]);
     gen_listen!(living_damage_post, none, horizon_client::mod_api::LivingDamagePostEvent<'_>, (field kind), [entity: copy, kind: cloned, damage_type: cloned, causing: copy, direct: copy, amount: copy]);
     gen_cancel!(living_incoming_damage_v3, none, horizon_client::mod_api::LivingIncomingDamageV3Event<'_>, (field kind), [victim: copy, victim_uuid: opt_uuid, kind: cloned, attacker: copy, attacker_uuid: opt_uuid, direct: copy, damage_type: cloned, amount: copy => mut_scalar]);
     gen_listen!(log_line, none, horizon_client::mod_api::LogLineEvent<'_>, (none), [level: cloned, thread: cloned, message: cloned, line: cloned]);
-    gen_collect!(menu_input_closed, game_mut, horizon_client::mod_api::MenuInputClosedEvent<'_>, (none), [uuid: copy, window: copy, slots: s_vec(horizon_client::mod_api::Option<ItemStack>) => w_vec(horizon_client::mod_api::Option<ItemStack>)]);
-    gen_collect!(menu_links, game_mut, horizon_client::mod_api::MenuLinksEvent<'_>, (none), [player: copy, menu: cloned, pos: pos, links: s_vec([i32;3]) => w_vec([i32;3])]);
+    gen_collect!(menu_input_closed, game_mut, horizon_client::mod_api::MenuInputClosedEvent<'_>, (none), [uuid: uuid, window: copy, slots: s_vec(horizon_client::mod_api::Option<ItemStack>) => w_vec(horizon_client::mod_api::Option<ItemStack>)]);
+    gen_collect!(menu_links, game_mut, horizon_client::mod_api::MenuLinksEvent<'_>, (none), [player: uuid, menu: cloned, pos: pos, links: s_vec([i32;3]) => w_vec([i32;3])]);
     gen_mob_ai_register!(mob_ai_register, none, horizon_client::mod_api::MobAiRegisterEvent<'_>, (mob mob), [mob: mob_view]);
     gen_listen!(mob_died, game_mut, horizon_client::mod_api::MobDiedEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, damage_type: cloned, causing: copy, player: opt_uuid]);
-    gen_replace!(permission_check, game_ref, horizon_client::mod_api::PermissionCheckEvent<'_>, (none), [player: copy, node: cloned, default_level: copy], result : value, Option<bool>);
+    gen_replace!(permission_check, game_ref, horizon_client::mod_api::PermissionCheckEvent<'_>, (none), [player: uuid, node: cloned, default_level: copy], result : value, Option<bool>);
     gen_listen!(player_register_channels, game_mut, horizon_client::mod_api::PlayerRegisterChannelsEvent<'_>, (none), [player: player, channels: str_seq, register: copy]);
     gen_listen!(player_command_level, game_mut, horizon_client::mod_api::PlayerCommandLevelEvent<'_>, (none), [player: player, command: cloned, level: copy => mut_scalar]);
     gen_collect!(player_commands_sent_v2, game_mut, horizon_client::mod_api::PlayerCommandsSentV2Event<'_>, (none), [player: player, names: str_seq => mut_strvec, names_hidden: str_seq => mut_strvec]);
     gen_cancel!(player_fish_v2, game_mut, horizon_client::mod_api::PlayerFishV2Event<'_>, (none), [player: player, state: copy, hand: s_val(horizon_client::mod_api::Hand)]);
-    gen_cancel!(player_hurt_by_player, none, horizon_client::mod_api::PlayerHurtByPlayerEvent<'_>, (none), [attacker: copy, attacker_entity: copy, victim: copy, victim_entity: copy, source: cloned, damage_type: cloned, amount: copy => mut_scalar]);
+    gen_cancel!(player_hurt_by_player, none, horizon_client::mod_api::PlayerHurtByPlayerEvent<'_>, (none), [attacker: uuid, attacker_entity: copy, victim: uuid, victim_entity: copy, source: cloned, damage_type: cloned, amount: copy => mut_scalar]);
     gen_cancel!(player_launch_projectile_v2, game_mut, horizon_client::mod_api::PlayerLaunchProjectileV2Event<'_>, (none), [player: player, stack: item]);
     gen_listen!(player_logging_out, game_mut, horizon_client::mod_api::PlayerLoggingOutEvent<'_>, (none), [player: player]);
-    gen_cancel!(player_move, none, horizon_client::mod_api::PlayerMoveEvent<'_>, (none), [player: copy, name: cloned, from: vec3, to: s_mut([f64;3]) => w_mut([f64;3]), yaw: copy, pitch: copy, on_ground: copy]);
-    gen_collect!(player_pre_login, none, horizon_client::mod_api::PlayerPreLoginEvent<'_>, (none), [player: copy, name: cloned, address: s_val(std::net::SocketAddr), defer: s_defer => w_defer]);
+    gen_cancel!(player_move, none, horizon_client::mod_api::PlayerMoveEvent<'_>, (none), [player: uuid, name: cloned, from: vec3, to: s_mut([f64;3]) => w_mut([f64;3]), yaw: copy, pitch: copy, on_ground: copy]);
+    gen_collect!(player_pre_login, none, horizon_client::mod_api::PlayerPreLoginEvent<'_>, (none), [player: uuid, name: cloned, address: s_val(std::net::SocketAddr), defer: s_defer => w_defer]);
     gen_listen!(player_respawn_position, game_mut, horizon_client::mod_api::PlayerRespawnPositionEvent<'_>, (none), [player: player, dimension: mut_string => mut_string, pos: s_mut([f64;3]) => w_mut([f64;3]), yaw: copy => mut_scalar, pitch: copy => mut_scalar]);
     gen_listen!(player_spawn_location, game_mut, horizon_client::mod_api::PlayerSpawnLocationEvent<'_>, (none), [player: player, dimension: mut_string => mut_string, position: s_mut([f64;3]) => w_mut([f64;3]), rotation: s_mut([f32;2]) => w_mut([f32;2])]);
-    gen_cancel!(player_teleport, none, horizon_client::mod_api::PlayerTeleportEvent<'_>, (none), [player: copy, name: cloned, cause: cloned, from_dimension: cloned, from: vec3, to_dimension: cloned, to: s_mut([f64;3]) => w_mut([f64;3]), relative: copy => mut_scalar]);
+    gen_cancel!(player_teleport, none, horizon_client::mod_api::PlayerTeleportEvent<'_>, (none), [player: uuid, name: cloned, cause: cloned, from_dimension: cloned, from: vec3, to_dimension: cloned, to: s_mut([f64;3]) => w_mut([f64;3]), relative: copy => mut_scalar]);
     gen_listen!(player_tick_pre, game_mut, horizon_client::mod_api::PlayerTickPreEvent, (none), []);
     gen_listen!(projectile_world_border, none, horizon_client::mod_api::ProjectileWorldBorderEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, pos: s_mut([f64;3]) => w_mut([f64;3]), velocity: s_mut([f64;3]) => w_mut([f64;3]), collide: copy => mut_scalar]);
-    gen_collect!(recipe_sources, game_mut, horizon_client::mod_api::RecipeSourcesEvent<'_>, (none), [player: copy, menu: cloned, pos: pos, sources: s_vec([i32;3]) => w_vec([i32;3])]);
+    gen_collect!(recipe_sources, game_mut, horizon_client::mod_api::RecipeSourcesEvent<'_>, (none), [player: uuid, menu: cloned, pos: pos, sources: s_vec([i32;3]) => w_vec([i32;3])]);
     gen_mob_ai_register!(register_goals, none, horizon_client::mod_api::RegisterGoalsEvent<'_>, (mob mob), [mob: mob_view]);
-    gen_listen!(resource_pack_status_v2, game_mut, horizon_client::mod_api::ResourcePackStatusV2Event<'_>, (none), [player: player, pack: copy, status: copy]);
+    gen_listen!(resource_pack_status_v2, game_mut, horizon_client::mod_api::ResourcePackStatusV2Event<'_>, (none), [player: player, pack: uuid, status: copy]);
     gen_cancel!(right_click_block_v2, game_mut, horizon_client::mod_api::RightClickBlockV2Event, (none), [pos: pos, face: pos, hand: s_val(horizon_client::mod_api::Hand)]);
     gen_cancel!(screen_mouse_dragged_pre_v2, game_mut, horizon_client::mod_api::ScreenMouseDraggedPreV2Event<'_>, (none), [screen: cloned, mouse: pair, button: copy, delta: pair, modifiers: copy]);
     gen_cancel!(screen_mouse_scrolled_pre_v2, game_mut, horizon_client::mod_api::ScreenMouseScrolledPreV2Event<'_>, (none), [screen: cloned, mouse: pair, scroll: pair64, modifiers: copy]);
@@ -8021,7 +8021,7 @@ mod generated_tests {
     fn generated_menu_clicked() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_clicked",
-            "horizon.on(\"menu_clicked\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.uuid == 7, \"uuid\")\n    assert(event.window == 8, \"window\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.button == 10, \"button\")\n    assert(event.mode == 11, \"mode\")\nend)",
+            "horizon.on(\"menu_clicked\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.uuid == \"00000000-0000-0000-0000-000000000007\", \"uuid\")\n    assert(event.window == 8, \"window\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.button == 10, \"button\")\n    assert(event.mode == 11, \"mode\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_menu_clicked(&mut FakeHost::empty(), &firing_mods, 7, 8, 9, 10, 11);
@@ -8101,7 +8101,7 @@ mod generated_tests {
     fn generated_menu_closed() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_closed",
-            "horizon.on(\"menu_closed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.uuid == 7, \"uuid\")\n    assert(event.window == 8, \"window\")\nend)",
+            "horizon.on(\"menu_closed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.uuid == \"00000000-0000-0000-0000-000000000007\", \"uuid\")\n    assert(event.window == 8, \"window\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_menu_closed(&mut FakeHost::empty(), &firing_mods, 7, 8);
@@ -8844,7 +8844,7 @@ mod generated_tests {
     fn generated_net_from_client() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_net_from_client",
-            "horizon.on(\"net_from_client\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.channel == \"test:channel\", \"channel\")\n    assert(event.data == \"t\" .. string.char(0, 159), \"data\")\nend)",
+            "horizon.on(\"net_from_client\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.channel == \"test:channel\", \"channel\")\n    assert(event.data == \"t\" .. string.char(0, 159), \"data\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_net_from_client(
@@ -9189,7 +9189,7 @@ mod generated_tests {
     fn generated_mob_killed() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_mob_killed",
-            "horizon.on(\"mob_killed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"mob_killed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -19729,7 +19729,7 @@ mod generated_tests {
     fn generated_player_start_tracking() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_start_tracking",
-            "horizon.on(\"player_start_tracking\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.uuid == 10, \"uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_start_tracking\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.uuid == \"00000000-0000-0000-0000-00000000000a\", \"uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -19889,7 +19889,7 @@ mod generated_tests {
     fn generated_player_stop_tracking() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_stop_tracking",
-            "horizon.on(\"player_stop_tracking\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.uuid == 10, \"uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_stop_tracking\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.uuid == \"00000000-0000-0000-0000-00000000000a\", \"uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -21030,7 +21030,7 @@ mod generated_tests {
     }
 
     #[test]
-    fn generated_entity_tick_listened_answers_from_entity_tick_post_handlers() {
+    fn generated_entity_tick_listened_answers_from_sibling_handlers() {
         let (m, id, dir, lua) = loaded_tracked(
             "gen_entity_tick_listened_none",
             "horizon.on(\"tick\", function(event) end)",
@@ -21043,7 +21043,7 @@ mod generated_tests {
             reset_level_reads();
             reset_event_tables();
             dispatch_entity_tick_listened(&mut FakeHost::empty(), &firing_mods, &mut listened);
-            assert!(!listened, "no entity_tick_post handler: nobody listens");
+            assert!(!listened, "a handler on another hook: nobody listens");
             assert_eq!(witness(&lua), 0, "the query ran no handler");
             assert_eq!(event_tables(), 0, "the query built no event table");
             assert_eq!(
@@ -21065,8 +21065,8 @@ mod generated_tests {
         no_error(&id);
         drop_dir(dir);
         let (m, id, dir, lua) = loaded_tracked(
-            "gen_entity_tick_listened_some",
-            "horizon.on(\"entity_tick_post\", function(event) __witness = (__witness or 0) + 1 end, \"minecraft:zombie\")\nhorizon.on(\"entity_tick_post\", function(event) end)",
+            "gen_entity_tick_listened_kind",
+            "horizon.on(\"entity_tick_post\", function(event) __witness = (__witness or 0) + 1 end, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         {
@@ -21076,9 +21076,96 @@ mod generated_tests {
             reset_level_reads();
             reset_event_tables();
             dispatch_entity_tick_listened(&mut FakeHost::empty(), &firing_mods, &mut listened);
-            assert!(listened, "a entity_tick_post handler: somebody listens");
+            assert!(
+                listened,
+                "a kind-filtered entity_tick_post handler: somebody listens"
+            );
             assert_eq!(witness(&lua), 0, "the query ran no handler");
             assert_eq!(event_tables(), 0, "the query built no event table");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_tick_listened read no entity unheard"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_tick_listened read the host unheard"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_tick_listened read the level unheard"
+            );
+        }
+        no_error(&id);
+        drop_dir(dir);
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_tick_listened_bare",
+            "horizon.on(\"entity_tick_post\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut listened = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_tick_listened(&mut FakeHost::empty(), &firing_mods, &mut listened);
+            assert!(
+                listened,
+                "a bare entity_tick_post handler: somebody listens"
+            );
+            assert_eq!(witness(&lua), 0, "the query ran no handler");
+            assert_eq!(event_tables(), 0, "the query built no event table");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_tick_listened read no entity unheard"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_tick_listened read the host unheard"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_tick_listened read the level unheard"
+            );
+        }
+        no_error(&id);
+        drop_dir(dir);
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_tick_listened_only_entity_tick_pre",
+            "horizon.on(\"entity_tick_pre\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut listened = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_tick_listened(&mut FakeHost::empty(), &firing_mods, &mut listened);
+            assert!(listened, "a bare entity_tick_pre handler: somebody listens");
+            assert_eq!(witness(&lua), 0, "the query ran no handler");
+            assert_eq!(event_tables(), 0, "the query built no event table");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_tick_listened read no entity unheard"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_tick_listened read the host unheard"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_tick_listened read the level unheard"
+            );
         }
         no_error(&id);
         drop_dir(dir);
@@ -21452,7 +21539,7 @@ mod generated_tests {
     }
 
     #[test]
-    fn generated_living_equipment_listened_answers_from_living_equipment_change_handlers() {
+    fn generated_living_equipment_listened_answers_from_sibling_handlers() {
         let (m, id, dir, lua) = loaded_tracked(
             "gen_living_equipment_listened_none",
             "horizon.on(\"tick\", function(event) end)",
@@ -21465,9 +21552,42 @@ mod generated_tests {
             reset_level_reads();
             reset_event_tables();
             dispatch_living_equipment_listened(&mut FakeHost::empty(), &firing_mods, &mut listened);
+            assert!(!listened, "a handler on another hook: nobody listens");
+            assert_eq!(witness(&lua), 0, "the query ran no handler");
+            assert_eq!(event_tables(), 0, "the query built no event table");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_equipment_listened read no entity unheard"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_equipment_listened read the host unheard"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_equipment_listened read the level unheard"
+            );
+        }
+        no_error(&id);
+        drop_dir(dir);
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_equipment_listened_kind",
+            "horizon.on(\"living_equipment_change\", function(event) __witness = (__witness or 0) + 1 end, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut listened = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_equipment_listened(&mut FakeHost::empty(), &firing_mods, &mut listened);
             assert!(
-                !listened,
-                "no living_equipment_change handler: nobody listens"
+                listened,
+                "a kind-filtered living_equipment_change handler: somebody listens"
             );
             assert_eq!(witness(&lua), 0, "the query ran no handler");
             assert_eq!(event_tables(), 0, "the query built no event table");
@@ -21490,8 +21610,8 @@ mod generated_tests {
         no_error(&id);
         drop_dir(dir);
         let (m, id, dir, lua) = loaded_tracked(
-            "gen_living_equipment_listened_some",
-            "horizon.on(\"living_equipment_change\", function(event) __witness = (__witness or 0) + 1 end, \"minecraft:zombie\")\nhorizon.on(\"living_equipment_change\", function(event) end)",
+            "gen_living_equipment_listened_bare",
+            "horizon.on(\"living_equipment_change\", function(event) end)",
         );
         let firing_mods = boxed(m);
         {
@@ -21503,10 +21623,25 @@ mod generated_tests {
             dispatch_living_equipment_listened(&mut FakeHost::empty(), &firing_mods, &mut listened);
             assert!(
                 listened,
-                "a living_equipment_change handler: somebody listens"
+                "a bare living_equipment_change handler: somebody listens"
             );
             assert_eq!(witness(&lua), 0, "the query ran no handler");
             assert_eq!(event_tables(), 0, "the query built no event table");
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_equipment_listened read no entity unheard"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_equipment_listened read the host unheard"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_equipment_listened read the level unheard"
+            );
         }
         no_error(&id);
         drop_dir(dir);
@@ -24883,7 +25018,7 @@ mod generated_tests {
     fn generated_creeper_ignite() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_creeper_ignite",
-            "horizon.on(\"creeper_ignite\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 11, \"kind\")\n    assert(event.player == 8, \"player\")\n    assert(event.item == \"test:item\", \"item\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"creeper_ignite\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 11, \"kind\")\n    assert(event.player == \"00000000-0000-0000-0000-000000000008\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -28166,7 +28301,7 @@ mod generated_tests {
     fn generated_experience_orb_pickup() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_experience_orb_pickup",
-            "horizon.on(\"experience_orb_pickup\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.orb == 9, \"orb\")\n    assert(event.value == 10, \"value\")\n    event.value = 53\n    assert(event.count == 11, \"count\")\n    event.count = 54\n    horizon.cancel()\nend)",
+            "horizon.on(\"experience_orb_pickup\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.orb == 9, \"orb\")\n    assert(event.value == 10, \"value\")\n    event.value = 53\n    assert(event.count == 11, \"count\")\n    event.count = 54\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut value = 10;
@@ -28193,7 +28328,7 @@ mod generated_tests {
     fn generated_experience_orb_pickup_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_experience_orb_pickup_nocancel",
-            "horizon.on(\"experience_orb_pickup\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.orb == 9, \"orb\")\n    assert(event.value == 10, \"value\")\n    event.value = 53\n    assert(event.count == 11, \"count\")\n    event.count = 54\nend)",
+            "horizon.on(\"experience_orb_pickup\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.orb == 9, \"orb\")\n    assert(event.value == 10, \"value\")\n    event.value = 53\n    assert(event.count == 11, \"count\")\n    event.count = 54\nend)",
         );
         let firing_mods = boxed(m);
         let mut value = 10;
@@ -28310,7 +28445,7 @@ mod generated_tests {
     fn generated_mending_repair() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_mending_repair",
-            "horizon.on(\"mending_repair\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\n    assert(event.experience == 9, \"experience\")\n    assert(event.repair == 10, \"repair\")\n    event.repair = 53\nend)",
+            "horizon.on(\"mending_repair\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\n    assert(event.experience == 9, \"experience\")\n    assert(event.repair == 10, \"repair\")\n    event.repair = 53\nend)",
         );
         let firing_mods = boxed(m);
         let mut repair = 10;
@@ -45964,7 +46099,7 @@ mod generated_tests {
     fn generated_baby_entity_spawn() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_baby_entity_spawn",
-            "horizon.on(\"baby_entity_spawn\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.parent == 7, \"parent\")\n    assert(event.partner == 8, \"partner\")\n    assert(event.player == 9, \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"baby_entity_spawn\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.parent == 7, \"parent\")\n    assert(event.partner == 8, \"partner\")\n    assert(event.player == \"00000000-0000-0000-0000-000000000009\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -46001,7 +46136,7 @@ mod generated_tests {
     fn generated_baby_entity_spawn_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_baby_entity_spawn_nocancel",
-            "horizon.on(\"baby_entity_spawn\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.parent == 7, \"parent\")\n    assert(event.partner == 8, \"partner\")\n    assert(event.player == 9, \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"baby_entity_spawn\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.parent == 7, \"parent\")\n    assert(event.partner == 8, \"partner\")\n    assert(event.player == \"00000000-0000-0000-0000-000000000009\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -49289,7 +49424,7 @@ mod generated_tests {
     fn generated_village_siege() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_village_siege",
-            "horizon.on(\"village_siege\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.player == 8, \"player\")\n    assert(event.attempted_pos.x == 3.0, \"attempted_pos\")\n    assert(event.attempted_pos.y == 4.0, \"attempted_pos\")\n    assert(event.attempted_pos.z == 5.0, \"attempted_pos\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"village_siege\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.player == \"00000000-0000-0000-0000-000000000008\", \"player\")\n    assert(event.attempted_pos.x == 3.0, \"attempted_pos\")\n    assert(event.attempted_pos.y == 4.0, \"attempted_pos\")\n    assert(event.attempted_pos.z == 5.0, \"attempted_pos\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -49310,7 +49445,7 @@ mod generated_tests {
     fn generated_village_siege_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_village_siege_nocancel",
-            "horizon.on(\"village_siege\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.player == 8, \"player\")\n    assert(event.attempted_pos.x == 3.0, \"attempted_pos\")\n    assert(event.attempted_pos.y == 4.0, \"attempted_pos\")\n    assert(event.attempted_pos.z == 5.0, \"attempted_pos\")\nend)",
+            "horizon.on(\"village_siege\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.player == \"00000000-0000-0000-0000-000000000008\", \"player\")\n    assert(event.attempted_pos.x == 3.0, \"attempted_pos\")\n    assert(event.attempted_pos.y == 4.0, \"attempted_pos\")\n    assert(event.attempted_pos.z == 5.0, \"attempted_pos\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -50541,7 +50676,7 @@ mod generated_tests {
     fn generated_client_chat_received() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_chat_received",
-            "horizon.on(\"client_chat_received\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.system == true, \"system\")\n    assert(event.overlay == false, \"overlay\")\n    assert(event.sender == 9, \"sender\")\n    assert(event.chat_type == nil, \"chat_type\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.message_component.text == \"test:message\", \"message\")\n    event.message = \"test:message:edited\"\n    horizon.cancel()\nend)",
+            "horizon.on(\"client_chat_received\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.system == true, \"system\")\n    assert(event.overlay == false, \"overlay\")\n    assert(event.sender == \"00000000-0000-0000-0000-000000000009\", \"sender\")\n    assert(event.chat_type == nil, \"chat_type\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.message_component.text == \"test:message\", \"message\")\n    event.message = \"test:message:edited\"\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut message = Text::literal("test:message");
@@ -50566,7 +50701,7 @@ mod generated_tests {
     fn generated_client_chat_received_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_chat_received_nocancel",
-            "horizon.on(\"client_chat_received\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.system == true, \"system\")\n    assert(event.overlay == false, \"overlay\")\n    assert(event.sender == 9, \"sender\")\n    assert(event.chat_type == nil, \"chat_type\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.message_component.text == \"test:message\", \"message\")\n    event.message = \"test:message:edited\"\nend)",
+            "horizon.on(\"client_chat_received\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.system == true, \"system\")\n    assert(event.overlay == false, \"overlay\")\n    assert(event.sender == \"00000000-0000-0000-0000-000000000009\", \"sender\")\n    assert(event.chat_type == nil, \"chat_type\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.message_component.text == \"test:message\", \"message\")\n    event.message = \"test:message:edited\"\nend)",
         );
         let firing_mods = boxed(m);
         let mut message = Text::literal("test:message");
@@ -50680,7 +50815,7 @@ mod generated_tests {
     fn generated_menu_extra_data() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_extra_data",
-            "horizon.on(\"menu_extra_data\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.data == nil, \"replace seed\")\n    event.data = \"t\" .. string.char(0, 159)\nend)",
+            "horizon.on(\"menu_extra_data\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.data == nil, \"replace seed\")\n    event.data = \"t\" .. string.char(0, 159)\nend)",
         );
         let firing_mods = boxed(m);
         let mut data: Option<Vec<u8>> = None;
@@ -54568,7 +54703,7 @@ mod generated_tests {
     fn generated_custom_payload_from_client() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_custom_payload_from_client",
-            "horizon.on(\"custom_payload_from_client\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.channel == \"test:channel\", \"channel\")\n    assert(event.data == \"t\" .. string.char(0, 159), \"data\")\nend)",
+            "horizon.on(\"custom_payload_from_client\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.channel == \"test:channel\", \"channel\")\n    assert(event.data == \"t\" .. string.char(0, 159), \"data\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_custom_payload_from_client(
@@ -55280,7 +55415,7 @@ mod generated_tests {
     fn generated_fishing_hook_landed() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_fishing_hook_landed",
-            "horizon.on(\"fishing_hook_landed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.hook == 8, \"hook\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.block.x == 4, \"block\")\n    assert(event.block.y == 5, \"block\")\n    assert(event.block.z == 6, \"block\")\n    assert(event.face.x == 5, \"face\")\n    assert(event.face.y == 6, \"face\")\n    assert(event.face.z == 7, \"face\")\nend)",
+            "horizon.on(\"fishing_hook_landed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.hook == 8, \"hook\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.block.x == 4, \"block\")\n    assert(event.block.y == 5, \"block\")\n    assert(event.block.z == 6, \"block\")\n    assert(event.face.x == 5, \"face\")\n    assert(event.face.y == 6, \"face\")\n    assert(event.face.z == 7, \"face\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_fishing_hook_landed(
@@ -56313,7 +56448,7 @@ mod generated_tests {
     fn generated_item_dropped_v2() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_dropped_v2",
-            "horizon.on(\"item_dropped_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"item_dropped_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -56338,7 +56473,7 @@ mod generated_tests {
     fn generated_item_dropped_v2_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_dropped_v2_nocancel",
-            "horizon.on(\"item_dropped_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\nend)",
+            "horizon.on(\"item_dropped_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -56780,7 +56915,7 @@ mod generated_tests {
     fn generated_item_picked_up_v2() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_picked_up_v2",
-            "horizon.on(\"item_picked_up_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\n    assert(event.thrower == \"00000000-0000-0000-0000-000000000009\", \"thrower\")\n    assert(event.position.x == 4.0, \"position\")\n    assert(event.position.y == 5.0, \"position\")\n    assert(event.position.z == 6.0, \"position\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"item_picked_up_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\n    assert(event.thrower == \"00000000-0000-0000-0000-000000000009\", \"thrower\")\n    assert(event.position.x == 4.0, \"position\")\n    assert(event.position.y == 5.0, \"position\")\n    assert(event.position.z == 6.0, \"position\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -56807,7 +56942,7 @@ mod generated_tests {
     fn generated_item_picked_up_v2_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_picked_up_v2_nocancel",
-            "horizon.on(\"item_picked_up_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\n    assert(event.thrower == \"00000000-0000-0000-0000-000000000009\", \"thrower\")\n    assert(event.position.x == 4.0, \"position\")\n    assert(event.position.y == 5.0, \"position\")\n    assert(event.position.z == 6.0, \"position\")\nend)",
+            "horizon.on(\"item_picked_up_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.stack.plain == true, \"stack\")\n    assert(event.thrower == \"00000000-0000-0000-0000-000000000009\", \"thrower\")\n    assert(event.position.x == 4.0, \"position\")\n    assert(event.position.y == 5.0, \"position\")\n    assert(event.position.z == 6.0, \"position\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -57747,7 +57882,7 @@ mod generated_tests {
     fn generated_menu_input_closed() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_input_closed",
-            "horizon.on(\"menu_input_closed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.uuid == 7, \"uuid\")\n    assert(event.window == 8, \"window\")\n    assert(event.slots[1].id == \"test:slots\", \"slots\")\n    assert(event.slots[1].count == 3, \"slots\")\n    assert(event.slots[1].damage == 2, \"slots\")\n    assert(event.slots[1].extra[\"minecraft:repair_cost\"] == 22, \"slots\")\n    assert(event.slots[1].plain == false, \"slots\")\n    assert(event.slots[2].id == \"test:slots\", \"slots\")\n    assert(event.slots[2].count == 4, \"slots\")\n    assert(event.slots[2].damage == 3, \"slots\")\n    assert(event.slots[2].extra[\"minecraft:repair_cost\"] == 23, \"slots\")\n    assert(event.slots[2].plain == false, \"slots\")\n    event.slots = { { id = \"test:slots\", count = 53, damage = 52, extra = { [\"minecraft:repair_cost\"] = 72 }, plain = false } }\nend)",
+            "horizon.on(\"menu_input_closed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.uuid == \"00000000-0000-0000-0000-000000000007\", \"uuid\")\n    assert(event.window == 8, \"window\")\n    assert(event.slots[1].id == \"test:slots\", \"slots\")\n    assert(event.slots[1].count == 3, \"slots\")\n    assert(event.slots[1].damage == 2, \"slots\")\n    assert(event.slots[1].extra[\"minecraft:repair_cost\"] == 22, \"slots\")\n    assert(event.slots[1].plain == false, \"slots\")\n    assert(event.slots[2].id == \"test:slots\", \"slots\")\n    assert(event.slots[2].count == 4, \"slots\")\n    assert(event.slots[2].damage == 3, \"slots\")\n    assert(event.slots[2].extra[\"minecraft:repair_cost\"] == 23, \"slots\")\n    assert(event.slots[2].plain == false, \"slots\")\n    event.slots = { { id = \"test:slots\", count = 53, damage = 52, extra = { [\"minecraft:repair_cost\"] = 72 }, plain = false } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut slots = vec![
@@ -58131,7 +58266,7 @@ mod generated_tests {
     fn generated_menu_links() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_links",
-            "horizon.on(\"menu_links\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.links[1].x == 4, \"links\")\n    assert(event.links[1].y == 5, \"links\")\n    assert(event.links[1].z == 6, \"links\")\n    assert(event.links[2].x == 5, \"links\")\n    assert(event.links[2].y == 6, \"links\")\n    assert(event.links[2].z == 7, \"links\")\n    event.links = { { x = 64, y = 65, z = 66 } }\nend)",
+            "horizon.on(\"menu_links\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.links[1].x == 4, \"links\")\n    assert(event.links[1].y == 5, \"links\")\n    assert(event.links[1].z == 6, \"links\")\n    assert(event.links[2].x == 5, \"links\")\n    assert(event.links[2].y == 6, \"links\")\n    assert(event.links[2].z == 7, \"links\")\n    event.links = { { x = 64, y = 65, z = 66 } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut links = vec![[4, 5, 6], [5, 6, 7]];
@@ -58956,7 +59091,7 @@ mod generated_tests {
     fn generated_permission_check() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_permission_check",
-            "horizon.on(\"permission_check\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.node == \"test:node\", \"node\")\n    assert(event.default_level == 9, \"default_level\")\n    assert(event.result == nil, \"replace seed\")\n    event.result = true\nend)",
+            "horizon.on(\"permission_check\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.node == \"test:node\", \"node\")\n    assert(event.default_level == 9, \"default_level\")\n    assert(event.result == nil, \"replace seed\")\n    event.result = true\nend)",
         );
         let firing_mods = boxed(m);
         let mut result: Option<bool> = None;
@@ -59714,7 +59849,7 @@ mod generated_tests {
     fn generated_player_hurt_by_player() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_hurt_by_player",
-            "horizon.on(\"player_hurt_by_player\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.attacker == 7, \"attacker\")\n    assert(event.attacker_entity == 8, \"attacker_entity\")\n    assert(event.victim == 9, \"victim\")\n    assert(event.victim_entity == 10, \"victim_entity\")\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 7.5, \"amount\")\n    event.amount = 21.5\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_hurt_by_player\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.attacker == \"00000000-0000-0000-0000-000000000007\", \"attacker\")\n    assert(event.attacker_entity == 8, \"attacker_entity\")\n    assert(event.victim == \"00000000-0000-0000-0000-000000000009\", \"victim\")\n    assert(event.victim_entity == 10, \"victim_entity\")\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 7.5, \"amount\")\n    event.amount = 21.5\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut amount = 7.5;
@@ -59740,7 +59875,7 @@ mod generated_tests {
     fn generated_player_hurt_by_player_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_hurt_by_player_nocancel",
-            "horizon.on(\"player_hurt_by_player\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.attacker == 7, \"attacker\")\n    assert(event.attacker_entity == 8, \"attacker_entity\")\n    assert(event.victim == 9, \"victim\")\n    assert(event.victim_entity == 10, \"victim_entity\")\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 7.5, \"amount\")\n    event.amount = 21.5\nend)",
+            "horizon.on(\"player_hurt_by_player\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.attacker == \"00000000-0000-0000-0000-000000000007\", \"attacker\")\n    assert(event.attacker_entity == 8, \"attacker_entity\")\n    assert(event.victim == \"00000000-0000-0000-0000-000000000009\", \"victim\")\n    assert(event.victim_entity == 10, \"victim_entity\")\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 7.5, \"amount\")\n    event.amount = 21.5\nend)",
         );
         let firing_mods = boxed(m);
         let mut amount = 7.5;
@@ -60081,7 +60216,7 @@ mod generated_tests {
     fn generated_player_move() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_move",
-            "horizon.on(\"player_move\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.from.x == 3.0, \"from\")\n    assert(event.from.y == 4.0, \"from\")\n    assert(event.from.z == 5.0, \"from\")\n    assert(event.to.x == 4.0, \"to\")\n    assert(event.to.y == 5.0, \"to\")\n    assert(event.to.z == 6.0, \"to\")\n    event.to = { x = 14.0, y = 15.0, z = 16.0 }\n    assert(event.yaw == 5.5, \"yaw\")\n    assert(event.pitch == 6.5, \"pitch\")\n    assert(event.on_ground == true, \"on_ground\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_move\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.from.x == 3.0, \"from\")\n    assert(event.from.y == 4.0, \"from\")\n    assert(event.from.z == 5.0, \"from\")\n    assert(event.to.x == 4.0, \"to\")\n    assert(event.to.y == 5.0, \"to\")\n    assert(event.to.z == 6.0, \"to\")\n    event.to = { x = 14.0, y = 15.0, z = 16.0 }\n    assert(event.yaw == 5.5, \"yaw\")\n    assert(event.pitch == 6.5, \"pitch\")\n    assert(event.on_ground == true, \"on_ground\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut to = [4.0, 5.0, 6.0];
@@ -60107,7 +60242,7 @@ mod generated_tests {
     fn generated_player_move_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_move_nocancel",
-            "horizon.on(\"player_move\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.from.x == 3.0, \"from\")\n    assert(event.from.y == 4.0, \"from\")\n    assert(event.from.z == 5.0, \"from\")\n    assert(event.to.x == 4.0, \"to\")\n    assert(event.to.y == 5.0, \"to\")\n    assert(event.to.z == 6.0, \"to\")\n    event.to = { x = 14.0, y = 15.0, z = 16.0 }\n    assert(event.yaw == 5.5, \"yaw\")\n    assert(event.pitch == 6.5, \"pitch\")\n    assert(event.on_ground == true, \"on_ground\")\nend)",
+            "horizon.on(\"player_move\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.from.x == 3.0, \"from\")\n    assert(event.from.y == 4.0, \"from\")\n    assert(event.from.z == 5.0, \"from\")\n    assert(event.to.x == 4.0, \"to\")\n    assert(event.to.y == 5.0, \"to\")\n    assert(event.to.z == 6.0, \"to\")\n    event.to = { x = 14.0, y = 15.0, z = 16.0 }\n    assert(event.yaw == 5.5, \"yaw\")\n    assert(event.pitch == 6.5, \"pitch\")\n    assert(event.on_ground == true, \"on_ground\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut to = [4.0, 5.0, 6.0];
@@ -60220,7 +60355,7 @@ mod generated_tests {
     fn generated_player_pre_login() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_pre_login",
-            "horizon.on(\"player_pre_login\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.address == \"127.0.0.1:25567\", \"address\")\n    assert(event.defer.count == 0, \"defer\")\n    event.defer = { refuse = \"test:refused\" }\nend)",
+            "horizon.on(\"player_pre_login\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.address == \"127.0.0.1:25567\", \"address\")\n    assert(event.defer.count == 0, \"defer\")\n    event.defer = { refuse = \"test:refused\" }\nend)",
         );
         let firing_mods = boxed(m);
         let mut defer = Vec::new();
@@ -60664,7 +60799,7 @@ mod generated_tests {
     fn generated_player_teleport() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_teleport",
-            "horizon.on(\"player_teleport\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.from.x == 5.0, \"from\")\n    assert(event.from.y == 6.0, \"from\")\n    assert(event.from.z == 7.0, \"from\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.to.x == 7.0, \"to\")\n    assert(event.to.y == 8.0, \"to\")\n    assert(event.to.z == 9.0, \"to\")\n    event.to = { x = 17.0, y = 18.0, z = 19.0 }\n    assert(event.relative == 14, \"relative\")\n    event.relative = 57\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_teleport\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.from.x == 5.0, \"from\")\n    assert(event.from.y == 6.0, \"from\")\n    assert(event.from.z == 7.0, \"from\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.to.x == 7.0, \"to\")\n    assert(event.to.y == 8.0, \"to\")\n    assert(event.to.z == 9.0, \"to\")\n    event.to = { x = 17.0, y = 18.0, z = 19.0 }\n    assert(event.relative == 14, \"relative\")\n    event.relative = 57\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut to = [7.0, 8.0, 9.0];
@@ -60693,7 +60828,7 @@ mod generated_tests {
     fn generated_player_teleport_no_cancel() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_teleport_nocancel",
-            "horizon.on(\"player_teleport\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.from.x == 5.0, \"from\")\n    assert(event.from.y == 6.0, \"from\")\n    assert(event.from.z == 7.0, \"from\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.to.x == 7.0, \"to\")\n    assert(event.to.y == 8.0, \"to\")\n    assert(event.to.z == 9.0, \"to\")\n    event.to = { x = 17.0, y = 18.0, z = 19.0 }\n    assert(event.relative == 14, \"relative\")\n    event.relative = 57\nend)",
+            "horizon.on(\"player_teleport\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.from.x == 5.0, \"from\")\n    assert(event.from.y == 6.0, \"from\")\n    assert(event.from.z == 7.0, \"from\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.to.x == 7.0, \"to\")\n    assert(event.to.y == 8.0, \"to\")\n    assert(event.to.z == 9.0, \"to\")\n    event.to = { x = 17.0, y = 18.0, z = 19.0 }\n    assert(event.relative == 14, \"relative\")\n    event.relative = 57\nend)",
         );
         let firing_mods = boxed(m);
         let mut to = [7.0, 8.0, 9.0];
@@ -61075,7 +61210,7 @@ mod generated_tests {
     fn generated_recipe_sources() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_recipe_sources",
-            "horizon.on(\"recipe_sources\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.sources[1].x == 4, \"sources\")\n    assert(event.sources[1].y == 5, \"sources\")\n    assert(event.sources[1].z == 6, \"sources\")\n    assert(event.sources[2].x == 5, \"sources\")\n    assert(event.sources[2].y == 6, \"sources\")\n    assert(event.sources[2].z == 7, \"sources\")\n    event.sources = { { x = 64, y = 65, z = 66 } }\nend)",
+            "horizon.on(\"recipe_sources\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.sources[1].x == 4, \"sources\")\n    assert(event.sources[1].y == 5, \"sources\")\n    assert(event.sources[1].z == 6, \"sources\")\n    assert(event.sources[2].x == 5, \"sources\")\n    assert(event.sources[2].y == 6, \"sources\")\n    assert(event.sources[2].z == 7, \"sources\")\n    event.sources = { { x = 64, y = 65, z = 66 } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut sources = vec![[4, 5, 6], [5, 6, 7]];
@@ -61753,7 +61888,7 @@ mod generated_tests {
     fn generated_resource_pack_status_v2() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_resource_pack_status_v2",
-            "horizon.on(\"resource_pack_status_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pack == 9, \"pack\")\n    assert(event.status == 10, \"status\")\nend)",
+            "horizon.on(\"resource_pack_status_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pack == \"00000000-0000-0000-0000-000000000009\", \"pack\")\n    assert(event.status == 10, \"status\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_resource_pack_status_v2(

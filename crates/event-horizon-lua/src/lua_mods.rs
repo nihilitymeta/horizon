@@ -4838,6 +4838,60 @@ experimental = ["scripts"]
     }
 
     #[test]
+    fn mob_killed_player_uuid_round_trips_as_text() {
+        let (dir, path) = hmod(
+            "killed-uuid",
+            &[(
+                "scripts/init.lua",
+                br#"
+                LOG = {}
+                local function log(s) LOG[#LOG + 1] = s end
+                horizon.on("mob_killed", function(event)
+                  log("killed " .. event.entity .. " by " .. event.player .. " (" .. type(event.player) .. ")")
+                end, "minecraft:cow")
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        // A real 128-bit player UUID: Lua sees its uuid text, never a Lua
+        // number (an f64 cannot hold 128 bits, so a numeric seed of this
+        // value would not round-trip).
+        let steve = 0x6ba7b811_9dad_11d1_80b4_00c04fd430c8;
+        m.mob_killed(
+            &mut host,
+            &mut test_events::mob_killed_event(steve, 7, "minecraft:cow"),
+        );
+        // A zombie is nobody's business: the kind filter stays quiet.
+        m.mob_killed(
+            &mut host,
+            &mut test_events::mob_killed_event(steve, 9, "minecraft:zombie"),
+        );
+        let log: Vec<String> = m
+            .lua
+            .globals()
+            .get::<Table>("LOG")
+            .unwrap()
+            .sequence_values()
+            .map(|v| v.unwrap())
+            .collect();
+        // One entry, with the killer's uuid text (not a lossy number).
+        assert_eq!(
+            log,
+            ["killed 7 by 6ba7b811-9dad-11d1-80b4-00c04fd430c8 (string)"]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn timers_run_from_the_server_tick_and_world_and_player_data_persist() {
         use horizon_world::nbt::Tag;
         let (dir, path) = hmod(
