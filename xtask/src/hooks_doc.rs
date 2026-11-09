@@ -11,9 +11,20 @@ use syn::Item;
 
 /// The engine hooks a scripted mod hears, and as what (`docs/lua-bindings.md`).
 const LUA_HOOKS: &[(&str, &str)] = &[
-    ("server_tick", "`server_tick(phase, world_running)`"),
-    ("world_lifecycle", "`world_lifecycle(phase)`"),
-    ("data_pack_files", "reloads the scripts on `/reload`"),
+    // Generated hooks name no `name(` handler here: that spelling feeds the
+    // registerable-names test, which covers the hand-written registry only.
+    (
+        "server_tick",
+        "an event table with `phase`, `world_running` and the context",
+    ),
+    (
+        "world_lifecycle",
+        "an event table with `phase`, `error_text` and the context",
+    ),
+    (
+        "data_pack_files",
+        "`event.files`, appended in load order; reloads the scripts on `/reload`",
+    ),
     (
         "mob_spawned",
         "`mob_spawned(dimension, kind, x, y, z, natural)`, by kind",
@@ -124,7 +135,7 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "loot_drops",
-        "`loot_drops(source, drops)`, by block or by kind",
+        "an event table with the loot context flat and `drops`, by block or by kind",
     ),
     (
         "hears_projectile_impacts",
@@ -565,10 +576,37 @@ mod tests {
                 }
             }
         }
+        // The generated arms expand inside that same `impl` block, from the
+        // `gen_*` invocations, so they are not `fn` items above: their
+        // native names (each invocation's first token) are gathered here
+        // and counted as answered below where the reference covers them.
+        // Generated hooks the reference does not cover stay out, as before.
+        let gen_src = std::fs::read_to_string(
+            root.join("crates/event-horizon-lua/src/generated_hooks/mod.rs"),
+        )
+        .unwrap();
+        let mut generated = std::collections::BTreeSet::new();
+        for line in gen_src.lines() {
+            let line = line.trim_start();
+            if !line.starts_with("gen_") {
+                continue;
+            }
+            let Some(paren) = line.find("!(") else {
+                continue;
+            };
+            let after = &line[paren + 2..];
+            let Some(name) = after.split([',', ' ']).next() else {
+                continue;
+            };
+            generated.insert(name.to_owned());
+        }
         let named: std::collections::BTreeSet<String> = super::LUA_HOOKS
             .iter()
             .map(|(n, _)| n.to_string())
             .collect();
+        // A reference hook with a generated arm counts as answered through
+        // it.
+        answered.extend(generated.intersection(&named).cloned());
         assert_eq!(answered, named);
     }
 
@@ -596,11 +634,18 @@ mod tests {
             }
         }
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let src =
-            std::fs::read_to_string(root.join("crates/event-horizon-lua/src/lua_mods.rs")).unwrap();
-        let file = syn::parse_file(&src).unwrap();
         let mut calls = Calls(Default::default());
-        calls.visit_file(&file);
+        // The runtime's host calls live in the hand-written hooks and in
+        // the generated runtime's helpers (whose macros expand into the
+        // hand-written `impl` block); both files count.
+        for relative in [
+            "crates/event-horizon-lua/src/lua_mods.rs",
+            "crates/event-horizon-lua/src/generated_runtime.rs",
+        ] {
+            let src = std::fs::read_to_string(root.join(relative)).unwrap();
+            let file = syn::parse_file(&src).unwrap();
+            calls.visit_file(&file);
+        }
         let catalog: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(root.join("native-hooks.json")).unwrap())
                 .unwrap();

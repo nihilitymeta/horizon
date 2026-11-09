@@ -20,16 +20,10 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "cannot: visuals: unsupported: NativeBlockRim borrows render state (render thread); visuals: unsupported: NativeColoredLight borrows render state (render thread)",
     ),
     ("emissive", "generated"),
-    (
-        "world_lifecycle",
-        "cannot: world_lifecycle: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("world_lifecycle", "generated"),
     ("server_about_to_start", "generated"),
     ("server_stopping", "generated"),
-    (
-        "server_tick",
-        "cannot: server_tick: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("server_tick", "generated"),
     ("level_tick_pre", "generated"),
     ("level_tick_post", "generated"),
     ("block_changed", "generated"),
@@ -261,10 +255,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ),
     ("consume_effect", "generated"),
     ("loot_table_load", "generated"),
-    (
-        "loot_drops",
-        "cannot: loot_drops: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("loot_drops", "generated"),
     ("state_for_placement", "generated"),
     ("enchant_effect", "generated"),
     (
@@ -320,10 +311,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "screen_char_typed_pre",
         "cannot: screen_char_typed_pre: unsupported: NativeScreenView borrows render state (render thread)",
     ),
-    (
-        "data_pack_files",
-        "cannot: data_pack_files: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("data_pack_files", "generated"),
     (
         "biome_colors",
         "cannot: biome_colors: unsupported: BiomeColors borrows render state (render thread)",
@@ -929,8 +917,10 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "frame",
     "tick",
     "emissive",
+    "world_lifecycle",
     "server_about_to_start",
     "server_stopping",
+    "server_tick",
     "level_tick_pre",
     "level_tick_post",
     "block_changed",
@@ -978,6 +968,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "is_bonemeal_success",
     "consume_effect",
     "loot_table_load",
+    "loot_drops",
     "state_for_placement",
     "enchant_effect",
     "modify_default_components",
@@ -989,6 +980,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "use_animation",
     "can_eat",
     "perform_console_command",
+    "data_pack_files",
     "server_data_loaded",
     "compute_fov",
     "mouse_button_pre",
@@ -1323,6 +1315,7 @@ pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
     "apply_effect_tick",
     "on_effect_added",
     "mob_effect_added",
+    "loot_drops",
     "living_entity_use_item_tick",
     "on_use_tick",
     "living_entity_use_item_stop",
@@ -1404,8 +1397,10 @@ macro_rules! impl_generated_hooks {
     gen_listen!(frame, game_mut, horizon_client::mod_api::FrameEvent, (none), [elapsed: s_val(std::time::Duration)]);
     gen_listen!(tick, game_mut, horizon_client::mod_api::TickEvent, (none), []);
     gen_collect!(emissive, game_ref, horizon_client::mod_api::EmissiveEvent<'_>, (none), [layers: s_vec((&'static str, &'static str)) => w_vec((&'static str, &'static str))]);
+    gen_listen!(world_lifecycle, game_mut, horizon_client::mod_api::WorldLifecycleEvent<'_>, (none), [context: lifecycle_ctx, phase: world_phase, error_text: cloned]);
     gen_listen!(server_about_to_start, game_mut, horizon_client::mod_api::ServerAboutToStartEvent, (none), [dedicated: copy]);
     gen_listen!(server_stopping, game_mut, horizon_client::mod_api::ServerStoppingEvent, (none), [dedicated: copy]);
+    gen_server_tick!(server_tick, game_mut, horizon_client::mod_api::ServerTickEvent<'_>, (none), [context: lifecycle_ctx, phase: tick_phase]);
     gen_listen!(level_tick_pre, game_mut, horizon_client::mod_api::LevelTickPreEvent<'_>, (none), [dimension: cloned]);
     gen_listen!(level_tick_post, game_mut, horizon_client::mod_api::LevelTickPostEvent<'_>, (none), [dimension: cloned]);
     gen_listen!(block_changed, level, horizon_client::mod_api::BlockChangedEvent, (none), [dimension: dim, pos: pos_struct, old: state_level, new: state_level, old_props: state_props_note, new_props: state_props_note]);
@@ -1453,6 +1448,7 @@ macro_rules! impl_generated_hooks {
     gen_collect!(is_bonemeal_success, level_mut, horizon_client::mod_api::IsBonemealSuccessEvent, (none), [dimension: dim, pos: pos_struct, success: copy => mut_scalar, block: block_from_state]);
     gen_listen!(consume_effect, game_mut, horizon_client::mod_api::ConsumeEffectEvent<'_>, (none), [kind: cloned, data: s_ref(serde_json::Value)]);
     gen_collect!(loot_table_load, none, horizon_client::mod_api::LootTableLoadEvent<'_>, (none), [id: cloned, table: s_mut(serde_json::Value) => w_mut(serde_json::Value)]);
+    gen_loot_drops!(loot_drops, game_mut, horizon_client::mod_api::LootDropsEvent<'_>, (loot), [context: loot_ctx, drops: s_vec(horizon_client::mod_api::ItemStack) => loot_write]);
     gen_replace!(state_for_placement, level, horizon_client::mod_api::StateForPlacementEvent<'_>, (none), [dimension: dim, state: state_level, context: s_ref(horizon_client::mod_api::PlacementContext), fluid: s_val(horizon_client::mod_api::FluidState), state_props: state_props_note], answer : answer_state, Option<Option<BlockStateId>>);
     gen_listen!(enchant_effect, game_mut, horizon_client::mod_api::EnchantEffectEvent<'_>, (none), [enchantment: cloned, kind: cloned, data: s_ref(serde_json::Value), level: copy, victim: copy]);
     gen_collect!(modify_default_components, none, horizon_client::mod_api::ModifyDefaultComponentsEvent<'_>, (none), [item: cloned, components: s_mut(serde_json::Map<String, serde_json::Value>) => w_mut(serde_json::Map<String, serde_json::Value>)]);
@@ -1464,6 +1460,7 @@ macro_rules! impl_generated_hooks {
     gen_listen!(use_animation, game_ref, horizon_client::mod_api::UseAnimationEvent<'_>, (none), [stack: item, animation: s_mut(horizon_world::consumable::UseAnimation) => w_mut(horizon_world::consumable::UseAnimation)]);
     gen_listen!(can_eat, game_ref, horizon_client::mod_api::CanEatEvent<'_>, (none), [stack: item, can_eat: copy => mut_scalar]);
     gen_cancel!(perform_console_command, game_mut, horizon_client::mod_api::PerformConsoleCommandEvent<'_>, (none), [command: cloned]);
+    gen_data_pack_files!(data_pack_files, game_ref, horizon_client::mod_api::DataPackFilesEvent<'_>, (none), [files: s_vec((String,Vec<u8>)) => w_vec((String,Vec<u8>))]);
     gen_listen!(server_data_loaded, game_mut, horizon_client::mod_api::ServerDataLoadedEvent, (none), [reload: copy]);
     gen_listen!(compute_fov, game_ref, horizon_client::mod_api::ComputeFovEvent, (none), [partial: copy, camera: vec3, degrees: copy => mut_scalar]);
     gen_cancel!(mouse_button_pre, game_mut, horizon_client::mod_api::MouseButtonPreEvent, (none), [button: copy, pressed: copy, modifiers: copy]);
@@ -2107,6 +2104,116 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_world_lifecycle() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_world_lifecycle",
+            "horizon.on(\"world_lifecycle\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.authority == \"IntegratedServer\", \"context\")\n    assert(event.epoch == 7, \"context\")\n    assert(event.tick == 11, \"context\")\n    assert(event.phase == \"WorldOpenFailed\", \"phase\")\n    assert(event.error_text == \"test:error_text\", \"error_text\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_world_lifecycle(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_lifecycle_context(
+                horizon_client::mod_api::NativeAuthority::IntegratedServer,
+                horizon_client::mod_api::NativeWorldEpoch::new(7),
+                horizon_client::mod_api::NativeTickId::new(11),
+            ),
+            horizon_client::mod_api::WorldPhase::WorldOpenFailed,
+            "test:error_text",
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_world_lifecycle_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_world_lifecycle_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_world_lifecycle(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_lifecycle_context(
+                    horizon_client::mod_api::NativeAuthority::IntegratedServer,
+                    horizon_client::mod_api::NativeWorldEpoch::new(7),
+                    horizon_client::mod_api::NativeTickId::new(11),
+                ),
+                horizon_client::mod_api::WorldPhase::WorldOpenFailed,
+                "test:error_text",
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "world_lifecycle read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "world_lifecycle read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "world_lifecycle read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_world_lifecycle_cost_live",
+            "horizon.on(\"world_lifecycle\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_world_lifecycle(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_lifecycle_context(
+                    horizon_client::mod_api::NativeAuthority::IntegratedServer,
+                    horizon_client::mod_api::NativeWorldEpoch::new(7),
+                    horizon_client::mod_api::NativeTickId::new(11),
+                ),
+                horizon_client::mod_api::WorldPhase::WorldOpenFailed,
+                "test:error_text",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "world_lifecycle built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "world_lifecycle read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "world_lifecycle read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_server_about_to_start() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_server_about_to_start",
@@ -2260,6 +2367,115 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "server_stopping read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_server_tick() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_server_tick",
+            "horizon.on(\"server_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.authority == \"IntegratedServer\", \"context\")\n    assert(event.epoch == 7, \"context\")\n    assert(event.tick == 11, \"context\")\n    assert(event.phase == \"end\", \"phase\")\n    assert(event.world_running == false, \"phase\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_server_tick(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_lifecycle_context(
+                horizon_client::mod_api::NativeAuthority::IntegratedServer,
+                horizon_client::mod_api::NativeWorldEpoch::new(7),
+                horizon_client::mod_api::NativeTickId::new(11),
+            ),
+            horizon_client::mod_api::ServerTickPhase::ServerTickEnd {
+                world_running: false,
+            },
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_server_tick_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_tick_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_server_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_lifecycle_context(
+                    horizon_client::mod_api::NativeAuthority::IntegratedServer,
+                    horizon_client::mod_api::NativeWorldEpoch::new(7),
+                    horizon_client::mod_api::NativeTickId::new(11),
+                ),
+                horizon_client::mod_api::ServerTickPhase::ServerTickEnd {
+                    world_running: false,
+                },
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "the timers' table is the only one built with no other handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "server_tick read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "server_tick read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_tick read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_tick_cost_live",
+            "horizon.on(\"server_tick\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_server_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_lifecycle_context(
+                    horizon_client::mod_api::NativeAuthority::IntegratedServer,
+                    horizon_client::mod_api::NativeWorldEpoch::new(7),
+                    horizon_client::mod_api::NativeTickId::new(11),
+                ),
+                horizon_client::mod_api::ServerTickPhase::ServerTickEnd {
+                    world_running: false,
+                },
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "server_tick built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "server_tick read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_tick read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -9146,6 +9362,606 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_loot_drops() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_loot_drops",
+            "horizon.on(\"loot_drops\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.block.id == \"minecraft:stone\", \"kind\")\n    assert(event.table == \"test:table0\", \"context\")\n    assert(event.dimension == \"minecraft:overworld\", \"context\")\n    assert(event.origin.x == 1.0, \"context\")\n    assert(event.origin.y == 2.0, \"context\")\n    assert(event.origin.z == 3.0, \"context\")\n    assert(event.block.x == 1, \"context\")\n    assert(event.block.y == 2, \"context\")\n    assert(event.block.z == 3, \"context\")\n    assert(event.block.id == \"minecraft:stone\", \"context\")\n    assert(event.block.state == \"minecraft:stone\", \"context\")\n    assert(event.entity.id == 11, \"context\")\n    assert(event.entity.kind == \"minecraft:zombie\", \"context\")\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"context\")\n    assert(event.tool.id == \"test:tool\", \"context\")\n    assert(event.tool.count == 1, \"context\")\n    assert(event.tool.damage == 0, \"context\")\n    assert(event.tool.extra == nil, \"context\")\n    assert(event.tool.plain == true, \"context\")\n    assert(event.explosion == 1.5, \"context\")\n    assert(event.used == true, \"context\")\n    assert(event.drops[1].id == \"test:drops\", \"drops\")\n    assert(event.drops[1].count == 2, \"drops\")\n    assert(event.drops[1].damage == 1, \"drops\")\n    assert(event.drops[1].extra[\"minecraft:repair_cost\"] == 21, \"drops\")\n    assert(event.drops[1].plain == false, \"drops\")\n    assert(event.drops[2].id == \"test:drops\", \"drops\")\n    assert(event.drops[2].count == 3, \"drops\")\n    assert(event.drops[2].damage == 2, \"drops\")\n    assert(event.drops[2].extra[\"minecraft:repair_cost\"] == 22, \"drops\")\n    assert(event.drops[2].plain == false, \"drops\")\n    table.insert(event.drops, { id = \"test:drops:added\", count = 1 })\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut drops = vec![
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 21,
+                        ..Default::default()
+                    })),
+                },
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                },
+            ];
+            dispatch_loot_drops(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_loot_drops(
+                    "test:tableK2",
+                    "minecraft:overworld",
+                    [2.0, 64.0, 3.0],
+                    None,
+                    Some((13, "minecraft:skeleton")),
+                    None,
+                    None,
+                    None,
+                    false,
+                ),
+                &mut drops,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        // gone event: the handler stays quiet.
+        {
+            let mut drops = vec![
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 21,
+                        ..Default::default()
+                    })),
+                },
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                },
+            ];
+            dispatch_loot_drops(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_loot_drops(
+                    "test:tableGone",
+                    "minecraft:overworld",
+                    [0.0, 64.0, 0.0],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                ),
+                &mut drops,
+            );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
+        }
+        no_error(&id);
+        let mut drops = vec![
+            ItemStack {
+                item: "test:drops".into(),
+                count: 2,
+                damage: 1,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 21,
+                    ..Default::default()
+                })),
+            },
+            ItemStack {
+                item: "test:drops".into(),
+                count: 3,
+                damage: 2,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 22,
+                    ..Default::default()
+                })),
+            },
+        ];
+        dispatch_loot_drops(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_loot_drops(
+                "test:table0",
+                "minecraft:overworld",
+                [1.0, 2.0, 3.0],
+                Some(([1, 2, 3], BlockStateId(7))),
+                Some((11, "minecraft:zombie")),
+                Some(7),
+                Some(&ItemStack {
+                    item: "test:tool".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                }),
+                Some(1.5),
+                true,
+            ),
+            &mut drops,
+        );
+        assert_eq!(
+            format!("{:?}", drops),
+            format!(
+                "{:?}",
+                vec![
+                    ItemStack {
+                        item: "test:drops".into(),
+                        count: 2,
+                        damage: 1,
+                        extra: Some(Box::new(StackData {
+                            repair_cost: 21,
+                            ..Default::default()
+                        }))
+                    },
+                    ItemStack {
+                        item: "test:drops".into(),
+                        count: 3,
+                        damage: 2,
+                        extra: Some(Box::new(StackData {
+                            repair_cost: 22,
+                            ..Default::default()
+                        }))
+                    },
+                    ItemStack {
+                        item: "test:drops:added".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None
+                    }
+                ]
+            )
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_loot_drops_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_loot_drops_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut drops = vec![
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 21,
+                        ..Default::default()
+                    })),
+                },
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_loot_drops(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_loot_drops(
+                    "test:table0",
+                    "minecraft:overworld",
+                    [1.0, 2.0, 3.0],
+                    Some(([1, 2, 3], BlockStateId(7))),
+                    Some((11, "minecraft:zombie")),
+                    Some(7),
+                    Some(&ItemStack {
+                        item: "test:tool".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    }),
+                    Some(1.5),
+                    true,
+                ),
+                &mut drops,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "loot_drops read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "loot_drops read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "loot_drops read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_loot_drops_cost_kind",
+            "horizon.on(\"loot_drops\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut drops = vec![
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 21,
+                        ..Default::default()
+                    })),
+                },
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_loot_drops(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_loot_drops(
+                    "test:table0",
+                    "minecraft:overworld",
+                    [1.0, 2.0, 3.0],
+                    Some(([1, 2, 3], BlockStateId(7))),
+                    Some((11, "minecraft:zombie")),
+                    Some(7),
+                    Some(&ItemStack {
+                        item: "test:tool".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    }),
+                    Some(1.5),
+                    true,
+                ),
+                &mut drops,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "loot_drops read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                1,
+                "loot_drops read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "loot_drops read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_loot_drops_cost_live",
+            "horizon.on(\"loot_drops\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut drops = vec![
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 21,
+                        ..Default::default()
+                    })),
+                },
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_loot_drops(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_loot_drops(
+                    "test:table0",
+                    "minecraft:overworld",
+                    [1.0, 2.0, 3.0],
+                    Some(([1, 2, 3], BlockStateId(7))),
+                    Some((11, "minecraft:zombie")),
+                    Some(7),
+                    Some(&ItemStack {
+                        item: "test:tool".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    }),
+                    Some(1.5),
+                    true,
+                ),
+                &mut drops,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "loot_drops built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "loot_drops read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "loot_drops read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_loot_drops_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_loot_drops_duo_a1",
+            "horizon.on(\"loot_drops\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.drops, { id = \"test:drops\", count = 151 })\nend, \"minecraft:stone\")",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_loot_drops_duo_b1",
+            "horizon.on(\"loot_drops\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.drops, { id = \"test:drops\", count = 152 })\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut drops = vec![
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 21,
+                        ..Default::default()
+                    })),
+                },
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                },
+            ];
+            dispatch_loot_drops(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_loot_drops(
+                    "test:table0",
+                    "minecraft:overworld",
+                    [1.0, 2.0, 3.0],
+                    Some(([1, 2, 3], BlockStateId(7))),
+                    Some((11, "minecraft:zombie")),
+                    Some(7),
+                    Some(&ItemStack {
+                        item: "test:tool".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    }),
+                    Some(1.5),
+                    true,
+                ),
+                &mut drops,
+            );
+            assert_eq!(
+                drops
+                    .iter()
+                    .map(|s| (s.item.to_string(), s.count))
+                    .collect::<Vec<_>>(),
+                vec![
+                    ("test:drops".to_owned(), 2),
+                    ("test:drops".to_owned(), 3),
+                    ("test:drops".to_owned(), 151),
+                    ("test:drops".to_owned(), 152)
+                ]
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_loot_drops_duo_a2",
+            "horizon.on(\"loot_drops\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.drops, { id = \"test:drops\", count = 151 })\nend, \"minecraft:stone\")",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_loot_drops_duo_b2",
+            "horizon.on(\"loot_drops\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.drops, { id = \"test:drops\", count = 152 })\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut drops = vec![
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 21,
+                        ..Default::default()
+                    })),
+                },
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                },
+            ];
+            dispatch_loot_drops(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_loot_drops(
+                    "test:table0",
+                    "minecraft:overworld",
+                    [1.0, 2.0, 3.0],
+                    Some(([1, 2, 3], BlockStateId(7))),
+                    Some((11, "minecraft:zombie")),
+                    Some(7),
+                    Some(&ItemStack {
+                        item: "test:tool".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    }),
+                    Some(1.5),
+                    true,
+                ),
+                &mut drops,
+            );
+            assert_eq!(
+                drops
+                    .iter()
+                    .map(|s| (s.item.to_string(), s.count))
+                    .collect::<Vec<_>>(),
+                vec![
+                    ("test:drops".to_owned(), 2),
+                    ("test:drops".to_owned(), 3),
+                    ("test:drops".to_owned(), 152),
+                    ("test:drops".to_owned(), 151)
+                ]
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_loot_drops_duo_b3",
+            "horizon.on(\"loot_drops\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.drops, { id = \"test:drops\", count = 152 })\nend, \"minecraft:stone\")",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_loot_drops_duo_e3",
+            "horizon.on(\"loot_drops\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut drops = vec![
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 21,
+                        ..Default::default()
+                    })),
+                },
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                },
+            ];
+            dispatch_loot_drops(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_loot_drops(
+                    "test:table0",
+                    "minecraft:overworld",
+                    [1.0, 2.0, 3.0],
+                    Some(([1, 2, 3], BlockStateId(7))),
+                    Some((11, "minecraft:zombie")),
+                    Some(7),
+                    Some(&ItemStack {
+                        item: "test:tool".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    }),
+                    Some(1.5),
+                    true,
+                ),
+                &mut drops,
+            );
+            assert_eq!(
+                drops
+                    .iter()
+                    .map(|s| (s.item.to_string(), s.count))
+                    .collect::<Vec<_>>(),
+                vec![
+                    ("test:drops".to_owned(), 2),
+                    ("test:drops".to_owned(), 3),
+                    ("test:drops".to_owned(), 152)
+                ]
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_state_for_placement() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_state_for_placement",
@@ -10652,6 +11468,205 @@ mod generated_tests {
             no_error(&id);
             drop_dir(dir);
         }
+    }
+
+    #[test]
+    fn generated_data_pack_files() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_data_pack_files",
+            "horizon.on(\"data_pack_files\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.files[1].path == \"test:path0\", \"files\")\n    assert(event.files[1].data == \"t\" .. string.char(0, 159), \"files\")\n    assert(event.files[2].path == \"test:path1\", \"files\")\n    assert(event.files[2].data == \"t\" .. string.char(0, 159), \"files\")\n    event.files = { { path = \"test:path50:edited\", data = \"w\" .. string.char(1, 2) } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut files = vec![
+            ("test:path0".to_owned(), vec![116u8, 0u8, 159u8]),
+            ("test:path1".to_owned(), vec![116u8, 0u8, 159u8]),
+        ];
+        dispatch_data_pack_files(&FakeHost::empty(), &firing_mods, &mut files);
+        assert_eq!(
+            format!("{:?}", files),
+            format!(
+                "{:?}",
+                vec![("test:path50:edited".to_owned(), vec![119u8, 1u8, 2u8])]
+            )
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_data_pack_files_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_data_pack_files_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut files = vec![
+                ("test:path0".to_owned(), vec![116u8, 0u8, 159u8]),
+                ("test:path1".to_owned(), vec![116u8, 0u8, 159u8]),
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_data_pack_files(&FakeHost::empty(), &firing_mods, &mut files);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "data_pack_files read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "data_pack_files read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "data_pack_files read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_data_pack_files_cost_live",
+            "horizon.on(\"data_pack_files\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut files = vec![
+                ("test:path0".to_owned(), vec![116u8, 0u8, 159u8]),
+                ("test:path1".to_owned(), vec![116u8, 0u8, 159u8]),
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_data_pack_files(&FakeHost::empty(), &firing_mods, &mut files);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "data_pack_files built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "data_pack_files read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "data_pack_files read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_data_pack_files_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_data_pack_files_duo_a1",
+            "horizon.on(\"data_pack_files\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.files, { path = \"test:path50:edited\", data = \"w\" .. string.char(1, 2) })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_data_pack_files_duo_b1",
+            "horizon.on(\"data_pack_files\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.files, { path = \"test:path51:edited\", data = \"w\" .. string.char(1, 2) })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut files = vec![
+                ("test:path0".to_owned(), vec![116u8, 0u8, 159u8]),
+                ("test:path1".to_owned(), vec![116u8, 0u8, 159u8]),
+            ];
+            dispatch_data_pack_files(&FakeHost::empty(), &firing_mods, &mut files);
+            assert_eq!(
+                format!("{:?}", &files[files.len() - 2..]),
+                format!(
+                    "{:?}",
+                    vec![
+                        ("test:path50:edited".to_owned(), vec![119u8, 1u8, 2u8]),
+                        ("test:path51:edited".to_owned(), vec![119u8, 1u8, 2u8])
+                    ]
+                )
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_data_pack_files_duo_a2",
+            "horizon.on(\"data_pack_files\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.files, { path = \"test:path50:edited\", data = \"w\" .. string.char(1, 2) })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_data_pack_files_duo_b2",
+            "horizon.on(\"data_pack_files\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.files, { path = \"test:path51:edited\", data = \"w\" .. string.char(1, 2) })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut files = vec![
+                ("test:path0".to_owned(), vec![116u8, 0u8, 159u8]),
+                ("test:path1".to_owned(), vec![116u8, 0u8, 159u8]),
+            ];
+            dispatch_data_pack_files(&FakeHost::empty(), &firing_mods, &mut files);
+            assert_eq!(
+                format!("{:?}", &files[files.len() - 2..]),
+                format!(
+                    "{:?}",
+                    vec![
+                        ("test:path51:edited".to_owned(), vec![119u8, 1u8, 2u8]),
+                        ("test:path50:edited".to_owned(), vec![119u8, 1u8, 2u8])
+                    ]
+                )
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_data_pack_files_duo_b3",
+            "horizon.on(\"data_pack_files\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.files, { path = \"test:path51:edited\", data = \"w\" .. string.char(1, 2) })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_data_pack_files_duo_e3",
+            "horizon.on(\"data_pack_files\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut files = vec![
+                ("test:path0".to_owned(), vec![116u8, 0u8, 159u8]),
+                ("test:path1".to_owned(), vec![116u8, 0u8, 159u8]),
+            ];
+            dispatch_data_pack_files(&FakeHost::empty(), &firing_mods, &mut files);
+            assert_eq!(
+                format!("{:?}", &files[files.len() - 1..]),
+                format!(
+                    "{:?}",
+                    vec![("test:path51:edited".to_owned(), vec![119u8, 1u8, 2u8])]
+                )
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -56032,6 +57047,20 @@ mod generated_tests {
             let mut layers = vec![("test:a0", "test:b0"), ("test:a1", "test:b1")];
             dispatch_emissive(&FakeHost::empty(), &firing_mods, &mut layers);
         }
+        // world_lifecycle: unregistered, nothing runs.
+        {
+            dispatch_world_lifecycle(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_lifecycle_context(
+                    horizon_client::mod_api::NativeAuthority::IntegratedServer,
+                    horizon_client::mod_api::NativeWorldEpoch::new(7),
+                    horizon_client::mod_api::NativeTickId::new(11),
+                ),
+                horizon_client::mod_api::WorldPhase::WorldOpenFailed,
+                "test:error_text",
+            );
+        }
         // server_about_to_start: unregistered, nothing runs.
         {
             dispatch_server_about_to_start(&mut FakeHost::empty(), &firing_mods, true);
@@ -56039,6 +57068,21 @@ mod generated_tests {
         // server_stopping: unregistered, nothing runs.
         {
             dispatch_server_stopping(&mut FakeHost::empty(), &firing_mods, true);
+        }
+        // server_tick: unregistered, nothing runs.
+        {
+            dispatch_server_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_lifecycle_context(
+                    horizon_client::mod_api::NativeAuthority::IntegratedServer,
+                    horizon_client::mod_api::NativeWorldEpoch::new(7),
+                    horizon_client::mod_api::NativeTickId::new(11),
+                ),
+                horizon_client::mod_api::ServerTickPhase::ServerTickEnd {
+                    world_running: false,
+                },
+            );
         }
         // level_tick_pre: unregistered, nothing runs.
         {
@@ -56497,6 +57541,50 @@ mod generated_tests {
             let mut table = serde_json::json!({ "testkey": 8 });
             dispatch_loot_table_load(&firing_mods, "test:id", &mut table);
         }
+        // loot_drops: unregistered, nothing runs.
+        {
+            let mut drops = vec![
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 21,
+                        ..Default::default()
+                    })),
+                },
+                ItemStack {
+                    item: "test:drops".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                },
+            ];
+            dispatch_loot_drops(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_loot_drops(
+                    "test:table0",
+                    "minecraft:overworld",
+                    [1.0, 2.0, 3.0],
+                    Some(([1, 2, 3], BlockStateId(7))),
+                    Some((11, "minecraft:zombie")),
+                    Some(7),
+                    Some(&ItemStack {
+                        item: "test:tool".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    }),
+                    Some(1.5),
+                    true,
+                ),
+                &mut drops,
+            );
+        }
         // state_for_placement: unregistered, nothing runs.
         {
             let mut answer: Option<Option<BlockStateId>> = None;
@@ -56645,6 +57733,14 @@ mod generated_tests {
                 &mut ran,
             );
             assert!(!ran, "ran changed with no handler");
+        }
+        // data_pack_files: unregistered, nothing runs.
+        {
+            let mut files = vec![
+                ("test:path0".to_owned(), vec![116u8, 0u8, 159u8]),
+                ("test:path1".to_owned(), vec![116u8, 0u8, 159u8]),
+            ];
+            dispatch_data_pack_files(&FakeHost::empty(), &firing_mods, &mut files);
         }
         // server_data_loaded: unregistered, nothing runs.
         {

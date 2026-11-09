@@ -54,6 +54,8 @@ fn kind_tt(model: &Model) -> String {
                 format!("(entity {field})")
             }
         }
+        // Loot filters by the block id or entity kind of its context.
+        Kind::Loot => "(loot)".to_owned(),
     }
 }
 
@@ -140,6 +142,13 @@ fn seed_tag(conv: &Conv, ty: &str, key: Option<&str>) -> String {
             }
         }
         Conv::MutStrVec => "str_seq",
+        // The flat seeds ignore the field name and seed their table keys.
+        Conv::LifecycleCtx => "lifecycle_ctx",
+        Conv::TickPhase => "tick_phase",
+        Conv::WorldPhaseName => "world_phase",
+        Conv::LootCtx => "loot_ctx",
+        // Loot's drops seed like the struct vec of stacks they are.
+        Conv::LootDrops => return struct_shape(ty, key.unwrap_or("?")).0,
         Conv::Struct => return struct_shape(ty, key.unwrap_or("?")).0,
         Conv::Bytes => return "s_bytes".into(),
         Conv::PathStr => return "s_path".into(),
@@ -174,6 +183,8 @@ fn write_tag(conv: &Conv, ty: &str, key: Option<&str>) -> Option<String> {
         } else {
             "mut_strvec".into()
         }),
+        // The component-keeping drops write-back, not a plain struct vec.
+        Conv::LootDrops => Some("loot_write".into()),
         Conv::Struct => struct_shape(ty, key.unwrap_or("?")).1,
         Conv::TextVal => Some("w_text".into()),
         Conv::TextOpt => Some("w_opt_text".into()),
@@ -309,6 +320,18 @@ fn extra_tags(model: &Model) -> Vec<String> {
 }
 
 fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
+    // Three hooks run bespoke arms: the server tick suppresses unknown
+    // phases and reloads on request, loot filters by its context's block or
+    // entity with the absent-both early-out, and the data-pack collect runs
+    // on every load including the first. Their fields still seed and write
+    // back through the shared arms; only the dispatch shell is bespoke, so
+    // no kind token travels with them.
+    let bespoke = match model.name.as_str() {
+        "server_tick" => Some("gen_server_tick"),
+        "loot_drops" => Some("gen_loot_drops"),
+        "data_pack_files" => Some("gen_data_pack_files"),
+        _ => None,
+    };
     let contract = match model.contract.as_str() {
         "collect" => "gen_collect",
         "cancel" => "gen_cancel",
@@ -329,8 +352,11 @@ fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
         .collect();
     tags.extend(extra_tags(model));
     let fields = tags.join(", ");
+    // A bespoke arm keeps the kind token: it filters through it like the
+    // stock arms do.
+    let macro_name = bespoke.unwrap_or(contract);
     let mut out = format!(
-        "    {contract}!({}, {}, {}, {}, [{fields}]",
+        "    {macro_name}!({}, {}, {}, {}, [{fields}]",
         model.name,
         host_ident(model.host),
         event_ty(model),
@@ -489,6 +515,22 @@ fn kind_values(model: &Model) -> Option<KindPlan> {
                 assert_kind: Some(ENTITY_ONE.to_string()),
             })
         }
+        // Loot filters by the block id or entity kind of its context. K1
+        // is the `n = 0` dispatch sample (a stone break), so the K1
+        // firing's asserts match it exactly; K2 is a skeleton death, which
+        // stays quiet; gone is neither block nor entity, the early-out.
+        Kind::Loot => {
+            let k1 = sample(&Conv::LootCtx, "&NativeLootDrops", "context", 0).rust;
+            let k2 = "&horizon_client::test_events::native_loot_drops(\"test:tableK2\", \"minecraft:overworld\", [2.0, 64.0, 3.0], None, Some((13, \"minecraft:skeleton\")), None, None, None, false)".to_owned();
+            let gone = "&horizon_client::test_events::native_loot_drops(\"test:tableGone\", \"minecraft:overworld\", [0.0, 64.0, 0.0], None, None, None, None, None, false)".to_owned();
+            Some(KindPlan {
+                k1,
+                k2,
+                gone: Some(gone),
+                register: "minecraft:stone".to_owned(),
+                assert_kind: Some("\"minecraft:stone\"".to_owned()),
+            })
+        }
     }
 }
 
@@ -517,6 +559,21 @@ fn param_asserts(
     if Some(field.name.as_str()) == model.kind_field()
         && let Some(kind) = kind_lua
     {
+        // Loot filters by the block id or entity kind of its context: the
+        // kind line pins the block the K1 sample breaks, beside the full
+        // flat asserts below.
+        if model.kind == Kind::Loot {
+            let mut lines = vec![format!("    assert(event.block.id == {kind}, \"kind\")")];
+            let s = sample(&field.conv, ty, &field.name, n);
+            lines.extend(assert_lines(
+                &field.conv,
+                &field.name,
+                &s.lua,
+                field.key.as_deref(),
+                n,
+            ));
+            return lines;
+        }
         return vec![format!(
             "    assert({} == {kind}, \"kind\")",
             lua_read(&field.name)
@@ -869,7 +926,18 @@ fn handler_body(
         checked |= !asserts.is_empty();
         lines.extend(asserts);
         let s = sample(&field.conv, ty, &field.name, n);
-        if let Some(write) = s.write_lua {
+        if field.conv == Conv::LootDrops {
+            // Loot's write-back keeps a same-id entry's stack (its
+            // components): replacing the table with the write pair would
+            // keep the seeds, not replace them. The generated test appends
+            // a new stack instead, and the seeds keep their components
+            // through the round trip; the replace, truncate, count-edit
+            // and keep cases are the hand-written test's.
+            lines.push(
+                "    table.insert(event.drops, { id = \"test:drops:added\", count = 1 })"
+                    .to_owned(),
+            );
+        } else if let Some(write) = s.write_lua {
             lines.push(mutate_line(&field.conv, &field.name, &write));
         }
     }
@@ -917,7 +985,21 @@ fn rust_asserts(model: &Model, tys: &BTreeMap<String, String>, flip_opt: bool) -
         let ty = tys.get(&field.name).map(String::as_str).unwrap_or("?");
         let n = eff_n(&field.conv, n, flip_opt);
         let s = sample(&field.conv, ty, &field.name, n);
-        if let Some(write) = s.write_rust {
+        if field.conv == Conv::LootDrops {
+            // The append above: the seeds round-trip untouched (their
+            // components kept) with the new stack after them.
+            let inner = s
+                .rust
+                .strip_prefix("vec![")
+                .and_then(|s| s.strip_suffix(']'))
+                .unwrap_or_else(|| panic!("no loot drops seed for {}", model.name));
+            let added =
+                "ItemStack { item: \"test:drops:added\".into(), count: 1, damage: 0, extra: None }";
+            lines.push(format!(
+                "    assert_eq!(format!(\"{{:?}}\", {}), format!(\"{{:?}}\", vec![{}, {}]));",
+                field.name, inner, added
+            ));
+        } else if let Some(write) = s.write_rust {
             lines.push(match &field.conv {
                 Conv::MutStrVec => format!(
                     "    assert_eq!({0}, vec![\"test:edited\".to_owned(), \"test:seed2\".to_owned(), \"test:added\".to_owned()]);",
@@ -1182,6 +1264,16 @@ fn cost_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
         "loaded_tracked(\"gen_{}_cost\", \"horizon.on(\\\"{}\\\", function(event) end)\")",
         model.name, other
     );
+    // The tick's own timers listen to every server tick, so an otherwise
+    // unheard tick still builds their one table (and runs no test handler).
+    let (unheard_tables, unheard_msg) = if model.name == "server_tick" {
+        (
+            1,
+            "the timers' table is the only one built with no other handler",
+        )
+    } else {
+        (0, "no event table was built with no handler")
+    };
     cost_part(
         &mut out,
         model,
@@ -1190,7 +1282,8 @@ fn cost_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
         &unregistered,
         (0, 0),
         "with no handler",
-        "no event table was built with no handler",
+        unheard_tables,
+        unheard_msg,
     );
     if kind_values(model).is_some() {
         // A handler watching another kind: the K1 event still builds no table.
@@ -1201,9 +1294,11 @@ fn cost_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
         let plan = kind_values(model).unwrap_or_else(|| panic!("no kind plan for {}", model.name));
         // A field kind resolves without the host; an entity kind resolves
         // through it (one `entity`, one `entity_kind`), before the watches
-        // check that turns the event away.
+        // check that turns the event away. Loot resolves its block's name
+        // through the host (one `state_name`) for the same check.
         let reads = match model.kind {
             Kind::Entity { .. } => (2, 2),
+            Kind::Loot => (0, 1),
             _ => (0, 0),
         };
         cost_part(
@@ -1214,6 +1309,7 @@ fn cost_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
             &mismatch,
             reads,
             "for a watched-away kind",
+            0,
             "no event table is built for a watched-away kind (the table is built after the kind check)",
         );
     }
@@ -1225,9 +1321,9 @@ fn cost_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
 /// One cost-test part: a loaded mod, then a single measured dispatch with
 /// the host counters reset. `kind` is the K1 dispatch argument for
 /// kind-filtered hooks; `reads` is the pinned per-dispatch (`entity`,
-/// `host`) read count; `tables` is what the part states about the event
-/// tables the dispatch built (zero here: the table is built past every
-/// early return).
+/// `host`) read count; `table_count` is how many event tables the dispatch
+/// built (zero here: the table is built past every early return, except the
+/// tick's own timers, which always listen), and `tables` states that.
 #[allow(clippy::too_many_arguments)]
 fn cost_part(
     out: &mut String,
@@ -1237,6 +1333,7 @@ fn cost_part(
     load: &str,
     reads: (usize, usize),
     when: &str,
+    table_count: usize,
     tables: &str,
 ) {
     out.push_str(&format!("    let (m, id, dir, lua) = {load};\n"));
@@ -1255,7 +1352,7 @@ fn cost_part(
     out.push('\n');
     out.push_str("    assert_eq!(witness(&lua), 0, \"no handler ran\");\n");
     out.push_str(&format!(
-        "    assert_eq!(event_tables(), 0, \"{tables}\");\n"
+        "    assert_eq!(event_tables(), {table_count}, \"{tables}\");\n"
     ));
     out.push_str(&format!(
         "    assert_eq!(entity_reads(), {}, \"{} read the host {}\");\n",
@@ -1294,10 +1391,13 @@ fn cost_control_reads(model: &Model) -> (bool, bool) {
         match conv {
             Conv::Player | Conv::PlayerOpt | Conv::StateGame => seed_reads_host = true,
             Conv::StateLevel | Conv::BlockAtPos | Conv::BlockFromState => reads_level = true,
+            // Loot's seed names its block through the host and its player
+            // through the host's players.
+            Conv::LootCtx => seed_reads_host = true,
             _ => {}
         }
     }
-    let kind_reads_host = matches!(model.kind, Kind::Entity { .. });
+    let kind_reads_host = matches!(model.kind, Kind::Entity { .. } | Kind::Loot);
     (seed_reads_host || kind_reads_host, reads_level)
 }
 
@@ -1479,6 +1579,70 @@ fn duo_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
     out
 }
 
+/// One collect sequence both duo mods append to: each mod inserts its own
+/// element, and every firing's Rust side checks the appended order (the
+/// seed itself is the single-mod tests' job).
+#[allow(clippy::too_many_arguments)]
+fn duo_seq(
+    model: &Model,
+    field: &Field,
+    ty: &str,
+    n: usize,
+    lua_a: &mut Vec<String>,
+    lua_b: &mut Vec<String>,
+    rust_ab: &mut Vec<String>,
+    rust_ba: &mut Vec<String>,
+    rust_eb: &mut Vec<String>,
+) {
+    let s = sample(&field.conv, ty, &field.name, n);
+    let read = lua_read(&field.name);
+    let key = field.key.as_deref().unwrap_or("?");
+    let (rust_a, lua_elem_a, edited_a) = canonical_elem(key, &field.name, n + 50)
+        .unwrap_or_else(|| panic!("no duo element for {}", model.name));
+    let (rust_b, lua_elem_b, _) = canonical_elem(key, &field.name, n + 51)
+        .unwrap_or_else(|| panic!("no duo element for {}", model.name));
+    if lua_elem_a == lua_elem_b {
+        panic!("duo elements collide for {}: {}", model.name, field.name);
+    }
+    lua_a.push(format!("    table.insert({read}, {lua_elem_a})"));
+    lua_b.push(format!("    table.insert({read}, {lua_elem_b})"));
+    // Elements lack `PartialEq` in general, so the lists compare
+    // through `Debug`, like the single-mod tests. A shape with an
+    // edited pair (a tooltip line) does not round-trip its seed,
+    // so the test checks the appended suffix instead of the whole
+    // list; the seed itself is the single-mod tests' job.
+    if edited_a {
+        // Length-relative: seeds vary in length (an `[i32;3]`
+        // list seeds one row) and the erroring firing appends
+        // once, so the test checks the appended tail.
+        let suffix_asserts = |rust: &mut Vec<String>, take: usize, elems: &[&str]| {
+            rust.push(format!(
+                "    assert_eq!(format!(\"{{:?}}\", &{}[{}.len() - {take}..]), format!(\"{{:?}}\", vec![{}]));",
+                field.name,
+                field.name,
+                elems.join(", ")
+            ));
+        };
+        suffix_asserts(rust_ab, 2, &[&rust_a, &rust_b]);
+        suffix_asserts(rust_ba, 2, &[&rust_b, &rust_a]);
+        suffix_asserts(rust_eb, 1, &[&rust_b]);
+    } else {
+        let seq_asserts = |rust: &mut Vec<String>, elems: &[&str]| {
+            rust.push(format!("    let mut expected_{} = {};", field.name, s.rust));
+            for elem in elems {
+                rust.push(format!("    expected_{}.push({elem});", field.name));
+            }
+            rust.push(format!(
+                "    assert_eq!(format!(\"{{:?}}\", {}), format!(\"{{:?}}\", expected_{}));",
+                field.name, field.name
+            ));
+        };
+        seq_asserts(rust_ab, &[&rust_a, &rust_b]);
+        seq_asserts(rust_ba, &[&rust_b, &rust_a]);
+        seq_asserts(rust_eb, &[&rust_b]);
+    }
+}
+
 /// A duo test's contributions and asserts: each mod's handler lines, the Rust
 /// asserts after the [A, B], [B, A] and [error, B] firings, the expected
 /// (a, b) witnesses after each firing, and the name suffix stating the
@@ -1587,51 +1751,56 @@ fn duo_parts(
                 if write_tag(&field.conv, ty, field.key.as_deref())
                     .is_some_and(|w| w.starts_with("w_vec")) =>
             {
-                let key = field.key.as_deref().unwrap_or("?");
-                let (rust_a, lua_elem_a, edited_a) = canonical_elem(key, &field.name, n + 50)
-                    .unwrap_or_else(|| panic!("no duo element for {}", model.name));
-                let (rust_b, lua_elem_b, _) = canonical_elem(key, &field.name, n + 51)
-                    .unwrap_or_else(|| panic!("no duo element for {}", model.name));
-                if lua_elem_a == lua_elem_b {
-                    panic!("duo elements collide for {}: {}", model.name, field.name);
-                }
-                lua_a.push(format!("    table.insert({read}, {lua_elem_a})"));
-                lua_b.push(format!("    table.insert({read}, {lua_elem_b})"));
-                // Elements lack `PartialEq` in general, so the lists compare
-                // through `Debug`, like the single-mod tests. A shape with an
-                // edited pair (a tooltip line) does not round-trip its seed,
-                // so the test checks the appended suffix instead of the whole
-                // list; the seed itself is the single-mod tests' job.
-                if edited_a {
-                    // Length-relative: seeds vary in length (an `[i32;3]`
-                    // list seeds one row) and the erroring firing appends
-                    // once, so the test checks the appended tail.
-                    let suffix_asserts = |rust: &mut Vec<String>, take: usize, elems: &[&str]| {
-                        rust.push(format!(
-                            "    assert_eq!(format!(\"{{:?}}\", &{}[{}.len() - {take}..]), format!(\"{{:?}}\", vec![{}]));",
-                            field.name,
-                            field.name,
-                            elems.join(", ")
-                        ));
-                    };
-                    suffix_asserts(&mut rust_ab, 2, &[&rust_a, &rust_b]);
-                    suffix_asserts(&mut rust_ba, 2, &[&rust_b, &rust_a]);
-                    suffix_asserts(&mut rust_eb, 1, &[&rust_b]);
-                } else {
-                    let seq_asserts = |rust: &mut Vec<String>, elems: &[&str]| {
-                        rust.push(format!("    let mut expected_{} = {};", field.name, s.rust));
-                        for elem in elems {
-                            rust.push(format!("    expected_{}.push({elem});", field.name));
-                        }
-                        rust.push(format!(
-                            "    assert_eq!(format!(\"{{:?}}\", {}), format!(\"{{:?}}\", expected_{}));",
-                            field.name, field.name
-                        ));
-                    };
-                    seq_asserts(&mut rust_ab, &[&rust_a, &rust_b]);
-                    seq_asserts(&mut rust_ba, &[&rust_b, &rust_a]);
-                    seq_asserts(&mut rust_eb, &[&rust_b]);
-                }
+                duo_seq(
+                    model,
+                    field,
+                    ty,
+                    n,
+                    &mut lua_a,
+                    &mut lua_b,
+                    &mut rust_ab,
+                    &mut rust_ba,
+                    &mut rust_eb,
+                );
+                suffix = "append_in_load_order";
+            }
+            // Loot appends like a sequence, but the write-back keeps a
+            // same-id entry's stack and drops a new stack's damage: the
+            // contributions assert (item, count) pairs, and the suffix still
+            // pins in-order appends.
+            Conv::LootDrops => {
+                let read = lua_read(&field.name);
+                let count_a = 150 + n as i32;
+                let count_b = 151 + n as i32;
+                lua_a.push(format!(
+                    "    table.insert({read}, {{ id = \"test:drops\", count = {count_a} }})"
+                ));
+                lua_b.push(format!(
+                    "    table.insert({read}, {{ id = \"test:drops\", count = {count_b} }})"
+                ));
+                // The seeds round-trip untouched with the appended stacks
+                // after them, in firing order.
+                let pairs = |counts: &[i32]| {
+                    let mut pairs = vec![
+                        format!("(\"test:drops\".to_owned(), {})", 1 + n as i32),
+                        format!("(\"test:drops\".to_owned(), {})", 2 + n as i32),
+                    ];
+                    for c in counts {
+                        pairs.push(format!("(\"test:drops\".to_owned(), {c})"));
+                    }
+                    pairs.join(", ")
+                };
+                let seq_asserts = |rust: &mut Vec<String>, counts: &[i32]| {
+                    rust.push(format!(
+                        "    assert_eq!({}.iter().map(|s| (s.item.to_string(), s.count)).collect::<Vec<_>>(), vec![{}]);",
+                        field.name,
+                        pairs(counts)
+                    ));
+                };
+                seq_asserts(&mut rust_ab, &[count_a, count_b]);
+                seq_asserts(&mut rust_ba, &[count_b, count_a]);
+                seq_asserts(&mut rust_eb, &[count_b]);
+                suffix = "append_in_load_order";
             }
             _ => {
                 let (la, lb, ab, ba, eb) = duo_exotic(model, &field.name);

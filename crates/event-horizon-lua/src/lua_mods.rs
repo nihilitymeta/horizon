@@ -23,11 +23,10 @@ use horizon_client::dev_input::mods::{
 };
 use horizon_client::mod_api::{
     AttachmentCodec, AttachmentType, BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
-    BlockPos, BlockStateId, Compound, DataPackFilesEvent, EntityTickListenedEvent,
-    EntityTickPostEvent, Flow, Holder, Hooks, Host, InteractEntityEvent, LevelDimension, LevelHost,
-    LevelWriteHost, LivingIncomingDamageEvent, MobAiRegisterEvent, MobKilledEvent, MobSpawnedEvent,
-    MobView, RandomTickEvent, RightClickBlockEvent, ServerTickEvent, ServerTickPhase,
-    TickBlockEvent, WorldLifecycleEvent,
+    BlockPos, BlockStateId, Compound, EntityTickListenedEvent, EntityTickPostEvent, Flow, Holder,
+    Hooks, Host, InteractEntityEvent, LevelDimension, LevelHost, LevelWriteHost,
+    LivingIncomingDamageEvent, MobAiRegisterEvent, MobKilledEvent, MobSpawnedEvent, MobView,
+    RandomTickEvent, RightClickBlockEvent, TickBlockEvent,
 };
 use horizon_client::mod_api::{
     AttackEntityEvent, DestroyBlockEvent, InventoryTickEvent, ItemPickedUpEvent, ItemStack,
@@ -38,9 +37,9 @@ use horizon_client::mod_api::{
     EntityJoinLevelEvent, ExplosionDetonateEvent, GuiLayerPostEvent, HearsProjectileImpactsEvent,
     HudEvent, HurtEnemyEvent, ItemCraftedEvent, ItemDroppedEvent, LivingEntityUseItemStartEvent,
     LivingEquipmentChangeEvent, LivingEquipmentListenedEvent, LivingFallEvent, LivingHealEvent,
-    LivingKnockbackEvent, LootDropsEvent, PlayerBedEnterEvent, PlayerChangedDimensionEvent,
-    PlayerChatEvent, PlayerCommandEvent, PlayerContainerOpenEvent, PlayerExpChangeEvent,
-    PlayerTickEvent, ProjectileImpactEvent, ProjectileLaunchEvent,
+    LivingKnockbackEvent, PlayerBedEnterEvent, PlayerChangedDimensionEvent, PlayerChatEvent,
+    PlayerCommandEvent, PlayerContainerOpenEvent, PlayerExpChangeEvent, PlayerTickEvent,
+    ProjectileImpactEvent, ProjectileLaunchEvent,
 };
 use horizon_client::mod_api::{NativeCommand, PerformCommandEvent, RegisterCommandsEvent};
 use horizon_mods::{Capability, Content, Package};
@@ -132,8 +131,6 @@ pub const ENTRY: &str = horizon_mods::content::SCRIPT_ENTRY;
 /// load error with its line, not a handler that never runs. `command` is
 /// `horizon.command`'s own.
 pub const LUA_HOOK_NAMES: &[&str] = &[
-    "server_tick",
-    "world_lifecycle",
     "mob_spawned",
     "mob_ai_register",
     "random_tick",
@@ -164,7 +161,6 @@ pub const LUA_HOOK_NAMES: &[&str] = &[
     "item_picked_up",
     "item_crafted",
     "item_dropped",
-    "loot_drops",
     "projectile_impact",
     "projectile_launched",
     "explosion",
@@ -298,8 +294,8 @@ return function(horizon, report)
     timers[#timers + 1] = { due = tick + n, every = n, fn = fn }
   end
   horizon.ticks = function() return tick end
-  local function run_timers(phase, running)
-    if phase ~= "end" or not running then return end
+  local function run_timers(event)
+    if event.phase ~= "end" or not event.world_running then return end
     tick = tick + 1
     local i = 1
     while i <= #timers do
@@ -2421,14 +2417,8 @@ impl LuaMod {
         ));
     }
 
-    /// Call the handlers of `hook` with `args`, then run what they queued
-    /// with the hook's host (none: the actions are dropped with a warning).
-    fn call(&self, host: Option<&mut dyn Host>, hook: &str, args: impl mlua::IntoLuaMulti) {
-        self.call_for(host, hook, None, args);
-    }
-
-    /// `call` for a hook about a mob of `kind`: its handlers are those for
-    /// every kind and those watching `kind`.
+    /// `call_bare`/`call_kind` for a hook about a mob of `kind`: its handlers
+    /// are those for every kind and those watching `kind`.
     fn call_for(
         &self,
         host: Option<&mut dyn Host>,
@@ -3074,22 +3064,6 @@ impl LuaMod {
 }
 
 impl Hooks for LuaMod {
-    /// The server's data tables load (the world opens, `/reload`): from the
-    /// second load on, the scripts are read and run again, so an edited
-    /// script is live after `/reload`.
-    fn data_pack_files(&self, _host: &dyn Host, _event: &mut DataPackFilesEvent<'_>) {
-        if self.loads.fetch_add(1, Ordering::Relaxed) == 0 {
-            // The first data load: the logger is up now (it was not when the
-            // mods were gathered), so this is where the mod says it runs.
-            log::info!(
-                "Horizon: Lua mod {} running from {}",
-                self.id,
-                self.source.display()
-            );
-            return;
-        }
-        self.reload_now("/reload");
-    }
     /// A block that ticks randomly does: `random_tick(dimension, block, x, y,
     /// z, props, data)`, `data` the block entity's saved table when the block
     /// has one, written back after the call.
@@ -3244,24 +3218,6 @@ impl Hooks for LuaMod {
                 self.hook_error(hook, e);
             }
         }
-    }
-    fn world_lifecycle(&self, host: &mut dyn Host, event: &mut WorldLifecycleEvent<'_>) {
-        let phase = format!("{:?}", event.phase);
-        self.call(Some(host), "world_lifecycle", phase);
-    }
-    fn server_tick(&self, host: &mut dyn Host, event: &mut ServerTickEvent<'_>) {
-        let (phase, running) = match event.phase {
-            ServerTickPhase::ServerTickStart { world_running } => ("start", world_running),
-            ServerTickPhase::ServerTickEnd { world_running } => ("end", world_running),
-            // A phase this runtime does not know fires no hook, rather than a
-            // made-up one the scripts have not heard of.
-            _ => return,
-        };
-        // The developer tools asked for a reload: before this tick's handlers.
-        if phase == "start" && self.reload_asked() {
-            self.reload_now("the console");
-        }
-        self.call(Some(host), "server_tick", (phase, running));
     }
     /// A mob's goals as its species set them up: handlers see the mob's view
     /// and add Lua goals (`horizon.add_goal(priority, name)`,
@@ -4000,92 +3956,6 @@ impl Hooks for LuaMod {
             self.hook_error(hook, e);
         }
     }
-    /// A block broke or a mob died and its loot is about to drop:
-    /// `loot_drops(source, drops)`, registered by the block's id or the
-    /// mob's kind. `source` has `table`, `dimension`, `origin`, and `block`
-    /// (`{x, y, z, id}`) or `mob` (`{id, kind}`), `player` (the one credited,
-    /// or nil), `tool`, `explosion`; `drops` is a sequence of `{id, count,
-    /// damage, plain}` the handler changes in place (add, change or remove
-    /// entries), written back after the call.
-    fn loot_drops(&self, host: &mut dyn Host, event: &mut LootDropsEvent<'_>) {
-        let hook = "loot_drops";
-        let key = match (event.context.block, event.context.entity) {
-            (Some((_, state)), _) => host.state_name(state),
-            (None, Some((_, kind))) => qualify(kind),
-            (None, None) => return,
-        };
-        let key = key.split('[').next().unwrap_or(&key).to_owned();
-        if !self.watches(hook, &key) {
-            return;
-        }
-        let r = (|| -> mlua::Result<()> {
-            let lua = &self.lua;
-            let c = event.context;
-            let source = lua.create_table()?;
-            source.set("table", c.table)?;
-            source.set("dimension", c.dimension)?;
-            source.set("origin", goals::vec3(lua, c.origin)?)?;
-            if let Some((pos, state)) = c.block {
-                let block = lua.create_table()?;
-                block.set("x", pos[0])?;
-                block.set("y", pos[1])?;
-                block.set("z", pos[2])?;
-                block.set("id", key.as_str())?;
-                block.set("state", host.state_name(state))?;
-                source.set("block", block)?;
-            }
-            if let Some((id, kind)) = c.entity {
-                source.set("mob", self.id_kind_table(id, &qualify(kind))?)?;
-            }
-            if let Some(uuid) = c.player {
-                source.set("player", self.player_by_uuid(host, uuid, None)?)?;
-            }
-            if let Some(tool) = c.tool {
-                source.set("tool", item_table_of(lua, tool)?)?;
-            }
-            if let Some(radius) = c.explosion {
-                source.set("explosion", radius)?;
-            }
-            let drops = lua.create_table()?;
-            for (i, stack) in event.drops.iter().enumerate() {
-                drops.set(i + 1, item_table_of(lua, stack)?)?;
-            }
-            self.call_kind(
-                hook,
-                Some(&key),
-                host,
-                (source, drops.clone()),
-                &mut |host, action, args| self.run_action(host, action, args),
-            )?;
-            // Written back: an entry with the item of the stack at its place
-            // keeps that stack (its components), others are plain.
-            let mut out = Vec::new();
-            for (i, entry) in drops.sequence_values::<Table>().enumerate() {
-                let entry = entry?;
-                let id = qualify(&entry.get::<String>("id")?);
-                let count: u32 = entry.get::<Option<u32>>("count")?.unwrap_or(1);
-                if count == 0 {
-                    continue;
-                }
-                let mut stack = match event.drops.get(i) {
-                    Some(s) if *s.item == *id => s.clone(),
-                    _ => ItemStack {
-                        item: id.as_str().into(),
-                        count,
-                        damage: 0,
-                        extra: None,
-                    },
-                };
-                stack.count = count;
-                out.push(stack);
-            }
-            *event.drops = out;
-            Ok(())
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
-    }
     /// Projectile impacts are heard when a script watches one
     /// (`projectile_impact` by projectile kind).
     fn hears_projectile_impacts(&self, _host: &dyn Host, event: &mut HearsProjectileImpactsEvent) {
@@ -4739,6 +4609,7 @@ mod tests {
     use super::*;
     // The engine's `#[non_exhaustive]` events are built by their defining
     // crate's test-support constructors (horizon-client's `test_events`).
+    use horizon_client::mod_api::ServerTickPhase;
     use horizon_client::test_events;
 
     const MANIFEST_TEXT: &str = r#"
@@ -6273,14 +6144,14 @@ experimental = ["scripts"]
                 end)
                 horizon.on("item_crafted", function(player, recipe, item) say(("crafted %s %s x%d"):format(recipe, item.id, item.count)) end, "minecraft:oak_planks")
                 horizon.on("item_dropped", function(player, item, count) say("dropped " .. item .. " x" .. count) end, "stick")
-                horizon.on("loot_drops", function(source, drops)
-                  say(("loot %s %s at %d,%d,%d by %s tool %s"):format(source.table, source.block.id, source.block.x, source.block.y, source.block.z, source.player and source.player.name or "nobody", source.tool and source.tool.id or "hand"))
-                  drops[1].count = 2
-                  drops[#drops + 1] = { id = "diamond", count = 1 }
+                horizon.on("loot_drops", function(event)
+                  say(("loot %s %s at %d,%d,%d by %s tool %s"):format(event.table, event.block.id, event.block.x, event.block.y, event.block.z, event.player and event.player.name or "nobody", event.tool and event.tool.id or "hand"))
+                  event.drops[1].count = 2
+                  event.drops[#event.drops + 1] = { id = "diamond", count = 1 }
                 end, "minecraft:stone")
-                horizon.on("loot_drops", function(source, drops)
-                  say(("loot %s mob %d %s"):format(source.table, source.mob.id, source.mob.kind))
-                  drops[1] = nil
+                horizon.on("loot_drops", function(event)
+                  say(("loot %s mob %d %s"):format(event.table, event.entity.id, event.entity.kind))
+                  event.drops[1] = nil
                 end, "minecraft:cow")
                 horizon.on("projectile_impact", function(projectile, kind, owner, hit)
                   say(("impact %d %s by %d on %s"):format(projectile, kind, owner, hit.entity and ("entity " .. hit.entity .. " " .. hit.entity_kind) or ("block " .. hit.block.id .. " face " .. hit.face.y)))
@@ -6834,8 +6705,12 @@ experimental = ["scripts"]
         m.data_pack_files(&NoHost, &mut test_events::data_pack_files_event(&mut files));
         assert_eq!(handlers(&m), 2);
         assert_eq!(m.lua.globals().get::<i64>("VERSION").unwrap(), 2);
+        // The tick handlers hear an event table now, not a bare pair.
         let tick = |m: &LuaMod| {
-            m.call_bare("server_tick", None, ("end", true), &mut |_, _| Ok(()))
+            let event = m.lua.create_table().unwrap();
+            event.set("phase", "end").unwrap();
+            event.set("world_running", true).unwrap();
+            m.call_bare("server_tick", None, event, &mut |_, _| Ok(()))
                 .unwrap();
         };
         tick(&m);
@@ -6903,9 +6778,13 @@ experimental = ["scripts"]
             )],
         );
         let m = LuaMod::load(&path, &[]).unwrap();
+        // The tick handlers hear an event table now, not a bare pair.
+        let tick = m.lua.create_table().unwrap();
+        tick.set("phase", "end").unwrap();
+        tick.set("world_running", true).unwrap();
         let started = std::time::Instant::now();
         let e = m
-            .call_bare("server_tick", None, ("end", true), &mut |_, _| Ok(()))
+            .call_bare("server_tick", None, tick, &mut |_, _| Ok(()))
             .unwrap_err()
             .to_string();
         assert!(e.contains("ran over"), "{e}");
@@ -6915,7 +6794,10 @@ experimental = ["scripts"]
             started.elapsed()
         );
         // The state is fine afterwards, and the next chunk has a budget of its own.
-        m.call_bare("world_lifecycle", None, ("start", "x"), &mut |_, _| Ok(()))
+        let cycle = m.lua.create_table().unwrap();
+        cycle.set("phase", "start").unwrap();
+        cycle.set("error_text", "").unwrap();
+        m.call_bare("world_lifecycle", None, cycle, &mut |_, _| Ok(()))
             .unwrap();
         assert_eq!(m.lua.globals().get::<i64>("N").unwrap(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -6947,7 +6829,16 @@ experimental = ["scripts"]
             )],
         );
         let m = LuaMod::load(&path, &[]).unwrap();
-        for hook in ["mob_spawned", "mob_killed", "server_tick"] {
+        // The tick handlers hear an event table now, not a bare pair: the
+        // table is what runs the timers, so the tick's overrun is the
+        // timers' (they share its budget).
+        let tick_event = || {
+            let event = m.lua.create_table().unwrap();
+            event.set("phase", "end").unwrap();
+            event.set("world_running", true).unwrap();
+            event
+        };
+        for hook in ["mob_spawned", "mob_killed"] {
             let started = std::time::Instant::now();
             let e = m
                 .call_bare(hook, None, ("end", true), &mut |_, _| Ok(()))
@@ -6960,6 +6851,17 @@ experimental = ["scripts"]
                 started.elapsed()
             );
         }
+        let started = std::time::Instant::now();
+        let e = m
+            .call_bare("server_tick", None, tick_event(), &mut |_, _| Ok(()))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("ran over"), "server_tick: {e}");
+        assert!(
+            started.elapsed() < HANDLER_BUDGET * 4,
+            "server_tick: {:?}",
+            started.elapsed()
+        );
         // The host slot and the queue are back as they were, and the next
         // call has a budget of its own.
         let slot: Table = m.lua.named_registry_value(HOST_SLOT).unwrap();
@@ -6967,9 +6869,171 @@ experimental = ["scripts"]
         assert_eq!(slot.get::<Option<i64>>(3).unwrap().unwrap_or(0), 0);
         let queue: Table = m.lua.named_registry_value(QUEUE).unwrap();
         assert_eq!(queue.raw_len(), 0);
-        m.call_bare("world_lifecycle", None, ("start", "x"), &mut |_, _| Ok(()))
+        let event = m.lua.create_table().unwrap();
+        event.set("phase", "start").unwrap();
+        event.set("error_text", "").unwrap();
+        m.call_bare("world_lifecycle", None, event, &mut |_, _| Ok(()))
             .unwrap();
         assert_eq!(m.lua.globals().get::<i64>("N").unwrap(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn loot_drops_keeps_same_id_stacks_truncates_on_nil_and_appends() {
+        let (dir, path) = hmod(
+            "loot-writeback",
+            &[(
+                "scripts/init.lua",
+                br#"
+                RAN = 0
+                horizon.on("loot_drops", function(event)
+                  RAN = RAN + 1
+                  -- The same id at the same place keeps the stack: the count edits.
+                  event.drops[1].count = 5
+                  -- A different id replaces the stack wholesale (plain).
+                  event.drops[2] = { id = "minecraft:diamond", count = 2 }
+                  -- Nil stops the list: the third seed stack drops out.
+                  event.drops[3] = nil
+                  -- And a new stack joins at the end.
+                  event.drops[#event.drops + 1] = { id = "minecraft:stick", count = 3 }
+                end, "minecraft:stone")
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let steve = host.acting_player().unwrap();
+        let pick = wand();
+        // Cobble carries components, dirt and gold are plain.
+        let mut drops = vec![
+            ItemStack {
+                item: "minecraft:cobblestone".into(),
+                count: 1,
+                damage: 0,
+                extra: Some(Box::new(horizon_client::item_data::StackData {
+                    repair_cost: 7,
+                    ..Default::default()
+                })),
+            },
+            ItemStack {
+                item: "minecraft:dirt".into(),
+                count: 1,
+                damage: 0,
+                extra: None,
+            },
+            ItemStack {
+                item: "minecraft:gold_ingot".into(),
+                count: 1,
+                damage: 0,
+                extra: None,
+            },
+        ];
+        m.loot_drops(
+            &mut host,
+            &mut test_events::loot_drops_event(
+                &test_events::native_loot_drops(
+                    "minecraft:blocks/stone",
+                    "minecraft:overworld",
+                    [1.5, 2.5, 3.5],
+                    Some(([1, 2, 3], BlockStateId(1))),
+                    None,
+                    Some(steve.uuid),
+                    Some(&pick),
+                    None,
+                    false,
+                ),
+                &mut drops,
+            ),
+        );
+        assert_eq!(m.lua.globals().get::<i64>("RAN").unwrap(), 1);
+        assert_eq!(drops.len(), 3);
+        // Same id, same place: the stack (and its repair cost) is kept.
+        assert_eq!(drops[0].item.to_string(), "minecraft:cobblestone");
+        assert_eq!(drops[0].count, 5);
+        assert_eq!(drops[0].extra.as_ref().unwrap().repair_cost, 7);
+        // Different id: a plain new stack.
+        assert_eq!(drops[1].item.to_string(), "minecraft:diamond");
+        assert_eq!(drops[1].count, 2);
+        assert_eq!(drops[1].damage, 0);
+        assert!(drops[1].extra.is_none());
+        // The nil cut the gold out; the stick joined after the diamond.
+        assert_eq!(drops[2].item.to_string(), "minecraft:stick");
+        assert_eq!(drops[2].count, 3);
+        // Neither a break nor a death: the handler stays quiet and the
+        // drops are untouched.
+        let mut drops = vec![ItemStack {
+            item: "minecraft:cobblestone".into(),
+            count: 1,
+            damage: 0,
+            extra: None,
+        }];
+        m.loot_drops(
+            &mut host,
+            &mut test_events::loot_drops_event(
+                &test_events::native_loot_drops(
+                    "test:empty",
+                    "minecraft:overworld",
+                    [0.0, 64.0, 0.0],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                ),
+                &mut drops,
+            ),
+        );
+        assert_eq!(m.lua.globals().get::<i64>("RAN").unwrap(), 1);
+        assert_eq!(drops.len(), 1);
+        assert_eq!(drops[0].count, 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn data_pack_files_appends_in_load_order_after_the_packs_files() {
+        let (dir, path) = hmod(
+            "pack-order",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.on("data_pack_files", function(event)
+                  assert(event.files[1].path == "data/test/pack.json", "pack first")
+                  event.files[#event.files + 1] = { path = "data/test/mod.json", data = "m" }
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        // The world's own pack file is already there when the mod appends.
+        let mut files = vec![("data/test/pack.json".to_owned(), b"p".to_vec())];
+        m.data_pack_files(&NoHost, &mut test_events::data_pack_files_event(&mut files));
+        assert_eq!(
+            files,
+            [
+                ("data/test/pack.json".to_owned(), b"p".to_vec()),
+                ("data/test/mod.json".to_owned(), b"m".to_vec()),
+            ]
+        );
+        // Every call collects, including the second (which reloads first):
+        // the mod appends again, after what is already there.
+        m.data_pack_files(&NoHost, &mut test_events::data_pack_files_event(&mut files));
+        assert_eq!(
+            files,
+            [
+                ("data/test/pack.json".to_owned(), b"p".to_vec()),
+                ("data/test/mod.json".to_owned(), b"m".to_vec()),
+                ("data/test/mod.json".to_owned(), b"m".to_vec()),
+            ]
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -7433,7 +7497,12 @@ experimental = ["scripts"]
             format!("{}:stalk", m.id())
         );
         // A handler's error is the status's last error.
-        m.call(None, "mob_spawned", ());
+        if let Err(e) = m.call_bare("mob_spawned", None, (), &mut |action, _| {
+            m.warn(format!("mob_spawned: {action} needs a host; dropped"));
+            Ok(())
+        }) {
+            m.error(format!("mob_spawned: {e}"));
+        }
         assert!(of(&m).error.unwrap().contains("oops"));
         // The console asks for a reload, by id or for everyone: each is served once.
         assert!(!m.reload_asked());

@@ -401,8 +401,8 @@ A handler receives the hook's arguments. Some hooks let it change the event, wit
 
 | Hook | Called when |
 |---|---|
-| `server_tick(phase, world_running)` | a server tick starts or ends |
-| `world_lifecycle(phase)` | the world opens or closes |
+| `server_tick(event)` | a server tick starts (`event.phase == "start"`) or ends (`"end"`), each with `event.world_running` and the context (`event.authority`, `event.epoch`, `event.tick`) |
+| `world_lifecycle(event)` | the world opens or closes; `event.phase` names the phase, `event.error_text` carries a failure's text (empty otherwise), with the context |
 | `explosion(dimension, center, blocks)` | an explosion is about to break *blocks*, a sequence of `{x, y, z}`. Remove entries to spare those blocks: they keep their block and get no fire |
 | `entity_joined(dimension, id, kind, x, y, z, loaded)` | any entity joins the level, such as `minecraft:item`, `minecraft:arrow` or a mob; *loaded* is true for one that comes back with its chunk. By kind. `cancel()` keeps it out. `mob_spawned` stays for mobs |
 | `projectile_launched(projectile, kind, player)` | a projectile is added to the level; *player* is the shooter's table, or nil for a mob's or a dispenser's. By projectile kind. It only listens |
@@ -424,7 +424,7 @@ A handler receives the hook's arguments. Some hooks let it change the event, wit
 | `mob_heal(mob, amount)` | a living entity is about to heal. No host; *mob* is `{id}`, because the engine names no kind here, so every handler hears every entity, players too. `set_amount(n)` and `cancel()` |
 | `mob_knockback(mob, damage_type, causing, direct, strength, x, z)` | a living entity is about to be knocked back. No host. *strength* is the raw value, and *x* and *z* the direction. `set_strength(n)` and `cancel()`. By kind |
 | `mob_equipped(mob, slot, from, to)` | an equipment slot of a mob (`mainhand`, `offhand`, `feet`, `legs`, `chest`, `head`, `body` or `saddle`) takes a different stack. *from* and *to* are item tables, or nil. By kind. It only listens |
-| `loot_drops(source, drops)` | a block broken by a player, an explosion or a mob, or a mob that died, is about to drop its loot. By block id or mob kind. *source* has `table` (the loot table's id), `dimension`, `origin`, and `block` (`{x, y, z, id, state}`) or `mob` (`{id, kind}`), `player` (the one credited, or nil), `tool` (an item table, or nil) and `explosion` (a radius, or nil). *drops* is a sequence of `{id, count, damage, plain}`: change it in place, and it is written back after the call. An entry whose id matches the stack at that place keeps the stack's components |
+| `loot_drops(event)` | a block broken by a player, an explosion or a mob, or a mob that died, is about to drop its loot. By block id or mob kind. The loot context is flat on the event: `table` (the loot table's id), `dimension`, `origin`, and `block` (`{x, y, z, id, state}`) or `entity` (`{id, kind}`), `player` (the one credited, or nil), `tool` (an item table, or nil), `explosion` (a radius, or nil) and `used`. *drops* (`event.drops`) is a sequence of `{id, count, damage, plain}`: change it in place, and it is written back after the call. An entry whose id matches the stack at that place keeps the stack's components |
 
 ### Blocks
 

@@ -27,7 +27,6 @@ export type Vec2 = { x: number, y: number }
 export type Chunk = { x: number, z: number }
 export type DeathCause = { damage_type: string, causing: number, player: PlayerRef? }
 export type Hit = { x: number, y: number, z: number, entity: number?, entity_kind: string?, block: Block?, face: Vec3? }
-export type LootSource = { table: string, dimension: string, origin: Vec3, block: LootBlock?, mob: IdKind?, player: PlayerRef?, tool: Item?, explosion: number? }
 export type Time = { dimension: string, day_time: number, day: number, time_of_day: number, rain: number, thunder: number }
 export type Raycast = { id: string, x: number, y: number, z: number, block: Vec3 }
 export type Light = { block: number, sky: number }
@@ -147,6 +146,7 @@ export type CustomFluidFillEvent = { pos: Vec3, side: "down" | "up" | "north" | 
 export type CustomFluidTanksEvent = { pos: Vec3, side: "down" | "up" | "north" | "south" | "west" | "east"?, out: { { tank: number, content: { fluid: string, amount: number, components: Data }?, capacity: number, can_fill: boolean, can_drain: boolean } }? }
 export type CustomPayloadFromClientEvent = { player: number, channel: string, data: string }
 export type DataMapTypesEvent = { types: any }
+export type DataPackFilesEvent = { files: any }
 export type DatapackSyncEvent = { recipe_types: { string } }
 export type DifficultyChangedEvent = { from: string, to: string }
 export type DispenseItemEvent = { dimension: string, pos: Vec3, facing: "down" | "up" | "north" | "south" | "west" | "east", stack: Item, answer: { remainder: Item?, event: number }?? }
@@ -250,6 +250,7 @@ export type LivingIncomingDamageV3Event = { victim: number, victim_uuid: string?
 export type LivingJumpEvent = { entity: number, kind: string }
 export type LivingKnockbackV2Event = { entity: number, kind: string, attacker: number, attacker_main: Item?, attacker_off: Item?, strength: number, x: number, z: number }
 export type LogLineEvent = { level: string, thread: string, message: string, line: string }
+export type LootDropsEvent = { table: string, dimension: string, origin: Vec3, block: LootBlock?, entity: IdKind?, player: PlayerRef?, tool: Item?, explosion: number?, used: boolean, drops: { Item } }
 export type LootTableLoadEvent = { id: string, table: Data }
 export type MapDecorationsEvent = { map: { id: number, center: { x: number, z: number }, scale: number, dimension: string, locked: boolean, in_frame: boolean }, decorations: any }
 export type MayPlaceOnEvent = { dimension: string, state: string, ground: string, ground_pos: Vec3, state_props: Props, ground_props: Props, may: boolean? }
@@ -403,6 +404,7 @@ export type ServerAboutToStartEvent = { dedicated: boolean }
 export type ServerDataLoadedEvent = { reload: boolean }
 export type ServerReloadListenerApplyEvent = { listener: { id: string, folder: string }, files: { { path: string, data: Data } } }
 export type ServerStoppingEvent = { dedicated: boolean }
+export type ServerTickEvent = { authority: string, epoch: number, tick: number, phase: string, world_running: boolean }
 export type ServerTickTimedEvent = { wall_ms: number, cpu_ms: number?, spans: { { name: string, ms: number, cpu_ms: number, depth: number } } }
 export type SettingsEvent = { mod_id: string, buttons: { string } }
 export type SettingsClickEvent = { mod_id: string, button: number }
@@ -448,13 +450,12 @@ export type WorldBorderBoundsChangeFinishEvent = {  }
 export type WorldBorderBoundsChangedEvent = {  }
 export type WorldBorderCenterChangedEvent = {  }
 export type WorldGameRuleChangeEvent = { player: PlayerRef, rule: string, value: string }
+export type WorldLifecycleEvent = { authority: string, epoch: number, tick: number, phase: string, error_text: string }
 export type WorldSavedEvent = { wait: boolean }
 export type ZoomEvent = { zoom: { factor: number, smooth: boolean, turn: number }?? }
 
 -- `horizon.on(name, fn[, kind])`: one overload per hook, with its handler's signature.
 export type HorizonOn =
-    ((name: "server_tick", fn: (phase: string, world_running: boolean) -> (), kind: string?) -> ()) &
-    ((name: "world_lifecycle", fn: (phase: string) -> (), kind: string?) -> ()) &
     ((name: "mob_spawned", fn: (dimension: string, kind: string, x: number, y: number, z: number, natural: boolean) -> (), kind: string?) -> ()) &
     ((name: "mob_ai_register", fn: (mob: MobView) -> (), kind: string?) -> ()) &
     ((name: "random_tick", fn: (dimension: string, block: string, x: number, y: number, z: number, props: Props, data: Data?) -> (), kind: string?) -> ()) &
@@ -485,7 +486,6 @@ export type HorizonOn =
     ((name: "item_picked_up", fn: (player: PlayerRef, item: string, count: number) -> (), kind: string?) -> ()) &
     ((name: "item_crafted", fn: (player: PlayerRef, recipe: string, item: Item) -> (), kind: string?) -> ()) &
     ((name: "item_dropped", fn: (player: PlayerRef, item: string, count: number) -> (), kind: string?) -> ()) &
-    ((name: "loot_drops", fn: (source: LootSource, drops: { Item }) -> (), kind: string?) -> ()) &
     ((name: "projectile_impact", fn: (projectile: number, kind: string, owner: number, hit: Hit) -> (), kind: string?) -> ()) &
     ((name: "projectile_launched", fn: (projectile: number, kind: string, player: PlayerRef?) -> (), kind: string?) -> ()) &
     ((name: "explosion", fn: (dimension: string, center: Vec3, blocks: { Vec3 }) -> (), kind: string?) -> ()) &
@@ -589,6 +589,7 @@ export type HorizonOn =
     ((name: "custom_fluid_tanks", fn: (event: CustomFluidTanksEvent) -> ()) -> ()) &
     ((name: "custom_payload_from_client", fn: (event: CustomPayloadFromClientEvent) -> ()) -> ()) &
     ((name: "data_map_types", fn: (event: DataMapTypesEvent) -> ()) -> ()) &
+    ((name: "data_pack_files", fn: (event: DataPackFilesEvent) -> ()) -> ()) &
     ((name: "datapack_sync", fn: (event: DatapackSyncEvent) -> ()) -> ()) &
     ((name: "difficulty_changed", fn: (event: DifficultyChangedEvent) -> ()) -> ()) &
     ((name: "dispense_item", fn: (event: DispenseItemEvent) -> ()) -> ()) &
@@ -692,6 +693,7 @@ export type HorizonOn =
     ((name: "living_jump", fn: (event: LivingJumpEvent) -> (), kind: string?) -> ()) &
     ((name: "living_knockback_v2", fn: (event: LivingKnockbackV2Event) -> (), kind: string?) -> ()) &
     ((name: "log_line", fn: (event: LogLineEvent) -> ()) -> ()) &
+    ((name: "loot_drops", fn: (event: LootDropsEvent) -> (), kind: string?) -> ()) &
     ((name: "loot_table_load", fn: (event: LootTableLoadEvent) -> ()) -> ()) &
     ((name: "map_decorations", fn: (event: MapDecorationsEvent) -> ()) -> ()) &
     ((name: "may_place_on", fn: (event: MayPlaceOnEvent) -> ()) -> ()) &
@@ -845,6 +847,7 @@ export type HorizonOn =
     ((name: "server_data_loaded", fn: (event: ServerDataLoadedEvent) -> ()) -> ()) &
     ((name: "server_reload_listener_apply", fn: (event: ServerReloadListenerApplyEvent) -> ()) -> ()) &
     ((name: "server_stopping", fn: (event: ServerStoppingEvent) -> ()) -> ()) &
+    ((name: "server_tick", fn: (event: ServerTickEvent) -> ()) -> ()) &
     ((name: "server_tick_timed", fn: (event: ServerTickTimedEvent) -> ()) -> ()) &
     ((name: "settings", fn: (event: SettingsEvent) -> ()) -> ()) &
     ((name: "settings_click", fn: (event: SettingsClickEvent) -> ()) -> ()) &
@@ -890,6 +893,7 @@ export type HorizonOn =
     ((name: "world_border_bounds_changed", fn: (event: WorldBorderBoundsChangedEvent) -> ()) -> ()) &
     ((name: "world_border_center_changed", fn: (event: WorldBorderCenterChangedEvent) -> ()) -> ()) &
     ((name: "world_game_rule_change", fn: (event: WorldGameRuleChangeEvent) -> ()) -> ()) &
+    ((name: "world_lifecycle", fn: (event: WorldLifecycleEvent) -> ()) -> ()) &
     ((name: "world_saved", fn: (event: WorldSavedEvent) -> ()) -> ()) &
     ((name: "zoom", fn: (event: ZoomEvent) -> ()) -> ())
 

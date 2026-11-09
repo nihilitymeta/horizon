@@ -289,6 +289,11 @@ macro_rules! gen_kind {
             .and_then(|id| $host.entity(id))
             .and_then(|entity| $host.entity_kind(entity))
     };
+    // Loot filters by the block id or entity kind of its context, with the
+    // absent-both early-out (`loot_kind_key`).
+    ((loot), $host:expr, $event:ident) => {
+        crate::generated_runtime::loot_kind_key($host, $event.context)
+    };
 }
 
 /// One _event-table field's seed: the value the handler is told. The host
@@ -596,6 +601,68 @@ macro_rules! gen_seed {
                 .unwrap_or_else(|| "minecraft:air".to_owned()),
         )?
     };
+    // A lifecycle context, flat under the native names: the authority's
+    // Debug name, the epoch and the tick.
+    ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : lifecycle_ctx) => {{
+        $table.set("authority", format!("{:?}", $event.context.authority))?;
+        $table.set("epoch", $event.context.epoch.get())?;
+        $table.set("tick", $event.context.tick.get())?;
+    }};
+    // A server tick phase: its name and whether the world runs. Unknown
+    // phases never reach this seed: the arm suppresses them first.
+    ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : tick_phase) => {{
+        let (phase, running) = match $event.phase {
+            horizon_client::mod_api::ServerTickPhase::ServerTickStart { world_running } => {
+                ("start", world_running)
+            }
+            horizon_client::mod_api::ServerTickPhase::ServerTickEnd { world_running } => {
+                ("end", world_running)
+            }
+            _ => {
+                return Err(mlua::Error::runtime(
+                    "server_tick: a phase this runtime does not know",
+                ));
+            }
+        };
+        $table.set("phase", phase)?;
+        $table.set("world_running", running)?;
+    }};
+    // A world phase: its Debug name.
+    ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : world_phase) => {
+        $table.set("phase", format!("{:?}", $event.phase))?
+    };
+    // Loot's context, flat under the native names: no nested `source`,
+    // and `entity`, not `mob`.
+    ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : loot_ctx) => {{
+        let context = $event.context;
+        $table.set("table", context.table)?;
+        $table.set("dimension", context.dimension)?;
+        $table.set("origin", goals::vec3($lua, context.origin)?)?;
+        if let Some((pos, state)) = context.block {
+            let id = $host.state_name(state);
+            let id = id.split('[').next().unwrap_or(&id);
+            let block = $lua.create_table()?;
+            block.set("x", pos[0])?;
+            block.set("y", pos[1])?;
+            block.set("z", pos[2])?;
+            block.set("id", id)?;
+            block.set("state", $host.state_name(state))?;
+            $table.set("block", block)?;
+        }
+        if let Some((id, kind)) = context.entity {
+            $table.set("entity", $this.id_kind_table(id, &qualify(kind))?)?;
+        }
+        if let Some(uuid) = context.player {
+            $table.set("player", $this.player_by_uuid($host, uuid, None)?)?;
+        }
+        if let Some(tool) = context.tool {
+            $table.set("tool", item_table_of($lua, tool)?)?;
+        }
+        if let Some(radius) = context.explosion {
+            $table.set("explosion", radius)?;
+        }
+        $table.set("used", context.used)?;
+    }};
 }
 
 /// One _event-table field's write-back: what the handler changed, read into
@@ -814,6 +881,11 @@ macro_rules! gen_writeback {
             }
         }
     }};
+    // Loot's drops: an entry with the item of the stack at its place keeps
+    // that stack (its components), others are plain.
+    ($table:ident, $lua:ident, $event:ident, $level:expr, $field:ident, loot_write) => {
+        crate::generated_runtime::write_loot_drops_back($lua, &$table, &mut *$event.$field)?
+    };
 }
 
 /// A `listen` hook: one _event table per hook under the native name; what
@@ -1005,6 +1077,150 @@ macro_rules! gen_listen {
 macro_rules! gen_collect {
     ($($tokens:tt)*) => {
         gen_listen!($($tokens)*);
+    };
+}
+
+/// A server tick: like a `game_mut` listen hook, but an unknown phase fires
+/// no hook (rather than a made-up one), and a reload the developer tools
+/// asked for runs before the start tick's handlers.
+macro_rules! gen_server_tick {
+    ($name:ident, game_mut, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(($st:ty))? $(=> $write:ident $(($wt:ty))?)?),* $(,)?]) => {
+        fn $name(&self, host: &mut dyn horizon_client::mod_api::Host, _event: &mut $event) {
+            let hook = stringify!($name);
+            if !self.has_any_handlers(hook) {
+                return;
+            }
+            let start = match _event.phase {
+                horizon_client::mod_api::ServerTickPhase::ServerTickStart { .. } => true,
+                horizon_client::mod_api::ServerTickPhase::ServerTickEnd { .. } => false,
+                _ => return,
+            };
+            if start && self.reload_asked() {
+                self.reload_now("the console");
+            }
+            let kind: Option<String> = gen_kind!($kind, host, _event);
+            if let Some(kind) = kind.as_ref() {
+                if !self.watches(hook, kind) {
+                    return;
+                }
+            } else if !self.has_handlers(hook) {
+                return;
+            }
+            let outcome = (|| -> mlua::Result<()> {
+                let lua = &self.lua;
+                let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
+                $(gen_seed!(self, table, lua, host, (), _event, $field : $seed $(($st))?);)*
+                self.call_kind(
+                    hook,
+                    kind.as_deref(),
+                    host,
+                    table.clone(),
+                    &mut |host, action, args| {
+                        self.run_action(host, action, args)?;
+                        Ok(())
+                    },
+                )?;
+                $(gen_writeback!(table, lua, _event, (), $field $(, $write $(($wt))?)?);)*
+                Ok(())
+            })();
+            if let Err(e) = outcome {
+                self.error(format!("{hook}: {e}"));
+            }
+        }
+    };
+}
+
+/// Loot's drops: like a `game_mut` listen hook, but the kind is the block
+/// id or entity kind of the context, with the absent-both early-out
+/// (neither a break nor a death names a kind).
+macro_rules! gen_loot_drops {
+    ($name:ident, game_mut, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(($st:ty))? $(=> $write:ident $(($wt:ty))?)?),* $(,)?]) => {
+        fn $name(&self, host: &mut dyn horizon_client::mod_api::Host, _event: &mut $event) {
+            let hook = stringify!($name);
+            if !self.has_any_handlers(hook) {
+                return;
+            }
+            let Some(key) = gen_kind!($kind, host, _event) else {
+                return;
+            };
+            if !self.watches(hook, &key) {
+                return;
+            }
+            let outcome = (|| -> mlua::Result<()> {
+                let lua = &self.lua;
+                let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
+                $(gen_seed!(self, table, lua, host, (), _event, $field : $seed $(($st))?);)*
+                self.call_kind(
+                    hook,
+                    Some(key.as_str()),
+                    host,
+                    table.clone(),
+                    &mut |host, action, args| {
+                        self.run_action(host, action, args)?;
+                        Ok(())
+                    },
+                )?;
+                $(gen_writeback!(table, lua, _event, (), $field $(, $write $(($wt))?)?);)*
+                Ok(())
+            })();
+            if let Err(e) = outcome {
+                self.error(format!("{hook}: {e}"));
+            }
+        }
+    };
+}
+
+/// The data-pack files: like a `game_ref` collect hook, but the collect
+/// runs on every call including the first. The first load only logs (the
+/// logger is up now); from the second on, the scripts are read and run
+/// again first, so an edited script is live after `/reload`.
+macro_rules! gen_data_pack_files {
+    ($name:ident, game_ref, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(($st:ty))? $(=> $write:ident $(($wt:ty))?)?),* $(,)?]) => {
+        fn $name(&self, _host: &dyn horizon_client::mod_api::Host, _event: &mut $event) {
+            let hook = stringify!($name);
+            if self.loads.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                log::info!(
+                    "Horizon: Lua mod {} running from {}",
+                    self.id,
+                    self.source.display()
+                );
+            } else {
+                self.reload_now("/reload");
+            }
+            if !self.has_any_handlers(hook) {
+                return;
+            }
+            let kind: Option<String> = gen_kind!($kind, _host, _event);
+            if let Some(kind) = kind.as_ref() {
+                if !self.watches(hook, kind) {
+                    return;
+                }
+            } else if !self.has_handlers(hook) {
+                return;
+            }
+            let outcome = (|| -> mlua::Result<()> {
+                let lua = &self.lua;
+                let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
+                $(gen_seed!(self, table, lua, _host, (), _event, $field : $seed $(($st))?);)*
+                self.call_bare(
+                    hook,
+                    kind.as_deref(),
+                    table.clone(),
+                    &mut |action, _args| {
+                        self.warn(format!("{hook}: {action} needs a host; dropped"));
+                        Ok(())
+                    },
+                )?;
+                $(gen_writeback!(table, lua, _event, (), $field $(, $write $(($wt))?)?);)*
+                Ok(())
+            })();
+            if let Err(e) = outcome {
+                self.error(format!("{hook}: {e}"));
+            }
+        }
     };
 }
 
@@ -1414,6 +1630,55 @@ pub(crate) fn struct_vec_from_lua<T: LuaStruct>(
     Ok(out)
 }
 
+/// Loot's kind filter: the block's id or the dying entity's kind, with the
+/// absent-both early-out (neither a break nor a death names a kind). The
+/// block id is the state name without its properties.
+pub(crate) fn loot_kind_key(
+    host: &dyn horizon_client::mod_api::Host,
+    context: &horizon_client::mod_api::NativeLootDrops<'_>,
+) -> Option<String> {
+    use crate::lua_mods::qualify;
+    let key = match (context.block, context.entity) {
+        (Some((_, state)), _) => host.state_name(state),
+        (None, Some((_, kind))) => qualify(kind),
+        (None, None) => return None,
+    };
+    Some(key.split('[').next().unwrap_or(&key).to_owned())
+}
+
+/// Loot's drops write-back: an entry with the item of the stack at its place
+/// keeps that stack (its components), others are plain.
+pub(crate) fn write_loot_drops_back(
+    _lua: &Lua,
+    table: &Table,
+    drops: &mut Vec<ItemStack>,
+) -> mlua::Result<()> {
+    use crate::lua_mods::qualify;
+    let entries: Table = table.get("drops")?;
+    let mut out = Vec::new();
+    for (i, entry) in entries.sequence_values::<Table>().enumerate() {
+        let entry = entry?;
+        let id = qualify(&entry.get::<String>("id")?);
+        let count: u32 = entry.get::<Option<u32>>("count")?.unwrap_or(1);
+        if count == 0 {
+            continue;
+        }
+        let mut stack = match drops.get(i) {
+            Some(s) if *s.item == *id => s.clone(),
+            _ => ItemStack {
+                item: id.as_str().into(),
+                count,
+                damage: 0,
+                extra: None,
+            },
+        };
+        stack.count = count;
+        out.push(stack);
+    }
+    *drops = out;
+    Ok(())
+}
+
 /// A fieldless enum from its lowercase name; a wrong name errors listing the
 /// valid ones, as the handler's error (through `hook_error` like other
 /// handler errors).
@@ -1588,6 +1853,38 @@ impl LuaStruct for (String, serde_json::Value) {
                 req_key::<String>(&t, "path", field)?,
                 serde_json::Value::from_value(lua, t.get::<Value>("data")?, field)?,
             )),
+            other => Err(mlua::Error::runtime(format!(
+                "{field}: expected {{path, data}}, got {}",
+                other.type_name()
+            ))),
+        }
+    }
+}
+
+/// A data-pack file (`{path, data}` in order): the bytes cross as a Lua
+/// string (Luau strings are byte-safe).
+impl LuaStruct for (String, Vec<u8>) {
+    fn to_value(lua: &Lua, v: &Self) -> mlua::Result<Value> {
+        let t = lua.create_table()?;
+        t.set("path", v.0.as_str())?;
+        t.set("data", lua.create_string(&v.1)?)?;
+        Ok(Value::Table(t))
+    }
+    fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
+        match v {
+            Value::Table(t) => {
+                let data: Value = t.get("data")?;
+                let data = match data {
+                    Value::String(s) => s.as_bytes().to_vec(),
+                    other => {
+                        return Err(mlua::Error::runtime(format!(
+                            "{field}.data: expected a string, got {}",
+                            other.type_name()
+                        )));
+                    }
+                };
+                Ok((req_key::<String>(&t, "path", field)?, data))
+            }
             other => Err(mlua::Error::runtime(format!(
                 "{field}: expected {{path, data}}, got {}",
                 other.type_name()

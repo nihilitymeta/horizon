@@ -51,6 +51,9 @@ pub enum Kind {
         field: String,
         opt: bool,
     },
+    /// Loot (`loot_drops` only): the block id or entity kind of the loot
+    /// context, with the absent-both early-out (`loot_kind_key`).
+    Loot,
 }
 
 /// One converter tag per event-table field: the seed expression, the
@@ -133,6 +136,23 @@ pub enum Conv {
     TextOpt,
     /// `&mut Vec<Receiver<..>>`: `{count}` in, `refuse` out.
     PreLogin,
+    /// `&NativeLifecycleContext`: seeds `authority` (the Debug name),
+    /// `epoch` and `tick` flat, read-only.
+    LifecycleCtx,
+    /// `ServerTickPhase`: seeds `phase` (`"start"`/`"end"`) and
+    /// `world_running`, read-only. Unknown phases never reach the seed: the
+    /// arm suppresses them before building the table.
+    TickPhase,
+    /// `WorldPhase`: seeds `phase` (the Debug name), read-only.
+    WorldPhaseName,
+    /// `&NativeLootDrops`: seeds the nine context fields flat (`table`,
+    /// `dimension`, `origin`, `block`, `entity`, `player`, `tool`,
+    /// `explosion`, `used`), read-only.
+    LootCtx,
+    /// `&mut Vec<ItemStack>` of loot: seeded like a struct vec of stacks,
+    /// written back by the component-keeping `loot_write` arm (a same-id
+    /// entry keeps its stack), not plain `from_value`.
+    LootDrops,
     /// A state field's `_props` note: seeded beside the state itself.
     StateProps,
 }
@@ -176,12 +196,13 @@ pub struct Extra {
 }
 
 impl Model {
-    /// The parameter the kind filter reads, if any: the `kind` field or the
-    /// resolved entity id.
+    /// The parameter the kind filter reads, if any: the `kind` field, the
+    /// resolved entity id, or the loot context the kind derives from.
     pub fn kind_field(&self) -> Option<&str> {
         match &self.kind {
             Kind::Field => Some("kind"),
             Kind::Entity { field, .. } => Some(field.as_str()),
+            Kind::Loot => Some("context"),
             Kind::None => None,
         }
     }
@@ -675,6 +696,12 @@ fn field_of(hook: &str, param: &str, ty: &syn::Type, host: Host, is_out: bool) -
         }
         Some("ItemStack") if borrowed => FieldOutcome::Conv(Conv::Item, "Item".into()),
         Some("ItemStack") => FieldOutcome::Conv(Conv::Item, "Item".into()),
+        Some("NativeLifecycleContext") if borrowed => {
+            FieldOutcome::Conv(Conv::LifecycleCtx, "any".into())
+        }
+        Some("ServerTickPhase") if !borrowed => FieldOutcome::Conv(Conv::TickPhase, "any".into()),
+        Some("WorldPhase") if !borrowed => FieldOutcome::Conv(Conv::WorldPhaseName, "any".into()),
+        Some("NativeLootDrops") if borrowed => FieldOutcome::Conv(Conv::LootCtx, "any".into()),
         Some("ModBlockEntity" | "Mob") => FieldOutcome::Adapter(format!(
             "{}: handle: a {} handle needs its own design",
             hook,
@@ -806,6 +833,13 @@ fn mut_of(
         .is_some_and(|e| last_ident(e).as_deref() == Some("Receiver"))
     {
         return FieldOutcome::Conv(Conv::PreLogin, "{ count: number, refuse: string? }".into());
+    }
+    // Loot's drops: seeded like a struct vec of stacks, written back by the
+    // component-keeping `loot_write` arm, not plain `from_value`.
+    if hook == "loot_drops"
+        && single_generic_arg(elem, &["Vec"]).is_some_and(|e| is_path(e, "ItemStack"))
+    {
+        return FieldOutcome::Conv(Conv::LootDrops, struct_ts_owned("Vec<ItemStack>"));
     }
     if mentions_stack(elem) {
         if let Some(key) = struct_key_of(elem) {
@@ -1241,6 +1275,7 @@ fn struct_ts(key: &str) -> &'static str {
         "(i32,u32)" => "{ value: number, max: number }",
         "(i32,i32)" => "{ min: number, max: number }",
         "(String,Value)" => "{ path: string, data: Data }",
+        "(String,Vec<u8>)" => "{ path: string, data: string }",
         "(String,Compound)" => "{ name: string, tag: Data }",
         "(&'staticstr,&'staticstr)" => "{ a: string, b: string }",
         _ => "any",
@@ -1851,6 +1886,21 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 leaf("data", format!("{}", 7 + n as i32)),
             ],
         ),
+        // A data-pack file: the path and the raw bytes as a Lua string.
+        // Mutable (a collect writes it back), with a distinct edited pair.
+        "(String,Vec<u8>)" => {
+            let mut s = mutable(
+                format!("(\"test:path{n}\".to_owned(), vec![116u8, 0u8, 159u8])"),
+                format!("{{ path = \"test:path{n}\", data = \"t\" .. string.char(0, 159) }}"),
+                format!("(\"test:path{n}:edited\".to_owned(), vec![119u8, 1u8, 2u8])"),
+                format!("{{ path = \"test:path{n}:edited\", data = \"w\" .. string.char(1, 2) }}"),
+            );
+            s.leaves = vec![
+                leaf("path", format!("\"test:path{n}\"")),
+                leaf("data", "\"t\" .. string.char(0, 159)".into()),
+            ];
+            s
+        }
         "(String,Compound)" => fixed(
             format!(
                 "(\"test:entity{n}\".to_owned(), Compound::from([(\"testkey\".into(), Tag::Int({}))]))",
@@ -2456,6 +2506,36 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
     Some(s)
 }
 
+/// The event-table keys a flat seed writes, with their `.d.lua` types, in
+/// table order: the generated `horizon.d.lua` event type lists these, not
+/// the native parameter name (which has no table key of its own).
+pub fn flat_ts(conv: &Conv) -> Vec<(String, String)> {
+    match conv {
+        Conv::LifecycleCtx => vec![
+            ("authority".into(), "string".into()),
+            ("epoch".into(), "number".into()),
+            ("tick".into(), "number".into()),
+        ],
+        Conv::TickPhase => vec![
+            ("phase".into(), "string".into()),
+            ("world_running".into(), "boolean".into()),
+        ],
+        Conv::WorldPhaseName => vec![("phase".into(), "string".into())],
+        Conv::LootCtx => vec![
+            ("table".into(), "string".into()),
+            ("dimension".into(), "string".into()),
+            ("origin".into(), "Vec3".into()),
+            ("block".into(), "LootBlock?".into()),
+            ("entity".into(), "IdKind?".into()),
+            ("player".into(), "PlayerRef?".into()),
+            ("tool".into(), "Item?".into()),
+            ("explosion".into(), "number?".into()),
+            ("used".into(), "boolean".into()),
+        ],
+        _ => Vec::new(),
+    }
+}
+
 /// The `.d.lua` type of a `LuaStruct` key, with `Vec`, slice and `Option`
 /// wrappers applied.
 fn struct_ts_owned(key: &str) -> String {
@@ -2499,6 +2579,7 @@ fn tuple_struct(ty: &syn::Type) -> Option<(String, String)> {
         ["i32", "i32"] => "{ min: number, max: number }",
         ["Option<ItemStack>", "i32"] => "{ remainder: Item?, event: number }",
         ["String", "Value"] => "{ path: string, data: Data }",
+        ["String", "Vec<u8>"] => "{ path: string, data: string }",
         ["String", "Compound"] => "{ name: string, tag: Data }",
         ["&'staticstr", "&'staticstr"] => "{ a: string, b: string }",
         ["usize", "usize"] => "{ start: number, end: number }",
@@ -3040,7 +3121,7 @@ fn model_of(
             collect && Some(param) == out.as_ref(),
         ) {
             FieldOutcome::Conv(conv, ts) => {
-                let key = if matches!(conv, Conv::Struct) {
+                let key = if matches!(conv, Conv::Struct | Conv::LootDrops) {
                     struct_key_of(ty)
                 } else {
                     None
@@ -3081,8 +3162,11 @@ fn model_of(
     }
     // The kind filter: a `kind` string field names an entity type (minus
     // the documented non-entity kinds), else the hook's single entity id
-    // resolves through a game host.
-    let kind = if params.iter().any(|(n, t)| n == "kind" && is_str_ref(t))
+    // resolves through a game host. Loot filters by the block id or entity
+    // kind of its context instead, with the absent-both early-out.
+    let kind = if name == "loot_drops" {
+        Kind::Loot
+    } else if params.iter().any(|(n, t)| n == "kind" && is_str_ref(t))
         && !NON_ENTITY_KINDS.iter().any(|(n, _)| n == &name)
     {
         Kind::Field
@@ -3356,6 +3440,74 @@ pub fn assert_lines(
                 a(&format!("{e}.z == {z}")),
             ]
         }
+        // The flat seeds: one assert per seeded table key, each with the
+        // sample's independent value. (`lua` is unused: the sample builds
+        // the native value, and these lines recompute the Lua side from
+        // `n`, like the position arms do.)
+        Conv::LifecycleCtx => {
+            let authority = if n.is_multiple_of(2) {
+                "IntegratedServer"
+            } else {
+                "DedicatedServer"
+            };
+            vec![
+                a(&format!("event.authority == \"{authority}\"")),
+                a(&format!("event.epoch == {}", 7 + n)),
+                a(&format!("event.tick == {}", 11 + n)),
+            ]
+        }
+        Conv::TickPhase => {
+            let (phase, running) = if n.is_multiple_of(2) {
+                ("start", true)
+            } else {
+                ("end", false)
+            };
+            vec![
+                a(&format!("event.phase == \"{phase}\"")),
+                a(&format!("event.world_running == {running}")),
+            ]
+        }
+        Conv::WorldPhaseName => {
+            let phase = [
+                "WorldOpenReady",
+                "WorldOpenFailed",
+                "WorldCloseFinal",
+                "WorldCloseFailed",
+            ][n % 4];
+            vec![a(&format!("event.phase == \"{phase}\""))]
+        }
+        Conv::LootCtx => {
+            let origin = |c: f64| format!("{c:?}");
+            let (ox, oy, oz) = (1.0 + n as f64, 2.0 + n as f64, 3.0 + n as f64);
+            let (x, y, z) = (1 + n as i32, 2 + n as i32, 3 + n as i32);
+            let uuid = uuid_sample((7 + n) as u128);
+            let tool_count = 1 + n;
+            let explosion = format!("{}", 1.5 + n as f32);
+            vec![
+                a(&format!("event.table == \"test:table{n}\"")),
+                a("event.dimension == \"minecraft:overworld\""),
+                a(&format!("event.origin.x == {}", origin(ox))),
+                a(&format!("event.origin.y == {}", origin(oy))),
+                a(&format!("event.origin.z == {}", origin(oz))),
+                a(&format!("event.block.x == {x}")),
+                a(&format!("event.block.y == {y}")),
+                a(&format!("event.block.z == {z}")),
+                a("event.block.id == \"minecraft:stone\""),
+                a("event.block.state == \"minecraft:stone\""),
+                a(&format!("event.entity.id == {}", 11 + n)),
+                a("event.entity.kind == \"minecraft:zombie\""),
+                a(&format!("event.player.uuid == \"{uuid}\"")),
+                a("event.tool.id == \"test:tool\""),
+                a(&format!("event.tool.count == {tool_count}")),
+                a(&format!("event.tool.damage == {n}")),
+                a("event.tool.extra == nil"),
+                a("event.tool.plain == true"),
+                a(&format!("event.explosion == {explosion}")),
+                a(&format!("event.used == {}", n.is_multiple_of(2))),
+            ]
+        }
+        // Loot's drops assert like the struct vec of stacks they seed as.
+        Conv::LootDrops => assert_lines(&Conv::Struct, field, lua, key, n),
         _ => vec![a(&format!("{e} == {lua}"))],
     }
 }
@@ -3463,6 +3615,13 @@ pub fn table_leaves(
             ("[1]".into(), "\"test:seed\"".into()),
             ("[2]".into(), "\"test:seed2\"".into()),
         ],
+        // Loot's drops leaf like the struct vec of stacks they seed as.
+        Conv::LootDrops => table_leaves(&Conv::Struct, field, lua, key, n),
+        // The flat seeds assert their table keys directly (see
+        // `assert_lines`): the `event.<field>`-rooted leaf check has no
+        // suffix spelling them, so they carry no leaves. Their assert
+        // values are hand-picked distinct per key.
+        Conv::LifecycleCtx | Conv::TickPhase | Conv::WorldPhaseName | Conv::LootCtx => Vec::new(),
         _ => Vec::new(),
     }
 }
@@ -3660,6 +3819,76 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
             "{ refuse = \"test:refused\" }".into(),
         ),
         Conv::StateProps => panic!("no sample for a state _props note"),
+        // The lifecycle context both lifecycle hooks carry: the authority
+        // alternates with `n`, the epoch and tick count up, so every leaf
+        // has its own value.
+        Conv::LifecycleCtx => {
+            let authority = if n.is_multiple_of(2) {
+                "IntegratedServer"
+            } else {
+                "DedicatedServer"
+            };
+            plain(
+                format!(
+                    "&horizon_client::test_events::native_lifecycle_context(horizon_client::mod_api::NativeAuthority::{authority}, horizon_client::mod_api::NativeWorldEpoch::new({}), horizon_client::mod_api::NativeTickId::new({}))",
+                    7 + n,
+                    11 + n
+                ),
+                "{}".into(),
+            )
+        }
+        // The tick phase: end on odd dispatches (the timers' gate), start
+        // otherwise; `world_running` alternates too.
+        Conv::TickPhase => {
+            let (phase, running) = if n.is_multiple_of(2) {
+                ("ServerTickStart", true)
+            } else {
+                ("ServerTickEnd", false)
+            };
+            plain(
+                format!(
+                    "horizon_client::mod_api::ServerTickPhase::{phase} {{ world_running: {running} }}"
+                ),
+                "{}".into(),
+            )
+        }
+        // The world phase: one variant per dispatch index, so the open,
+        // failed-open, final-close and failed-close names are all covered.
+        Conv::WorldPhaseName => {
+            let phase = [
+                "WorldOpenReady",
+                "WorldOpenFailed",
+                "WorldCloseFinal",
+                "WorldCloseFailed",
+            ][n % 4];
+            plain(
+                format!("horizon_client::mod_api::WorldPhase::{phase}"),
+                "{}".into(),
+            )
+        }
+        // Loot's context: a block-stone break at every parity (the kind
+        // stays stone, so the kind plan's static registration holds), with
+        // every other leaf counting up with `n`.
+        Conv::LootCtx => plain(
+            format!(
+                "&horizon_client::test_events::native_loot_drops(\"test:table{n}\", \"minecraft:overworld\", [{:?}, {:?}, {:?}], Some(([{n1}, {n2}, {n3}], BlockStateId(7))), Some(({en}, \"minecraft:zombie\")), Some({pn}), Some(&ItemStack {{ item: \"test:tool\".into(), count: {cn}, damage: {n}, extra: None }}), Some({ex:?}), {used})",
+                1.0 + n as f64,
+                2.0 + n as f64,
+                3.0 + n as f64,
+                n1 = 1 + n as i32,
+                n2 = 2 + n as i32,
+                n3 = 3 + n as i32,
+                en = 11 + n,
+                pn = 7 + n,
+                cn = 1 + n,
+                ex = 1.5 + n as f32,
+                used = n.is_multiple_of(2),
+            ),
+            "{}".into(),
+        ),
+        // Loot's drops: a struct vec of stacks (the seed and asserts are
+        // the struct vec's); only the write-back differs.
+        Conv::LootDrops => sample(&Conv::Struct, ty, field, n),
         Conv::Plain => {
             let (rust, lua) = plain_seed(ty, field, n);
             plain(rust, lua)

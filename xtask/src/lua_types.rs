@@ -82,10 +82,6 @@ const TYPES: &[(&str, &str)] = &[
         "{ x: number, y: number, z: number, entity: number?, entity_kind: string?, block: Block?, face: Vec3? }",
     ),
     (
-        "LootSource",
-        "{ table: string, dimension: string, origin: Vec3, block: LootBlock?, mob: IdKind?, player: PlayerRef?, tool: Item?, explosion: number? }",
-    ),
-    (
         "Time",
         "{ dimension: string, day_time: number, day: number, time_of_day: number, rain: number, thunder: number }",
     ),
@@ -115,11 +111,8 @@ const TYPES: &[(&str, &str)] = &[
 /// Every hook a script registers for (`horizon.on(name, fn[, kind])`) and
 /// its handler's type; the runtime's `LUA_HOOK_NAMES` names the same hooks.
 const HOOKS: &[(&str, &str)] = &[
-    (
-        "server_tick",
-        "(phase: string, world_running: boolean) -> ()",
-    ),
-    ("world_lifecycle", "(phase: string) -> ()"),
+    // `server_tick`, `world_lifecycle` and `loot_drops` are generated now
+    // (an event table each): their overloads come from the model below.
     (
         "mob_spawned",
         "(dimension: string, kind: string, x: number, y: number, z: number, natural: boolean) -> ()",
@@ -228,7 +221,6 @@ const HOOKS: &[(&str, &str)] = &[
         "item_dropped",
         "(player: PlayerRef, item: string, count: number) -> ()",
     ),
-    ("loot_drops", "(source: LootSource, drops: { Item }) -> ()"),
     (
         "projectile_impact",
         "(projectile: number, kind: string, owner: number, hit: Hit) -> ()",
@@ -308,7 +300,16 @@ fn generated_hooks() -> Result<Vec<GeneratedHook>, String> {
         let event_ty = event_name(&model.name);
         let mut fields: Vec<String> = Vec::new();
         for f in &model.fields {
-            fields.push(format!("{}: {}", f.name, f.ts));
+            // A flat seed writes its table keys, not the native parameter
+            // name: the event type lists those keys instead.
+            let flat = super::lua_model::flat_ts(&f.conv);
+            if flat.is_empty() {
+                fields.push(format!("{}: {}", f.name, f.ts));
+            } else {
+                for (name, ts) in flat {
+                    fields.push(format!("{name}: {ts}"));
+                }
+            }
             // A text field reads alongside its vanilla JSON component table.
             if matches!(
                 f.conv,
