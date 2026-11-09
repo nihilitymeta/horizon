@@ -1847,15 +1847,50 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_frame(
                 &mut FakeHost::empty(),
                 &firing_mods,
                 Duration::from_secs_f64(1.5),
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "frame read the host with no handler");
             assert_eq!(host_reads(), 0, "frame read the host with no handler");
             assert_eq!(level_reads(), 0, "frame read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_frame_cost_live",
+            "horizon.on(\"frame\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_frame(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Duration::from_secs_f64(1.5),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "frame built an event table for a heard dispatch"
+            );
+            assert_eq!(host_reads(), 0, "frame read the host for a heard dispatch");
+            assert_eq!(
+                level_reads(),
+                0,
+                "frame read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -1884,11 +1919,38 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_tick(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "tick read the host with no handler");
             assert_eq!(host_reads(), 0, "tick read the host with no handler");
             assert_eq!(level_reads(), 0, "tick read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tick_cost_live",
+            "horizon.on(\"tick\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_tick(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "tick built an event table for a heard dispatch"
+            );
+            assert_eq!(host_reads(), 0, "tick read the host for a heard dispatch");
+            assert_eq!(level_reads(), 0, "tick read the level for a heard dispatch");
             no_error(&id);
             drop_dir(dir);
         }
@@ -1923,11 +1985,47 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_emissive(&FakeHost::empty(), &firing_mods, &mut layers);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "emissive read the host with no handler");
             assert_eq!(host_reads(), 0, "emissive read the host with no handler");
             assert_eq!(level_reads(), 0, "emissive read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_emissive_cost_live",
+            "horizon.on(\"emissive\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut layers = vec![("test:a0", "test:b0"), ("test:a1", "test:b1")];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_emissive(&FakeHost::empty(), &firing_mods, &mut layers);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "emissive built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "emissive read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "emissive read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -2031,8 +2129,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_server_about_to_start(&mut FakeHost::empty(), &firing_mods, true);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -2047,6 +2151,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "server_about_to_start read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_about_to_start_cost_live",
+            "horizon.on(\"server_about_to_start\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_server_about_to_start(&mut FakeHost::empty(), &firing_mods, true);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "server_about_to_start built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "server_about_to_start read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_about_to_start read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -2076,8 +2209,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_server_stopping(&mut FakeHost::empty(), &firing_mods, true);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -2096,6 +2235,35 @@ mod generated_tests {
             no_error(&id);
             drop_dir(dir);
         }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_stopping_cost_live",
+            "horizon.on(\"server_stopping\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_server_stopping(&mut FakeHost::empty(), &firing_mods, true);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "server_stopping built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "server_stopping read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_stopping read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -2109,8 +2277,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_level_tick_pre(&mut FakeHost::empty(), &firing_mods, "test:dimension");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -2125,6 +2299,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "level_tick_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_level_tick_pre_cost_live",
+            "horizon.on(\"level_tick_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_level_tick_pre(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "level_tick_pre built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "level_tick_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "level_tick_pre read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -2154,8 +2357,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_level_tick_post(&mut FakeHost::empty(), &firing_mods, "test:dimension");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -2170,6 +2379,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "level_tick_post read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_level_tick_post_cost_live",
+            "horizon.on(\"level_tick_post\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_level_tick_post(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "level_tick_post built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "level_tick_post read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "level_tick_post read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -2206,6 +2444,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_changed(
                 &FakeLevel,
                 &firing_mods,
@@ -2215,6 +2454,11 @@ mod generated_tests {
                 BlockStateId(11),
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -2229,6 +2473,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_changed_cost_live",
+            "horizon.on(\"block_changed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_changed(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                BlockStateId(11),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_changed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_changed read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "block_changed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -2256,11 +2535,38 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_key(&mut FakeHost::empty(), &firing_mods, "test:key", false);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "key read the host with no handler");
             assert_eq!(host_reads(), 0, "key read the host with no handler");
             assert_eq!(level_reads(), 0, "key read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_key_cost_live",
+            "horizon.on(\"key\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_key(&mut FakeHost::empty(), &firing_mods, "test:key", false);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "key built an event table for a heard dispatch"
+            );
+            assert_eq!(host_reads(), 0, "key read the host for a heard dispatch");
+            assert_eq!(level_reads(), 0, "key read the level for a heard dispatch");
             no_error(&id);
             drop_dir(dir);
         }
@@ -2306,11 +2612,43 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_wheel(&mut FakeHost::empty(), &firing_mods, 1.5, &mut claimed);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "wheel read the host with no handler");
             assert_eq!(host_reads(), 0, "wheel read the host with no handler");
             assert_eq!(level_reads(), 0, "wheel read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_wheel_cost_live",
+            "horizon.on(\"wheel\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut claimed = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_wheel(&mut FakeHost::empty(), &firing_mods, 1.5, &mut claimed);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "wheel built an event table for a heard dispatch"
+            );
+            assert_eq!(host_reads(), 0, "wheel read the host for a heard dispatch");
+            assert_eq!(
+                level_reads(),
+                0,
+                "wheel read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -2349,11 +2687,47 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "commands read the host with no handler");
             assert_eq!(host_reads(), 0, "commands read the host with no handler");
             assert_eq!(level_reads(), 0, "commands read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_commands_cost_live",
+            "horizon.on(\"commands\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut commands = vec!["test:seed", "test:seed2"];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "commands built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "commands read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "commands read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -2465,11 +2839,39 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_zoom(&FakeHost::empty(), &firing_mods, &mut zoom);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "zoom read the host with no handler");
             assert_eq!(host_reads(), 0, "zoom read the host with no handler");
             assert_eq!(level_reads(), 0, "zoom read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_zoom_cost_live",
+            "horizon.on(\"zoom\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut zoom: Option<NativeZoom> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_zoom(&FakeHost::empty(), &firing_mods, &mut zoom);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "zoom built an event table for a heard dispatch"
+            );
+            assert_eq!(host_reads(), 0, "zoom read the host for a heard dispatch");
+            assert_eq!(level_reads(), 0, "zoom read the level for a heard dispatch");
             no_error(&id);
             drop_dir(dir);
         }
@@ -2598,11 +3000,47 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_minimap(&FakeHost::empty(), &firing_mods, &mut minimap);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "minimap read the host with no handler");
             assert_eq!(host_reads(), 0, "minimap read the host with no handler");
             assert_eq!(level_reads(), 0, "minimap read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_minimap_cost_live",
+            "horizon.on(\"minimap\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut minimap: Option<NativeMinimap> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_minimap(&FakeHost::empty(), &firing_mods, &mut minimap);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "minimap built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "minimap read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "minimap read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -2783,11 +3221,60 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_mods(&mut FakeHost::empty(), &firing_mods, &mut mods);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "mods read the host with no handler");
             assert_eq!(host_reads(), 0, "mods read the host with no handler");
             assert_eq!(level_reads(), 0, "mods read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mods_cost_live",
+            "horizon.on(\"mods\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut mods = vec![
+                NativeMod {
+                    id: "test:mod0".into(),
+                    title: "test:title0".into(),
+                    description: "test:desc0".into(),
+                    keys: vec![[
+                        "test:key0".into(),
+                        "test:label0".into(),
+                        "test:default0".into(),
+                    ]],
+                },
+                NativeMod {
+                    id: "test:mod1".into(),
+                    title: "test:title1".into(),
+                    description: "test:desc1".into(),
+                    keys: vec![[
+                        "test:key1".into(),
+                        "test:label1".into(),
+                        "test:default1".into(),
+                    ]],
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mods(&mut FakeHost::empty(), &firing_mods, &mut mods);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "mods built an event table for a heard dispatch"
+            );
+            assert_eq!(host_reads(), 0, "mods read the host for a heard dispatch");
+            assert_eq!(level_reads(), 0, "mods read the level for a heard dispatch");
             no_error(&id);
             drop_dir(dir);
         }
@@ -3077,6 +3564,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_settings(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -3084,9 +3572,49 @@ mod generated_tests {
                 &mut buttons,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "settings read the host with no handler");
             assert_eq!(host_reads(), 0, "settings read the host with no handler");
             assert_eq!(level_reads(), 0, "settings read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_settings_cost_live",
+            "horizon.on(\"settings\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut buttons = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_settings(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:mod_id",
+                &mut buttons,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "settings built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "settings read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "settings read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -3205,8 +3733,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_settings_click(&mut FakeHost::empty(), &firing_mods, "test:mod_id", 8);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -3221,6 +3755,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "settings_click read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_settings_click_cost_live",
+            "horizon.on(\"settings_click\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_settings_click(&mut FakeHost::empty(), &firing_mods, "test:mod_id", 8);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "settings_click built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "settings_click read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "settings_click read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -3267,6 +3830,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_entity_container(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -3274,6 +3838,11 @@ mod generated_tests {
                 &mut container,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -3288,6 +3857,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_entity_container read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_entity_container_cost_live",
+            "horizon.on(\"block_entity_container\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut container: Option<ModContainer> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_entity_container(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut container,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_entity_container built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_entity_container read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_entity_container read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -3440,11 +4044,43 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_screen(&FakeHost::empty(), &firing_mods, "test:block", &mut screen);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "screen read the host with no handler");
             assert_eq!(host_reads(), 0, "screen read the host with no handler");
             assert_eq!(level_reads(), 0, "screen read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_cost_live",
+            "horizon.on(\"screen\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut screen: Option<NativeScreen> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen(&FakeHost::empty(), &firing_mods, "test:block", &mut screen);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "screen built an event table for a heard dispatch"
+            );
+            assert_eq!(host_reads(), 0, "screen read the host for a heard dispatch");
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -3562,6 +4198,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_screen_click(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -3572,6 +4209,11 @@ mod generated_tests {
                 &mut button,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -3586,6 +4228,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "screen_click read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_click_cost_live",
+            "horizon.on(\"screen_click\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut button: Option<i32> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_click(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &[5, 10],
+                [3.5, 4.5],
+                false,
+                &mut button,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "screen_click built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_click read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_click read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -3695,6 +4375,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_screen_tooltip(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -3704,6 +4385,11 @@ mod generated_tests {
                 &mut lines,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -3718,6 +4404,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "screen_tooltip read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_tooltip_cost_live",
+            "horizon.on(\"screen_tooltip\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_tooltip(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &[5, 10],
+                [3.5, 4.5],
+                &mut lines,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "screen_tooltip built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_tooltip read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_tooltip read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -3843,8 +4566,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_menu_clicked(&mut FakeHost::empty(), &firing_mods, 7, 8, 9, 10, 11);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -3859,6 +4588,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "menu_clicked read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_menu_clicked_cost_live",
+            "horizon.on(\"menu_clicked\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_menu_clicked(&mut FakeHost::empty(), &firing_mods, 7, 8, 9, 10, 11);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "menu_clicked built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "menu_clicked read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "menu_clicked read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -3888,8 +4646,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_menu_closed(&mut FakeHost::empty(), &firing_mods, 7, 8);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -3900,6 +4664,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "menu_closed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_menu_closed_cost_live",
+            "horizon.on(\"menu_closed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_menu_closed(&mut FakeHost::empty(), &firing_mods, 7, 8);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "menu_closed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "menu_closed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "menu_closed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -3957,6 +4750,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_tooltip(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -3969,9 +4763,57 @@ mod generated_tests {
                 &mut lines,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "tooltip read the host with no handler");
             assert_eq!(host_reads(), 0, "tooltip read the host with no handler");
             assert_eq!(level_reads(), 0, "tooltip read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tooltip_cost_live",
+            "horizon.on(\"tooltip\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut lines = vec![
+                (Text::literal("test:line1"), 3),
+                (Text::literal("test:line2"), 4),
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_tooltip(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut lines,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "tooltip built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "tooltip read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "tooltip read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -4182,6 +5024,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_spread(
                 &FakeLevel,
                 &firing_mods,
@@ -4192,6 +5035,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -4206,6 +5054,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_spread read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_spread_cost_live",
+            "horizon.on(\"block_spread\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_spread(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                "test:kind",
+                BlockPos::new(3, 4, 5),
+                BlockPos::new(4, 5, 6),
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_spread built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_spread read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_spread read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -4270,6 +5156,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_piston_move(
                 &FakeLevel,
                 &firing_mods,
@@ -4282,6 +5169,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "piston_move read the host with no handler"
@@ -4291,6 +5183,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "piston_move read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_piston_move_cost_live",
+            "horizon.on(\"piston_move\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_piston_move(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                [3, 4, 5],
+                &[BlockPos::new(4, 5, 6), BlockPos::new(5, 6, 7)],
+                &[BlockPos::new(5, 6, 7), BlockPos::new(6, 7, 8)],
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "piston_move built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "piston_move read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "piston_move read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -4359,6 +5290,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_fill_bucket(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -4373,6 +5305,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "fill_bucket read the host with no handler"
@@ -4382,6 +5319,47 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "fill_bucket read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_fill_bucket_cost_live",
+            "horizon.on(\"fill_bucket\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_fill_bucket(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                [2, 3, 4],
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "fill_bucket built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "fill_bucket read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "fill_bucket read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -4417,6 +5395,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_net_from_client(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -4425,6 +5404,11 @@ mod generated_tests {
                 &[116u8, 0u8, 159u8],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -4439,6 +5423,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "net_from_client read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_net_from_client_cost_live",
+            "horizon.on(\"net_from_client\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_net_from_client(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:channel",
+                &[116u8, 0u8, 159u8],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "net_from_client built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "net_from_client read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "net_from_client read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -4473,6 +5492,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_net_from_server(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -4480,6 +5500,11 @@ mod generated_tests {
                 &[116u8, 0u8, 159u8],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -4494,6 +5519,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "net_from_server read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_net_from_server_cost_live",
+            "horizon.on(\"net_from_server\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_net_from_server(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:channel",
+                &[116u8, 0u8, 159u8],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "net_from_server built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "net_from_server read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "net_from_server read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -4545,11 +5604,46 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_on_equip(&mut FakeHost::empty(), &firing_mods, "test:slot", None);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "on_equip read the host with no handler");
             assert_eq!(host_reads(), 0, "on_equip read the host with no handler");
             assert_eq!(level_reads(), 0, "on_equip read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_on_equip_cost_live",
+            "horizon.on(\"on_equip\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_on_equip(&mut FakeHost::empty(), &firing_mods, "test:slot", None);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "on_equip built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "on_equip read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "on_equip read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -4590,6 +5684,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_signal(
                 &FakeLevel,
                 &firing_mods,
@@ -4601,6 +5696,11 @@ mod generated_tests {
                 &mut signal,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -4615,6 +5715,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_signal read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_signal_cost_live",
+            "horizon.on(\"block_signal\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut signal = 12;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_signal(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                Direction::South,
+                true,
+                &mut signal,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_signal built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_signal read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "block_signal read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -4647,8 +5785,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_is_signal_source(&FakeLevel, &firing_mods, BlockStateId(8), &mut source);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -4663,6 +5807,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "is_signal_source read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_is_signal_source_cost_live",
+            "horizon.on(\"is_signal_source\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut source = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_is_signal_source(&FakeLevel, &firing_mods, BlockStateId(8), &mut source);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "is_signal_source built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "is_signal_source read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "is_signal_source read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -4723,6 +5896,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_left_click_block(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -4732,6 +5906,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -4746,6 +5925,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "left_click_block read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_left_click_block_cost_live",
+            "horizon.on(\"left_click_block\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_left_click_block(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                [2, 3, 4],
+                BlockStateId(10),
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "left_click_block built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "left_click_block read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "left_click_block read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -4793,6 +6008,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_leave_level(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -4801,6 +6017,11 @@ mod generated_tests {
                 "test:kind",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -4828,6 +6049,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_leave_level(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -4836,6 +6058,11 @@ mod generated_tests {
                 "minecraft:zombie",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -4850,6 +6077,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_leave_level read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_leave_level_cost_live",
+            "horizon.on(\"entity_leave_level\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_leave_level(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_leave_level built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_leave_level read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_leave_level read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -4890,6 +6152,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_entity_fluids(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -4897,6 +6160,11 @@ mod generated_tests {
                 &mut fluids,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -4911,6 +6179,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_entity_fluids read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_entity_fluids_cost_live",
+            "horizon.on(\"block_entity_fluids\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut fluids: Option<ModFluidTanks> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_entity_fluids(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut fluids,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_entity_fluids built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_entity_fluids read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_entity_fluids read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -5056,6 +6359,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_should_apply_effect_tick_this_tick(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -5065,6 +6369,11 @@ mod generated_tests {
                 &mut apply,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -5079,6 +6388,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "should_apply_effect_tick_this_tick read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_should_apply_effect_tick_this_tick_cost_live",
+            "horizon.on(\"should_apply_effect_tick_this_tick\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut apply = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_should_apply_effect_tick_this_tick(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:effect",
+                8,
+                9,
+                &mut apply,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "should_apply_effect_tick_this_tick built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "should_apply_effect_tick_this_tick read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "should_apply_effect_tick_this_tick read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -5149,6 +6495,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_apply_effect_tick(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -5159,6 +6506,11 @@ mod generated_tests {
                 &mut keep,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -5187,6 +6539,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_apply_effect_tick(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -5197,6 +6550,11 @@ mod generated_tests {
                 &mut keep,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -5211,6 +6569,47 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "apply_effect_tick read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_apply_effect_tick_cost_live",
+            "horizon.on(\"apply_effect_tick\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut keep = true;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_apply_effect_tick(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:effect",
+                "test:dimension",
+                Some(11),
+                10,
+                &mut keep,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "apply_effect_tick built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "apply_effect_tick resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "apply_effect_tick read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "apply_effect_tick read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -5264,8 +6663,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_on_effect_added(&mut FakeHost::empty(), &firing_mods, "test:effect", None, 9);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -5293,6 +6698,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_on_effect_added(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -5301,6 +6707,11 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -5315,6 +6726,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "on_effect_added read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_on_effect_added_cost_live",
+            "horizon.on(\"on_effect_added\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_on_effect_added(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:effect",
+                Some(11),
+                9,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "on_effect_added built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "on_effect_added resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "on_effect_added read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "on_effect_added read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -5368,8 +6817,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_mob_effect_added(&mut FakeHost::empty(), &firing_mods, "test:effect", None, 9);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -5397,6 +6852,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_mob_effect_added(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -5405,6 +6861,11 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -5423,6 +6884,44 @@ mod generated_tests {
             no_error(&id);
             drop_dir(dir);
         }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_effect_added_cost_live",
+            "horizon.on(\"mob_effect_added\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_effect_added(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:effect",
+                Some(11),
+                9,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "mob_effect_added built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "mob_effect_added resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "mob_effect_added read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_effect_added read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -5436,6 +6935,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_chunk_load(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -5444,6 +6944,11 @@ mod generated_tests {
                 true,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -5454,6 +6959,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "chunk_load read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_chunk_load_cost_live",
+            "horizon.on(\"chunk_load\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_chunk_load(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [4, -6],
+                true,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "chunk_load built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "chunk_load read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "chunk_load read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -5488,6 +7028,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_chunk_unload(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -5495,6 +7036,11 @@ mod generated_tests {
                 [4, -6],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -5509,6 +7055,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "chunk_unload read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_chunk_unload_cost_live",
+            "horizon.on(\"chunk_unload\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_chunk_unload(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [4, -6],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "chunk_unload built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "chunk_unload read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "chunk_unload read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -5551,6 +7131,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_bar(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -5563,9 +7144,54 @@ mod generated_tests {
                 &mut bar,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "item_bar read the host with no handler");
             assert_eq!(host_reads(), 0, "item_bar read the host with no handler");
             assert_eq!(level_reads(), 0, "item_bar read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_bar_cost_live",
+            "horizon.on(\"item_bar\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut bar = Some((8, 2));
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_item_bar(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut bar,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "item_bar built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_bar read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_bar read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -5597,8 +7223,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_has_analog_output(&FakeLevel, &firing_mods, BlockStateId(8), &mut output);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -5613,6 +7245,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "has_analog_output read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_has_analog_output_cost_live",
+            "horizon.on(\"has_analog_output\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut output = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_has_analog_output(&FakeLevel, &firing_mods, BlockStateId(8), &mut output);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "has_analog_output built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "has_analog_output read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "has_analog_output read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -5720,6 +7381,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_analog_output(
                 &FakeLevel,
                 &firing_mods,
@@ -5730,6 +7392,11 @@ mod generated_tests {
                 &mut output,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -5744,6 +7411,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "analog_output read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_analog_output_cost_live",
+            "horizon.on(\"analog_output\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut output = 11;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_analog_output(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                Direction::South,
+                &mut output,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "analog_output built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "analog_output read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "analog_output read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -5853,8 +7557,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_component_types(&firing_mods, &mut types);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -5869,6 +7579,36 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "component_types read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_component_types_cost_live",
+            "horizon.on(\"component_types\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_component_types(&firing_mods, &mut types);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "component_types built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "component_types read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "component_types read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -6000,6 +7740,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_dispense_item(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -6016,6 +7757,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "dispense_item read the host with no handler"
@@ -6029,6 +7775,49 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "dispense_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_dispense_item_cost_live",
+            "horizon.on(\"dispense_item\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut answer: Option<NativeDispensed> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_dispense_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                Direction::North,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: None,
+                },
+                &mut answer,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "dispense_item built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "dispense_item read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "dispense_item read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -6186,6 +7975,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_tooltip_component(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -6198,6 +7988,11 @@ mod generated_tests {
                 &mut size,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -6212,6 +8007,46 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "tooltip_component read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tooltip_component_cost_live",
+            "horizon.on(\"tooltip_component\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut size: Option<[f32; 2]> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_tooltip_component(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut size,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "tooltip_component built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "tooltip_component read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "tooltip_component read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -6348,6 +8183,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_can_survive(
                 &FakeLevel,
                 &firing_mods,
@@ -6358,6 +8194,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "can_survive read the host with no handler"
@@ -6367,6 +8208,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "can_survive read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_can_survive_cost_live",
+            "horizon.on(\"can_survive\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut survives: Option<bool> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_can_survive(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut survives,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "can_survive built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "can_survive read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "can_survive read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -6495,6 +8372,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_may_place_on(
                 &FakeLevel,
                 &firing_mods,
@@ -6505,6 +8383,11 @@ mod generated_tests {
                 &mut may,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -6519,6 +8402,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "may_place_on read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_may_place_on_cost_live",
+            "horizon.on(\"may_place_on\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut may: Option<bool> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_may_place_on(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                BlockStateId(10),
+                BlockPos::new(4, 5, 6),
+                &mut may,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "may_place_on built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "may_place_on read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "may_place_on read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -6649,6 +8569,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_is_valid_bonemeal_target(
                 &FakeLevel,
                 &firing_mods,
@@ -6658,6 +8579,11 @@ mod generated_tests {
                 &mut valid,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -6672,6 +8598,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "is_valid_bonemeal_target read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_is_valid_bonemeal_target_cost_live",
+            "horizon.on(\"is_valid_bonemeal_target\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut valid: Option<bool> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_is_valid_bonemeal_target(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut valid,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "is_valid_bonemeal_target built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "is_valid_bonemeal_target read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "is_valid_bonemeal_target read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -6778,6 +8740,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_is_bonemeal_success(
                 &mut FakeLevel,
                 &firing_mods,
@@ -6787,6 +8750,11 @@ mod generated_tests {
                 &mut success,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -6801,6 +8769,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "is_bonemeal_success read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_is_bonemeal_success_cost_live",
+            "horizon.on(\"is_bonemeal_success\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut success = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_is_bonemeal_success(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut success,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "is_bonemeal_success built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "is_bonemeal_success read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "is_bonemeal_success read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -6923,6 +8927,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_consume_effect(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -6930,6 +8935,11 @@ mod generated_tests {
                 &serde_json::json!({ "testkey": 8 }),
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -6944,6 +8954,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "consume_effect read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_consume_effect_cost_live",
+            "horizon.on(\"consume_effect\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_consume_effect(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:kind",
+                &serde_json::json!({ "testkey": 8 }),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "consume_effect built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "consume_effect read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "consume_effect read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -6976,8 +9020,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_loot_table_load(&firing_mods, "test:id", &mut table);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -6992,6 +9042,36 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "loot_table_load read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_loot_table_load_cost_live",
+            "horizon.on(\"loot_table_load\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut table = serde_json::json!({ "testkey": 8 });
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_loot_table_load(&firing_mods, "test:id", &mut table);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "loot_table_load built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "loot_table_load read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "loot_table_load read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -7114,6 +9194,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_state_for_placement(
                 &FakeLevel,
                 &firing_mods,
@@ -7140,6 +9221,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "state_for_placement read the host with no handler"
@@ -7153,6 +9239,58 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "state_for_placement read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_state_for_placement_cost_live",
+            "horizon.on(\"state_for_placement\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut answer: Option<Option<BlockStateId>> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_state_for_placement(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &PlacementContext {
+                    pos: BlockPos::new(3, 4, 5),
+                    hit_pos: BlockPos::new(6, 7, 8),
+                    face: Direction::North,
+                    hit: horizon_core::geometry::Vec3 {
+                        x: 9.5,
+                        y: 10.5,
+                        z: 11.5,
+                    },
+                    inside: true,
+                    yaw: 92.0,
+                    pitch: 32.0,
+                    sneaking: false,
+                    item: "test:item2".into(),
+                    replace_clicked: true,
+                },
+                FluidState::EMPTY,
+                &mut answer,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "state_for_placement built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "state_for_placement read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "state_for_placement read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -7326,6 +9464,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_enchant_effect(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -7336,6 +9475,11 @@ mod generated_tests {
                 11,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -7350,6 +9494,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "enchant_effect read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_enchant_effect_cost_live",
+            "horizon.on(\"enchant_effect\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_enchant_effect(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:enchantment",
+                "test:kind",
+                &serde_json::json!({ "testkey": 9 }),
+                10,
+                11,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "enchant_effect built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "enchant_effect read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "enchant_effect read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -7391,8 +9572,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_modify_default_components(&firing_mods, "test:item", &mut components);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -7407,6 +9594,38 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "modify_default_components read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_modify_default_components_cost_live",
+            "horizon.on(\"modify_default_components\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut components = [("testkey".to_owned(), serde_json::json!(8))]
+                .into_iter()
+                .collect();
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_modify_default_components(&firing_mods, "test:item", &mut components);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "modify_default_components built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "modify_default_components read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "modify_default_components read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -7557,8 +9776,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_shader_params(&FakeHost::empty(), &firing_mods, 1.5, &mut params);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -7573,6 +9798,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "shader_params read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_shader_params_cost_live",
+            "horizon.on(\"shader_params\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut params = [
+                [2.5, 3.5, 4.5, 5.5],
+                [12.5, 13.5, 14.5, 15.5],
+                [22.5, 23.5, 24.5, 25.5],
+                [32.5, 33.5, 34.5, 35.5],
+                [42.5, 43.5, 44.5, 45.5],
+                [52.5, 53.5, 54.5, 55.5],
+                [62.5, 63.5, 64.5, 65.5],
+                [72.5, 73.5, 74.5, 75.5],
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_shader_params(&FakeHost::empty(), &firing_mods, 1.5, &mut params);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "shader_params built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "shader_params read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "shader_params read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -7633,6 +9897,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_highlight(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -7642,6 +9907,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -7656,6 +9926,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_highlight read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_highlight_cost_live",
+            "horizon.on(\"block_highlight\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_highlight(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                BlockStateId(9),
+                3.5,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_highlight built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "block_highlight read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_highlight read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -7748,6 +10054,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_render_hand(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -7760,6 +10067,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "render_hand read the host with no handler"
@@ -7769,6 +10081,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "render_hand read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_render_hand_cost_live",
+            "horizon.on(\"render_hand\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_render_hand(
+                &FakeHost::empty(),
+                &firing_mods,
+                Hand::Main,
+                None,
+                3.5,
+                4.5,
+                5.5,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "render_hand built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "render_hand read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "render_hand read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -7798,8 +10149,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_client_resources_reloaded(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -7814,6 +10171,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "client_resources_reloaded read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_resources_reloaded_cost_live",
+            "horizon.on(\"client_resources_reloaded\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_client_resources_reloaded(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "client_resources_reloaded built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_resources_reloaded read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_resources_reloaded read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -7856,6 +10242,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_use_duration(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -7868,6 +10255,11 @@ mod generated_tests {
                 &mut duration,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -7882,6 +10274,46 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "use_duration read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_use_duration_cost_live",
+            "horizon.on(\"use_duration\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut duration = 8;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_use_duration(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut duration,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "use_duration built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "use_duration read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "use_duration read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -7924,6 +10356,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_use_animation(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -7936,6 +10369,11 @@ mod generated_tests {
                 &mut animation,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -7950,6 +10388,46 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "use_animation read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_use_animation_cost_live",
+            "horizon.on(\"use_animation\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut animation = UseAnimation::Block;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_use_animation(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut animation,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "use_animation built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "use_animation read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "use_animation read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -7992,6 +10470,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_can_eat(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -8004,9 +10483,54 @@ mod generated_tests {
                 &mut can_eat,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "can_eat read the host with no handler");
             assert_eq!(host_reads(), 0, "can_eat read the host with no handler");
             assert_eq!(level_reads(), 0, "can_eat read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_can_eat_cost_live",
+            "horizon.on(\"can_eat\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut can_eat = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_can_eat(
+                &FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                &mut can_eat,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "can_eat built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "can_eat read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "can_eat read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -8062,6 +10586,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_perform_console_command(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -8069,6 +10594,11 @@ mod generated_tests {
                 &mut ran,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -8083,6 +10613,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "perform_console_command read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_perform_console_command_cost_live",
+            "horizon.on(\"perform_console_command\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut ran = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_perform_console_command(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:command",
+                &mut ran,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "perform_console_command built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "perform_console_command read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "perform_console_command read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -8112,8 +10677,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_server_data_loaded(&mut FakeHost::empty(), &firing_mods, true);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -8128,6 +10699,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "server_data_loaded read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_data_loaded_cost_live",
+            "horizon.on(\"server_data_loaded\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_server_data_loaded(&mut FakeHost::empty(), &firing_mods, true);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "server_data_loaded built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "server_data_loaded read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_data_loaded read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -8166,6 +10766,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_compute_fov(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -8174,6 +10775,11 @@ mod generated_tests {
                 &mut degrees,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -8184,6 +10790,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "compute_fov read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_compute_fov_cost_live",
+            "horizon.on(\"compute_fov\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut degrees = 3.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_compute_fov(
+                &FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                [2.0, 3.0, 4.0],
+                &mut degrees,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "compute_fov built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "compute_fov read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "compute_fov read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -8244,6 +10886,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_mouse_button_pre(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -8253,6 +10896,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -8267,6 +10915,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "mouse_button_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mouse_button_pre_cost_live",
+            "horizon.on(\"mouse_button_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mouse_button_pre(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                false,
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "mouse_button_pre built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mouse_button_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mouse_button_pre read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -8296,8 +10981,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_mouse_button_post(&mut FakeHost::empty(), &firing_mods, 7, false, 9);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -8312,6 +11003,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "mouse_button_post read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mouse_button_post_cost_live",
+            "horizon.on(\"mouse_button_post\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mouse_button_post(&mut FakeHost::empty(), &firing_mods, 7, false, 9);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "mouse_button_post built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mouse_button_post read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mouse_button_post read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -8357,11 +11077,49 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_music(&FakeHost::empty(), &firing_mods, &mut music, &mut volume);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "music read the host with no handler");
             assert_eq!(host_reads(), 0, "music read the host with no handler");
             assert_eq!(level_reads(), 0, "music read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_music_cost_live",
+            "horizon.on(\"music\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut music = Some(Music {
+                sound: "test:sound0".into(),
+                min_delay: 1,
+                max_delay: 2,
+                replace_current_music: true,
+            });
+            let mut volume = 2.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_music(&FakeHost::empty(), &firing_mods, &mut music, &mut volume);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "music built an event table for a heard dispatch"
+            );
+            assert_eq!(host_reads(), 0, "music read the host for a heard dispatch");
+            assert_eq!(
+                level_reads(),
+                0,
+                "music read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -8420,8 +11178,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_music_layers(&FakeHost::empty(), &firing_mods, &mut layers);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -8436,6 +11200,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "music_layers read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_music_layers_cost_live",
+            "horizon.on(\"music_layers\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut layers = vec![
+                MusicLayer {
+                    sound: "test:sound0".into(),
+                    volume: 0.5,
+                },
+                MusicLayer {
+                    sound: "test:sound1".into(),
+                    volume: 1.5,
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_music_layers(&FakeHost::empty(), &firing_mods, &mut layers);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "music_layers built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "music_layers read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "music_layers read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -8598,8 +11401,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_datapack_sync(&mut FakeHost::empty(), &firing_mods, &mut recipe_types);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -8614,6 +11423,36 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "datapack_sync read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_datapack_sync_cost_live",
+            "horizon.on(\"datapack_sync\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut recipe_types = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_datapack_sync(&mut FakeHost::empty(), &firing_mods, &mut recipe_types);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "datapack_sync built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "datapack_sync read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "datapack_sync read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -8722,12 +11561,18 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_recipes_received(
                 &mut FakeHost::empty(),
                 &firing_mods,
                 &["test:seed".to_owned(), "test:seed2".to_owned()],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -8742,6 +11587,39 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "recipes_received read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_recipes_received_cost_live",
+            "horizon.on(\"recipes_received\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_recipes_received(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &["test:seed".to_owned(), "test:seed2".to_owned()],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "recipes_received built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "recipes_received read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "recipes_received read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -8806,6 +11684,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_mouse_scrolling(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -8817,6 +11696,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -8831,6 +11715,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "mouse_scrolling read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mouse_scrolling_cost_live",
+            "horizon.on(\"mouse_scrolling\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mouse_scrolling(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1.5, 2.5],
+                [4, -6],
+                [true, false, false],
+                [4.5, 5.5],
+                11,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "mouse_scrolling built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mouse_scrolling read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mouse_scrolling read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -8867,6 +11790,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_mod_container_viewers(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -8876,6 +11800,11 @@ mod generated_tests {
                 10,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -8890,6 +11819,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "mod_container_viewers read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mod_container_viewers_cost_live",
+            "horizon.on(\"mod_container_viewers\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mod_container_viewers(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                9,
+                10,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "mod_container_viewers built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mod_container_viewers read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mod_container_viewers read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -8931,6 +11896,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_experience_orb_can_merge(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -8942,6 +11908,11 @@ mod generated_tests {
                 &mut can_merge,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -8956,6 +11927,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "experience_orb_can_merge read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_experience_orb_can_merge_cost_live",
+            "horizon.on(\"experience_orb_can_merge\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut can_merge = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_experience_orb_can_merge(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                9,
+                10,
+                11,
+                &mut can_merge,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "experience_orb_can_merge built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "experience_orb_can_merge read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "experience_orb_can_merge read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -9018,6 +12028,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_experience_orb_merge(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -9028,6 +12039,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -9042,6 +12058,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "experience_orb_merge read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_experience_orb_merge_cost_live",
+            "horizon.on(\"experience_orb_merge\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_experience_orb_merge(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                9,
+                10,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "experience_orb_merge built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "experience_orb_merge read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "experience_orb_merge read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -9089,6 +12143,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_menu_slot_rules(
                 &firing_mods,
                 "test:menu",
@@ -9104,6 +12159,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "menu_slot_rules read the host with no handler"
@@ -9117,6 +12177,49 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "menu_slot_rules read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_menu_slot_rules_cost_live",
+            "horizon.on(\"menu_slot_rules\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut may_place = false;
+            let mut max_stack = 11;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_menu_slot_rules(
+                &firing_mods,
+                "test:menu",
+                8,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                &mut may_place,
+                &mut max_stack,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "menu_slot_rules built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "menu_slot_rules read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "menu_slot_rules read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -9235,6 +12338,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_entity_use_item_tick(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -9250,6 +12354,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -9279,6 +12388,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_entity_use_item_tick(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -9295,6 +12405,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
                 entity_reads(),
                 2,
                 "living_entity_use_item_tick read the host for a watched-away kind"
@@ -9308,6 +12423,53 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "living_entity_use_item_tick read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_entity_use_item_tick_cost_live",
+            "horizon.on(\"living_entity_use_item_tick\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut duration = 10;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_entity_use_item_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                Some(11),
+                Hand::Main,
+                &mut duration,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_entity_use_item_tick built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "living_entity_use_item_tick resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "living_entity_use_item_tick read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_entity_use_item_tick read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -9382,6 +12544,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_on_use_tick(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -9395,6 +12558,11 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -9418,6 +12586,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_on_use_tick(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -9432,6 +12601,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
                 entity_reads(),
                 2,
                 "on_use_tick read the host for a watched-away kind"
@@ -9445,6 +12619,49 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "on_use_tick read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_on_use_tick_cost_live",
+            "horizon.on(\"on_use_tick\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_on_use_tick(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                Some(11),
+                9,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "on_use_tick built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "on_use_tick resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "on_use_tick read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "on_use_tick read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -9557,6 +12774,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_entity_use_item_stop(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -9572,6 +12790,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -9600,6 +12823,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_entity_use_item_stop(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -9616,6 +12840,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
                 entity_reads(),
                 2,
                 "living_entity_use_item_stop read the host for a watched-away kind"
@@ -9629,6 +12858,52 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "living_entity_use_item_stop read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_entity_use_item_stop_cost_live",
+            "horizon.on(\"living_entity_use_item_stop\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_entity_use_item_stop(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                Some(11),
+                Hand::Main,
+                10,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_entity_use_item_stop built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "living_entity_use_item_stop resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "living_entity_use_item_stop read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_entity_use_item_stop read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -9711,6 +12986,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_release_using(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -9725,6 +13001,11 @@ mod generated_tests {
                 &mut used,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -9753,6 +13034,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_release_using(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -9768,6 +13050,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
                 entity_reads(),
                 2,
                 "release_using read the host for a watched-away kind"
@@ -9781,6 +13068,51 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "release_using read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_release_using_cost_live",
+            "horizon.on(\"release_using\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut used = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_release_using(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                Some(11),
+                9,
+                &mut used,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "release_using built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "release_using resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "release_using read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "release_using read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -9810,8 +13142,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_level_load(&mut FakeHost::empty(), &firing_mods, "test:dimension");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -9822,6 +13160,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "level_load read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_level_load_cost_live",
+            "horizon.on(\"level_load\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_level_load(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "level_load built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "level_load read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "level_load read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -9851,8 +13218,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_level_unload(&mut FakeHost::empty(), &firing_mods, "test:dimension");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -9867,6 +13240,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "level_unload read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_level_unload_cost_live",
+            "horizon.on(\"level_unload\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_level_unload(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "level_unload built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "level_unload read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "level_unload read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -9896,8 +13298,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_client_level_load(&mut FakeHost::empty(), &firing_mods, "test:dimension");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -9912,6 +13320,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "client_level_load read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_level_load_cost_live",
+            "horizon.on(\"client_level_load\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_client_level_load(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "client_level_load built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_level_load read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_level_load read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -9941,8 +13378,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_client_level_unload(&mut FakeHost::empty(), &firing_mods, "test:dimension");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -9957,6 +13400,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "client_level_unload read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_level_unload_cost_live",
+            "horizon.on(\"client_level_unload\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_client_level_unload(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "client_level_unload built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_level_unload read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_level_unload read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -10040,6 +13512,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_mount(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -10052,6 +13525,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -10080,6 +13558,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_mount(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -10092,6 +13571,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -10106,6 +13590,46 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_mount read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_mount_cost_live",
+            "horizon.on(\"entity_mount\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_mount(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+                10,
+                "test:vehicle_kind",
+                false,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_mount built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_mount read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_mount read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -10172,6 +13696,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_interaction_key(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -10182,6 +13707,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -10196,6 +13726,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "interaction_key read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_interaction_key_cost_live",
+            "horizon.on(\"interaction_key\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut swing_hand = false;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_interaction_key(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:key_mapping",
+                Hand::Main,
+                &mut swing_hand,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "interaction_key built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "interaction_key read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "interaction_key read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -10282,6 +13851,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_map_decorations(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -10297,6 +13867,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "map_decorations read the host with no handler"
@@ -10310,6 +13885,63 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "map_decorations read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_map_decorations_cost_live",
+            "horizon.on(\"map_decorations\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut decorations = vec![
+                NativeMapDecoration {
+                    sprite: "test:sprite1".into(),
+                    x: 2,
+                    y: 4,
+                    rot: 0,
+                    shown_on_frame: false,
+                },
+                NativeMapDecoration {
+                    sprite: "test:sprite2".into(),
+                    x: 3,
+                    y: 5,
+                    rot: 0,
+                    shown_on_frame: true,
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_map_decorations(
+                &FakeHost::empty(),
+                &firing_mods,
+                &NativeMapInfo {
+                    id: 7,
+                    center: [3, -5],
+                    scale: 0,
+                    dimension: "minecraft:overworld",
+                    locked: true,
+                    in_frame: false,
+                },
+                &mut decorations,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "map_decorations built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "map_decorations read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "map_decorations read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -10601,6 +14233,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_start_tracking(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -10611,6 +14244,11 @@ mod generated_tests {
                 "test:kind",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -10638,6 +14276,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_start_tracking(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -10648,6 +14287,11 @@ mod generated_tests {
                 "minecraft:zombie",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -10662,6 +14306,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_start_tracking read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_start_tracking_cost_live",
+            "horizon.on(\"player_start_tracking\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_start_tracking(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+                "minecraft:zombie",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_start_tracking built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_start_tracking read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_start_tracking read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -10713,6 +14393,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_stop_tracking(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -10723,6 +14404,11 @@ mod generated_tests {
                 "test:kind",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -10750,6 +14436,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_stop_tracking(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -10760,6 +14447,11 @@ mod generated_tests {
                 "minecraft:zombie",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -10774,6 +14466,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_stop_tracking read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_stop_tracking_cost_live",
+            "horizon.on(\"player_stop_tracking\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_stop_tracking(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+                "minecraft:zombie",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_stop_tracking built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_stop_tracking read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_stop_tracking read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -10815,6 +14543,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_entity_energy(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -10822,6 +14551,11 @@ mod generated_tests {
                 &mut energy,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -10836,6 +14570,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_entity_energy read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_entity_energy_cost_live",
+            "horizon.on(\"block_entity_energy\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut energy: Option<ModEnergyBuffer> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_entity_energy(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut energy,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_entity_energy built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_entity_energy read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_entity_energy read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -11004,8 +14773,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_data_map_types(&FakeHost::empty(), &firing_mods, &mut types);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -11020,6 +14795,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "data_map_types read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_data_map_types_cost_live",
+            "horizon.on(\"data_map_types\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut types = vec![
+                NativeDataMapType {
+                    id: "test:map0".into(),
+                    registry: "test:registry0".into(),
+                },
+                NativeDataMapType {
+                    id: "test:map1".into(),
+                    registry: "test:registry1".into(),
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_data_map_types(&FakeHost::empty(), &firing_mods, &mut types);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "data_map_types built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "data_map_types read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "data_map_types read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -11225,6 +15039,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_breathe(
                 &firing_mods,
                 7,
@@ -11234,6 +15049,11 @@ mod generated_tests {
                 &mut refill,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -11264,6 +15084,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_breathe(
                 &firing_mods,
                 7,
@@ -11273,6 +15094,11 @@ mod generated_tests {
                 &mut refill,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -11287,6 +15113,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "living_breathe read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_breathe_cost_live",
+            "horizon.on(\"living_breathe\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut can_breathe = true;
+            let mut consume = 10;
+            let mut refill = 11;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_breathe(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &mut can_breathe,
+                &mut consume,
+                &mut refill,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_breathe built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_breathe read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_breathe read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -11361,6 +15226,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_tick_pre(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -11370,6 +15236,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -11398,6 +15269,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_tick_pre(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -11407,6 +15279,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -11425,6 +15302,43 @@ mod generated_tests {
             no_error(&id);
             drop_dir(dir);
         }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_tick_pre_cost_live",
+            "horizon.on(\"entity_tick_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_tick_pre(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_tick_pre built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_tick_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_tick_pre read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -11439,8 +15353,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_fluid_tank(&FakeHost::empty(), &firing_mods, "test:item", &mut capacity);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -11455,6 +15375,36 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "item_fluid_tank read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_fluid_tank_cost_live",
+            "horizon.on(\"item_fluid_tank\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut capacity: Option<i32> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_item_fluid_tank(&FakeHost::empty(), &firing_mods, "test:item", &mut capacity);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "item_fluid_tank built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_fluid_tank read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_fluid_tank read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -11554,8 +15504,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_render_listened(&FakeHost::empty(), &firing_mods, &mut listened);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -11570,6 +15526,36 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_render_listened read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_render_listened_cost_live",
+            "horizon.on(\"player_render_listened\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut listened = true;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_render_listened(&FakeHost::empty(), &firing_mods, &mut listened);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_render_listened built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_render_listened read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_render_listened read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -11714,6 +15700,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_sign_changed(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -11726,6 +15713,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -11740,6 +15732,46 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "sign_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_sign_changed_cost_live",
+            "horizon.on(\"sign_changed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_sign_changed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:dimension",
+                [4, 5, 6],
+                true,
+                &mut lines,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "sign_changed built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "sign_changed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "sign_changed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -11779,8 +15811,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_standalone_models(&firing_mods, &mut models);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -11795,6 +15833,36 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "standalone_models read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_standalone_models_cost_live",
+            "horizon.on(\"standalone_models\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut models = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_standalone_models(&firing_mods, &mut models);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "standalone_models built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "standalone_models read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "standalone_models read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -11887,6 +15955,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_container_close(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -11897,6 +15966,11 @@ mod generated_tests {
                 Some([5, 6, 7]),
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -11911,6 +15985,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_container_close read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_container_close_cost_live",
+            "horizon.on(\"player_container_close\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_container_close(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:dimension",
+                "test:menu",
+                Some([5, 6, 7]),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_container_close built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_container_close read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_container_close read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -11971,6 +16081,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_toggle_flight(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -11980,6 +16091,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -11998,6 +16114,42 @@ mod generated_tests {
             no_error(&id);
             drop_dir(dir);
         }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_toggle_flight_cost_live",
+            "horizon.on(\"player_toggle_flight\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_toggle_flight(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                true,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_toggle_flight built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_toggle_flight read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_toggle_flight read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -12011,6 +16163,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_anvil_damaged(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -12020,6 +16173,11 @@ mod generated_tests {
                 "test:to",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -12034,6 +16192,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "anvil_damaged read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_anvil_damaged_cost_live",
+            "horizon.on(\"anvil_damaged\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_anvil_damaged(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:from",
+                "test:to",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "anvil_damaged built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "anvil_damaged read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "anvil_damaged read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -12080,6 +16274,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_arrow_loose(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -12095,6 +16290,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "arrow_loose read the host with no handler"
@@ -12104,6 +16304,49 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "arrow_loose read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_arrow_loose_cost_live",
+            "horizon.on(\"arrow_loose\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut charge = 9;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_arrow_loose(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                },
+                false,
+                &mut charge,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "arrow_loose built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "arrow_loose read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "arrow_loose read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -12139,6 +16382,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_beacon_state_change(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -12147,6 +16391,11 @@ mod generated_tests {
                 true,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -12161,6 +16410,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "beacon_state_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_beacon_state_change_cost_live",
+            "horizon.on(\"beacon_state_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_beacon_state_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                true,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "beacon_state_change built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "beacon_state_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "beacon_state_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -12200,6 +16484,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_bell_ring(
                 &FakeLevel,
                 &firing_mods,
@@ -12209,9 +16494,50 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "bell_ring read the host with no handler");
             assert_eq!(host_reads(), 0, "bell_ring read the host with no handler");
             assert_eq!(level_reads(), 0, "bell_ring read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_bell_ring_cost_live",
+            "horizon.on(\"bell_ring\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_bell_ring(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                None,
+                BlockPos::new(3, 4, 5),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "bell_ring built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "bell_ring read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "bell_ring read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -12247,6 +16573,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_break_progress_update(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -12256,6 +16583,11 @@ mod generated_tests {
                 10,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -12270,6 +16602,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_break_progress_update read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_break_progress_update_cost_live",
+            "horizon.on(\"block_break_progress_update\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_break_progress_update(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                10,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_break_progress_update built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "block_break_progress_update read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_break_progress_update read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -12308,6 +16675,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_burn(
                 &FakeLevel,
                 &firing_mods,
@@ -12316,6 +16684,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -12326,6 +16699,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_burn read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_burn_cost_live",
+            "horizon.on(\"block_burn\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_burn(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_burn built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_burn read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "block_burn read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -12343,6 +16751,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_cook(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -12351,6 +16760,11 @@ mod generated_tests {
                 "test:result",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -12361,6 +16775,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_cook read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_cook_cost_live",
+            "horizon.on(\"block_cook\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_cook(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                "test:item",
+                "test:result",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_cook built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_cook read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_cook read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -12396,6 +16845,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_damage_abort(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -12404,6 +16854,11 @@ mod generated_tests {
                 [3, 4, 5],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -12418,6 +16873,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_damage_abort read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_damage_abort_cost_live",
+            "horizon.on(\"block_damage_abort\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_damage_abort(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_damage_abort built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "block_damage_abort read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_damage_abort read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -12454,6 +16943,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_dispense_armor(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -12463,6 +16953,11 @@ mod generated_tests {
                 "test:target",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -12477,6 +16972,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_dispense_armor read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_dispense_armor_cost_live",
+            "horizon.on(\"block_dispense_armor\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_dispense_armor(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:item",
+                "test:target",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_dispense_armor built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_dispense_armor read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_dispense_armor read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -12516,6 +17047,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_exp(
                 &FakeLevel,
                 &firing_mods,
@@ -12525,9 +17057,51 @@ mod generated_tests {
                 &mut experience,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "block_exp read the host with no handler");
             assert_eq!(host_reads(), 0, "block_exp read the host with no handler");
             assert_eq!(level_reads(), 0, "block_exp read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_exp_cost_live",
+            "horizon.on(\"block_exp\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut experience = 10;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_exp(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                "test:block",
+                &mut experience,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_exp built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_exp read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_exp read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -12589,6 +17163,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_fade(
                 &FakeLevel,
                 &firing_mods,
@@ -12600,6 +17175,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "block_fade read the host with no handler"
@@ -12609,6 +17189,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_fade read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_fade_cost_live",
+            "horizon.on(\"block_fade\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_fade(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                BlockStateId(11),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_fade built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_fade read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "block_fade read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -12644,6 +17261,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_failed_dispense(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -12652,6 +17270,11 @@ mod generated_tests {
                 "test:item",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -12666,6 +17289,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_failed_dispense read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_failed_dispense_cost_live",
+            "horizon.on(\"block_failed_dispense\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_failed_dispense(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:item",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_failed_dispense built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_failed_dispense read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_failed_dispense read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -12728,6 +17386,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_form(
                 &FakeLevel,
                 &firing_mods,
@@ -12739,6 +17398,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "block_form read the host with no handler"
@@ -12748,6 +17412,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_form read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_form_cost_live",
+            "horizon.on(\"block_form\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_form(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                BlockStateId(11),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_form built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_form read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "block_form read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -12810,6 +17511,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_ignite(
                 &FakeLevel,
                 &firing_mods,
@@ -12820,6 +17522,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -12834,6 +17541,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_ignite read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_ignite_cost_live",
+            "horizon.on(\"block_ignite\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_ignite(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                None,
+                BlockPos::new(3, 4, 5),
+                "test:cause",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_ignite built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_ignite read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_ignite read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -12873,6 +17618,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_lock_check(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -12882,6 +17628,11 @@ mod generated_tests {
                 &mut locked,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -12896,6 +17647,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_lock_check read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_lock_check_cost_live",
+            "horizon.on(\"block_lock_check\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut locked = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_lock_check(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut locked,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_lock_check built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "block_lock_check read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_lock_check read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -12958,6 +17745,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_receive_game(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -12968,6 +17756,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -12982,6 +17775,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_receive_game read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_receive_game_cost_live",
+            "horizon.on(\"block_receive_game\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_receive_game(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:block",
+                "test:event",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_receive_game built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_receive_game read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_receive_game read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -13031,6 +17862,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_shear_entity(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -13040,6 +17872,11 @@ mod generated_tests {
                 "test:kind",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13067,6 +17904,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_shear_entity(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -13076,6 +17914,11 @@ mod generated_tests {
                 "minecraft:zombie",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13090,6 +17933,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_shear_entity read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_shear_entity_cost_live",
+            "horizon.on(\"block_shear_entity\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_shear_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                9,
+                "minecraft:zombie",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_shear_entity built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_shear_entity read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_shear_entity read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -13119,8 +17998,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_brewing_complete(&FakeHost::empty(), &firing_mods, [1, 2, 3]);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13135,6 +18020,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "brewing_complete read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_brewing_complete_cost_live",
+            "horizon.on(\"brewing_complete\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_brewing_complete(&FakeHost::empty(), &firing_mods, [1, 2, 3]);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "brewing_complete built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "brewing_complete read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "brewing_complete read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -13164,8 +18078,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_brewing_fuel(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13180,6 +18100,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "brewing_fuel read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_brewing_fuel_cost_live",
+            "horizon.on(\"brewing_fuel\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_brewing_fuel(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "brewing_fuel built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "brewing_fuel read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "brewing_fuel read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -13214,6 +18163,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_brewing_start(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -13221,6 +18171,11 @@ mod generated_tests {
                 "test:ingredient",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13235,6 +18190,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "brewing_start read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_brewing_start_cost_live",
+            "horizon.on(\"brewing_start\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_brewing_start(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                "test:ingredient",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "brewing_start built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "brewing_start read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "brewing_start read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -13285,8 +18274,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_broadcast_message(&FakeHost::empty(), &firing_mods, &mut line, &mut cancel);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13301,6 +18296,37 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "broadcast_message read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_broadcast_message_cost_live",
+            "horizon.on(\"broadcast_message\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut line = Text::literal("test:line");
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_broadcast_message(&FakeHost::empty(), &firing_mods, &mut line, &mut cancel);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "broadcast_message built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "broadcast_message read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "broadcast_message read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -13330,8 +18356,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_campfire_start(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13346,6 +18378,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "campfire_start read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_campfire_start_cost_live",
+            "horizon.on(\"campfire_start\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_campfire_start(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "campfire_start built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "campfire_start read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "campfire_start read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -13412,6 +18473,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_cauldron_level_changed(
                 &FakeLevel,
                 &firing_mods,
@@ -13424,6 +18486,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13438,6 +18505,46 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "cauldron_level_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_cauldron_level_changed_cost_live",
+            "horizon.on(\"cauldron_level_changed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_cauldron_level_changed(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                None,
+                BlockPos::new(3, 4, 5),
+                10,
+                11,
+                "test:reason",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "cauldron_level_changed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "cauldron_level_changed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "cauldron_level_changed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -13504,6 +18611,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_chorus_fruit_teleport(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -13514,6 +18622,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13528,6 +18641,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "chorus_fruit_teleport read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_chorus_fruit_teleport_cost_live",
+            "horizon.on(\"chorus_fruit_teleport\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut target = [4.0, 5.0, 6.0];
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_chorus_fruit_teleport(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3.0, 4.0, 5.0],
+                &mut target,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "chorus_fruit_teleport built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "chorus_fruit_teleport read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "chorus_fruit_teleport read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -13557,8 +18708,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_compost_item(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13573,6 +18730,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "compost_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_compost_item_cost_live",
+            "horizon.on(\"compost_item\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_compost_item(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "compost_item built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "compost_item read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "compost_item read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -13602,8 +18788,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_crafter_craft(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:recipe");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13618,6 +18810,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "crafter_craft read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_crafter_craft_cost_live",
+            "horizon.on(\"crafter_craft\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_crafter_craft(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:recipe");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "crafter_craft built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "crafter_craft read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "crafter_craft read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -13659,8 +18880,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_creeper_ignite(&mut FakeHost::empty(), &firing_mods, 7, 8, "test:item");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13688,8 +18915,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_creeper_ignite(&mut FakeHost::empty(), &firing_mods, 11, 8, "test:item");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -13704,6 +18937,38 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "creeper_ignite read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_creeper_ignite_cost_live",
+            "horizon.on(\"creeper_ignite\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_creeper_ignite(&mut FakeHost::empty(), &firing_mods, 11, 8, "test:item");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "creeper_ignite built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "creeper_ignite resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "creeper_ignite read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "creeper_ignite read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -13745,8 +19010,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 7, [2.0, 3.0, 4.0]);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13774,8 +19045,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 3.0, 4.0]);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -13790,6 +19067,38 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "creeper_power read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_creeper_power_cost_live",
+            "horizon.on(\"creeper_power\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 3.0, 4.0]);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "creeper_power built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "creeper_power resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "creeper_power read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "creeper_power read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -13832,6 +19141,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_critical_hit(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -13841,6 +19151,11 @@ mod generated_tests {
                 &mut damage_multiplier,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13855,6 +19170,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "critical_hit read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_critical_hit_cost_live",
+            "horizon.on(\"critical_hit\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut critical = true;
+            let mut damage_multiplier = 4.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_critical_hit(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:target_kind",
+                false,
+                &mut critical,
+                &mut damage_multiplier,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "critical_hit built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "critical_hit read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "critical_hit read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -13884,6 +19237,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_difficulty_changed(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -13891,6 +19245,11 @@ mod generated_tests {
                 "test:to",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13905,6 +19264,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "difficulty_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_difficulty_changed_cost_live",
+            "horizon.on(\"difficulty_changed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_difficulty_changed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:from",
+                "test:to",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "difficulty_changed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "difficulty_changed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "difficulty_changed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -13963,6 +19356,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_dragon_egg_form(
                 &FakeLevel,
                 &firing_mods,
@@ -13971,6 +19365,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -13985,6 +19384,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "dragon_egg_form read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_dragon_egg_form_cost_live",
+            "horizon.on(\"dragon_egg_form\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_dragon_egg_form(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "dragon_egg_form built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "dragon_egg_form read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "dragon_egg_form read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -14027,6 +19462,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_enchant_item(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14043,6 +19479,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "enchant_item read the host with no handler"
@@ -14056,6 +19497,47 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "enchant_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_enchant_item_cost_live",
+            "horizon.on(\"enchant_item\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_enchant_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &ItemStack {
+                    item: "test:item".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: None,
+                },
+                11,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "enchant_item built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "enchant_item read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "enchant_item read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -14130,6 +19612,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_ender_pearl_teleport(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14142,6 +19625,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -14156,6 +19644,47 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "ender_pearl_teleport read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_ender_pearl_teleport_cost_live",
+            "horizon.on(\"ender_pearl_teleport\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut target = [5.0, 6.0, 7.0];
+            let mut damage = 6.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_ender_pearl_teleport(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                [4.0, 5.0, 6.0],
+                &mut target,
+                &mut damage,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "ender_pearl_teleport built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "ender_pearl_teleport read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "ender_pearl_teleport read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -14191,6 +19720,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entities_load(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14199,6 +19729,11 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -14213,6 +19748,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entities_load read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entities_load_cost_live",
+            "horizon.on(\"entities_load\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entities_load(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [4, -6],
+                9,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entities_load built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entities_load read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entities_load read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -14248,6 +19818,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entities_unload(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14256,6 +19827,11 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -14270,6 +19846,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entities_unload read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entities_unload_cost_live",
+            "horizon.on(\"entities_unload\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entities_unload(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [4, -6],
+                9,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entities_unload built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entities_unload read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entities_unload read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -14317,6 +19928,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_break_door(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14325,6 +19937,11 @@ mod generated_tests {
                 [3, 4, 5],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -14352,6 +19969,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_break_door(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14360,6 +19978,11 @@ mod generated_tests {
                 [3, 4, 5],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -14374,6 +19997,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_break_door read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_break_door_cost_live",
+            "horizon.on(\"entity_break_door\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_break_door(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                [3, 4, 5],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_break_door built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_break_door read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_break_door read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -14403,8 +20061,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_breed(&mut FakeHost::empty(), &firing_mods, 7, 8, Some(9));
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -14419,6 +20083,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_breed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_breed_cost_live",
+            "horizon.on(\"entity_breed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_breed(&mut FakeHost::empty(), &firing_mods, 7, 8, Some(9));
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_breed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_breed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_breed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -14470,6 +20163,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_change_block(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14480,6 +20174,11 @@ mod generated_tests {
                 "test:to",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -14507,6 +20206,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_change_block(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14517,6 +20217,11 @@ mod generated_tests {
                 "test:to",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -14531,6 +20236,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_change_block read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_change_block_cost_live",
+            "horizon.on(\"entity_change_block\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_change_block(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                [3, 4, 5],
+                "test:from",
+                "test:to",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_change_block built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_change_block read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_change_block read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -14593,6 +20335,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_drop_item(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14602,6 +20345,11 @@ mod generated_tests {
                 [4.0, 5.0, 6.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -14629,6 +20377,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_drop_item(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14638,6 +20387,11 @@ mod generated_tests {
                 [4.0, 5.0, 6.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -14652,6 +20406,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_drop_item read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_drop_item_cost_live",
+            "horizon.on(\"entity_drop_item\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_drop_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                11,
+                "test:item",
+                9,
+                [4.0, 5.0, 6.0],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_drop_item built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "entity_drop_item resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "entity_drop_item read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_drop_item read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -14701,6 +20494,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_enter_block(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14710,6 +20504,11 @@ mod generated_tests {
                 "test:block",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -14737,6 +20536,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_enter_block(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14746,6 +20546,11 @@ mod generated_tests {
                 "test:block",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -14760,6 +20565,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_enter_block read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_enter_block_cost_live",
+            "horizon.on(\"entity_enter_block\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_enter_block(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                [3, 4, 5],
+                "test:block",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_enter_block built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_enter_block read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_enter_block read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -14807,6 +20648,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_enter_love_mode(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14815,6 +20657,11 @@ mod generated_tests {
                 Some(9),
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -14842,6 +20689,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_enter_love_mode(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14850,6 +20698,11 @@ mod generated_tests {
                 Some(9),
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -14864,6 +20717,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_enter_love_mode read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_enter_love_mode_cost_live",
+            "horizon.on(\"entity_enter_love_mode\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_enter_love_mode(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                Some(9),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_enter_love_mode built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_enter_love_mode read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_enter_love_mode read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -14923,6 +20811,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_portal(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14931,6 +20820,11 @@ mod generated_tests {
                 [3, 4, 5],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -14958,6 +20852,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_portal(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -14966,6 +20861,11 @@ mod generated_tests {
                 [3, 4, 5],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -14980,6 +20880,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_portal read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_portal_cost_live",
+            "horizon.on(\"entity_portal\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_portal(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                11,
+                [3, 4, 5],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_portal built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "entity_portal resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "entity_portal read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_portal read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -15016,6 +20954,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_pose_change(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -15025,6 +20964,11 @@ mod generated_tests {
                 "test:to",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -15039,6 +20983,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_pose_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_pose_change_cost_live",
+            "horizon.on(\"entity_pose_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_pose_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:from",
+                "test:to",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_pose_change built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "entity_pose_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_pose_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -15101,8 +21080,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_shoot_bow(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9, 4.5);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -15130,6 +21115,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_shoot_bow(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -15139,6 +21125,11 @@ mod generated_tests {
                 4.5,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -15153,6 +21144,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_shoot_bow read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_shoot_bow_cost_live",
+            "horizon.on(\"entity_shoot_bow\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_shoot_bow(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+                4.5,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_shoot_bow built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "entity_shoot_bow resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "entity_shoot_bow read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_shoot_bow read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -15200,6 +21230,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_tame(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -15208,6 +21239,11 @@ mod generated_tests {
                 Some(9),
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -15231,6 +21267,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_tame(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -15239,6 +21276,11 @@ mod generated_tests {
                 Some(9),
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -15253,6 +21295,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_tame read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_tame_cost_live",
+            "horizon.on(\"entity_tame\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_tame(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                Some(9),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_tame built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_tame read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_tame read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -15315,6 +21392,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_teleport(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -15324,6 +21402,11 @@ mod generated_tests {
                 [4.0, 5.0, 6.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -15351,6 +21434,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_teleport(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -15360,6 +21444,11 @@ mod generated_tests {
                 [4.0, 5.0, 6.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -15374,6 +21463,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_teleport read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_teleport_cost_live",
+            "horizon.on(\"entity_teleport\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_teleport(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                11,
+                [3.0, 4.0, 5.0],
+                [4.0, 5.0, 6.0],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_teleport built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "entity_teleport resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "entity_teleport read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_teleport read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -15403,6 +21531,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_toggle_glide(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -15411,6 +21540,11 @@ mod generated_tests {
                 true,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -15425,6 +21559,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_toggle_glide read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_toggle_glide_cost_live",
+            "horizon.on(\"entity_toggle_glide\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_toggle_glide(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                true,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_toggle_glide built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "entity_toggle_glide read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_toggle_glide read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -15474,6 +21642,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_transform(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -15483,6 +21652,11 @@ mod generated_tests {
                 "test:transformed_kind",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -15510,6 +21684,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_transform(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -15519,6 +21694,11 @@ mod generated_tests {
                 "test:transformed_kind",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -15533,6 +21713,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_transform read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_transform_cost_live",
+            "horizon.on(\"entity_transform\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_transform(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                9,
+                "test:transformed_kind",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_transform built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_transform read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_transform read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -15573,8 +21789,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_unleash(&mut FakeHost::empty(), &firing_mods, 7, "test:kind");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -15602,8 +21824,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_unleash(&mut FakeHost::empty(), &firing_mods, 7, "minecraft:zombie");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -15618,6 +21846,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_unleash read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_unleash_cost_live",
+            "horizon.on(\"entity_unleash\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_unleash(&mut FakeHost::empty(), &firing_mods, 7, "minecraft:zombie");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_unleash built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_unleash read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_unleash read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -15647,8 +21904,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_exp_bottle(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 8);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -15659,6 +21922,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "exp_bottle read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_exp_bottle_cost_live",
+            "horizon.on(\"exp_bottle\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_exp_bottle(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 8);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "exp_bottle built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "exp_bottle read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "exp_bottle read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -15691,12 +21983,18 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_experience_orb_pickup_listened(
                 &FakeHost::empty(),
                 &firing_mods,
                 &mut listened,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -15711,6 +22009,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "experience_orb_pickup_listened read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_experience_orb_pickup_listened_cost_live",
+            "horizon.on(\"experience_orb_pickup_listened\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut listened = true;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_experience_orb_pickup_listened(
+                &FakeHost::empty(),
+                &firing_mods,
+                &mut listened,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "experience_orb_pickup_listened built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "experience_orb_pickup_listened read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "experience_orb_pickup_listened read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -15862,6 +22194,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_experience_orb_pickup(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -15873,6 +22206,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -15887,6 +22225,47 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "experience_orb_pickup read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_experience_orb_pickup_cost_live",
+            "horizon.on(\"experience_orb_pickup\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut value = 10;
+            let mut count = 11;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_experience_orb_pickup(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:dimension",
+                9,
+                &mut value,
+                &mut count,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "experience_orb_pickup built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "experience_orb_pickup read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "experience_orb_pickup read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -15931,6 +22310,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_mending_repair(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -15946,6 +22326,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "mending_repair read the host with no handler"
@@ -15959,6 +22344,48 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "mending_repair read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mending_repair_cost_live",
+            "horizon.on(\"mending_repair\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut repair = 10;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mending_repair(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: None,
+                },
+                9,
+                &mut repair,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "mending_repair built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mending_repair read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mending_repair read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -15988,8 +22415,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_explosion_prime(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 2.5);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -16004,6 +22437,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "explosion_prime read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_explosion_prime_cost_live",
+            "horizon.on(\"explosion_prime\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_explosion_prime(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 2.5);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "explosion_prime built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "explosion_prime read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "explosion_prime read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -16042,6 +22504,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_fire_odds(
                 &FakeLevel,
                 &firing_mods,
@@ -16050,9 +22513,49 @@ mod generated_tests {
                 &mut odds,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "fire_odds read the host with no handler");
             assert_eq!(host_reads(), 0, "fire_odds read the host with no handler");
             assert_eq!(level_reads(), 0, "fire_odds read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_fire_odds_cost_live",
+            "horizon.on(\"fire_odds\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut odds: Option<(i32, i32)> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_fire_odds(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &mut odds,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "fire_odds built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "fire_odds read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "fire_odds read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -16175,6 +22678,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_smoke_source(
                 &FakeLevel,
                 &firing_mods,
@@ -16183,6 +22687,11 @@ mod generated_tests {
                 &mut smoke,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -16197,6 +22706,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "smoke_source read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_smoke_source_cost_live",
+            "horizon.on(\"smoke_source\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut smoke: Option<bool> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_smoke_source(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockStateId(9),
+                &mut smoke,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "smoke_source built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "smoke_source read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "smoke_source read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -16323,8 +22867,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 7, [2.0, 3.0, 4.0], 9);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -16352,8 +22902,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 3.0, 4.0], 9);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -16368,6 +22924,38 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "firework_explode read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_firework_explode_cost_live",
+            "horizon.on(\"firework_explode\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 3.0, 4.0], 9);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "firework_explode built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "firework_explode resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "firework_explode read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "firework_explode read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -16432,6 +23020,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_fluid_level_change(
                 &FakeLevel,
                 &firing_mods,
@@ -16443,6 +23032,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -16457,6 +23051,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "fluid_level_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_fluid_level_change_cost_live",
+            "horizon.on(\"fluid_level_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_fluid_level_change(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                "test:fluid",
+                10,
+                11,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "fluid_level_change built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "fluid_level_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "fluid_level_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -16496,6 +23129,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_framerate_limit(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -16505,6 +23139,11 @@ mod generated_tests {
                 &mut limit,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -16519,6 +23158,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "framerate_limit read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_framerate_limit_cost_live",
+            "horizon.on(\"framerate_limit\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut limit = 10;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_framerate_limit(
+                &FakeHost::empty(),
+                &firing_mods,
+                true,
+                false,
+                true,
+                &mut limit,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "framerate_limit built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "framerate_limit read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "framerate_limit read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -16548,8 +23224,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_furnace_burn(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -16564,6 +23246,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "furnace_burn read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_furnace_burn_cost_live",
+            "horizon.on(\"furnace_burn\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_furnace_burn(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "furnace_burn built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "furnace_burn read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "furnace_burn read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -16601,6 +23312,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_furnace_extract(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -16611,6 +23323,11 @@ mod generated_tests {
                 11,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -16625,6 +23342,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "furnace_extract read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_furnace_extract_cost_live",
+            "horizon.on(\"furnace_extract\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_furnace_extract(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                "test:item",
+                11,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "furnace_extract built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "furnace_extract read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "furnace_extract read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -16660,6 +23413,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_furnace_smelt(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -16668,6 +23422,11 @@ mod generated_tests {
                 "test:result",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -16682,6 +23441,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "furnace_smelt read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_furnace_smelt_cost_live",
+            "horizon.on(\"furnace_smelt\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_furnace_smelt(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                "test:item",
+                "test:result",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "furnace_smelt built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "furnace_smelt read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "furnace_smelt read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -16711,8 +23505,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_furnace_start_smelt(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -16727,6 +23527,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "furnace_start_smelt read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_furnace_start_smelt_cost_live",
+            "horizon.on(\"furnace_start_smelt\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_furnace_start_smelt(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "furnace_start_smelt built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "furnace_start_smelt read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "furnace_start_smelt read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -16761,6 +23590,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_game_event(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -16768,6 +23598,11 @@ mod generated_tests {
                 [2.0, 3.0, 4.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -16778,6 +23613,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "game_event read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_game_event_cost_live",
+            "horizon.on(\"game_event\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_game_event(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:event",
+                [2.0, 3.0, 4.0],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "game_event built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "game_event read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "game_event read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -16837,6 +23706,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_hopper_inventory_search(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -16845,6 +23715,11 @@ mod generated_tests {
                 Some(9),
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -16872,6 +23747,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_hopper_inventory_search(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -16880,6 +23756,11 @@ mod generated_tests {
                 Some(11),
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -16894,6 +23775,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "hopper_inventory_search read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_hopper_inventory_search_cost_live",
+            "horizon.on(\"hopper_inventory_search\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_hopper_inventory_search(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some([2, 3, 4]),
+                Some(11),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "hopper_inventory_search built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "hopper_inventory_search resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "hopper_inventory_search read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "hopper_inventory_search read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -16956,6 +23875,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_hopper_pickup_item(
                 &FakeLevel,
                 &firing_mods,
@@ -16966,6 +23886,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -16980,6 +23905,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "hopper_pickup_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_hopper_pickup_item_cost_live",
+            "horizon.on(\"hopper_pickup_item\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_hopper_pickup_item(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                "test:item",
+                10,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "hopper_pickup_item built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "hopper_pickup_item read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "hopper_pickup_item read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -17026,6 +23989,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_ingredient(
                 &firing_mods,
                 "test:kind",
@@ -17036,6 +24000,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "ingredient read the host with no handler"
@@ -17045,6 +24014,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "ingredient read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_ingredient_cost_live",
+            "horizon.on(\"ingredient\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut items = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_ingredient(
+                &firing_mods,
+                "test:kind",
+                &[("testkey".to_owned(), serde_json::json!(8))]
+                    .into_iter()
+                    .collect(),
+                &mut items,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "ingredient built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "ingredient read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "ingredient read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -17201,6 +24207,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_inventory_block_start(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -17210,6 +24217,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -17224,6 +24236,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "inventory_block_start read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_inventory_block_start_cost_live",
+            "horizon.on(\"inventory_block_start\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_inventory_block_start(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "inventory_block_start built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "inventory_block_start read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "inventory_block_start read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -17284,6 +24332,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_inventory_move_item(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -17293,6 +24342,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -17307,6 +24361,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "inventory_move_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_inventory_move_item_cost_live",
+            "horizon.on(\"inventory_move_item\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_inventory_move_item(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                [2, 3, 4],
+                "test:item",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "inventory_move_item built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "inventory_move_item read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "inventory_move_item read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -17369,6 +24460,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_despawn(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -17378,6 +24470,11 @@ mod generated_tests {
                 [4.0, 5.0, 6.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -17405,6 +24502,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_despawn(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -17414,6 +24512,11 @@ mod generated_tests {
                 [4.0, 5.0, 6.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -17428,6 +24531,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "item_despawn read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_despawn_cost_live",
+            "horizon.on(\"item_despawn\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_item_despawn(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                11,
+                "test:item",
+                9,
+                [4.0, 5.0, 6.0],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "item_despawn built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "item_despawn resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "item_despawn read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_despawn read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -17467,8 +24609,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_energy_buffer(&FakeHost::empty(), &firing_mods, "test:item", &mut buffer);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -17483,6 +24631,36 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "item_energy_buffer read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_energy_buffer_cost_live",
+            "horizon.on(\"item_energy_buffer\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut buffer: Option<ItemEnergyBuffer> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_item_energy_buffer(&FakeHost::empty(), &firing_mods, "test:item", &mut buffer);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "item_energy_buffer built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_energy_buffer read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_energy_buffer read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -17650,6 +24828,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_expire(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -17663,6 +24842,11 @@ mod generated_tests {
                 &mut extra_life,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -17687,6 +24871,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_expire(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -17701,6 +24886,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
                 entity_reads(),
                 2,
                 "item_expire read the host for a watched-away kind"
@@ -17714,6 +24904,50 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "item_expire read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_expire_cost_live",
+            "horizon.on(\"item_expire\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut extra_life = 9;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_item_expire(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                11,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: None,
+                },
+                &mut extra_life,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "item_expire built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "item_expire resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "item_expire read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_expire read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -17776,6 +25010,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_spawn(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -17785,6 +25020,11 @@ mod generated_tests {
                 [4.0, 5.0, 6.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -17808,6 +25048,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_spawn(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -17817,6 +25058,11 @@ mod generated_tests {
                 [4.0, 5.0, 6.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -17831,6 +25077,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "item_spawn read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_spawn_cost_live",
+            "horizon.on(\"item_spawn\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_item_spawn(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                11,
+                "test:item",
+                9,
+                [4.0, 5.0, 6.0],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "item_spawn built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "item_spawn resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "item_spawn read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_spawn read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -17889,6 +25174,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_leaves_decay(
                 &FakeLevel,
                 &firing_mods,
@@ -17897,6 +25183,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -17911,6 +25202,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "leaves_decay read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_leaves_decay_cost_live",
+            "horizon.on(\"leaves_decay\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_leaves_decay(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "leaves_decay built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "leaves_decay read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "leaves_decay read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -17971,6 +25298,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_lightning_strike(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -17980,6 +25308,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -17994,6 +25327,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "lightning_strike read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_lightning_strike_cost_live",
+            "horizon.on(\"lightning_strike\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_lightning_strike(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                [2, 3, 4],
+                "test:cause",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "lightning_strike built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "lightning_strike read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "lightning_strike read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -18056,6 +25426,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_moisture_change(
                 &FakeLevel,
                 &firing_mods,
@@ -18066,6 +25437,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -18080,6 +25456,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "moisture_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_moisture_change_cost_live",
+            "horizon.on(\"moisture_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_moisture_change(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                9,
+                10,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "moisture_change built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "moisture_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "moisture_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -18130,6 +25544,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_anvil_craft_post(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -18154,6 +25569,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "anvil_craft_post read the host with no handler"
@@ -18167,6 +25587,55 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "anvil_craft_post read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_anvil_craft_post_cost_live",
+            "horizon.on(\"anvil_craft_post\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_anvil_craft_post(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &AnvilCraft {
+                    left: Some(ItemStack {
+                        item: "test:craft".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    }),
+                    right: None,
+                    output: ItemStack {
+                        item: "test:craft:out".into(),
+                        count: 2,
+                        damage: 3,
+                        extra: None,
+                    },
+                },
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "anvil_craft_post built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "anvil_craft_post read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "anvil_craft_post read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -18257,6 +25726,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_anvil_craft_pre(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -18282,6 +25752,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "anvil_craft_pre read the host with no handler"
@@ -18295,6 +25770,57 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "anvil_craft_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_anvil_craft_pre_cost_live",
+            "horizon.on(\"anvil_craft_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_anvil_craft_pre(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &AnvilCraft {
+                    left: Some(ItemStack {
+                        item: "test:craft".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    }),
+                    right: None,
+                    output: ItemStack {
+                        item: "test:craft:out".into(),
+                        count: 2,
+                        damage: 3,
+                        extra: None,
+                    },
+                },
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "anvil_craft_pre built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "anvil_craft_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "anvil_craft_pre read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -18357,6 +25883,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_armor_stand_manipulate(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -18367,6 +25894,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -18381,6 +25913,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "armor_stand_manipulate read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_armor_stand_manipulate_cost_live",
+            "horizon.on(\"armor_stand_manipulate\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_armor_stand_manipulate(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                "test:slot",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "armor_stand_manipulate built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "armor_stand_manipulate read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "armor_stand_manipulate read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -18443,6 +26012,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_bucket_empty(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -18453,6 +26023,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -18467,6 +26042,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "bucket_empty read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_bucket_empty_cost_live",
+            "horizon.on(\"bucket_empty\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_bucket_empty(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                "test:fluid",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "bucket_empty built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "bucket_empty read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "bucket_empty read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -18529,6 +26141,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_container_opened(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -18539,6 +26152,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -18553,6 +26171,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "container_opened read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_container_opened_cost_live",
+            "horizon.on(\"container_opened\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_container_opened(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:kind",
+                Some([4, 5, 6]),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "container_opened built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "container_opened read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "container_opened read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -18617,6 +26272,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_creative_slot(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -18628,6 +26284,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -18642,6 +26303,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "creative_slot read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_creative_slot_cost_live",
+            "horizon.on(\"creative_slot\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_creative_slot(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                "test:item",
+                11,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "creative_slot built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "creative_slot read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "creative_slot read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -18708,6 +26407,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_food_level_changed(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -18718,6 +26418,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -18732,6 +26437,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "food_level_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_food_level_changed_cost_live",
+            "horizon.on(\"food_level_changed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut to = 10;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_food_level_changed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                &mut to,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "food_level_changed built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "food_level_changed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "food_level_changed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -18806,6 +26549,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_hanging_break(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -18815,6 +26559,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -18843,6 +26592,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_hanging_break(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -18852,6 +26602,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -18866,6 +26621,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "hanging_break read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_hanging_break_cost_live",
+            "horizon.on(\"hanging_break\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_hanging_break(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "minecraft:zombie",
+                [3, 4, 5],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "hanging_break built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "hanging_break read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "hanging_break read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -18943,6 +26735,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_hanging_place(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -18953,6 +26746,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -18981,6 +26779,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_hanging_place(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -18991,6 +26790,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -19005,6 +26809,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "hanging_place read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_hanging_place_cost_live",
+            "horizon.on(\"hanging_place\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_hanging_place(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "minecraft:zombie",
+                [4, 5, 6],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "hanging_place built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "hanging_place read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "hanging_place read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -19071,6 +26912,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_damaged(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -19081,6 +26923,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -19095,6 +26942,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "item_damaged read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_damaged_cost_live",
+            "horizon.on(\"item_damaged\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 10;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_item_damaged(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:item",
+                &mut amount,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "item_damaged built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "item_damaged read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_damaged read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -19124,8 +27009,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_clone(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -19140,6 +27031,34 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_clone read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_clone_cost_live",
+            "horizon.on(\"player_clone\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_clone(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_clone built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_clone read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_clone read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -19185,6 +27104,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_commands_sent(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -19193,6 +27113,11 @@ mod generated_tests {
                 &mut names,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -19207,6 +27132,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_commands_sent read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_commands_sent_cost_live",
+            "horizon.on(\"player_commands_sent\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_commands_sent(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut names,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_commands_sent built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_commands_sent read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_commands_sent read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -19336,6 +27296,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_destroy_item(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -19345,6 +27306,11 @@ mod generated_tests {
                 "test:slot",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -19359,6 +27325,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_destroy_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_destroy_item_cost_live",
+            "horizon.on(\"player_destroy_item\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_destroy_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:item",
+                "test:slot",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_destroy_item built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_destroy_item read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_destroy_item read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -19419,6 +27420,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_fish(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -19429,6 +27431,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "player_fish read the host with no handler"
@@ -19438,6 +27445,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_fish read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_fish_cost_live",
+            "horizon.on(\"player_fish\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_fish(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_fish built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_fish read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_fish read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -19474,6 +27517,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_flower_pot_manipulate(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -19483,6 +27527,11 @@ mod generated_tests {
                 "test:plant",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -19497,6 +27546,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_flower_pot_manipulate read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_flower_pot_manipulate_cost_live",
+            "horizon.on(\"player_flower_pot_manipulate\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_flower_pot_manipulate(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                "test:plant",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_flower_pot_manipulate built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_flower_pot_manipulate read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_flower_pot_manipulate read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -19559,6 +27643,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_game_mode_changed(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -19569,6 +27654,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -19583,6 +27673,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_game_mode_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_game_mode_changed_cost_live",
+            "horizon.on(\"player_game_mode_changed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_game_mode_changed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_game_mode_changed built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_game_mode_changed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_game_mode_changed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -19619,6 +27746,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_insert_lectern_book(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -19628,6 +27756,11 @@ mod generated_tests {
                 "test:book",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -19642,6 +27775,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_insert_lectern_book read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_insert_lectern_book_cost_live",
+            "horizon.on(\"player_insert_lectern_book\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_insert_lectern_book(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                "test:book",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_insert_lectern_book built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_insert_lectern_book read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_insert_lectern_book read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -19710,6 +27878,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_item_frame_change(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -19721,6 +27890,11 @@ mod generated_tests {
                 12,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -19748,6 +27922,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_item_frame_change(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -19759,6 +27934,11 @@ mod generated_tests {
                 12,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -19773,6 +27953,47 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_item_frame_change read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_item_frame_change_cost_live",
+            "horizon.on(\"player_item_frame_change\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_item_frame_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+                "test:action",
+                "test:item",
+                12,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_item_frame_change built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "player_item_frame_change resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_item_frame_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_item_frame_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -19810,6 +28031,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_item_mend(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -19820,6 +28042,11 @@ mod generated_tests {
                 11,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -19834,6 +28061,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_item_mend read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_item_mend_cost_live",
+            "horizon.on(\"player_item_mend\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_item_mend(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:item",
+                10,
+                11,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_item_mend built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_item_mend read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_item_mend read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -19870,6 +28133,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_lectern_page_change(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -19879,6 +28143,11 @@ mod generated_tests {
                 10,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -19893,6 +28162,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_lectern_page_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_lectern_page_change_cost_live",
+            "horizon.on(\"player_lectern_page_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_lectern_page_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                10,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_lectern_page_change built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_lectern_page_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_lectern_page_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -19928,6 +28232,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_load_from_file(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -19936,6 +28241,11 @@ mod generated_tests {
                 std::path::Path::new("test:path"),
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -19950,6 +28260,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_load_from_file read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_load_from_file_cost_live",
+            "horizon.on(\"player_load_from_file\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_load_from_file(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                std::path::Path::new("test:path"),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_load_from_file built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_load_from_file read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_load_from_file read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -20014,6 +28358,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_login(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -20023,6 +28368,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20037,6 +28387,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_login read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_login_cost_live",
+            "horizon.on(\"player_login\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut reason = Some(Text::literal("test:reason"));
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_login(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut reason,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_login built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_login read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_login read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -20072,6 +28459,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_save_to_file(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -20080,6 +28468,11 @@ mod generated_tests {
                 std::path::Path::new("test:path"),
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20094,6 +28487,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_save_to_file read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_save_to_file_cost_live",
+            "horizon.on(\"player_save_to_file\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_save_to_file(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                std::path::Path::new("test:path"),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_save_to_file built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_save_to_file read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_save_to_file read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -20123,8 +28550,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_sprint(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20139,6 +28572,34 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_sprint read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_sprint_cost_live",
+            "horizon.on(\"player_sprint\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_sprint(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_sprint built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_sprint read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_sprint read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -20197,6 +28658,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_swap_hands(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -20205,6 +28667,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20219,6 +28686,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_swap_hands read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_swap_hands_cost_live",
+            "horizon.on(\"player_swap_hands\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_swap_hands(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_swap_hands built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_swap_hands read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_swap_hands read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -20255,6 +28757,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_take_lectern_book(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -20264,6 +28767,11 @@ mod generated_tests {
                 "test:book",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20278,6 +28786,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_take_lectern_book read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_take_lectern_book_cost_live",
+            "horizon.on(\"player_take_lectern_book\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_take_lectern_book(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                "test:book",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_take_lectern_book built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_take_lectern_book read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_take_lectern_book read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -20315,6 +28858,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_teleported(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -20325,6 +28869,11 @@ mod generated_tests {
                 "test:dimension",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20339,6 +28888,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_teleported read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_teleported_cost_live",
+            "horizon.on(\"player_teleported\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_teleported(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3.0, 4.0, 5.0],
+                [4.0, 5.0, 6.0],
+                "test:dimension",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_teleported built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_teleported read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_teleported read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -20368,8 +28953,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_totem(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20384,6 +28975,34 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_totem read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_totem_cost_live",
+            "horizon.on(\"player_totem\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_totem(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_totem built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_totem read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_totem read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -20413,8 +29032,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_resource_pack_status(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20429,6 +29054,34 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "resource_pack_status read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_resource_pack_status_cost_live",
+            "horizon.on(\"resource_pack_status\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_resource_pack_status(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "resource_pack_status built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "resource_pack_status read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "resource_pack_status read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -20458,8 +29111,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_spawn_change(&mut FakeHost::empty(), &firing_mods, [1, 2, 3], [2.5, 3.5]);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20474,6 +29133,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "spawn_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_spawn_change_cost_live",
+            "horizon.on(\"spawn_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_spawn_change(&mut FakeHost::empty(), &firing_mods, [1, 2, 3], [2.5, 3.5]);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "spawn_change built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "spawn_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "spawn_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -20532,6 +29220,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_tnt_primed(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -20540,6 +29229,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20550,6 +29244,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "tnt_primed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tnt_primed_cost_live",
+            "horizon.on(\"tnt_primed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_tnt_primed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                [2, 3, 4],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "tnt_primed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "tnt_primed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "tnt_primed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -20595,6 +29325,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_vehicle_create(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -20602,6 +29333,11 @@ mod generated_tests {
                 [2.0, 3.0, 4.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20629,6 +29365,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_vehicle_create(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -20636,6 +29373,11 @@ mod generated_tests {
                 [2.0, 3.0, 4.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20650,6 +29392,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "vehicle_create read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vehicle_create_cost_live",
+            "horizon.on(\"vehicle_create\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_vehicle_create(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "minecraft:zombie",
+                [2.0, 3.0, 4.0],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "vehicle_create built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vehicle_create read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vehicle_create read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -20726,6 +29502,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_vehicle_damage(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -20734,6 +29511,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20763,6 +29545,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_vehicle_damage(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -20771,6 +29554,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20785,6 +29573,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "vehicle_damage read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vehicle_damage_cost_live",
+            "horizon.on(\"vehicle_damage\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut damage = 2.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_vehicle_damage(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "minecraft:zombie",
+                &mut damage,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "vehicle_damage built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vehicle_damage read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vehicle_damage read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -20830,6 +29655,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_vehicle_destroy(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -20837,6 +29663,11 @@ mod generated_tests {
                 [2.0, 3.0, 4.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20864,6 +29695,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_vehicle_destroy(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -20871,6 +29703,11 @@ mod generated_tests {
                 [2.0, 3.0, 4.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20885,6 +29722,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "vehicle_destroy read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vehicle_destroy_cost_live",
+            "horizon.on(\"vehicle_destroy\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_vehicle_destroy(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "minecraft:zombie",
+                [2.0, 3.0, 4.0],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "vehicle_destroy built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vehicle_destroy read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vehicle_destroy read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -20934,6 +29805,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_vehicle_moved(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -20943,6 +29815,11 @@ mod generated_tests {
                 [4.0, 5.0, 6.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20970,6 +29847,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_vehicle_moved(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -20979,6 +29857,11 @@ mod generated_tests {
                 [4.0, 5.0, 6.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -20993,6 +29876,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "vehicle_moved read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vehicle_moved_cost_live",
+            "horizon.on(\"vehicle_moved\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_vehicle_moved(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "minecraft:zombie",
+                [3.0, 4.0, 5.0],
+                [4.0, 5.0, 6.0],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "vehicle_moved built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vehicle_moved read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vehicle_moved read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -21022,8 +29941,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_world_border_bounds_changed(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -21038,6 +29963,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "world_border_bounds_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_world_border_bounds_changed_cost_live",
+            "horizon.on(\"world_border_bounds_changed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_world_border_bounds_changed(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "world_border_bounds_changed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "world_border_bounds_changed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "world_border_bounds_changed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -21067,8 +30021,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_world_border_center_changed(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -21083,6 +30043,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "world_border_center_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_world_border_center_changed_cost_live",
+            "horizon.on(\"world_border_center_changed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_world_border_center_changed(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "world_border_center_changed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "world_border_center_changed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "world_border_center_changed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -21119,6 +30108,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_world_game_rule_change(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -21128,6 +30118,11 @@ mod generated_tests {
                 "test:value",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -21142,6 +30137,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "world_game_rule_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_world_game_rule_change_cost_live",
+            "horizon.on(\"world_game_rule_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_world_game_rule_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:rule",
+                "test:value",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "world_game_rule_change built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "world_game_rule_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "world_game_rule_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -21206,6 +30236,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_note_play(
                 &FakeLevel,
                 &firing_mods,
@@ -21217,9 +30248,53 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "note_play read the host with no handler");
             assert_eq!(host_reads(), 0, "note_play read the host with no handler");
             assert_eq!(level_reads(), 0, "note_play read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_note_play_cost_live",
+            "horizon.on(\"note_play\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_note_play(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                None,
+                BlockPos::new(3, 4, 5),
+                "test:instrument",
+                11,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "note_play built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "note_play read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "note_play read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -21255,6 +30330,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_advancement_criterion_grant(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -21264,6 +30340,11 @@ mod generated_tests {
                 "test:criterion",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -21278,6 +30359,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_advancement_criterion_grant read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_advancement_criterion_grant_cost_live",
+            "horizon.on(\"player_advancement_criterion_grant\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_advancement_criterion_grant(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:advancement",
+                "test:criterion",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_advancement_criterion_grant built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_advancement_criterion_grant read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_advancement_criterion_grant read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -21313,6 +30429,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_advancement_done(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -21321,6 +30438,11 @@ mod generated_tests {
                 "test:advancement",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -21335,6 +30457,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_advancement_done read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_advancement_done_cost_live",
+            "horizon.on(\"player_advancement_done\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_advancement_done(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:advancement",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_advancement_done built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_advancement_done read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_advancement_done read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -21372,6 +30528,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_advancement_progress(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -21382,6 +30539,11 @@ mod generated_tests {
                 true,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -21396,6 +30558,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_advancement_progress read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_advancement_progress_cost_live",
+            "horizon.on(\"player_advancement_progress\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_advancement_progress(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:advancement",
+                "test:criterion",
+                true,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_advancement_progress built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_advancement_progress read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_advancement_progress read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -21431,6 +30629,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_arm_swing(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -21439,6 +30638,11 @@ mod generated_tests {
                 "test:hand",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -21453,6 +30657,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_arm_swing read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_arm_swing_cost_live",
+            "horizon.on(\"player_arm_swing\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_arm_swing(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:hand",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_arm_swing built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_arm_swing read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_arm_swing read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -21482,6 +30720,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_attack_cooldown_reset(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -21489,6 +30728,11 @@ mod generated_tests {
                 "test:name",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -21503,6 +30747,39 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_attack_cooldown_reset read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_attack_cooldown_reset_cost_live",
+            "horizon.on(\"player_attack_cooldown_reset\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_attack_cooldown_reset(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_attack_cooldown_reset built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_attack_cooldown_reset read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_attack_cooldown_reset read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -21538,6 +30815,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_bed_leave(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -21546,6 +30824,11 @@ mod generated_tests {
                 [3, 4, 5],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -21560,6 +30843,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_bed_leave read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_bed_leave_cost_live",
+            "horizon.on(\"player_bed_leave\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_bed_leave(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_bed_leave built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_bed_leave read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_bed_leave read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -21622,6 +30939,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_bucket_entity(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -21631,6 +30949,11 @@ mod generated_tests {
                 "test:entity",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -21658,6 +30981,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_bucket_entity(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -21667,6 +30991,11 @@ mod generated_tests {
                 "test:entity",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -21681,6 +31010,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_bucket_entity read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_bucket_entity_cost_live",
+            "horizon.on(\"player_bucket_entity\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_bucket_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+                "test:entity",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_bucket_entity built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "player_bucket_entity resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_bucket_entity read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_bucket_entity read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -21717,6 +31085,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_bundle_item_select(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -21726,6 +31095,11 @@ mod generated_tests {
                 10,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -21740,6 +31114,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_bundle_item_select read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_bundle_item_select_cost_live",
+            "horizon.on(\"player_bundle_item_select\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_bundle_item_select(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_bundle_item_select built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_bundle_item_select read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_bundle_item_select read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -21777,6 +31186,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_change_beacon_effect(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -21787,6 +31197,11 @@ mod generated_tests {
                 "test:secondary",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -21801,6 +31216,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_change_beacon_effect read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_change_beacon_effect_cost_live",
+            "horizon.on(\"player_change_beacon_effect\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_change_beacon_effect(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                "test:primary",
+                "test:secondary",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_change_beacon_effect built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_change_beacon_effect read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_change_beacon_effect read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -21836,6 +31287,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_change_main_hand(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -21844,6 +31296,11 @@ mod generated_tests {
                 true,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -21858,6 +31315,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_change_main_hand read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_change_main_hand_cost_live",
+            "horizon.on(\"player_change_main_hand\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_change_main_hand(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                true,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_change_main_hand built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_change_main_hand read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_change_main_hand read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -21887,6 +31378,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_client_loaded_world(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -21894,6 +31386,11 @@ mod generated_tests {
                 "test:name",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -21908,6 +31405,39 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_client_loaded_world read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_client_loaded_world_cost_live",
+            "horizon.on(\"player_client_loaded_world\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_client_loaded_world(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_client_loaded_world built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_client_loaded_world read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_client_loaded_world read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -21937,8 +31467,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_deep_sleep(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -21953,6 +31489,34 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_deep_sleep read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_deep_sleep_cost_live",
+            "horizon.on(\"player_deep_sleep\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_deep_sleep(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_deep_sleep built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_deep_sleep read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_deep_sleep read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -22015,6 +31579,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_edit_book(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -22025,6 +31590,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -22039,6 +31609,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_edit_book read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_edit_book_cost_live",
+            "horizon.on(\"player_edit_book\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_edit_book(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                false,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_edit_book built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_edit_book read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_edit_book read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -22068,8 +31675,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_egg_throw(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -22084,6 +31697,34 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_egg_throw read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_egg_throw_cost_live",
+            "horizon.on(\"player_egg_throw\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_egg_throw(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_egg_throw built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_egg_throw read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_egg_throw read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -22113,8 +31754,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_elytra_boost(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -22129,6 +31776,34 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_elytra_boost read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_elytra_boost_cost_live",
+            "horizon.on(\"player_elytra_boost\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_elytra_boost(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_elytra_boost built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_elytra_boost read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_elytra_boost read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -22158,8 +31833,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_input(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -22174,6 +31855,34 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_input read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_input_cost_live",
+            "horizon.on(\"player_input\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_input(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_input built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_input read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_input read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -22236,6 +31945,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_item_held(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -22246,6 +31956,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -22260,6 +31975,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_item_held read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_item_held_cost_live",
+            "horizon.on(\"player_item_held\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_item_held(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_item_held built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_item_held read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_item_held read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -22289,8 +32041,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_jump(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -22301,6 +32059,34 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_jump read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_jump_cost_live",
+            "horizon.on(\"player_jump\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_jump(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_jump built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_jump read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_jump read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -22336,6 +32122,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_kicked(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -22344,6 +32131,11 @@ mod generated_tests {
                 "test:reason",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -22358,6 +32150,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_kicked read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_kicked_cost_live",
+            "horizon.on(\"player_kicked\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_kicked(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:reason",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_kicked built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_kicked read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_kicked read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -22393,6 +32219,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_launch_projectile(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -22401,6 +32228,11 @@ mod generated_tests {
                 "test:item",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -22415,6 +32247,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_launch_projectile read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_launch_projectile_cost_live",
+            "horizon.on(\"player_launch_projectile\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_launch_projectile(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:item",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_launch_projectile built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_launch_projectile read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_launch_projectile read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -22444,6 +32310,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_level_change(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -22453,6 +32320,11 @@ mod generated_tests {
                 10,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -22467,6 +32339,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_level_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_level_change_cost_live",
+            "horizon.on(\"player_level_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_level_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_level_change built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_level_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_level_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -22502,6 +32409,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_locale_change(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -22510,6 +32418,11 @@ mod generated_tests {
                 "test:locale",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -22524,6 +32437,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_locale_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_locale_change_cost_live",
+            "horizon.on(\"player_locale_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_locale_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:locale",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_locale_change built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_locale_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_locale_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -22559,6 +32506,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_loom_pattern_select(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -22567,6 +32515,11 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -22581,6 +32534,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_loom_pattern_select read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_loom_pattern_select_cost_live",
+            "horizon.on(\"player_loom_pattern_select\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_loom_pattern_select(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_loom_pattern_select built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_loom_pattern_select read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_loom_pattern_select read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -22610,8 +32597,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_map_filled(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -22626,6 +32619,34 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_map_filled read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_map_filled_cost_live",
+            "horizon.on(\"player_map_filled\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_map_filled(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_map_filled built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_map_filled read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_map_filled read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -22688,6 +32709,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_name_entity(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -22697,6 +32719,11 @@ mod generated_tests {
                 "test:entity_name",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -22724,6 +32751,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_name_entity(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -22733,6 +32761,11 @@ mod generated_tests {
                 "test:entity_name",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -22747,6 +32780,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_name_entity read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_name_entity_cost_live",
+            "horizon.on(\"player_name_entity\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_name_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+                "test:entity_name",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_name_entity built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "player_name_entity resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_name_entity read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_name_entity read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -22783,6 +32855,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_open_sign(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -22792,6 +32865,11 @@ mod generated_tests {
                 false,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -22806,6 +32884,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_open_sign read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_open_sign_cost_live",
+            "horizon.on(\"player_open_sign\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_open_sign(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                false,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_open_sign built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_open_sign read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_open_sign read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -22902,6 +33015,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_pick_item(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -22913,6 +33027,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -22941,6 +33060,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_pick_item(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -22952,6 +33072,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -22966,6 +33091,48 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_pick_item read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_pick_item_cost_live",
+            "horizon.on(\"player_pick_item\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_pick_item(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                true,
+                [4, 5, 6],
+                11,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_pick_item built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "player_pick_item resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_pick_item read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_pick_item read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -23028,6 +33195,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_pickup_arrow(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -23037,6 +33205,11 @@ mod generated_tests {
                 "test:item",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -23064,6 +33237,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_pickup_arrow(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -23073,6 +33247,11 @@ mod generated_tests {
                 "test:item",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -23087,6 +33266,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_pickup_arrow read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_pickup_arrow_cost_live",
+            "horizon.on(\"player_pickup_arrow\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_pickup_arrow(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+                "test:item",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_pickup_arrow built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "player_pickup_arrow resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_pickup_arrow read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_pickup_arrow read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -23151,6 +33369,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_portal(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -23162,6 +33381,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -23176,6 +33400,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_portal read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_portal_cost_live",
+            "horizon.on(\"player_portal\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_portal(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:from_dimension",
+                "test:to_dimension",
+                "test:cause",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_portal built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_portal read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_portal read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -23211,6 +33473,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_ready_arrow(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -23219,6 +33482,11 @@ mod generated_tests {
                 "test:arrow",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -23233,6 +33501,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_ready_arrow read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_ready_arrow_cost_live",
+            "horizon.on(\"player_ready_arrow\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_ready_arrow(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:arrow",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_ready_arrow built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_ready_arrow read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_ready_arrow read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -23269,6 +33571,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_recipe_book_click(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -23278,6 +33581,11 @@ mod generated_tests {
                 false,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -23292,6 +33600,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_recipe_book_click read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_recipe_book_click_cost_live",
+            "horizon.on(\"player_recipe_book_click\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_recipe_book_click(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:recipe",
+                false,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_recipe_book_click built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_recipe_book_click read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_recipe_book_click read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -23329,6 +33672,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_recipe_book_settings_change(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -23339,6 +33683,11 @@ mod generated_tests {
                 true,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -23353,6 +33702,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_recipe_book_settings_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_recipe_book_settings_change_cost_live",
+            "horizon.on(\"player_recipe_book_settings_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_recipe_book_settings_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                false,
+                true,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_recipe_book_settings_change built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_recipe_book_settings_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_recipe_book_settings_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -23413,6 +33798,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_recipe_discovered(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -23422,6 +33808,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -23436,6 +33827,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_recipe_discovered read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_recipe_discovered_cost_live",
+            "horizon.on(\"player_recipe_discovered\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_recipe_discovered(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:recipe",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_recipe_discovered built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_recipe_discovered read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_recipe_discovered read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -23465,8 +33892,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_riptide(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -23481,6 +33914,34 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_riptide read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_riptide_cost_live",
+            "horizon.on(\"player_riptide\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_riptide(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_riptide built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_riptide read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_riptide read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -23573,6 +34034,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_shear_entity(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -23583,6 +34045,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -23611,6 +34078,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_shear_entity(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -23621,6 +34089,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -23635,6 +34108,47 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_shear_entity read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_shear_entity_cost_live",
+            "horizon.on(\"player_shear_entity\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_shear_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+                false,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_shear_entity built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "player_shear_entity resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_shear_entity read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_shear_entity read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -23699,6 +34213,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_spawn_point_set(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -23710,6 +34225,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -23724,6 +34244,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_spawn_point_set read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_spawn_point_set_cost_live",
+            "horizon.on(\"player_spawn_point_set\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_spawn_point_set(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:dimension",
+                [4, 5, 6],
+                "test:cause",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_spawn_point_set built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_spawn_point_set read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_spawn_point_set read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -23788,6 +34346,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_stat_award(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -23799,6 +34358,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -23813,6 +34377,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_stat_award read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_stat_award_cost_live",
+            "horizon.on(\"player_stat_award\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_stat_award(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:stat_type",
+                "test:stat",
+                11,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_stat_award built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_stat_award read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_stat_award read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -23848,6 +34450,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_stonecutter_recipe_select(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -23856,6 +34459,11 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -23870,6 +34478,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_stonecutter_recipe_select read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_stonecutter_recipe_select_cost_live",
+            "horizon.on(\"player_stonecutter_recipe_select\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_stonecutter_recipe_select(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_stonecutter_recipe_select built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_stonecutter_recipe_select read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_stonecutter_recipe_select read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -23929,6 +34571,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_stop_spectating_entity(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -23937,6 +34580,11 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -23964,6 +34612,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_stop_spectating_entity(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -23972,6 +34621,11 @@ mod generated_tests {
                 11,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -23986,6 +34640,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_stop_spectating_entity read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_stop_spectating_entity_cost_live",
+            "horizon.on(\"player_stop_spectating_entity\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_stop_spectating_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_stop_spectating_entity built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "player_stop_spectating_entity resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_stop_spectating_entity read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_stop_spectating_entity read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -24015,8 +34707,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_stop_using_item(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -24031,6 +34729,34 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_stop_using_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_stop_using_item_cost_live",
+            "horizon.on(\"player_stop_using_item\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_stop_using_item(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_stop_using_item built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_stop_using_item read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_stop_using_item read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -24066,6 +34792,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_swap_with_equipment_slot(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -24074,6 +34801,11 @@ mod generated_tests {
                 "test:slot",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -24088,6 +34820,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_swap_with_equipment_slot read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_swap_with_equipment_slot_cost_live",
+            "horizon.on(\"player_swap_with_equipment_slot\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_swap_with_equipment_slot(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:slot",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_swap_with_equipment_slot built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_swap_with_equipment_slot read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_swap_with_equipment_slot read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -24148,6 +34914,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_teleport_end_gateway(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -24157,6 +34924,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -24171,6 +34943,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_teleport_end_gateway read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_teleport_end_gateway_cost_live",
+            "horizon.on(\"player_teleport_end_gateway\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_teleport_end_gateway(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_teleport_end_gateway built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_teleport_end_gateway read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_teleport_end_gateway read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -24233,6 +35041,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_toggle_entity_age_lock(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -24242,6 +35051,11 @@ mod generated_tests {
                 false,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -24269,6 +35083,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_toggle_entity_age_lock(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -24278,6 +35093,11 @@ mod generated_tests {
                 false,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -24292,6 +35112,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_toggle_entity_age_lock read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_toggle_entity_age_lock_cost_live",
+            "horizon.on(\"player_toggle_entity_age_lock\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_toggle_entity_age_lock(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+                false,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_toggle_entity_age_lock built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "player_toggle_entity_age_lock resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_toggle_entity_age_lock read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_toggle_entity_age_lock read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -24321,6 +35180,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_toggle_sneak(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -24329,6 +35189,11 @@ mod generated_tests {
                 true,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -24343,6 +35208,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_toggle_sneak read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_toggle_sneak_cost_live",
+            "horizon.on(\"player_toggle_sneak\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_toggle_sneak(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                true,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_toggle_sneak built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_toggle_sneak read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_toggle_sneak read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -24384,8 +35283,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_trade(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -24413,8 +35318,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_trade(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 11);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -24429,6 +35340,38 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_trade read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_trade_cost_live",
+            "horizon.on(\"player_trade\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_trade(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 11);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_trade built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "player_trade resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_trade read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_trade read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -24482,8 +35425,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_unleash_entity(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -24511,6 +35460,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_unleash_entity(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -24519,6 +35469,11 @@ mod generated_tests {
                 11,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -24533,6 +35488,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_unleash_entity read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_unleash_entity_cost_live",
+            "horizon.on(\"player_unleash_entity\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_unleash_entity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                11,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_unleash_entity built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "player_unleash_entity resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_unleash_entity read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_unleash_entity read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -24568,6 +35561,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_velocity(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -24576,6 +35570,11 @@ mod generated_tests {
                 [3.0, 4.0, 5.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -24590,6 +35589,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_velocity read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_velocity_cost_live",
+            "horizon.on(\"player_velocity\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_velocity(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3.0, 4.0, 5.0],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_velocity built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_velocity read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_velocity read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -24624,6 +35657,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_portal_create(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -24631,6 +35665,11 @@ mod generated_tests {
                 [2, 3, 4],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -24645,6 +35684,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "portal_create read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_portal_create_cost_live",
+            "horizon.on(\"portal_create\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_portal_create(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "portal_create built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "portal_create read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "portal_create read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -24679,6 +35752,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_potion_splash(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -24686,6 +35760,11 @@ mod generated_tests {
                 [2.0, 3.0, 4.0],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -24700,6 +35779,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "potion_splash read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_potion_splash_cost_live",
+            "horizon.on(\"potion_splash\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_potion_splash(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:item",
+                [2.0, 3.0, 4.0],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "potion_splash built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "potion_splash read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "potion_splash read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -24719,6 +35832,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_prepare_anvil(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -24729,6 +35843,11 @@ mod generated_tests {
                 &mut result,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -24743,6 +35862,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "prepare_anvil read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_prepare_anvil_cost_live",
+            "horizon.on(\"prepare_anvil\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cost = 10;
+            let mut result: Option<ItemStack> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_prepare_anvil(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut cost,
+                &mut result,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "prepare_anvil built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "prepare_anvil read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "prepare_anvil read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -24884,6 +36041,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_prepare_grindstone(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -24893,6 +36051,11 @@ mod generated_tests {
                 &mut result,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -24907,6 +36070,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "prepare_grindstone read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_prepare_grindstone_cost_live",
+            "horizon.on(\"prepare_grindstone\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut result: Option<ItemStack> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_prepare_grindstone(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut result,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "prepare_grindstone built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "prepare_grindstone read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "prepare_grindstone read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -25030,8 +36229,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_prepare_hopper_transfer(&FakeHost::empty(), &firing_mods, [1, 2, 3]);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -25046,6 +36251,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "prepare_hopper_transfer read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_prepare_hopper_transfer_cost_live",
+            "horizon.on(\"prepare_hopper_transfer\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_prepare_hopper_transfer(&FakeHost::empty(), &firing_mods, [1, 2, 3]);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "prepare_hopper_transfer built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "prepare_hopper_transfer read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "prepare_hopper_transfer read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -25087,6 +36321,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_prepare_item_craft(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -25096,6 +36331,11 @@ mod generated_tests {
                 &mut result,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -25110,6 +36350,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "prepare_item_craft read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_prepare_item_craft_cost_live",
+            "horizon.on(\"prepare_item_craft\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut result: Option<ItemStack> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_prepare_item_craft(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                Some([3, 4, 5]),
+                &mut result,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "prepare_item_craft built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "prepare_item_craft read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "prepare_item_craft read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -25243,6 +36519,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_prepare_item_enchant(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -25252,6 +36529,11 @@ mod generated_tests {
                 &mut costs,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -25266,6 +36548,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "prepare_item_enchant read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_prepare_item_enchant_cost_live",
+            "horizon.on(\"prepare_item_enchant\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut costs = [4, 5, 6];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_prepare_item_enchant(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut costs,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "prepare_item_enchant built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "prepare_item_enchant read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "prepare_item_enchant read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -25307,6 +36625,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_prepare_smithing(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -25316,6 +36635,11 @@ mod generated_tests {
                 &mut result,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -25330,6 +36654,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "prepare_smithing read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_prepare_smithing_cost_live",
+            "horizon.on(\"prepare_smithing\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut result: Option<ItemStack> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_prepare_smithing(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut result,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "prepare_smithing built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "prepare_smithing read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "prepare_smithing read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -25453,8 +36813,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_raid_spawn_wave(&mut FakeHost::empty(), &firing_mods, 7, [2, 3, 4], 9, 10);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -25469,6 +36835,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "raid_spawn_wave read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_raid_spawn_wave_cost_live",
+            "horizon.on(\"raid_spawn_wave\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_raid_spawn_wave(&mut FakeHost::empty(), &firing_mods, 7, [2, 3, 4], 9, 10);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "raid_spawn_wave built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "raid_spawn_wave read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "raid_spawn_wave read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -25504,6 +36899,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_raid_state_change(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -25512,6 +36908,11 @@ mod generated_tests {
                 "test:state",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -25526,6 +36927,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "raid_state_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_raid_state_change_cost_live",
+            "horizon.on(\"raid_state_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_raid_state_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                [2, 3, 4],
+                "test:state",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "raid_state_change built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "raid_state_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "raid_state_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -25560,6 +36996,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_sculk_bloom(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -25567,6 +37004,11 @@ mod generated_tests {
                 [2, 3, 4],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -25577,6 +37019,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "sculk_bloom read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_sculk_bloom_cost_live",
+            "horizon.on(\"sculk_bloom\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_sculk_bloom(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "sculk_bloom built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "sculk_bloom read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "sculk_bloom read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -25615,6 +37091,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_sleep_finished_time(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -25623,6 +37100,11 @@ mod generated_tests {
                 &mut new_time,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -25637,6 +37119,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "sleep_finished_time read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_sleep_finished_time_cost_live",
+            "horizon.on(\"sleep_finished_time\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut new_time = 9;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_sleep_finished_time(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                &mut new_time,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "sleep_finished_time built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "sleep_finished_time read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "sleep_finished_time read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -25671,6 +37189,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_sponge_absorb(
                 &FakeLevel,
                 &firing_mods,
@@ -25678,6 +37197,11 @@ mod generated_tests {
                 BlockPos::new(2, 3, 4),
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -25692,6 +37216,40 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "sponge_absorb read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_sponge_absorb_cost_live",
+            "horizon.on(\"sponge_absorb\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_sponge_absorb(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "sponge_absorb built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "sponge_absorb read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "sponge_absorb read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -25769,6 +37327,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_tab_complete(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -25779,6 +37338,11 @@ mod generated_tests {
                 &mut suggestions,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -25793,6 +37357,56 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "tab_complete read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tab_complete_cost_live",
+            "horizon.on(\"tab_complete\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut suggestions = vec![
+                Suggestion {
+                    range: (7 + 4, 12 + 4),
+                    text: "test:suggestion4".into(),
+                    tooltip: Some("test:tooltip4".into()),
+                    int_value: Some(34),
+                },
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_tab_complete(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:command",
+                [10, 15],
+                &mut suggestions,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "tab_complete built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "tab_complete read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "tab_complete read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -26039,6 +37653,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_target_hit(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -26047,6 +37662,11 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -26057,6 +37677,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "target_hit read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_target_hit_cost_live",
+            "horizon.on(\"target_hit\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_target_hit(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                9,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "target_hit built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "target_hit read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "target_hit read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -26115,6 +37770,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_thunder_change(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -26123,6 +37779,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -26137,6 +37798,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "thunder_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_thunder_change_cost_live",
+            "horizon.on(\"thunder_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_thunder_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                false,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "thunder_change built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "thunder_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "thunder_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -26199,6 +37896,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_time_skip(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -26209,9 +37907,52 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "time_skip read the host with no handler");
             assert_eq!(host_reads(), 0, "time_skip read the host with no handler");
             assert_eq!(level_reads(), 0, "time_skip read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_time_skip_cost_live",
+            "horizon.on(\"time_skip\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_time_skip(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                9,
+                "test:cause",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "time_skip built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "time_skip read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "time_skip read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -26247,6 +37988,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_trade_select(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -26256,6 +37998,11 @@ mod generated_tests {
                 10,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -26270,6 +38017,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "trade_select read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_trade_select_cost_live",
+            "horizon.on(\"trade_select\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_trade_select(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                Some(9),
+                10,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "trade_select built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "trade_select read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "trade_select read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -26363,6 +38145,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_trade_with_villager(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -26395,6 +38178,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "trade_with_villager read the host with no handler"
@@ -26421,6 +38209,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_trade_with_villager(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -26453,6 +38242,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "trade_with_villager read the host for a watched-away kind"
@@ -26466,6 +38260,64 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "trade_with_villager read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_trade_with_villager_cost_live",
+            "horizon.on(\"trade_with_villager\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_trade_with_villager(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &MerchantOffer {
+                    base_cost_a: ItemCost {
+                        stack: ItemStack {
+                            item: "test:offer".into(),
+                            count: 1,
+                            damage: 0,
+                            extra: None,
+                        },
+                    },
+                    cost_b: None,
+                    result: ItemStack {
+                        item: "test:offer:out".into(),
+                        count: 2,
+                        damage: 3,
+                        extra: None,
+                    },
+                    uses: 12,
+                    max_uses: 4,
+                    reward_exp: true,
+                    special_price_diff: 5,
+                    demand: 6,
+                    price_multiplier: 0.5,
+                    xp: 7,
+                },
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "trade_with_villager built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "trade_with_villager read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "trade_with_villager read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -26501,6 +38353,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_vault_change_state(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -26509,6 +38362,11 @@ mod generated_tests {
                 "test:state",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -26523,6 +38381,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "vault_change_state read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vault_change_state_cost_live",
+            "horizon.on(\"vault_change_state\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_vault_change_state(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:state",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "vault_change_state built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vault_change_state read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vault_change_state read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -26552,8 +38445,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_vault_loot(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -26564,6 +38463,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "vault_loot read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vault_loot_cost_live",
+            "horizon.on(\"vault_loot\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_vault_loot(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "vault_loot built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vault_loot read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vault_loot read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -26624,6 +38552,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_weather_change(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -26633,6 +38562,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -26647,6 +38581,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "weather_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_weather_change_cost_live",
+            "horizon.on(\"weather_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_weather_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                false,
+                true,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "weather_change built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "weather_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "weather_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -26676,8 +38647,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_whitelist_state_update(&mut FakeHost::empty(), &firing_mods, true);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -26692,6 +38669,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "whitelist_state_update read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_whitelist_state_update_cost_live",
+            "horizon.on(\"whitelist_state_update\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_whitelist_state_update(&mut FakeHost::empty(), &firing_mods, true);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "whitelist_state_update built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "whitelist_state_update read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "whitelist_state_update read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -26721,8 +38727,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_world_border_bounds_change_finish(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -26737,6 +38749,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "world_border_bounds_change_finish read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_world_border_bounds_change_finish_cost_live",
+            "horizon.on(\"world_border_bounds_change_finish\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_world_border_bounds_change_finish(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "world_border_bounds_change_finish built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "world_border_bounds_change_finish read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "world_border_bounds_change_finish read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -26766,8 +38807,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_world_saved(&mut FakeHost::empty(), &firing_mods, true);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -26778,6 +38825,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "world_saved read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_world_saved_cost_live",
+            "horizon.on(\"world_saved\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_world_saved(&mut FakeHost::empty(), &firing_mods, true);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "world_saved built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "world_saved read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "world_saved read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -26865,6 +38941,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_drown(
                 &firing_mods,
                 7,
@@ -26875,6 +38952,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -26905,6 +38987,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_drown(
                 &firing_mods,
                 7,
@@ -26915,6 +38998,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -26929,6 +39017,46 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "living_drown read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_drown_cost_live",
+            "horizon.on(\"living_drown\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut is_drowning = true;
+            let mut damage_amount = 4.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_drown(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &mut is_drowning,
+                &mut damage_amount,
+                11,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_drown built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_drown read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_drown read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -26964,8 +39092,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_jump(&firing_mods, 7, "test:kind");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -26989,8 +39123,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_jump(&firing_mods, 7, "minecraft:zombie");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -27005,6 +39145,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "living_jump read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_jump_cost_live",
+            "horizon.on(\"living_jump\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_jump(&firing_mods, 7, "minecraft:zombie");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_jump built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_jump read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_jump read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -27079,6 +39248,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_arrow_nock(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -27096,6 +39266,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "arrow_nock read the host with no handler"
@@ -27105,6 +39280,49 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "arrow_nock read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_arrow_nock_cost_live",
+            "horizon.on(\"arrow_nock\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_arrow_nock(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &ItemStack {
+                    item: "test:bow".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                Hand::Off,
+                true,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "arrow_nock built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "arrow_nock read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "arrow_nock read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -27182,6 +39400,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_baby_entity_spawn(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -27192,6 +39411,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -27220,6 +39444,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_baby_entity_spawn(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -27230,6 +39455,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -27244,6 +39474,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "baby_entity_spawn read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_baby_entity_spawn_cost_live",
+            "horizon.on(\"baby_entity_spawn\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_baby_entity_spawn(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                8,
+                9,
+                "minecraft:zombie",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "baby_entity_spawn built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "baby_entity_spawn read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "baby_entity_spawn read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -27283,6 +39551,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_can_player_sleep(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -27292,6 +39561,11 @@ mod generated_tests {
                 &mut problem,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -27306,6 +39580,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "can_player_sleep read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_can_player_sleep_cost_live",
+            "horizon.on(\"can_player_sleep\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut problem = Some("test:problem".to_owned());
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_can_player_sleep(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                [3, 4, 5],
+                &mut problem,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "can_player_sleep built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "can_player_sleep read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "can_player_sleep read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -27376,6 +39686,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_explosion_knockback(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -27386,6 +39697,11 @@ mod generated_tests {
                 &mut knockback_velocity,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -27414,6 +39730,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_explosion_knockback(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -27424,6 +39741,11 @@ mod generated_tests {
                 &mut knockback_velocity,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -27438,6 +39760,47 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "explosion_knockback read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_explosion_knockback_cost_live",
+            "horizon.on(\"explosion_knockback\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut knockback_velocity = [5.0, 6.0, 7.0];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_explosion_knockback(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                &[[3, 4, 5], [4, 5, 6]],
+                Some(11),
+                &mut knockback_velocity,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "explosion_knockback built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "explosion_knockback resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "explosion_knockback read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "explosion_knockback read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -27574,6 +39937,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_ingredient_test(
                 &firing_mods,
                 "test:kind",
@@ -27590,6 +39954,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "ingredient_test read the host with no handler"
@@ -27603,6 +39972,49 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "ingredient_test read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_ingredient_test_cost_live",
+            "horizon.on(\"ingredient_test\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut accept = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_ingredient_test(
+                &firing_mods,
+                "test:kind",
+                &[("testkey".to_owned(), serde_json::json!(8))]
+                    .into_iter()
+                    .collect(),
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                &mut accept,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "ingredient_test built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "ingredient_test read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "ingredient_test read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -27635,8 +40047,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_container(&FakeHost::empty(), &firing_mods, "test:item", &mut slots);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -27651,6 +40069,36 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "item_container read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_container_cost_live",
+            "horizon.on(\"item_container\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut slots: Option<u32> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_item_container(&FakeHost::empty(), &firing_mods, "test:item", &mut slots);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "item_container built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_container read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_container read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -27767,6 +40215,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_conversion_post(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -27776,6 +40225,11 @@ mod generated_tests {
                 "test:converted_kind",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -27803,6 +40257,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_conversion_post(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -27812,6 +40267,11 @@ mod generated_tests {
                 "test:converted_kind",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -27826,6 +40286,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "living_conversion_post read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_conversion_post_cost_live",
+            "horizon.on(\"living_conversion_post\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_conversion_post(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                9,
+                "test:converted_kind",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_conversion_post built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_conversion_post read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_conversion_post read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -27900,6 +40396,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_conversion_pre(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -27909,6 +40406,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -27937,6 +40439,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_conversion_pre(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -27946,6 +40449,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -27960,6 +40468,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "living_conversion_pre read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_conversion_pre_cost_live",
+            "horizon.on(\"living_conversion_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_conversion_pre(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:outcome",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_conversion_pre built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_conversion_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_conversion_pre read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -28037,6 +40582,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_death(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -28047,6 +40593,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -28075,6 +40626,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_death(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -28085,6 +40637,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -28099,6 +40656,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "living_death read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_death_cost_live",
+            "horizon.on(\"living_death\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_death(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:damage_type",
+                10,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_death built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_death read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_death read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -28190,6 +40785,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_get_projectile(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -28206,6 +40802,11 @@ mod generated_tests {
                 &mut projectile,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -28242,6 +40843,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_get_projectile(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -28259,6 +40861,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "living_get_projectile read the host for a watched-away kind"
@@ -28272,6 +40879,57 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "living_get_projectile read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_get_projectile_cost_live",
+            "horizon.on(\"living_get_projectile\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut projectile = Some(ItemStack {
+                item: "test:projectile".into(),
+                count: 6,
+                damage: 5,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 25,
+                    ..Default::default()
+                })),
+            });
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_get_projectile(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:name",
+                Some(9),
+                "minecraft:zombie",
+                &ItemStack {
+                    item: "test:weapon".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                },
+                &mut projectile,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_get_projectile built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "living_get_projectile read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_get_projectile read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -28568,6 +41226,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_incoming_damage_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -28583,6 +41242,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -28612,6 +41276,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_incoming_damage_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -28628,6 +41293,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "living_incoming_damage_v2 read the host for a watched-away kind"
@@ -28641,6 +41311,50 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "living_incoming_damage_v2 read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_incoming_damage_v2_cost_live",
+            "horizon.on(\"living_incoming_damage_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 9.5;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_incoming_damage_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:damage_type",
+                10,
+                Some([5.0, 6.0, 7.0]),
+                [6.0, 7.0, 8.0],
+                [7.0, 8.0, 9.0],
+                None,
+                &mut amount,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_incoming_damage_v2 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_incoming_damage_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_incoming_damage_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -28819,6 +41533,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_knockback_v2(
                 &firing_mods,
                 7,
@@ -28837,6 +41552,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -28868,6 +41588,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_knockback_v2(
                 &firing_mods,
                 7,
@@ -28887,6 +41608,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "living_knockback_v2 read the host for a watched-away kind"
@@ -28900,6 +41626,55 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "living_knockback_v2 read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_knockback_v2_cost_live",
+            "horizon.on(\"living_knockback_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut strength = 6.5;
+            let mut x = 7.5;
+            let mut z = 8.5;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_knockback_v2(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                9,
+                None,
+                Some(&ItemStack {
+                    item: "test:attacker_off".into(),
+                    count: 5,
+                    damage: 4,
+                    extra: None,
+                }),
+                &mut strength,
+                &mut x,
+                &mut z,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_knockback_v2 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_knockback_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_knockback_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -28985,6 +41760,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_mob_split(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -28996,6 +41772,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "mob_split read the host with no handler");
             assert_eq!(host_reads(), 0, "mob_split read the host with no handler");
             assert_eq!(level_reads(), 0, "mob_split read the level with no handler");
@@ -29013,6 +41794,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_mob_split(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -29024,6 +41806,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -29038,6 +41825,46 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "mob_split read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_split_cost_live",
+            "horizon.on(\"mob_split\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut count = 11;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_split(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                9,
+                10,
+                &mut count,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "mob_split built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mob_split read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_split read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -29107,8 +41934,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_register_configs(&mut FakeHost::empty(), &firing_mods, &mut configs);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -29123,6 +41956,49 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "register_configs read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_register_configs_cost_live",
+            "horizon.on(\"register_configs\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut configs = vec![
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod0", NativeConfigKind::Server, "test:default0");
+                    c.file = "test:file0".into();
+                    c
+                },
+                {
+                    let mut c =
+                        NativeConfig::new("test:mod1", NativeConfigKind::Server, "test:default1");
+                    c.file = "test:file1".into();
+                    c
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_register_configs(&mut FakeHost::empty(), &firing_mods, &mut configs);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "register_configs built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "register_configs read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "register_configs read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -29349,6 +42225,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_movement_input(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -29358,6 +42235,11 @@ mod generated_tests {
                 &mut sneak,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -29372,6 +42254,46 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "movement_input read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_movement_input_cost_live",
+            "horizon.on(\"movement_input\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut forward = 1.5;
+            let mut strafe = 2.5;
+            let mut jump = true;
+            let mut sneak = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_movement_input(
+                &FakeHost::empty(),
+                &firing_mods,
+                &mut forward,
+                &mut strafe,
+                &mut jump,
+                &mut sneak,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "movement_input built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "movement_input read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "movement_input read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -29444,6 +42366,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_note_block_change(
                 &FakeLevel,
                 &firing_mods,
@@ -29458,6 +42381,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "note_block_change read the host with no handler"
@@ -29471,6 +42399,48 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "note_block_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_note_block_change_cost_live",
+            "horizon.on(\"note_block_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut new_note = 8;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_note_block_change(
+                &FakeLevel,
+                &firing_mods,
+                &NativeNoteBlockChange {
+                    dimension: LevelDimension::Overworld,
+                    pos: BlockPos::new(1, 2, 3),
+                    instrument: "test:instrument0",
+                    old_note: 7,
+                },
+                &mut new_note,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "note_block_change built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "note_block_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "note_block_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -29594,6 +42564,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_potential_spawns(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -29604,6 +42575,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -29618,6 +42594,60 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "potential_spawns read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_potential_spawns_cost_live",
+            "horizon.on(\"potential_spawns\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut entries = vec![
+                SpawnEntry {
+                    entity: "test:entity3".into(),
+                    weight: 10,
+                    min: 1,
+                    max: 2,
+                    constant: false,
+                },
+                SpawnEntry {
+                    entity: "test:entity4".into(),
+                    weight: 11,
+                    min: 1,
+                    max: 2,
+                    constant: true,
+                },
+            ];
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_potential_spawns(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                "test:category",
+                [3, 4, 5],
+                &mut entries,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "potential_spawns built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "potential_spawns read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "potential_spawns read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -29678,6 +42708,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_village_siege(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -29687,6 +42718,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -29701,6 +42737,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "village_siege read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_village_siege_cost_live",
+            "horizon.on(\"village_siege\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_village_siege(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                8,
+                [3.0, 4.0, 5.0],
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "village_siege built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "village_siege read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "village_siege read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -29765,6 +42838,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_xp_change(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -29774,6 +42848,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -29788,6 +42867,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_xp_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_xp_change_cost_live",
+            "horizon.on(\"player_xp_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 9;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_xp_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut amount,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_xp_change built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_xp_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_xp_change read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -29852,8 +42968,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_recipe_book_categories(&FakeHost::empty(), &firing_mods, &mut categories);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -29868,6 +42990,47 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "recipe_book_categories read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_recipe_book_categories_cost_live",
+            "horizon.on(\"recipe_book_categories\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut categories = vec![
+                RecipeBookCategory {
+                    id: "test:cat0".into(),
+                    recipe_type: "test:type0".into(),
+                    icon: "test:icon0".into(),
+                },
+                RecipeBookCategory {
+                    id: "test:cat1".into(),
+                    recipe_type: "test:type1".into(),
+                    icon: "test:icon1".into(),
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_recipe_book_categories(&FakeHost::empty(), &firing_mods, &mut categories);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "recipe_book_categories built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "recipe_book_categories read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "recipe_book_categories read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -29979,6 +43142,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_render_hand_pose(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -29997,6 +43161,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "render_hand_pose read the host with no handler"
@@ -30010,6 +43179,57 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "render_hand_pose read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_render_hand_pose_cost_live",
+            "horizon.on(\"render_hand_pose\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut x = 6.5;
+            let mut y = 7.5;
+            let mut z = 8.5;
+            let mut pitch = 9.5;
+            let mut yaw = 10.5;
+            let mut roll = 11.5;
+            let mut scale = 12.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_render_hand_pose(
+                &FakeHost::empty(),
+                &firing_mods,
+                Hand::Main,
+                None,
+                3.5,
+                4.5,
+                5.5,
+                &mut x,
+                &mut y,
+                &mut z,
+                &mut pitch,
+                &mut yaw,
+                &mut roll,
+                &mut scale,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "render_hand_pose built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "render_hand_pose read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "render_hand_pose read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -30118,6 +43338,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_render_item_in_frame(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -30132,6 +43353,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -30160,6 +43386,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_render_item_in_frame(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -30175,6 +43402,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
                 entity_reads(),
                 2,
                 "render_item_in_frame read the host for a watched-away kind"
@@ -30188,6 +43420,51 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "render_item_in_frame read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_render_item_in_frame_cost_live",
+            "horizon.on(\"render_item_in_frame\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_render_item_in_frame(
+                &FakeHost::empty(),
+                &firing_mods,
+                11,
+                [2, 3, 4],
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "render_item_in_frame built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "render_item_in_frame resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "render_item_in_frame read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "render_item_in_frame read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -30247,6 +43524,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_render_name_tag(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -30257,6 +43535,11 @@ mod generated_tests {
                 &mut text,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -30286,6 +43569,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_render_name_tag(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -30296,6 +43580,11 @@ mod generated_tests {
                 &mut text,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -30310,6 +43599,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "render_name_tag read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_render_name_tag_cost_live",
+            "horizon.on(\"render_name_tag\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut visible = false;
+            let mut text = Some("test:text".to_owned());
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_render_name_tag(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                true,
+                &mut visible,
+                &mut text,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "render_name_tag built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "render_name_tag read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "render_name_tag read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -30385,6 +43713,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_tooltip_color(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -30400,6 +43729,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "tooltip_color read the host with no handler"
@@ -30413,6 +43747,50 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "tooltip_color read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tooltip_color_cost_live",
+            "horizon.on(\"tooltip_color\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut background = 8;
+            let mut border_top = 9;
+            let mut border_bottom = 10;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_tooltip_color(
+                &FakeHost::empty(),
+                &firing_mods,
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                }),
+                &mut background,
+                &mut border_top,
+                &mut border_bottom,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "tooltip_color built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "tooltip_color read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "tooltip_color read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -30458,6 +43836,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_camera_pose(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -30468,6 +43847,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "camera_pose read the host with no handler"
@@ -30477,6 +43861,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "camera_pose read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_camera_pose_cost_live",
+            "horizon.on(\"camera_pose\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut position = [2.0, 3.0, 4.0];
+            let mut yaw = 3.5;
+            let mut pitch = 4.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_camera_pose(
+                &FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                &mut position,
+                &mut yaw,
+                &mut pitch,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "camera_pose built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "camera_pose read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "camera_pose read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -30545,6 +43968,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_client_chat_received(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -30556,6 +43980,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -30570,6 +43999,46 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "client_chat_received read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_chat_received_cost_live",
+            "horizon.on(\"client_chat_received\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut message = Text::literal("test:message");
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_client_chat_received(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                true,
+                false,
+                9,
+                None,
+                &mut message,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "client_chat_received built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_chat_received read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_chat_received read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -30610,6 +44079,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_menu_extra_data(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -30620,6 +44090,11 @@ mod generated_tests {
                 &mut data,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -30634,6 +44109,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "menu_extra_data read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_menu_extra_data_cost_live",
+            "horizon.on(\"menu_extra_data\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut data: Option<Vec<u8>> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_menu_extra_data(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                "test:block",
+                [4, 5, 6],
+                &mut data,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "menu_extra_data built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "menu_extra_data read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "menu_extra_data read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -30871,6 +44384,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_merchant_offer_traded(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -30879,6 +44393,11 @@ mod generated_tests {
                 &mut offer,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -30930,6 +44449,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_merchant_offer_traded(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -30938,6 +44458,11 @@ mod generated_tests {
                 &mut offer,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -30952,6 +44477,65 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "merchant_offer_traded read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_merchant_offer_traded_cost_live",
+            "horizon.on(\"merchant_offer_traded\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut offer = MerchantOffer {
+                base_cost_a: ItemCost {
+                    stack: ItemStack {
+                        item: "test:offer".into(),
+                        count: 1,
+                        damage: 0,
+                        extra: None,
+                    },
+                },
+                cost_b: None,
+                result: ItemStack {
+                    item: "test:offer:out".into(),
+                    count: 2,
+                    damage: 3,
+                    extra: None,
+                },
+                uses: 12,
+                max_uses: 4,
+                reward_exp: true,
+                special_price_diff: 5,
+                demand: 6,
+                price_multiplier: 0.5,
+                xp: 7,
+            };
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_merchant_offer_traded(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &mut offer,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "merchant_offer_traded built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "merchant_offer_traded read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "merchant_offer_traded read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -31150,12 +44734,18 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_add_server_reload_listeners(
                 &mut FakeHost::empty(),
                 &firing_mods,
                 &mut listeners,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -31170,6 +44760,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "add_server_reload_listeners read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_add_server_reload_listeners_cost_live",
+            "horizon.on(\"add_server_reload_listeners\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut listeners = vec![
+                NativeReloadListener::json("test:id0", "test:folder0"),
+                NativeReloadListener::json("test:id1", "test:folder1"),
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_add_server_reload_listeners(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &mut listeners,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "add_server_reload_listeners built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "add_server_reload_listeners read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "add_server_reload_listeners read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -31321,6 +44948,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_server_reload_listener_apply(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -31331,6 +44959,11 @@ mod generated_tests {
                 ],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -31345,6 +44978,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "server_reload_listener_apply read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_reload_listener_apply_cost_live",
+            "horizon.on(\"server_reload_listener_apply\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_server_reload_listener_apply(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                &NativeReloadListener::json("test:id0", "test:folder0"),
+                &[
+                    ("test:path1".to_owned(), serde_json::json!(8)),
+                    ("test:path2".to_owned(), serde_json::json!(9)),
+                ],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "server_reload_listener_apply built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "server_reload_listener_apply read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_reload_listener_apply read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -31374,8 +45044,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_client_start(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -31390,6 +45066,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "client_start read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_start_cost_live",
+            "horizon.on(\"client_start\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_client_start(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "client_start built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_start read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_start read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -31419,8 +45124,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_client_disconnecting(&FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -31435,6 +45146,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "client_disconnecting read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_disconnecting_cost_live",
+            "horizon.on(\"client_disconnecting\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_client_disconnecting(&FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "client_disconnecting built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_disconnecting read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_disconnecting read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -31464,8 +45204,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_client_stopping(&FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -31480,6 +45226,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "client_stopping read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_stopping_cost_live",
+            "horizon.on(\"client_stopping\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_client_stopping(&FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "client_stopping built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_stopping read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_stopping read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -31512,8 +45287,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_menu_background(&FakeHost::empty(), &firing_mods, &mut radius);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -31528,6 +45309,36 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "menu_background read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_menu_background_cost_live",
+            "horizon.on(\"menu_background\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut radius = Some(1.5);
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_menu_background(&FakeHost::empty(), &firing_mods, &mut radius);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "menu_background built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "menu_background read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "menu_background read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -31708,6 +45519,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_anvil_update(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -31731,6 +45543,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "anvil_update read the host with no handler"
@@ -31744,6 +45561,66 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "anvil_update read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_anvil_update_cost_live",
+            "horizon.on(\"anvil_update\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut output = Some(ItemStack {
+                item: "test:output".into(),
+                count: 9,
+                damage: 8,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 28,
+                    ..Default::default()
+                })),
+            });
+            let mut xp_cost = 16;
+            let mut material_cost = 17;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_anvil_update(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &ItemStack {
+                    item: "test:left".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                None,
+                Some("test:item_name"),
+                None,
+                13,
+                14,
+                &mut output,
+                &mut xp_cost,
+                &mut material_cost,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "anvil_update built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "anvil_update read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "anvil_update read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -31785,6 +45662,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_clone_item(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -31794,6 +45672,11 @@ mod generated_tests {
                 &mut stack,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -31808,6 +45691,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_clone_item read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_clone_item_cost_live",
+            "horizon.on(\"block_clone_item\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut stack: Option<ItemStack> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_clone_item(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                [2, 3, 4],
+                BlockStateId(10),
+                &mut stack,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_clone_item built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "block_clone_item read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_clone_item read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -31962,6 +45881,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_entity_accepts_fluid(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -31971,6 +45891,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -31985,6 +45910,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_entity_accepts_fluid read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_entity_accepts_fluid_cost_live",
+            "horizon.on(\"block_entity_accepts_fluid\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_entity_accepts_fluid(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                8,
+                "test:fluid",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_entity_accepts_fluid built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_entity_accepts_fluid read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_entity_accepts_fluid read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -32059,6 +46021,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_place(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -32076,6 +46039,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "block_place read the host with no handler"
@@ -32085,6 +46053,49 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_place read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_place_cost_live",
+            "horizon.on(\"block_place\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_place(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                [4, 5, 6],
+                BlockStateId(12),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_place built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "block_place read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_place read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -32124,6 +46135,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_redstone(
                 &FakeLevel,
                 &firing_mods,
@@ -32133,6 +46145,11 @@ mod generated_tests {
                 &mut new,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -32147,6 +46164,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_redstone read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_redstone_cost_live",
+            "horizon.on(\"block_redstone\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut new = 10;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_redstone(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                9,
+                &mut new,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_redstone built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_redstone read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_redstone read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -32186,6 +46240,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_break_speed(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -32196,6 +46251,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "break_speed read the host with no handler"
@@ -32205,6 +46265,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "break_speed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_break_speed_cost_live",
+            "horizon.on(\"break_speed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut speed = 4.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_break_speed(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                BlockStateId(9),
+                3.5,
+                &mut speed,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "break_speed built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "break_speed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "break_speed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -32242,6 +46338,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_chat_suggestion_applied(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -32252,6 +46349,11 @@ mod generated_tests {
                 "test:input",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -32266,6 +46368,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "chat_suggestion_applied read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_chat_suggestion_applied_cost_live",
+            "horizon.on(\"chat_suggestion_applied\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_chat_suggestion_applied(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:original",
+                8,
+                9,
+                "test:suggestion",
+                "test:input",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "chat_suggestion_applied built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "chat_suggestion_applied read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "chat_suggestion_applied read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -32307,8 +46446,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_client_attack(&mut FakeHost::empty(), &firing_mods, 7, false);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -32336,8 +46481,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_client_attack(&mut FakeHost::empty(), &firing_mods, 11, false);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 2,
@@ -32352,6 +46503,38 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "client_attack read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_attack_cost_live",
+            "horizon.on(\"client_attack\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_client_attack(&mut FakeHost::empty(), &firing_mods, 11, false);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "client_attack built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "client_attack resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "client_attack read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_attack read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -32381,8 +46564,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_client_hurt(&mut FakeHost::empty(), &firing_mods, Some(7), false);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -32393,6 +46582,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "client_hurt read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_hurt_cost_live",
+            "horizon.on(\"client_hurt\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_client_hurt(&mut FakeHost::empty(), &firing_mods, Some(7), false);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "client_hurt built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_hurt read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_hurt read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -32422,8 +46640,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_client_player_network_logging_in(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -32438,6 +46662,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "client_player_network_logging_in read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_player_network_logging_in_cost_live",
+            "horizon.on(\"client_player_network_logging_in\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_client_player_network_logging_in(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "client_player_network_logging_in built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_player_network_logging_in read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_player_network_logging_in read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -32467,8 +46720,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_client_tick_pre(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -32483,6 +46742,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "client_tick_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_tick_pre_cost_live",
+            "horizon.on(\"client_tick_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_client_tick_pre(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "client_tick_pre built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_tick_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_tick_pre read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -32512,8 +46800,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_client_tick_post(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -32528,6 +46822,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "client_tick_post read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_client_tick_post_cost_live",
+            "horizon.on(\"client_tick_post\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_client_tick_post(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "client_tick_post built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "client_tick_post read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "client_tick_post read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -32598,6 +46921,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_console_line(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -32607,6 +46931,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -32621,6 +46950,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "console_line read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_console_line_cost_live",
+            "horizon.on(\"console_line\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut replies = vec![Text::literal("test:line2"), Text::literal("test:line3")];
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_console_line(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:source",
+                "test:line",
+                &mut replies,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "console_line built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "console_line read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "console_line read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -32710,6 +47077,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_creative_slot_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -32720,6 +47088,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -32734,6 +47107,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "creative_slot_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_creative_slot_v2_cost_live",
+            "horizon.on(\"creative_slot_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_creative_slot_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                None,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "creative_slot_v2 built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "creative_slot_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "creative_slot_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -32766,6 +47176,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_custom_block_fluids(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -32773,6 +47184,11 @@ mod generated_tests {
                 &mut custom,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -32787,6 +47203,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "custom_block_fluids read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_custom_block_fluids_cost_live",
+            "horizon.on(\"custom_block_fluids\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut custom = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_custom_block_fluids(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut custom,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "custom_block_fluids built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "custom_block_fluids read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "custom_block_fluids read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -32838,6 +47289,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_custom_fluid_tanks(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -32846,6 +47298,11 @@ mod generated_tests {
                 &mut out,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -32860,6 +47317,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "custom_fluid_tanks read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_custom_fluid_tanks_cost_live",
+            "horizon.on(\"custom_fluid_tanks\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut out: Option<Vec<NativeFluidTankView>> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_custom_fluid_tanks(
+                &FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &mut out,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "custom_fluid_tanks built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "custom_fluid_tanks read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "custom_fluid_tanks read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -33028,6 +47521,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_custom_fluid_fill(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -33043,6 +47537,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "custom_fluid_fill read the host with no handler"
@@ -33056,6 +47555,48 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "custom_fluid_fill read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_custom_fluid_fill_cost_live",
+            "horizon.on(\"custom_fluid_fill\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut out: Option<i32> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_custom_fluid_fill(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &NativeFluidStack {
+                    fluid: "test:fluid2".into(),
+                    amount: 9,
+                    components: Compound::from([("testkey".into(), Tag::Int(14))]),
+                },
+                NativeFluidAction::Execute,
+                &mut out,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "custom_fluid_fill built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "custom_fluid_fill read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "custom_fluid_fill read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -33206,6 +47747,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_custom_fluid_drain(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -33216,6 +47758,11 @@ mod generated_tests {
                 &mut out,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -33230,6 +47777,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "custom_fluid_drain read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_custom_fluid_drain_cost_live",
+            "horizon.on(\"custom_fluid_drain\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut out: Option<NativeFluidStack> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_custom_fluid_drain(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                Some(Direction::Up),
+                &NativeFluidDrain::Any(9),
+                NativeFluidAction::Execute,
+                &mut out,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "custom_fluid_drain built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "custom_fluid_drain read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "custom_fluid_drain read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -33377,6 +47962,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_custom_payload_from_client(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -33385,6 +47971,11 @@ mod generated_tests {
                 &[116u8, 0u8, 159u8],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -33399,6 +47990,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "custom_payload_from_client read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_custom_payload_from_client_cost_live",
+            "horizon.on(\"custom_payload_from_client\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_custom_payload_from_client(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:channel",
+                &[116u8, 0u8, 159u8],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "custom_payload_from_client built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "custom_payload_from_client read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "custom_payload_from_client read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -33482,6 +48108,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_change_block_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -33494,6 +48121,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -33522,6 +48154,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_change_block_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -33534,6 +48167,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -33548,6 +48186,46 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_change_block_v2 read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_change_block_v2_cost_live",
+            "horizon.on(\"entity_change_block_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_change_block_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                None,
+                "minecraft:zombie",
+                [4, 5, 6],
+                "test:from",
+                "test:to",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_change_block_v2 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_change_block_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_change_block_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -33677,6 +48355,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_interact_specific(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -33692,6 +48371,11 @@ mod generated_tests {
                 &mut claimed,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -33720,6 +48404,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_interact_specific(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -33736,6 +48421,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "entity_interact_specific read the host for a watched-away kind"
@@ -33749,6 +48439,49 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_interact_specific read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_interact_specific_cost_live",
+            "horizon.on(\"entity_interact_specific\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut claimed = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_interact_specific(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                }),
+                [4.0, 5.0, 6.0],
+                &mut claimed,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_interact_specific built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_interact_specific read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_interact_specific read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -33800,6 +48533,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_outline(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -33808,6 +48542,11 @@ mod generated_tests {
                 &mut outline,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -33836,6 +48575,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_entity_outline(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -33844,6 +48584,11 @@ mod generated_tests {
                 &mut outline,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -33858,6 +48603,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "entity_outline read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_outline_cost_live",
+            "horizon.on(\"entity_outline\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut outline = Some(9);
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_outline(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &mut outline,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "entity_outline built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_outline read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_outline read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -33895,6 +48676,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_fishing_hook_landed(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -33905,6 +48687,11 @@ mod generated_tests {
                 [5, 6, 7],
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -33919,6 +48706,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "fishing_hook_landed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_fishing_hook_landed_cost_live",
+            "horizon.on(\"fishing_hook_landed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_fishing_hook_landed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                8,
+                "test:dimension",
+                [4, 5, 6],
+                [5, 6, 7],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "fishing_hook_landed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "fishing_hook_landed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "fishing_hook_landed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -33986,6 +48810,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_handshake(
                 &firing_mods,
                 "127.0.0.1:25565".parse().unwrap(),
@@ -33995,9 +48820,53 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "handshake read the host with no handler");
             assert_eq!(host_reads(), 0, "handshake read the host with no handler");
             assert_eq!(level_reads(), 0, "handshake read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_handshake_cost_live",
+            "horizon.on(\"handshake\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut host = "test:host".to_owned();
+            let mut reason = None;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_handshake(
+                &firing_mods,
+                "127.0.0.1:25565".parse().unwrap(),
+                &mut host,
+                9,
+                &mut reason,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "handshake built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "handshake read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "handshake read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -34121,6 +48990,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_interact_entity_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -34131,6 +49001,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -34159,6 +49034,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_interact_entity_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -34169,6 +49045,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -34183,6 +49064,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "interact_entity_v2 read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_interact_entity_v2_cost_live",
+            "horizon.on(\"interact_entity_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_interact_entity_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                Hand::Main,
+                None,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "interact_entity_v2 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "interact_entity_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "interact_entity_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -34249,6 +49168,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_inventory_click(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -34261,6 +49181,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -34275,6 +49200,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "inventory_click read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_inventory_click_cost_live",
+            "horizon.on(\"inventory_click\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_inventory_click(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+                11,
+                12,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "inventory_click built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "inventory_click read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "inventory_click read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -34339,6 +49303,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_inventory_drag(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -34350,6 +49315,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -34364,6 +49334,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "inventory_drag read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_inventory_drag_cost_live",
+            "horizon.on(\"inventory_drag\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_inventory_drag(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+                &[8, 13],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "inventory_drag built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "inventory_drag read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "inventory_drag read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -34522,6 +49530,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_after_vertical_collision(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -34535,6 +49544,11 @@ mod generated_tests {
                 &mut discard,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -34572,6 +49586,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_after_vertical_collision(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -34586,6 +49601,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
                 entity_reads(),
                 2,
                 "item_after_vertical_collision read the host for a watched-away kind"
@@ -34599,6 +49619,59 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "item_after_vertical_collision read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_after_vertical_collision_cost_live",
+            "horizon.on(\"item_after_vertical_collision\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut stack = ItemStack {
+                item: "test:stack".into(),
+                count: 7,
+                damage: 6,
+                extra: Some(Box::new(StackData {
+                    repair_cost: 26,
+                    ..Default::default()
+                })),
+            };
+            let mut discard = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_item_after_vertical_collision(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                false,
+                11,
+                BlockStateId(11),
+                [5, 6, 7],
+                [6.0, 7.0, 8.0],
+                &mut stack,
+                &mut discard,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "item_after_vertical_collision built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "item_after_vertical_collision resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "item_after_vertical_collision read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_after_vertical_collision read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -34667,6 +49740,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_dropped_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -34681,6 +49755,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "item_dropped_v2 read the host with no handler"
@@ -34694,6 +49773,47 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "item_dropped_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_dropped_v2_cost_live",
+            "horizon.on(\"item_dropped_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_item_dropped_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: None,
+                },
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "item_dropped_v2 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_dropped_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_dropped_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -34792,6 +49912,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_interact_mob(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -34806,6 +49927,11 @@ mod generated_tests {
                 &mut swing,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -34834,6 +49960,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_interact_mob(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -34849,6 +49976,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "item_interact_mob read the host for a watched-away kind"
@@ -34862,6 +49994,48 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "item_interact_mob read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_interact_mob_cost_live",
+            "horizon.on(\"item_interact_mob\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut swing: Option<bool> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_item_interact_mob(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                Some(&ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                }),
+                &mut swing,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "item_interact_mob built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_interact_mob read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_interact_mob read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -35037,6 +50211,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_item_picked_up_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -35053,6 +50228,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "item_picked_up_v2 read the host with no handler"
@@ -35066,6 +50246,49 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "item_picked_up_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_item_picked_up_v2_cost_live",
+            "horizon.on(\"item_picked_up_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_item_picked_up_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: None,
+                },
+                Some(9),
+                [4.0, 5.0, 6.0],
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "item_picked_up_v2 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "item_picked_up_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "item_picked_up_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -35143,6 +50366,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_change_target(
                 &firing_mods,
                 "test:dimension",
@@ -35153,6 +50377,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -35181,6 +50410,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_change_target(
                 &firing_mods,
                 "test:dimension",
@@ -35191,6 +50421,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -35205,6 +50440,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "living_change_target read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_change_target_cost_live",
+            "horizon.on(\"living_change_target\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_change_target(
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+                None,
+                Some(11),
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_change_target built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_change_target read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_change_target read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -35260,6 +50533,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_damage_pre(
                 &firing_mods,
                 7,
@@ -35270,6 +50544,11 @@ mod generated_tests {
                 &mut amount,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -35298,6 +50577,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_damage_pre(
                 &firing_mods,
                 7,
@@ -35308,6 +50588,11 @@ mod generated_tests {
                 &mut amount,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -35322,6 +50607,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "living_damage_pre read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_damage_pre_cost_live",
+            "horizon.on(\"living_damage_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 6.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_damage_pre(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:damage_type",
+                10,
+                11,
+                &mut amount,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_damage_pre built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_damage_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_damage_pre read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -35373,6 +50696,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_damage_post(
                 &firing_mods,
                 7,
@@ -35383,6 +50707,11 @@ mod generated_tests {
                 6.5,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -35410,6 +50739,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_damage_post(
                 &firing_mods,
                 7,
@@ -35420,6 +50750,11 @@ mod generated_tests {
                 6.5,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -35434,6 +50769,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "living_damage_post read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_damage_post_cost_live",
+            "horizon.on(\"living_damage_post\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_damage_post(
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                "test:damage_type",
+                10,
+                11,
+                6.5,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_damage_post built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_damage_post read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_damage_post read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -35525,6 +50897,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_incoming_damage_v3(
                 &firing_mods,
                 7,
@@ -35538,6 +50911,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -35567,6 +50945,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_living_incoming_damage_v3(
                 &firing_mods,
                 7,
@@ -35581,6 +50960,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "living_incoming_damage_v3 read the host for a watched-away kind"
@@ -35594,6 +50978,48 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "living_incoming_damage_v3 read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_incoming_damage_v3_cost_live",
+            "horizon.on(\"living_incoming_damage_v3\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 8.5;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_incoming_damage_v3(
+                &firing_mods,
+                7,
+                None,
+                "minecraft:zombie",
+                None,
+                Some(11),
+                None,
+                "test:damage_type",
+                &mut amount,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "living_incoming_damage_v3 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_incoming_damage_v3 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_incoming_damage_v3 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -35629,6 +51055,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_log_line(
                 &firing_mods,
                 "test:level",
@@ -35637,9 +51064,49 @@ mod generated_tests {
                 "test:line",
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "log_line read the host with no handler");
             assert_eq!(host_reads(), 0, "log_line read the host with no handler");
             assert_eq!(level_reads(), 0, "log_line read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_log_line_cost_live",
+            "horizon.on(\"log_line\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_log_line(
+                &firing_mods,
+                "test:level",
+                "test:thread",
+                "test:message",
+                "test:line",
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "log_line built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "log_line read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "log_line read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -35723,8 +51190,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_menu_input_closed(&mut FakeHost::empty(), &firing_mods, 7, 8, &mut slots);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -35739,6 +51212,55 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "menu_input_closed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_menu_input_closed_cost_live",
+            "horizon.on(\"menu_input_closed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut slots = vec![
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 22,
+                        ..Default::default()
+                    })),
+                }),
+                Some(ItemStack {
+                    item: "test:slots".into(),
+                    count: 4,
+                    damage: 3,
+                    extra: Some(Box::new(StackData {
+                        repair_cost: 23,
+                        ..Default::default()
+                    })),
+                }),
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_menu_input_closed(&mut FakeHost::empty(), &firing_mods, 7, 8, &mut slots);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "menu_input_closed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "menu_input_closed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "menu_input_closed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -36007,6 +51529,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_menu_links(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -36017,6 +51540,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "menu_links read the host with no handler"
@@ -36026,6 +51554,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "menu_links read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_menu_links_cost_live",
+            "horizon.on(\"menu_links\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut links = vec![[4, 5, 6], [5, 6, 7]];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_menu_links(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                [3, 4, 5],
+                &mut links,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "menu_links built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "menu_links read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "menu_links read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -36162,6 +51727,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_permission_check(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -36171,6 +51737,11 @@ mod generated_tests {
                 &mut result,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -36185,6 +51756,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "permission_check read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_permission_check_cost_live",
+            "horizon.on(\"permission_check\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut result: Option<bool> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_permission_check(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:node",
+                9,
+                &mut result,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "permission_check built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "permission_check read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "permission_check read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -36309,6 +51917,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_register_channels(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -36318,6 +51927,11 @@ mod generated_tests {
                 false,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -36332,6 +51946,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_register_channels read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_register_channels_cost_live",
+            "horizon.on(\"player_register_channels\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_register_channels(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &["test:seed".to_owned(), "test:seed2".to_owned()],
+                false,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_register_channels built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_register_channels read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_register_channels read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -36371,6 +52020,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_command_level(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -36380,6 +52030,11 @@ mod generated_tests {
                 &mut level,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -36394,6 +52049,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_command_level read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_command_level_cost_live",
+            "horizon.on(\"player_command_level\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut level = 10;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_command_level(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:command",
+                &mut level,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_command_level built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_command_level read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_command_level read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -36450,6 +52141,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_commands_sent_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -36459,6 +52151,11 @@ mod generated_tests {
                 &mut names_hidden,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -36473,6 +52170,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_commands_sent_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_commands_sent_v2_cost_live",
+            "horizon.on(\"player_commands_sent_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            let mut names_hidden = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_commands_sent_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut names,
+                &mut names_hidden,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_commands_sent_v2 built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_commands_sent_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_commands_sent_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -36645,6 +52379,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_fish_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -36655,6 +52390,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -36669,6 +52409,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_fish_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_fish_v2_cost_live",
+            "horizon.on(\"player_fish_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_fish_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                Hand::Off,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_fish_v2 built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_fish_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_fish_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -36739,6 +52516,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_hurt_by_player(
                 &firing_mods,
                 7,
@@ -36751,6 +52529,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -36765,6 +52548,47 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_hurt_by_player read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_hurt_by_player_cost_live",
+            "horizon.on(\"player_hurt_by_player\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut amount = 7.5;
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_hurt_by_player(
+                &firing_mods,
+                7,
+                8,
+                9,
+                10,
+                "test:source",
+                "test:damage_type",
+                &mut amount,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_hurt_by_player built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_hurt_by_player read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_hurt_by_player read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -36835,6 +52659,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_launch_projectile_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -36850,6 +52675,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "player_launch_projectile_v2 read the host with no handler"
@@ -36863,6 +52693,47 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_launch_projectile_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_launch_projectile_v2_cost_live",
+            "horizon.on(\"player_launch_projectile_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_launch_projectile_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &ItemStack {
+                    item: "test:stack".into(),
+                    count: 3,
+                    damage: 2,
+                    extra: None,
+                },
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_launch_projectile_v2 built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_launch_projectile_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_launch_projectile_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -36892,8 +52763,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_logging_out(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -36908,6 +52785,34 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_logging_out read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_logging_out_cost_live",
+            "horizon.on(\"player_logging_out\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_logging_out(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_logging_out built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_logging_out read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_logging_out read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -36978,6 +52883,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_move(
                 &firing_mods,
                 7,
@@ -36991,6 +52897,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "player_move read the host with no handler"
@@ -37000,6 +52911,47 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_move read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_move_cost_live",
+            "horizon.on(\"player_move\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut to = [4.0, 5.0, 6.0];
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_move(
+                &firing_mods,
+                7,
+                "test:name",
+                [3.0, 4.0, 5.0],
+                &mut to,
+                5.5,
+                6.5,
+                true,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_move built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_move read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_move read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -37038,6 +52990,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_pre_login(
                 &firing_mods,
                 7,
@@ -37046,6 +52999,11 @@ mod generated_tests {
                 &mut defer,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -37060,6 +53018,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_pre_login read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_pre_login_cost_live",
+            "horizon.on(\"player_pre_login\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut defer = Vec::new();
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_pre_login(
+                &firing_mods,
+                7,
+                "test:name",
+                "127.0.0.1:25567".parse().unwrap(),
+                &mut defer,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_pre_login built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_pre_login read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_pre_login read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -37215,6 +53209,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_respawn_position(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -37226,6 +53221,11 @@ mod generated_tests {
                 &mut pitch,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -37240,6 +53240,47 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_respawn_position read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_respawn_position_cost_live",
+            "horizon.on(\"player_respawn_position\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut dimension = "test:dimension".to_owned();
+            let mut pos = [4.0, 5.0, 6.0];
+            let mut yaw = 5.5;
+            let mut pitch = 6.5;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_respawn_position(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut dimension,
+                &mut pos,
+                &mut yaw,
+                &mut pitch,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_respawn_position built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_respawn_position read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_respawn_position read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -37286,6 +53327,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_spawn_location(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -37296,6 +53338,11 @@ mod generated_tests {
                 &mut rotation,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -37310,6 +53357,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_spawn_location read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_spawn_location_cost_live",
+            "horizon.on(\"player_spawn_location\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut dimension = "test:dimension".to_owned();
+            let mut position = [4.0, 5.0, 6.0];
+            let mut rotation = [5.0, 6.0];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_spawn_location(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut dimension,
+                &mut position,
+                &mut rotation,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_spawn_location built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_spawn_location read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_spawn_location read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -37386,6 +53472,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_teleport(
                 &firing_mods,
                 7,
@@ -37400,6 +53487,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "player_teleport read the host with no handler"
@@ -37413,6 +53505,49 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_teleport read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_teleport_cost_live",
+            "horizon.on(\"player_teleport\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut to = [7.0, 8.0, 9.0];
+            let mut relative = 14;
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_teleport(
+                &firing_mods,
+                7,
+                "test:name",
+                "test:cause",
+                "test:from_dimension",
+                [5.0, 6.0, 7.0],
+                "test:to_dimension",
+                &mut to,
+                &mut relative,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_teleport built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_teleport read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_teleport read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -37442,8 +53577,14 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_player_tick_pre(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -37458,6 +53599,35 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_tick_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_tick_pre_cost_live",
+            "horizon.on(\"player_tick_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_tick_pre(&mut FakeHost::empty(), &firing_mods);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_tick_pre built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_tick_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_tick_pre read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -37521,6 +53691,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_projectile_world_border(
                 &firing_mods,
                 "test:dimension",
@@ -37531,6 +53702,11 @@ mod generated_tests {
                 &mut collide,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -37561,6 +53737,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_projectile_world_border(
                 &firing_mods,
                 "test:dimension",
@@ -37571,6 +53748,11 @@ mod generated_tests {
                 &mut collide,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -37585,6 +53767,46 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "projectile_world_border read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_projectile_world_border_cost_live",
+            "horizon.on(\"projectile_world_border\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut pos = [4.0, 5.0, 6.0];
+            let mut velocity = [5.0, 6.0, 7.0];
+            let mut collide = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_projectile_world_border(
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+                &mut pos,
+                &mut velocity,
+                &mut collide,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "projectile_world_border built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "projectile_world_border read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "projectile_world_border read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -37627,6 +53849,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_recipe_sources(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -37636,6 +53859,11 @@ mod generated_tests {
                 &mut sources,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -37650,6 +53878,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "recipe_sources read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_recipe_sources_cost_live",
+            "horizon.on(\"recipe_sources\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut sources = vec![[4, 5, 6], [5, 6, 7]];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_recipe_sources(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:menu",
+                [3, 4, 5],
+                &mut sources,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "recipe_sources built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "recipe_sources read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "recipe_sources read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -37783,6 +54048,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_resource_pack_status_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -37792,6 +54058,11 @@ mod generated_tests {
                 10,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -37806,6 +54077,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "resource_pack_status_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_resource_pack_status_v2_cost_live",
+            "horizon.on(\"resource_pack_status_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_resource_pack_status_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                10,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "resource_pack_status_v2 built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "resource_pack_status_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "resource_pack_status_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -37866,6 +54172,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_right_click_block_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -37875,6 +54182,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -37889,6 +54201,43 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "right_click_block_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_right_click_block_v2_cost_live",
+            "horizon.on(\"right_click_block_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_right_click_block_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                [1, 2, 3],
+                [2, 3, 4],
+                Hand::Main,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "right_click_block_v2 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "right_click_block_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "right_click_block_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -37953,6 +54302,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_screen_mouse_dragged_pre_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -37964,6 +54314,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -37978,6 +54333,45 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "screen_mouse_dragged_pre_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_mouse_dragged_pre_v2_cost_live",
+            "horizon.on(\"screen_mouse_dragged_pre_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_mouse_dragged_pre_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:screen",
+                [2.5, 3.5],
+                9,
+                [4.5, 5.5],
+                11,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "screen_mouse_dragged_pre_v2 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_mouse_dragged_pre_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_mouse_dragged_pre_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -38040,6 +54434,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_screen_mouse_scrolled_pre_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -38050,6 +54445,11 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -38064,6 +54464,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "screen_mouse_scrolled_pre_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_mouse_scrolled_pre_v2_cost_live",
+            "horizon.on(\"screen_mouse_scrolled_pre_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_mouse_scrolled_pre_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:screen",
+                [2.5, 3.5],
+                [3.5, 4.5],
+                10,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "screen_mouse_scrolled_pre_v2 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_mouse_scrolled_pre_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_mouse_scrolled_pre_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -38112,6 +54550,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_server_tick_timed(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -38134,6 +54573,11 @@ mod generated_tests {
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
             assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
                 entity_reads(),
                 0,
                 "server_tick_timed read the host with no handler"
@@ -38147,6 +54591,54 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "server_tick_timed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_tick_timed_cost_live",
+            "horizon.on(\"server_tick_timed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_server_tick_timed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                None,
+                &[
+                    TickSpan {
+                        name: "test:span2",
+                        ms: 3.5,
+                        cpu_ms: 0.5,
+                        depth: 0,
+                    },
+                    TickSpan {
+                        name: "test:span3",
+                        ms: 4.5,
+                        cpu_ms: 0.5,
+                        depth: 0,
+                    },
+                ],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "server_tick_timed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "server_tick_timed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_tick_timed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -38184,6 +54676,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_stateful_block_entity(
                 &FakeHost::empty(),
                 &firing_mods,
@@ -38191,6 +54684,11 @@ mod generated_tests {
                 &mut stateful,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -38205,6 +54703,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "stateful_block_entity read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_stateful_block_entity_cost_live",
+            "horizon.on(\"stateful_block_entity\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut stateful = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_stateful_block_entity(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:block",
+                &mut stateful,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "stateful_block_entity built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "stateful_block_entity read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "stateful_block_entity read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -38248,6 +54781,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_block_entity_from_state(
                 &firing_mods,
                 "test:block",
@@ -38255,6 +54789,11 @@ mod generated_tests {
                 &mut entity,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -38269,6 +54808,41 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "block_entity_from_state read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_entity_from_state_cost_live",
+            "horizon.on(\"block_entity_from_state\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut entity: Option<(String, Compound)> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_entity_from_state(
+                &firing_mods,
+                "test:block",
+                &BlockProperties::new(),
+                &mut entity,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "block_entity_from_state built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_entity_from_state read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_entity_from_state read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -38447,6 +55021,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_tab_complete_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -38458,6 +55033,11 @@ mod generated_tests {
                 &mut suggestions,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -38472,6 +55052,57 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "tab_complete_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tab_complete_v2_cost_live",
+            "horizon.on(\"tab_complete_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut suggestions = vec![
+                Suggestion {
+                    range: (7 + 5, 12 + 5),
+                    text: "test:suggestion5".into(),
+                    tooltip: Some("test:tooltip5".into()),
+                    int_value: Some(35),
+                },
+                Suggestion {
+                    range: (7 + 6, 12 + 6),
+                    text: "test:suggestion6".into(),
+                    tooltip: Some("test:tooltip6".into()),
+                    int_value: Some(36),
+                },
+            ];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_tab_complete_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:label",
+                &["test:seed".to_owned(), "test:seed2".to_owned()],
+                [11, 16],
+                &mut suggestions,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "tab_complete_v2 built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "tab_complete_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "tab_complete_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -38744,6 +55375,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_toast_add(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -38752,9 +55384,50 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "toast_add read the host with no handler");
             assert_eq!(host_reads(), 0, "toast_add read the host with no handler");
             assert_eq!(level_reads(), 0, "toast_add read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_toast_add_cost_live",
+            "horizon.on(\"toast_add\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_toast_add(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:kind",
+                "test:id",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "toast_add built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "toast_add read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "toast_add read the level for a heard dispatch"
+            );
             no_error(&id);
             drop_dir(dir);
         }
@@ -38831,6 +55504,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_trample(
                 &firing_mods,
                 "test:dimension",
@@ -38841,6 +55515,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(entity_reads(), 0, "trample read the host with no handler");
             assert_eq!(host_reads(), 0, "trample read the host with no handler");
             assert_eq!(level_reads(), 0, "trample read the level with no handler");
@@ -38857,6 +55536,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_trample(
                 &firing_mods,
                 "test:dimension",
@@ -38867,6 +55547,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -38881,6 +55566,44 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "trample read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_trample_cost_live",
+            "horizon.on(\"trample\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_trample(
+                &firing_mods,
+                "test:dimension",
+                8,
+                "minecraft:zombie",
+                [4, 5, 6],
+                5.5,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "trample built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "trample read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "trample read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -38969,6 +55692,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_vehicle_moved_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -38981,6 +55705,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -39010,6 +55739,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_vehicle_moved_v2(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -39022,6 +55752,11 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -39036,6 +55771,47 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "vehicle_moved_v2 read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_vehicle_moved_v2_cost_live",
+            "horizon.on(\"vehicle_moved_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut to = [6.0, 7.0, 8.0];
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_vehicle_moved_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:dimension",
+                9,
+                "minecraft:zombie",
+                [5.0, 6.0, 7.0],
+                &mut to,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "vehicle_moved_v2 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "vehicle_moved_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "vehicle_moved_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -39074,6 +55850,7 @@ mod generated_tests {
             reset_entity_reads();
             reset_host_reads();
             reset_level_reads();
+            reset_event_tables();
             dispatch_wind_burst(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -39082,6 +55859,11 @@ mod generated_tests {
                 &mut blocks,
             );
             assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
             assert_eq!(
                 entity_reads(),
                 0,
@@ -39092,6 +55874,42 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "wind_burst read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_wind_burst_cost_live",
+            "horizon.on(\"wind_burst\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut blocks = vec![[3, 4, 5], [4, 5, 6]];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_wind_burst(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                &mut blocks,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "wind_burst built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "wind_burst read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "wind_burst read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);

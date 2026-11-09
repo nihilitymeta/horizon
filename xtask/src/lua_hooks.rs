@@ -566,64 +566,118 @@ fn spike_lua(body: &str) -> Option<&str> {
     Some(&rest[..end])
 }
 
-/// Lua `src` with comments removed: `--` line comments and `--[[ ]]`
-/// blocks, keeping newlines so line-oriented scans still line up. A `--`
-/// inside a `'...'`, `"..."` or `[[...]]` string stays: it is text, not a
-/// comment. Only level-0 long forms are strings or blocks here; a deeper
-/// level keeps its dashes, failing loudly instead of mis-scanning.
-fn strip_lua_comments(src: &str) -> String {
+/// The Lua tokens the spike-name gate reads: identifiers, single dots,
+/// and `==`. Everything else (strings, comments, numbers, other
+/// punctuation) is skipped, so the gate never sees text that is not code.
+/// A run of two or more dots (`..`, `...`) yields no `Dot`: only a lone
+/// `.` separates a table from its field.
+#[derive(Debug, PartialEq, Eq)]
+enum LuaTok {
+    Ident(String),
+    Dot,
+    EqEq,
+}
+
+/// `src` as tokens, skipping strings and comments: short strings with
+/// `\` escapes (an unterminated one runs to the end), long strings and
+/// long comments of any `=` level, and `--` line comments. Identifiers
+/// follow Lua's ASCII rule (letters, digits after the first, `_`).
+fn lex_lua(src: &str) -> Vec<LuaTok> {
     let chars: Vec<char> = src.chars().collect();
-    let mut out = String::with_capacity(src.len());
+    let mut toks = Vec::new();
     let mut i = 0;
+    // A long bracket at `i`: `[` or `]` followed by `level` `=` and the
+    // same bracket. Returns the level when `i` opens or closes one.
+    let long_level = |i: usize, open: char, close: char| -> Option<usize> {
+        if chars.get(i) != Some(&open) {
+            return None;
+        }
+        let mut level = 0;
+        while chars.get(i + 1 + level) == Some(&'=') {
+            level += 1;
+        }
+        (chars.get(i + 1 + level) == Some(&close)).then_some(level)
+    };
     while i < chars.len() {
         let c = chars[i];
         if c == '\'' || c == '"' {
-            out.push(c);
             i += 1;
             while i < chars.len() {
                 let d = chars[i];
-                out.push(d);
                 i += 1;
-                if d == '\\' && i < chars.len() {
-                    out.push(chars[i]);
+                if d == '\\' {
                     i += 1;
                 } else if d == c {
                     break;
                 }
             }
-        } else if c == '[' && chars.get(i + 1) == Some(&'[') {
-            out.push_str("[[");
-            i += 2;
-            while i + 1 < chars.len() && !(chars[i] == ']' && chars[i + 1] == ']') {
-                out.push(chars[i]);
+        } else if c == '['
+            && let Some(level) = long_level(i, '[', '[')
+        {
+            i += 2 + level;
+            while i < chars.len() && long_level(i, ']', ']') != Some(level) {
                 i += 1;
             }
-            if i + 1 < chars.len() {
-                out.push_str("]]");
-                i += 2;
+            i += 2 + level;
+        } else if c == '-'
+            && chars.get(i + 1) == Some(&'-')
+            && let Some(level) = long_level(i + 2, '[', '[')
+        {
+            i += 4 + level;
+            while i < chars.len() && long_level(i, ']', ']') != Some(level) {
+                i += 1;
             }
+            i += 2 + level;
         } else if c == '-' && chars.get(i + 1) == Some(&'-') {
-            if chars.get(i + 2) == Some(&'[') && chars.get(i + 3) == Some(&'[') {
-                i += 4;
-                while i + 1 < chars.len() && !(chars[i] == ']' && chars[i + 1] == ']') {
-                    if chars[i] == '\n' {
-                        out.push('\n');
-                    }
-                    i += 1;
-                }
-                i += 2.min(chars.len().saturating_sub(i));
-            } else {
-                i += 2;
-                while i < chars.len() && chars[i] != '\n' {
-                    i += 1;
-                }
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+        } else if c == '_' || c.is_ascii_alphabetic() {
+            let start = i;
+            while i < chars.len() && (chars[i] == '_' || chars[i].is_ascii_alphanumeric()) {
+                i += 1;
+            }
+            toks.push(LuaTok::Ident(chars[start..i].iter().collect()));
+        } else if c == '.' {
+            let mut dots = 0;
+            while chars.get(i + dots) == Some(&'.') {
+                dots += 1;
+            }
+            if dots == 1 {
+                toks.push(LuaTok::Dot);
+            }
+            i += dots;
+        } else if c == '=' && chars.get(i + 1) == Some(&'=') {
+            toks.push(LuaTok::EqEq);
+            i += 2;
+        } else if c.is_ascii_digit() {
+            while i < chars.len()
+                && (chars[i] == '_' || chars[i] == '.' || chars[i].is_ascii_alphanumeric())
+            {
+                i += 1;
             }
         } else {
-            out.push(c);
             i += 1;
         }
     }
-    out
+    toks
+}
+
+/// Whether `lua` asserts the player's name as code: the token sequence
+/// `event` `.` <field> `.` `name` `==`. The token boundary is the whole
+/// gate: text inside a string or comment never lexes to these tokens, and
+/// a longer name (`not_the_event`, `names`) lexes to one identifier that
+/// is not `event` or `name`.
+fn lua_asserts_player_name(lua: &str, field: &str) -> bool {
+    let toks = lex_lua(lua);
+    toks.windows(6).any(|w| {
+        matches!(&w[0], LuaTok::Ident(a) if a == "event")
+            && w[1] == LuaTok::Dot
+            && matches!(&w[2], LuaTok::Ident(b) if b == field)
+            && w[3] == LuaTok::Dot
+            && matches!(&w[4], LuaTok::Ident(c) if c == "name")
+            && w[5] == LuaTok::EqEq
+    })
 }
 
 /// The dispatch fields of `model` no assert covers: a parameter with no
@@ -1100,16 +1154,18 @@ fn no_cancel_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
 }
 
 /// One hook's cost test: with a mod loaded that listens to another hook, a
-/// dispatch nobody listens to reads no host and runs no handler. The host
-/// check is the fake host/level counters, exact per call. (Lua memory
-/// cannot pin table construction: the handler check itself does two
-/// registry reads per dispatch, ~200 bytes of collectable Lua garbage, so a
-/// table built early hides inside the check's own traffic. See QUESTIONS.md.)
-/// Kind-filtered hooks run the K1 event again with a handler watching
-/// another kind. A field kind reads nothing; an entity kind resolves the
-/// kind through the host first (one `entity` and one `entity_kind` read per
-/// dispatch), pinned below because the watches check needs the kind it
-/// resolves.
+/// dispatch nobody listens to builds no event table, reads no host and runs
+/// no handler. The table count is the direct pin: the host/level counters
+/// only move when a seed reads through them, so a hook whose seeds read
+/// nothing (like `tick`) stays green when the early returns are deleted
+/// without it. Kind-filtered hooks run the K1 event again with a handler
+/// watching another kind: the table is built after the kind check, so none
+/// is built there either (a field kind reads nothing; an entity kind
+/// resolves the kind through the host first, pinned below). Every test ends
+/// with a control: the same hook fired with a handler registered, which must
+/// run the handler and build at least one table (so a dead counter fails the
+/// same test), and move the read counters when the hook's seeds or kind
+/// resolution read through them.
 fn cost_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
     let mut out = format!(
         "#[test]\nfn generated_{}_unregistered_costs_nothing() {{\n",
@@ -1134,6 +1190,7 @@ fn cost_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
         &unregistered,
         (0, 0),
         "with no handler",
+        "no event table was built with no handler",
     );
     if kind_values(model).is_some() {
         // A handler watching another kind: the K1 event still builds no table.
@@ -1157,8 +1214,10 @@ fn cost_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
             &mismatch,
             reads,
             "for a watched-away kind",
+            "no event table is built for a watched-away kind (the table is built after the kind check)",
         );
     }
+    cost_control(&mut out, model, tys);
     out.push_str("}\n");
     out
 }
@@ -1166,7 +1225,9 @@ fn cost_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
 /// One cost-test part: a loaded mod, then a single measured dispatch with
 /// the host counters reset. `kind` is the K1 dispatch argument for
 /// kind-filtered hooks; `reads` is the pinned per-dispatch (`entity`,
-/// `host`) read count.
+/// `host`) read count; `tables` is what the part states about the event
+/// tables the dispatch built (zero here: the table is built past every
+/// early return).
 #[allow(clippy::too_many_arguments)]
 fn cost_part(
     out: &mut String,
@@ -1176,6 +1237,7 @@ fn cost_part(
     load: &str,
     reads: (usize, usize),
     when: &str,
+    tables: &str,
 ) {
     out.push_str(&format!("    let (m, id, dir, lua) = {load};\n"));
     out.push_str("    let firing_mods = boxed(m);\n");
@@ -1188,9 +1250,13 @@ fn cost_part(
     out.push_str("    reset_entity_reads();\n");
     out.push_str("    reset_host_reads();\n");
     out.push_str("    reset_level_reads();\n");
+    out.push_str("    reset_event_tables();\n");
     out.push_str(&call.call);
     out.push('\n');
     out.push_str("    assert_eq!(witness(&lua), 0, \"no handler ran\");\n");
+    out.push_str(&format!(
+        "    assert_eq!(event_tables(), 0, \"{tables}\");\n"
+    ));
     out.push_str(&format!(
         "    assert_eq!(entity_reads(), {}, \"{} read the host {}\");\n",
         reads.0, model.name, when
@@ -1203,6 +1269,103 @@ fn cost_part(
         "    assert_eq!(level_reads(), 0, \"{} read the level {}\");\n",
         model.name, when
     ));
+    out.push_str("    no_error(&id);\n");
+    out.push_str("    drop_dir(dir);\n");
+    out.push_str("    }\n");
+}
+
+/// Whether a heard dispatch of `model` reads the host or the level while
+/// building its event table: the control pins the counters moving only for
+/// these hooks. A `player` seed asks the host for its players, a `state`
+/// seed with a game host asks the host for the state name, and an entity
+/// kind resolves through `entity`/`entity_kind`; `state` seeds with a level
+/// host (and the block notes built from one) read the level.
+fn cost_control_reads(model: &Model) -> (bool, bool) {
+    // The `block` notes live in `extras`, not `fields`: the seeds that
+    // build them read the level all the same.
+    let convs = model
+        .fields
+        .iter()
+        .map(|f| &f.conv)
+        .chain(model.extras.iter().map(|e| &e.conv));
+    let mut seed_reads_host = false;
+    let mut reads_level = false;
+    for conv in convs {
+        match conv {
+            Conv::Player | Conv::PlayerOpt | Conv::StateGame => seed_reads_host = true,
+            Conv::StateLevel | Conv::BlockAtPos | Conv::BlockFromState => reads_level = true,
+            _ => {}
+        }
+    }
+    let kind_reads_host = matches!(model.kind, Kind::Entity { .. });
+    (seed_reads_host || kind_reads_host, reads_level)
+}
+
+/// The cost test's control: the same hook fired with a handler registered.
+/// The handler must run and at least one event table must be built, so a
+/// counter that is never wired fails the same test as the measurement; and
+/// when the hook's seeds or kind resolution read the host or level, those
+/// counters must move, so a dead read counter fails it too.
+fn cost_control(out: &mut String, model: &Model, tys: &BTreeMap<String, String>) {
+    let plan = kind_values(model);
+    let (kind_reg, kind_arg) = match &plan {
+        Some(plan) => (
+            format!(", \\\"{}\\\"", plan.register),
+            Some(plan.k1.clone()),
+        ),
+        None => (String::new(), None),
+    };
+    out.push_str(&format!(
+        "    let (m, id, dir, lua) = loaded_tracked(\"gen_{}_cost_live\", \"horizon.on(\\\"{}\\\", function(event)\\n    __witness = (__witness or 0) + 1\\nend{})\");\n",
+        model.name, model.name, kind_reg
+    ));
+    out.push_str("    let firing_mods = boxed(m);\n");
+    out.push_str("    {\n");
+    let call = dispatch_call(model, tys, kind_arg, false);
+    for binding in &call.bindings {
+        out.push_str(binding);
+        out.push('\n');
+    }
+    out.push_str("    reset_entity_reads();\n");
+    out.push_str("    reset_host_reads();\n");
+    out.push_str("    reset_level_reads();\n");
+    out.push_str("    reset_event_tables();\n");
+    out.push_str(&call.call);
+    out.push('\n');
+    out.push_str("    assert_eq!(witness(&lua), 1, \"the control handler ran\");\n");
+    out.push_str(&format!(
+        "    assert!(event_tables() >= 1, \"{} built an event table for a heard dispatch\");\n",
+        model.name
+    ));
+    let (reads_host, reads_level) = cost_control_reads(model);
+    if matches!(model.kind, Kind::Entity { .. }) {
+        out.push_str(&format!(
+            "    assert!(entity_reads() > 0, \"{} resolved its kind through the host\");\n",
+            model.name
+        ));
+    }
+    if reads_host {
+        out.push_str(&format!(
+            "    assert!(host_reads() > 0, \"{} read the host for a heard dispatch\");\n",
+            model.name
+        ));
+    } else {
+        out.push_str(&format!(
+            "    assert_eq!(host_reads(), 0, \"{} read the host for a heard dispatch\");\n",
+            model.name
+        ));
+    }
+    if reads_level {
+        out.push_str(&format!(
+            "    assert!(level_reads() > 0, \"{} read the level for a heard dispatch\");\n",
+            model.name
+        ));
+    } else {
+        out.push_str(&format!(
+            "    assert_eq!(level_reads(), 0, \"{} read the level for a heard dispatch\");\n",
+            model.name
+        ));
+    }
     out.push_str("    no_error(&id);\n");
     out.push_str("    drop_dir(dir);\n");
     out.push_str("    }\n");
@@ -2090,17 +2253,17 @@ pub fn run(check: bool) -> Result<(), String> {
         // `name` the table stands in for: the model checks below never see
         // the spike's own body.
         if spike {
-            // The registered Lua with comments stripped first: a
-            // commented-out assert, or an assert on another table's `name`,
-            // is not the player's name.
+            // The registered Lua as tokens: a commented-out assert, an
+            // assert on another table's `name`, or the text inside a
+            // string, is not the player's name. The gate needs the full
+            // `event.<field>.name ==` sequence at a token boundary, outside
+            // any string or comment.
             let lua = spike_test_body(&spike_src, &model.name).and_then(spike_lua);
-            let stripped = lua.map(strip_lua_comments);
             for field in &model.fields {
                 if !matches!(field.conv, Conv::Player | Conv::PlayerOpt) {
                     continue;
                 }
-                let want = format!("event.{}.name ==", field.name);
-                if !stripped.as_deref().is_some_and(|lua| lua.contains(&want)) {
+                if !lua.is_some_and(|lua| lua_asserts_player_name(lua, &field.name)) {
                     uncovered.push(format!("{}: {}.name", model.name, field.name));
                 }
             }
@@ -2300,4 +2463,107 @@ pub fn run(check: bool) -> Result<(), String> {
         return Err("cargo fmt failed on the generated file".into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LuaTok, lex_lua, lua_asserts_player_name};
+
+    #[test]
+    fn player_name_assert_passes_the_gate() {
+        assert!(lua_asserts_player_name(
+            "horizon.on(\"x\", function(event)\n  assert(event.player.name == \"Alex\", \"name\")\nend)",
+            "player"
+        ));
+        // Spacing around the dots and `==` does not matter: tokens do.
+        assert!(lua_asserts_player_name(
+            "assert(event.player.name==\"Alex\")",
+            "player"
+        ));
+        assert!(lua_asserts_player_name(
+            "assert(event . player . name == \"Alex\")",
+            "player"
+        ));
+    }
+
+    #[test]
+    fn name_text_inside_a_string_is_not_an_assert() {
+        // Bypass 1: the gate text inside a short string, double- or
+        // single-quoted, with an escaped quote before it.
+        assert!(!lua_asserts_player_name(
+            "local s = \"event.player.name == \\\"Alex\\\"\"",
+            "player"
+        ));
+        assert!(!lua_asserts_player_name(
+            "local s = 'event.player.name == \\'Alex\\''",
+            "player"
+        ));
+        // A real assert beside the string still passes.
+        assert!(lua_asserts_player_name(
+            "local s = \"event.player.name ==\"\nassert(event.player.name == \"Alex\")",
+            "player"
+        ));
+    }
+
+    #[test]
+    fn name_text_inside_a_long_string_is_not_an_assert() {
+        // Bypass 2: level-0 and level-1 long strings.
+        assert!(!lua_asserts_player_name(
+            "local s = [[event.player.name == \"Alex\"]]",
+            "player"
+        ));
+        assert!(!lua_asserts_player_name(
+            "local s = [=[event.player.name == \"Alex\"]=]",
+            "player"
+        ));
+    }
+
+    #[test]
+    fn name_text_inside_a_comment_is_not_an_assert() {
+        // Bypass 3: line comments and long comments of any level,
+        // including a multiline level-1 block (only `--[[` was handled).
+        assert!(!lua_asserts_player_name(
+            "-- assert(event.player.name == \"Alex\")",
+            "player"
+        ));
+        assert!(!lua_asserts_player_name(
+            "--[[ assert(event.player.name == \"Alex\") ]]",
+            "player"
+        ));
+        assert!(!lua_asserts_player_name(
+            "--[=[\nassert(event.player.name == \"Alex\")\n]=]",
+            "player"
+        ));
+    }
+
+    #[test]
+    fn a_longer_table_name_is_not_the_event() {
+        // Bypass 4: no token boundary in a substring scan.
+        assert!(!lua_asserts_player_name(
+            "assert(not_the_event.player.name == \"Alex\")",
+            "player"
+        ));
+        assert!(!lua_asserts_player_name(
+            "assert(event.player.names == \"Alex\")",
+            "player"
+        ));
+        // A different field's name does not satisfy this field.
+        assert!(!lua_asserts_player_name(
+            "assert(event.owner.name == \"Alex\")",
+            "player"
+        ));
+    }
+
+    #[test]
+    fn dots_and_equals_lex_as_code() {
+        // `..` is concat, not two field dots; a lone `=` is assignment.
+        assert_eq!(
+            lex_lua("a..b"),
+            vec![LuaTok::Ident("a".to_owned()), LuaTok::Ident("b".to_owned())]
+        );
+        assert!(!lua_asserts_player_name(
+            "event.player.name = \"Alex\"",
+            "player"
+        ));
+    }
 }

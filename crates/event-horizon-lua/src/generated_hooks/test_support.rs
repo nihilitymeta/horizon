@@ -76,6 +76,18 @@ pub fn witness(lua: &Lua) -> i64 {
     }
 }
 
+/// Event tables the generated dispatch arms built on this thread since
+/// `reset_event_tables`: an unheard hook must build none, a heard one at
+/// least one. Unlike the host/level counters (which only move when a seed
+/// reads through them), this also pins hooks whose seeds read nothing.
+pub fn event_tables() -> usize {
+    crate::generated_runtime::event_table_count()
+}
+
+pub fn reset_event_tables() {
+    crate::generated_runtime::reset_event_tables();
+}
+
 pub fn drop_dir(dir: PathBuf) {
     std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -18,6 +18,36 @@ use horizon_client::mod_api::ItemStack;
 use horizon_world::nbt::Tag;
 use mlua::{Lua, Table, Value};
 
+// Test-only count of event tables the generated dispatch arms built on
+// this thread. The cost tests reset it, dispatch, and pin it: zero for an
+// unheard hook (so a table built before the early returns fails the test),
+// one or more for a heard one (so a dead counter fails the control). The
+// macro arms below bump it beside every `create_table` that builds an
+// event table; helper tables (`pos_table`, text snapshots, hidden state)
+// do not count.
+#[cfg(test)]
+thread_local! {
+    static EVENT_TABLES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// One more event table built on this thread (test builds only).
+#[cfg(test)]
+pub(crate) fn note_event_table() {
+    EVENT_TABLES.with(|tables| tables.set(tables.get() + 1));
+}
+
+/// Event tables built on this thread since the last reset.
+#[cfg(test)]
+pub(crate) fn event_table_count() -> usize {
+    EVENT_TABLES.with(|tables| tables.get())
+}
+
+/// Forget the event tables built so far on this thread.
+#[cfg(test)]
+pub(crate) fn reset_event_tables() {
+    EVENT_TABLES.with(|tables| tables.set(0));
+}
+
 /// Round 3 (`adapter`) converters: one [`LuaStruct`] per native field type
 /// the classifier maps to `Conv::Struct`, plus the small scalar shapes
 /// (`Duration`, paths, addresses, bytes, text, the pre-login gate) the
@@ -806,6 +836,7 @@ macro_rules! gen_listen {
             let outcome = (|| -> mlua::Result<()> {
                 let lua = &self.lua;
                 let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
                 $(gen_seed!(self, table, lua, (), (), _event, $field : $seed $(($st))?);)*
                 self.call_bare(
                     hook,
@@ -841,6 +872,7 @@ macro_rules! gen_listen {
             let outcome = (|| -> mlua::Result<()> {
                 let lua = &self.lua;
                 let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
                 $(gen_seed!(self, table, lua, host, (), _event, $field : $seed $(($st))?);)*
                 self.call_kind(
                     hook,
@@ -877,6 +909,7 @@ macro_rules! gen_listen {
             let outcome = (|| -> mlua::Result<()> {
                 let lua = &self.lua;
                 let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
                 $(gen_seed!(self, table, lua, _host, (), _event, $field : $seed $(($st))?);)*
                 self.call_bare(
                     hook,
@@ -912,6 +945,7 @@ macro_rules! gen_listen {
             let outcome = (|| -> mlua::Result<()> {
                 let lua = &self.lua;
                 let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
                 $(gen_seed!(self, table, lua, (), level, _event, $field : $seed $(($st))?);)*
                 let reader = Reader::Level(level);
                 for (action, _args) in self.run_handlers(hook, kind.as_deref(), reader, table.clone())? {
@@ -948,6 +982,7 @@ macro_rules! gen_listen {
             let outcome = (|| -> mlua::Result<()> {
                 let lua = &self.lua;
                 let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
                 $(gen_seed!(self, table, lua, (), level, _event, $field : $seed $(($st))?);)*
                 let reader = Reader::Level(&*level);
                 for (action, _args) in self.run_handlers(hook, kind.as_deref(), reader, table.clone())? {
@@ -993,6 +1028,7 @@ macro_rules! gen_cancel {
             let outcome = (|| -> mlua::Result<bool> {
                 let lua = &self.lua;
                 let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
                 $(gen_seed!(self, table, lua, (), (), _event, $field : $seed $(($st))?);)*
                 self.call_bare(
                     hook,
@@ -1038,6 +1074,7 @@ macro_rules! gen_cancel {
             let outcome = (|| -> mlua::Result<bool> {
                 let lua = &self.lua;
                 let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
                 $(gen_seed!(self, table, lua, host, (), _event, $field : $seed $(($st))?);)*
                 self.call_kind(
                     hook,
@@ -1084,6 +1121,7 @@ macro_rules! gen_cancel {
             let outcome = (|| -> mlua::Result<bool> {
                 let lua = &self.lua;
                 let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
                 $(gen_seed!(self, table, lua, _host, (), _event, $field : $seed $(($st))?);)*
                 self.call_bare(
                     hook,
@@ -1129,6 +1167,7 @@ macro_rules! gen_cancel {
             let outcome = (|| -> mlua::Result<bool> {
                 let lua = &self.lua;
                 let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
                 $(gen_seed!(self, table, lua, (), level, _event, $field : $seed $(($st))?);)*
                 let reader = Reader::Level(level);
                 for (action, _args) in self.run_handlers(hook, kind.as_deref(), reader, table.clone())? {
@@ -1169,6 +1208,7 @@ macro_rules! gen_cancel {
             let outcome = (|| -> mlua::Result<bool> {
                 let lua = &self.lua;
                 let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
                 $(gen_seed!(self, table, lua, (), level, _event, $field : $seed $(($st))?);)*
                 let reader = Reader::Level(&*level);
                 for (action, _args) in self.run_handlers(hook, kind.as_deref(), reader, table.clone())? {
@@ -3578,6 +3618,7 @@ macro_rules! gen_replace {
             let outcome = (|| -> mlua::Result<$ret> {
                 let lua = &self.lua;
                 let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
                 $(gen_seed!(self, table, lua, (), (), _event, $field : $seed $(($st))?);)*
                 table.set(stringify!($out), mlua::Value::Nil)?;
                 self.call_bare(
@@ -3622,6 +3663,7 @@ macro_rules! gen_replace {
             let outcome = (|| -> mlua::Result<$ret> {
                 let lua = &self.lua;
                 let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
                 $(gen_seed!(self, table, lua, host, (), _event, $field : $seed $(($st))?);)*
                 table.set(stringify!($out), mlua::Value::Nil)?;
                 self.call_kind(
@@ -3667,6 +3709,7 @@ macro_rules! gen_replace {
             let outcome = (|| -> mlua::Result<$ret> {
                 let lua = &self.lua;
                 let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
                 $(gen_seed!(self, table, lua, _host, (), _event, $field : $seed $(($st))?);)*
                 table.set(stringify!($out), mlua::Value::Nil)?;
                 self.call_bare(
@@ -3711,6 +3754,7 @@ macro_rules! gen_replace {
             let outcome = (|| -> mlua::Result<$ret> {
                 let lua = &self.lua;
                 let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
                 $(gen_seed!(self, table, lua, (), level, _event, $field : $seed $(($st))?);)*
                 table.set(stringify!($out), mlua::Value::Nil)?;
                 let reader = Reader::Level(level);
@@ -3754,6 +3798,7 @@ macro_rules! gen_replace {
             let outcome = (|| -> mlua::Result<$ret> {
                 let lua = &self.lua;
                 let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
                 $(gen_seed!(self, table, lua, (), level, _event, $field : $seed $(($st))?);)*
                 table.set(stringify!($out), mlua::Value::Nil)?;
                 let reader = Reader::Level(&*level);
