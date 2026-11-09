@@ -16,8 +16,8 @@
 //! an unsupported field fails the check naming it.
 
 use crate::lua_model::{
-    Class, Conv, Field, Host, Kind, Model, ReplaceRead, assert_lines, classify, lua_read,
-    mutate_line, replace_sample, sample,
+    Class, Conv, Field, Host, Kind, Model, ReplaceRead, assert_lines, classify, dup_leaf, lua_read,
+    mutate_line, replace_sample, sample, table_leaves,
 };
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -517,8 +517,7 @@ fn param_asserts(
 
 /// The dispatch fields of `model` no assert covers: a parameter with no
 /// field entry, or one whose Lua asserts are empty and which is not
-/// allowlisted. The player `name` a player table stands in for is covered
-/// by that table's asserts.
+/// allowlisted.
 fn uncovered_fields(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String> {
     let kind_lua = kind_values(model)
         .as_ref()
@@ -543,6 +542,90 @@ fn uncovered_fields(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String
             out.push(field.name.clone());
         }
     }
+    // The player `name` a player table stands in for is covered by that
+    // table's asserts: a skipped `name` with no player table asserting it is
+    // a silent hole, not a covered field.
+    if model.skipped.iter().any(|s| s == "name")
+        && !model
+            .fields
+            .iter()
+            .any(|f| matches!(f.conv, Conv::Player | Conv::PlayerOpt))
+    {
+        out.push("name".to_owned());
+    }
+    out
+}
+
+/// The sequence row a leaf belongs to (`[1]`, `[2]`, ...): leaves of a plain
+/// table share the empty row. Only a leading index counts as a row: a nested
+/// one (a face list inside a container) is one table's leaf.
+fn leaf_row(suffix: &str) -> &str {
+    if suffix.starts_with('[')
+        && let Some(end) = suffix.find("].")
+    {
+        &suffix[..end + 1]
+    } else {
+        ""
+    }
+}
+
+/// A sequence leaf with its row prefix stripped (`[1].x` to `x`), so rows of
+/// one sequence compare leaf by leaf.
+fn row_leaf(suffix: &str) -> &str {
+    if let Some(rest) = suffix.strip_prefix('[')
+        && let Some(dot) = rest.find("].")
+    {
+        &suffix[dot + 3..]
+    } else {
+        suffix
+    }
+}
+
+/// The asserted-value problems in one hook's fields: a repeated value inside
+/// one row, or two identical sequence rows. Each names `hook: field` plus the
+/// leaf (or row) to fix. One leaf per row is not coverage: a second assert of
+/// the same value still passes when the handler never runs that leaf.
+fn dup_values(model: &Model, tys: &BTreeMap<String, String>) -> Vec<String> {
+    let mut out = Vec::new();
+    for (n, param) in model.dispatch_params.iter().enumerate() {
+        let Some(field) = model.fields.iter().find(|f| f.name == param.name) else {
+            continue;
+        };
+        let ty = tys.get(&field.name).map(String::as_str).unwrap_or("?");
+        let lua = sample(&field.conv, ty, &field.name, n).lua;
+        let leaves = table_leaves(&field.conv, &field.name, &lua, field.key.as_deref(), n);
+        let mut rows: std::collections::BTreeMap<&str, Vec<(String, String)>> =
+            std::collections::BTreeMap::new();
+        for (suffix, value) in &leaves {
+            rows.entry(leaf_row(suffix))
+                .or_default()
+                .push((suffix.clone(), value.clone()));
+        }
+        for (row, row_leaves) in &rows {
+            if let Some(suffix) = dup_leaf(field.key.as_deref(), row_leaves) {
+                let leaf = suffix.strip_prefix(row).unwrap_or(&suffix);
+                out.push(format!("{}: {}{row}{leaf}", model.name, field.name));
+            }
+        }
+        // Sequence rows must differ pairwise in at least one shared leaf:
+        // two identical rows make reversing them pass. (`s_vec` shifts `n`
+        // per element, so live rows always differ; a constant seed would not.)
+        let seq: Vec<(&str, &Vec<(String, String)>)> = rows
+            .iter()
+            .filter(|(r, _)| !r.is_empty())
+            .map(|(r, l)| (*r, l))
+            .collect();
+        for (i, (_, a)) in seq.iter().enumerate() {
+            for (second, b) in &seq[..i] {
+                let differs = a
+                    .iter()
+                    .any(|(s, v)| b.iter().any(|(t, w)| row_leaf(t) == row_leaf(s) && w != v));
+                if !differs {
+                    out.push(format!("{}: {}{second}", model.name, field.name));
+                }
+            }
+        }
+    }
     out
 }
 
@@ -554,21 +637,27 @@ fn handler_body(
     kind_lua: Option<&str>,
     cancel: bool,
 ) -> String {
-    let mut lines = Vec::new();
+    // The handler-ran witness, read back from the mod's Lua state: a handler
+    // whose asserts never fire leaves no error row, so without this a test
+    // passes when the handler never runs at all.
+    let mut lines = vec!["    __witness = (__witness or 0) + 1".to_owned()];
     // Param order, so the samples match the dispatch call's: the `name`
     // a player table stands in for still takes its index.
+    let mut checked = false;
     for (n, param) in model.dispatch_params.iter().enumerate() {
         let Some(field) = model.fields.iter().find(|f| f.name == param.name) else {
             continue;
         };
         let ty = tys.get(&field.name).map(String::as_str).unwrap_or("?");
-        lines.extend(param_asserts(model, field, ty, n, kind_lua));
+        let asserts = param_asserts(model, field, ty, n, kind_lua);
+        checked |= !asserts.is_empty();
+        lines.extend(asserts);
         let s = sample(&field.conv, ty, &field.name, n);
         if let Some(write) = s.write_lua {
             lines.push(mutate_line(&field.conv, &field.name, &write));
         }
     }
-    if lines.is_empty() {
+    if !checked {
         // A handler with nothing to check still proves the event exists.
         lines.push("    assert(event ~= nil, \"event\")".to_owned());
     }
@@ -731,11 +820,14 @@ fn test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
                 model.name
             );
             out.push_str(&format!(
-                "    let (m, id, _dir) = loaded(\"gen_{}\", {lua:?});\n",
+                "    let (m, id, _dir, lua) = loaded_tracked(\"gen_{}\", {lua:?});\n",
                 model.name
             ));
             out.push_str("    let firing_mods = boxed(m);\n");
             emit_firing(&mut out, model, tys, None);
+            // The handler ran (not merely stayed silent): without this, a
+            // renamed event or a dead handler passes `no_error` for free.
+            out.push_str("    assert_eq!(witness(&lua), 1, \"the handler ran\");\n");
             out.push_str("    no_error(&id);\n");
         }
         Some(plan) => {
@@ -745,12 +837,12 @@ fn test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
                 model.name, plan.register
             );
             out.push_str(&format!(
-                "    let (m, id, _dir) = loaded(\"gen_{}\", {lua:?});\n",
+                "    let (m, id, _dir, lua) = loaded_tracked(\"gen_{}\", {lua:?});\n",
                 model.name
             ));
             out.push_str("    let firing_mods = boxed(m);\n");
             // K2 (and gone) must not fire the K1 handler: any assert would
-            // trip `no_error`.
+            // trip `no_error`, and the witness would count the firing.
             for (label, kind_arg) in [("K2", Some(plan.k2)), ("gone", plan.gone)]
                 .into_iter()
                 .filter_map(|(label, arg)| arg.map(|arg| (label, arg)))
@@ -758,10 +850,14 @@ fn test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
                 out.push_str(&format!("    // {label} event: the handler stays quiet.\n"));
                 out.push_str("    {\n");
                 emit_call(&mut out, model, tys, Some(kind_arg));
+                out.push_str(&format!(
+                    "    assert_eq!(witness(&lua), 0, \"{label} event must not fire the handler\");\n"
+                ));
                 out.push_str("    }\n");
                 out.push_str("    no_error(&id);\n");
             }
             emit_firing(&mut out, model, tys, Some(plan.k1));
+            out.push_str("    assert_eq!(witness(&lua), 1, \"the handler ran\");\n");
             out.push_str("    no_error(&id);\n");
         }
     }
@@ -770,9 +866,9 @@ fn test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
 }
 
 /// A cancel hook's second test: a registered handler that asserts every
-/// field but returns without cancelling leaves the flag unset. The shared
-/// asserts (not silence) prove the handler ran, so `no_error` plus the
-/// unset flag is a real non-cancel proof.
+/// field but returns without cancelling leaves the flag unset. The witness
+/// proves the handler ran (not merely stayed silent), so `witness == 1` plus
+/// the unset flag is a real non-cancel proof.
 fn no_cancel_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
     let flag = model.cancel_flag.as_deref().unwrap_or("<cancel flag>");
     let mut out = format!("#[test]\nfn generated_{}_no_cancel() {{\n", model.name);
@@ -784,11 +880,12 @@ fn no_cancel_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
                 model.name
             );
             out.push_str(&format!(
-                "    let (m, id, _dir) = loaded(\"gen_{}_nocancel\", {lua:?});\n",
+                "    let (m, id, _dir, lua) = loaded_tracked(\"gen_{}_nocancel\", {lua:?});\n",
                 model.name
             ));
             out.push_str("    let firing_mods = boxed(m);\n");
             emit_call(&mut out, model, tys, None);
+            out.push_str("    assert_eq!(witness(&lua), 1, \"the handler ran\");\n");
             out.push_str(&format!(
                 "    assert!(!{flag}, \"{flag} set with no cancel\");\n"
             ));
@@ -801,11 +898,12 @@ fn no_cancel_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
                 model.name, plan.register
             );
             out.push_str(&format!(
-                "    let (m, id, _dir) = loaded(\"gen_{}_nocancel\", {lua:?});\n",
+                "    let (m, id, _dir, lua) = loaded_tracked(\"gen_{}_nocancel\", {lua:?});\n",
                 model.name
             ));
             out.push_str("    let firing_mods = boxed(m);\n");
             emit_call(&mut out, model, tys, Some(plan.k1));
+            out.push_str("    assert_eq!(witness(&lua), 1, \"the handler ran\");\n");
             out.push_str(&format!(
                 "    assert!(!{flag}, \"{flag} set with no cancel\");\n"
             ));
@@ -906,6 +1004,7 @@ pub fn run(check: bool) -> Result<(), String> {
     // hook and field. Spike hooks are hand-covered, except their generated
     // non-cancel test, which needs the same asserts.
     let mut uncovered = Vec::new();
+    let mut dups = Vec::new();
     for hc in &classes {
         let Class::Generated(model) = &hc.class else {
             continue;
@@ -931,12 +1030,14 @@ pub fn run(check: bool) -> Result<(), String> {
                 for field in uncovered_fields(model, &tys) {
                     uncovered.push(format!("{}: {field}", model.name));
                 }
+                dups.extend(dup_values(model, &tys));
             }
             tests.push(no_cancel_test_fn(model, &tys));
         } else if !spike {
             for field in uncovered_fields(model, &tys) {
                 uncovered.push(format!("{}: {field}", model.name));
             }
+            dups.extend(dup_values(model, &tys));
         }
         quiet.push(quiet_block(model, &tys));
     }
@@ -944,6 +1045,15 @@ pub fn run(check: bool) -> Result<(), String> {
         return Err(format!(
             "lua-hooks: no assertion for dispatch field(s): {} (assert every visible field, or allowlist it with a reason)",
             uncovered.join(", ")
+        ));
+    }
+    // Every asserted leaf carries its own value, or the generator fails
+    // naming the hook, field and leaf: a repeated value passes when the two
+    // leaves are swapped or one is zeroed.
+    if !dups.is_empty() {
+        return Err(format!(
+            "lua-hooks: repeated assert value(s): {} (every asserted leaf needs its own value, so reordering or zeroing fails)",
+            dups.join(", ")
         ));
     }
 
@@ -1023,7 +1133,7 @@ pub fn run(check: bool) -> Result<(), String> {
     }
     text.push_str("    #[test]\n    fn generated_no_handler_does_no_lua_work() {\n");
     text.push_str("        const LUA: &str = \"-- nothing registered\";\n");
-    text.push_str("        let (m, id, dir) = loaded(\"gen_no_handler\", LUA);\n");
+    text.push_str("        let (m, id, dir, lua) = loaded_tracked(\"gen_no_handler\", LUA);\n");
     text.push_str("        let firing_mods = boxed(m);\n");
     for block in &quiet {
         for line in block.lines() {
@@ -1032,6 +1142,8 @@ pub fn run(check: bool) -> Result<(), String> {
             text.push('\n');
         }
     }
+    // No handler was ever registered, so the witness never fired.
+    text.push_str("        assert_eq!(witness(&lua), 0, \"no handler ran\");\n");
     text.push_str("        no_error(&id);\n");
     text.push_str("        drop_dir(dir);\n");
     text.push_str("    }\n");

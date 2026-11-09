@@ -1821,9 +1821,9 @@ mod generated_tests {
 
     #[test]
     fn generated_frame() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_frame",
-            "horizon.on(\"frame\", function(event)\n    assert(event.elapsed == 1.5, \"elapsed\")\nend)",
+            "horizon.on(\"frame\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.elapsed == 1.5, \"elapsed\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_frame(
@@ -1831,25 +1831,27 @@ mod generated_tests {
             &firing_mods,
             Duration::from_secs_f64(1.5),
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_tick() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_tick",
-            "horizon.on(\"tick\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
+            "horizon.on(\"tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event ~= nil, \"event\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_tick(&mut FakeHost::empty(), &firing_mods);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_emissive() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_emissive",
-            "horizon.on(\"emissive\", function(event)\n    assert(event.layers[1].a == \"test:a0\", \"layers\")\n    assert(event.layers[2].a == \"test:a1\", \"layers\")\n    event.layers = { { a = \"test:a50\", b = \"test:b50\" } }\nend)",
+            "horizon.on(\"emissive\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.layers[1].a == \"test:a0\", \"layers\")\n    assert(event.layers[1].b == \"test:b0\", \"layers\")\n    assert(event.layers[2].a == \"test:a1\", \"layers\")\n    assert(event.layers[2].b == \"test:b1\", \"layers\")\n    event.layers = { { a = \"test:a50\", b = \"test:b50\" } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut layers = vec![("test:a0", "test:b0"), ("test:a1", "test:b1")];
@@ -1858,47 +1860,51 @@ mod generated_tests {
             format!("{:?}", layers),
             format!("{:?}", vec![("test:a50", "test:b50")])
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_server_about_to_start() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_server_about_to_start",
-            "horizon.on(\"server_about_to_start\", function(event)\n    assert(event.dedicated == true, \"dedicated\")\nend)",
+            "horizon.on(\"server_about_to_start\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dedicated == true, \"dedicated\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_server_about_to_start(&mut FakeHost::empty(), &firing_mods, true);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_server_stopping() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_server_stopping",
-            "horizon.on(\"server_stopping\", function(event)\n    assert(event.dedicated == true, \"dedicated\")\nend)",
+            "horizon.on(\"server_stopping\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dedicated == true, \"dedicated\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_server_stopping(&mut FakeHost::empty(), &firing_mods, true);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_level_tick_post() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_level_tick_post",
-            "horizon.on(\"level_tick_post\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
+            "horizon.on(\"level_tick_post\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_level_tick_post(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_changed() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_changed",
-            "horizon.on(\"block_changed\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.old == \"test:state10\", \"old\")\n    assert(event.new == \"test:state11\", \"new\")\n    assert(next(event.old_props) == nil, \"old_props\")\n    assert(next(event.new_props) == nil, \"new_props\")\nend)",
+            "horizon.on(\"block_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.old == \"test:state10\", \"old\")\n    assert(event.new == \"test:state11\", \"new\")\n    assert(next(event.old_props) == nil, \"old_props\")\n    assert(next(event.new_props) == nil, \"new_props\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_block_changed(
@@ -1909,51 +1915,55 @@ mod generated_tests {
             BlockStateId(10),
             BlockStateId(11),
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_key() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_key",
-            "horizon.on(\"key\", function(event)\n    assert(event.key == \"test:key\", \"key\")\n    assert(event.pressed == false, \"pressed\")\nend)",
+            "horizon.on(\"key\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.key == \"test:key\", \"key\")\n    assert(event.pressed == false, \"pressed\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_key(&mut FakeHost::empty(), &firing_mods, "test:key", false);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_wheel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_wheel",
-            "horizon.on(\"wheel\", function(event)\n    assert(event.steps == 1.5, \"steps\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"wheel\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.steps == 1.5, \"steps\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut claimed = false;
         dispatch_wheel(&mut FakeHost::empty(), &firing_mods, 1.5, &mut claimed);
         assert!(claimed, "claimed not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_wheel_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_wheel_nocancel",
-            "horizon.on(\"wheel\", function(event)\n    assert(event.steps == 1.5, \"steps\")\nend)",
+            "horizon.on(\"wheel\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.steps == 1.5, \"steps\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut claimed = false;
         dispatch_wheel(&mut FakeHost::empty(), &firing_mods, 1.5, &mut claimed);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!claimed, "claimed set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_commands() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_commands",
-            "horizon.on(\"commands\", function(event)\n    assert(event.commands[1] == \"test:seed\", \"commands\")\n    assert(event.commands[2] == \"test:seed2\", \"commands\")\n    event.commands[1] = \"test:edited\"; table.insert(event.commands, \"test:added\")\nend)",
+            "horizon.on(\"commands\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.commands[1] == \"test:seed\", \"commands\")\n    assert(event.commands[2] == \"test:seed2\", \"commands\")\n    event.commands[1] = \"test:edited\"; table.insert(event.commands, \"test:added\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut commands = vec!["test:seed", "test:seed2"];
@@ -1966,14 +1976,15 @@ mod generated_tests {
                 "test:added".to_owned()
             ]
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_zoom() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_zoom",
-            "horizon.on(\"zoom\", function(event)\n    assert(event ~= nil, \"event\")\n    assert(event.zoom == nil, \"replace seed\")\n    event.zoom = { factor = 1.5, smooth = true, turn = 2.5 }\nend)",
+            "horizon.on(\"zoom\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event ~= nil, \"event\")\n    assert(event.zoom == nil, \"replace seed\")\n    event.zoom = { factor = 1.5, smooth = true, turn = 2.5 }\nend)",
         );
         let firing_mods = boxed(m);
         let mut zoom: Option<NativeZoom> = None;
@@ -1986,14 +1997,15 @@ mod generated_tests {
                 turn: 2.5
             })
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_minimap() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_minimap",
-            "horizon.on(\"minimap\", function(event)\n    assert(event ~= nil, \"event\")\n    assert(event.minimap == nil, \"replace seed\")\n    event.minimap = { corner = \"top_left\", size = 64.0, blocks_per_pixel = 1.0, rotate = true, round = false }\nend)",
+            "horizon.on(\"minimap\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event ~= nil, \"event\")\n    assert(event.minimap == nil, \"replace seed\")\n    event.minimap = { corner = \"top_left\", size = 64.0, blocks_per_pixel = 1.0, rotate = true, round = false }\nend)",
         );
         let firing_mods = boxed(m);
         let mut minimap: Option<NativeMinimap> = None;
@@ -2008,14 +2020,15 @@ mod generated_tests {
                 round: false
             })
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_mods() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_mods",
-            "horizon.on(\"mods\", function(event)\n    assert(event.mods[1].id == \"test:mod0\", \"mods\")\n    assert(event.mods[2].id == \"test:mod1\", \"mods\")\n    event.mods = { { id = \"test:mod50\", title = \"test:title50\", description = \"test:desc50\", keys = { { key = \"test:key50\", label = \"test:label50\", default = \"test:default50\" } } } }\nend)",
+            "horizon.on(\"mods\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.mods[1].id == \"test:mod0\", \"mods\")\n    assert(event.mods[1].title == \"test:title0\", \"mods\")\n    assert(event.mods[1].description == \"test:desc0\", \"mods\")\n    assert(event.mods[1].keys[1].key == \"test:key0\", \"mods\")\n    assert(event.mods[1].keys[1].label == \"test:label0\", \"mods\")\n    assert(event.mods[1].keys[1].default == \"test:default0\", \"mods\")\n    assert(event.mods[2].id == \"test:mod1\", \"mods\")\n    assert(event.mods[2].title == \"test:title1\", \"mods\")\n    assert(event.mods[2].description == \"test:desc1\", \"mods\")\n    assert(event.mods[2].keys[1].key == \"test:key1\", \"mods\")\n    assert(event.mods[2].keys[1].label == \"test:label1\", \"mods\")\n    assert(event.mods[2].keys[1].default == \"test:default1\", \"mods\")\n    event.mods = { { id = \"test:mod50\", title = \"test:title50\", description = \"test:desc50\", keys = { { key = \"test:key50\", label = \"test:label50\", default = \"test:default50\" } } } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut mods = vec![
@@ -2057,14 +2070,15 @@ mod generated_tests {
                 }]
             )
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_settings() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_settings",
-            "horizon.on(\"settings\", function(event)\n    assert(event.mod_id == \"test:mod_id\", \"mod_id\")\n    assert(event.buttons[1] == \"test:seed\", \"buttons\")\n    assert(event.buttons[2] == \"test:seed2\", \"buttons\")\n    event.buttons[1] = \"test:edited\"; table.insert(event.buttons, \"test:added\")\nend)",
+            "horizon.on(\"settings\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.mod_id == \"test:mod_id\", \"mod_id\")\n    assert(event.buttons[1] == \"test:seed\", \"buttons\")\n    assert(event.buttons[2] == \"test:seed2\", \"buttons\")\n    event.buttons[1] = \"test:edited\"; table.insert(event.buttons, \"test:added\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut buttons = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
@@ -2082,25 +2096,27 @@ mod generated_tests {
                 "test:added".to_owned()
             ]
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_settings_click() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_settings_click",
-            "horizon.on(\"settings_click\", function(event)\n    assert(event.mod_id == \"test:mod_id\", \"mod_id\")\n    assert(event.button == 8, \"button\")\nend)",
+            "horizon.on(\"settings_click\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.mod_id == \"test:mod_id\", \"mod_id\")\n    assert(event.button == 8, \"button\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_settings_click(&mut FakeHost::empty(), &firing_mods, "test:mod_id", 8);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_entity_container() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_entity_container",
-            "horizon.on(\"block_entity_container\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.container == nil, \"replace seed\")\n    event.container = { slots = 9, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {}, menu = nil }\nend)",
+            "horizon.on(\"block_entity_container\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.container == nil, \"replace seed\")\n    event.container = { slots = 9, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {}, menu = nil }\nend)",
         );
         let firing_mods = boxed(m);
         let mut container: Option<ModContainer> = None;
@@ -2120,14 +2136,15 @@ mod generated_tests {
                 menu: None
             })
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_screen() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_screen",
-            "horizon.on(\"screen\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.screen == nil, \"replace seed\")\n    event.screen = { width = 100.0, height = 50.0, slots = { { x = 1.0, y = 2.0 }, false }, inventory_y = 10.0, inventory_x = 20.0, own_labels = true, own_background = false }\nend)",
+            "horizon.on(\"screen\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.screen == nil, \"replace seed\")\n    event.screen = { width = 100.0, height = 50.0, slots = { { x = 1.0, y = 2.0 }, false }, inventory_y = 10.0, inventory_x = 20.0, own_labels = true, own_background = false }\nend)",
         );
         let firing_mods = boxed(m);
         let mut screen: Option<NativeScreen> = None;
@@ -2144,36 +2161,39 @@ mod generated_tests {
                 own_background: false
             })
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_menu_clicked() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_clicked",
-            "horizon.on(\"menu_clicked\", function(event)\n    assert(event.uuid == 7, \"uuid\")\n    assert(event.window == 8, \"window\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.button == 10, \"button\")\n    assert(event.mode == 11, \"mode\")\nend)",
+            "horizon.on(\"menu_clicked\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.uuid == 7, \"uuid\")\n    assert(event.window == 8, \"window\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.button == 10, \"button\")\n    assert(event.mode == 11, \"mode\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_menu_clicked(&mut FakeHost::empty(), &firing_mods, 7, 8, 9, 10, 11);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_menu_closed() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_closed",
-            "horizon.on(\"menu_closed\", function(event)\n    assert(event.uuid == 7, \"uuid\")\n    assert(event.window == 8, \"window\")\nend)",
+            "horizon.on(\"menu_closed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.uuid == 7, \"uuid\")\n    assert(event.window == 8, \"window\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_menu_closed(&mut FakeHost::empty(), &firing_mods, 7, 8);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_tooltip() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_tooltip",
-            "horizon.on(\"tooltip\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.lines[1].text == \"test:line1\", \"lines\")\n    assert(event.lines[1].count == 3, \"lines\")\n    assert(event.lines[2].text == \"test:line2\", \"lines\")\n    assert(event.lines[2].count == 4, \"lines\")\n    event.lines = { { text = \"test:line51\", component = { text = \"test:line51\" }, count = 53 } }\nend)",
+            "horizon.on(\"tooltip\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 1, \"stack\")\n    assert(event.stack.damage == 0, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.lines[1].text == \"test:line1\", \"lines\")\n    assert(event.lines[1].component.text == \"test:line1\", \"lines\")\n    assert(event.lines[1].count == 3, \"lines\")\n    assert(event.lines[2].text == \"test:line2\", \"lines\")\n    assert(event.lines[2].component.text == \"test:line2\", \"lines\")\n    assert(event.lines[2].count == 4, \"lines\")\n    event.lines = { { text = \"test:line51\", component = { text = \"test:line51\" }, count = 53 } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut lines = vec![
@@ -2201,14 +2221,15 @@ mod generated_tests {
                 )]
             )
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_spread() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_spread",
-            "horizon.on(\"block_spread\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 4, \"from\")\n    assert(event.from.z == 5, \"from\")\n    assert(event.to.x == 4, \"to\")\n    assert(event.to.y == 5, \"to\")\n    assert(event.to.z == 6, \"to\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"block_spread\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 4, \"from\")\n    assert(event.from.z == 5, \"from\")\n    assert(event.to.x == 4, \"to\")\n    assert(event.to.y == 5, \"to\")\n    assert(event.to.z == 6, \"to\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -2222,14 +2243,15 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_spread_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_spread_nocancel",
-            "horizon.on(\"block_spread\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 4, \"from\")\n    assert(event.from.z == 5, \"from\")\n    assert(event.to.x == 4, \"to\")\n    assert(event.to.y == 5, \"to\")\n    assert(event.to.z == 6, \"to\")\nend)",
+            "horizon.on(\"block_spread\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 4, \"from\")\n    assert(event.from.z == 5, \"from\")\n    assert(event.to.x == 4, \"to\")\n    assert(event.to.y == 5, \"to\")\n    assert(event.to.z == 6, \"to\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -2242,15 +2264,16 @@ mod generated_tests {
             BlockPos::new(4, 5, 6),
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_piston_move() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_piston_move",
-            "horizon.on(\"piston_move\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.piston.x == 2, \"piston\")\n    assert(event.piston.y == 3, \"piston\")\n    assert(event.piston.z == 4, \"piston\")\n    assert(event.direction.x == 3, \"direction\")\n    assert(event.direction.y == 4, \"direction\")\n    assert(event.direction.z == 5, \"direction\")\n    assert(event.push[1].x == 4, \"push\")\n    assert(event.push[2].x == 5, \"push\")\n    assert(event.destroy[1].x == 5, \"destroy\")\n    assert(event.destroy[2].x == 6, \"destroy\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"piston_move\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.piston.x == 2, \"piston\")\n    assert(event.piston.y == 3, \"piston\")\n    assert(event.piston.z == 4, \"piston\")\n    assert(event.direction.x == 3, \"direction\")\n    assert(event.direction.y == 4, \"direction\")\n    assert(event.direction.z == 5, \"direction\")\n    assert(event.push[1].x == 4, \"push\")\n    assert(event.push[1].y == 5, \"push\")\n    assert(event.push[1].z == 6, \"push\")\n    assert(event.push[2].x == 5, \"push\")\n    assert(event.push[2].y == 6, \"push\")\n    assert(event.push[2].z == 7, \"push\")\n    assert(event.destroy[1].x == 5, \"destroy\")\n    assert(event.destroy[1].y == 6, \"destroy\")\n    assert(event.destroy[1].z == 7, \"destroy\")\n    assert(event.destroy[2].x == 6, \"destroy\")\n    assert(event.destroy[2].y == 7, \"destroy\")\n    assert(event.destroy[2].z == 8, \"destroy\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -2265,14 +2288,15 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_piston_move_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_piston_move_nocancel",
-            "horizon.on(\"piston_move\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.piston.x == 2, \"piston\")\n    assert(event.piston.y == 3, \"piston\")\n    assert(event.piston.z == 4, \"piston\")\n    assert(event.direction.x == 3, \"direction\")\n    assert(event.direction.y == 4, \"direction\")\n    assert(event.direction.z == 5, \"direction\")\n    assert(event.push[1].x == 4, \"push\")\n    assert(event.push[2].x == 5, \"push\")\n    assert(event.destroy[1].x == 5, \"destroy\")\n    assert(event.destroy[2].x == 6, \"destroy\")\nend)",
+            "horizon.on(\"piston_move\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.piston.x == 2, \"piston\")\n    assert(event.piston.y == 3, \"piston\")\n    assert(event.piston.z == 4, \"piston\")\n    assert(event.direction.x == 3, \"direction\")\n    assert(event.direction.y == 4, \"direction\")\n    assert(event.direction.z == 5, \"direction\")\n    assert(event.push[1].x == 4, \"push\")\n    assert(event.push[1].y == 5, \"push\")\n    assert(event.push[1].z == 6, \"push\")\n    assert(event.push[2].x == 5, \"push\")\n    assert(event.push[2].y == 6, \"push\")\n    assert(event.push[2].z == 7, \"push\")\n    assert(event.destroy[1].x == 5, \"destroy\")\n    assert(event.destroy[1].y == 6, \"destroy\")\n    assert(event.destroy[1].z == 7, \"destroy\")\n    assert(event.destroy[2].x == 6, \"destroy\")\n    assert(event.destroy[2].y == 7, \"destroy\")\n    assert(event.destroy[2].z == 8, \"destroy\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -2286,15 +2310,16 @@ mod generated_tests {
             &[BlockPos::new(5, 6, 7), BlockPos::new(6, 7, 8)],
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_fill_bucket() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_fill_bucket",
-            "horizon.on(\"fill_bucket\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"fill_bucket\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 1, \"stack\")\n    assert(event.stack.damage == 0, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -2311,14 +2336,15 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_fill_bucket_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_fill_bucket_nocancel",
-            "horizon.on(\"fill_bucket\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
+            "horizon.on(\"fill_bucket\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 1, \"stack\")\n    assert(event.stack.damage == 0, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -2334,15 +2360,16 @@ mod generated_tests {
             [2, 3, 4],
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_net_from_client() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_net_from_client",
-            "horizon.on(\"net_from_client\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.channel == \"test:channel\", \"channel\")\n    assert(event.data == \"t\" .. string.char(0, 159), \"data\")\nend)",
+            "horizon.on(\"net_from_client\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.channel == \"test:channel\", \"channel\")\n    assert(event.data == \"t\" .. string.char(0, 159), \"data\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_net_from_client(
@@ -2352,14 +2379,15 @@ mod generated_tests {
             "test:channel",
             &[116u8, 0u8, 159u8],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_net_from_server() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_net_from_server",
-            "horizon.on(\"net_from_server\", function(event)\n    assert(event.channel == \"test:channel\", \"channel\")\n    assert(event.data == \"t\" .. string.char(0, 159), \"data\")\nend)",
+            "horizon.on(\"net_from_server\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.channel == \"test:channel\", \"channel\")\n    assert(event.data == \"t\" .. string.char(0, 159), \"data\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_net_from_server(
@@ -2368,25 +2396,27 @@ mod generated_tests {
             "test:channel",
             &[116u8, 0u8, 159u8],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_on_equip() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_on_equip",
-            "horizon.on(\"on_equip\", function(event)\n    assert(event.slot == \"test:slot\", \"slot\")\n    assert(event.new == nil, \"new\")\nend)",
+            "horizon.on(\"on_equip\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.slot == \"test:slot\", \"slot\")\n    assert(event.new == nil, \"new\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_on_equip(&mut FakeHost::empty(), &firing_mods, "test:slot", None);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_signal() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_signal",
-            "horizon.on(\"block_signal\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.face == \"south\", \"face\")\n    assert(event.direct == true, \"direct\")\n    assert(event.signal == 12, \"signal\")\n    event.signal = 55\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"block_signal\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.face == \"south\", \"face\")\n    assert(event.direct == true, \"direct\")\n    assert(event.signal == 12, \"signal\")\n    event.signal = 55\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut signal = 12;
@@ -2401,27 +2431,29 @@ mod generated_tests {
             &mut signal,
         );
         assert_eq!(signal, 55);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_is_signal_source() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_is_signal_source",
-            "horizon.on(\"is_signal_source\", function(event)\n    assert(event.state == \"test:state8\", \"state\")\n    assert(event.source == false, \"source\")\n    event.source = true\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"is_signal_source\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.state == \"test:state8\", \"state\")\n    assert(event.source == false, \"source\")\n    event.source = true\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut source = false;
         dispatch_is_signal_source(&FakeLevel, &firing_mods, BlockStateId(8), &mut source);
         assert!(source);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_left_click_block() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_left_click_block",
-            "horizon.on(\"left_click_block\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.face.x == 2, \"face\")\n    assert(event.face.y == 3, \"face\")\n    assert(event.face.z == 4, \"face\")\n    assert(event.state == \"test:state10\", \"state\")\n    horizon.cancel()\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"left_click_block\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.face.x == 2, \"face\")\n    assert(event.face.y == 3, \"face\")\n    assert(event.face.z == 4, \"face\")\n    assert(event.state == \"test:state10\", \"state\")\n    horizon.cancel()\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -2434,14 +2466,15 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_left_click_block_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_left_click_block_nocancel",
-            "horizon.on(\"left_click_block\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.face.x == 2, \"face\")\n    assert(event.face.y == 3, \"face\")\n    assert(event.face.z == 4, \"face\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"left_click_block\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.face.x == 2, \"face\")\n    assert(event.face.y == 3, \"face\")\n    assert(event.face.z == 4, \"face\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -2453,15 +2486,16 @@ mod generated_tests {
             BlockStateId(10),
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_leave_level() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_leave_level",
-            "horizon.on(\"entity_leave_level\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_leave_level\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -2473,6 +2507,7 @@ mod generated_tests {
                 8,
                 "minecraft:skeleton",
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_entity_leave_level(
@@ -2482,14 +2517,15 @@ mod generated_tests {
             8,
             "minecraft:zombie",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_entity_fluids() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_entity_fluids",
-            "horizon.on(\"block_entity_fluids\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.fluids == nil, \"replace seed\")\n    event.fluids = { tanks = { 1000 }, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {} }\nend)",
+            "horizon.on(\"block_entity_fluids\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.fluids == nil, \"replace seed\")\n    event.fluids = { tanks = { 1000 }, faces = { { 0 }, {}, {}, {}, {}, {} }, inputs = { 0 }, outputs = {} }\nend)",
         );
         let firing_mods = boxed(m);
         let mut fluids: Option<ModFluidTanks> = None;
@@ -2503,14 +2539,15 @@ mod generated_tests {
                 outputs: vec![]
             })
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_should_apply_effect_tick_this_tick() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_should_apply_effect_tick_this_tick",
-            "horizon.on(\"should_apply_effect_tick_this_tick\", function(event)\n    assert(event.effect == \"test:effect\", \"effect\")\n    assert(event.tick_count == 8, \"tick_count\")\n    assert(event.amplifier == 9, \"amplifier\")\n    assert(event.apply == false, \"apply\")\n    event.apply = true\nend)",
+            "horizon.on(\"should_apply_effect_tick_this_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.effect == \"test:effect\", \"effect\")\n    assert(event.tick_count == 8, \"tick_count\")\n    assert(event.amplifier == 9, \"amplifier\")\n    assert(event.apply == false, \"apply\")\n    event.apply = true\nend)",
         );
         let firing_mods = boxed(m);
         let mut apply = false;
@@ -2523,14 +2560,15 @@ mod generated_tests {
             &mut apply,
         );
         assert!(apply);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_apply_effect_tick() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_apply_effect_tick",
-            "horizon.on(\"apply_effect_tick\", function(event)\n    assert(event.effect == \"test:effect\", \"effect\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.amplifier == 10, \"amplifier\")\n    assert(event.keep == true, \"keep\")\n    event.keep = false\nend, \"minecraft:zombie\")",
+            "horizon.on(\"apply_effect_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.effect == \"test:effect\", \"effect\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.amplifier == 10, \"amplifier\")\n    assert(event.keep == true, \"keep\")\n    event.keep = false\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -2545,6 +2583,7 @@ mod generated_tests {
                 10,
                 &mut keep,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -2559,6 +2598,7 @@ mod generated_tests {
                 10,
                 &mut keep,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         let mut keep = true;
@@ -2572,14 +2612,15 @@ mod generated_tests {
             &mut keep,
         );
         assert!(!keep);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_on_effect_added() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_on_effect_added",
-            "horizon.on(\"on_effect_added\", function(event)\n    assert(event.effect == \"test:effect\", \"effect\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.amplifier == 9, \"amplifier\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"on_effect_added\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.effect == \"test:effect\", \"effect\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.amplifier == 9, \"amplifier\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -2591,11 +2632,13 @@ mod generated_tests {
                 Some(13),
                 9,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
             dispatch_on_effect_added(&mut FakeHost::empty(), &firing_mods, "test:effect", None, 9);
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_on_effect_added(
@@ -2605,14 +2648,15 @@ mod generated_tests {
             Some(11),
             9,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_mob_effect_added() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_mob_effect_added",
-            "horizon.on(\"mob_effect_added\", function(event)\n    assert(event.effect == \"test:effect\", \"effect\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.amplifier == 9, \"amplifier\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"mob_effect_added\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.effect == \"test:effect\", \"effect\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.amplifier == 9, \"amplifier\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -2624,11 +2668,13 @@ mod generated_tests {
                 Some(13),
                 9,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
             dispatch_mob_effect_added(&mut FakeHost::empty(), &firing_mods, "test:effect", None, 9);
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_mob_effect_added(
@@ -2638,14 +2684,15 @@ mod generated_tests {
             Some(11),
             9,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_chunk_unload() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_chunk_unload",
-            "horizon.on(\"chunk_unload\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.chunk.x == 4, \"chunk\")\n    assert(event.chunk.z == -6, \"chunk\")\nend)",
+            "horizon.on(\"chunk_unload\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.chunk.x == 4, \"chunk\")\n    assert(event.chunk.z == -6, \"chunk\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_chunk_unload(
@@ -2654,14 +2701,15 @@ mod generated_tests {
             "test:dimension",
             [4, -6],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_item_bar() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_bar",
-            "horizon.on(\"item_bar\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.bar.value == 8, \"bar\")\n    event.bar = nil\nend)",
+            "horizon.on(\"item_bar\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 1, \"stack\")\n    assert(event.stack.damage == 0, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.bar.value == 8, \"bar\")\n    assert(event.bar.max == 2, \"bar\")\n    event.bar = nil\nend)",
         );
         let firing_mods = boxed(m);
         let mut bar = Some((8, 2));
@@ -2677,27 +2725,29 @@ mod generated_tests {
             &mut bar,
         );
         assert_eq!(bar, None);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_has_analog_output() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_has_analog_output",
-            "horizon.on(\"has_analog_output\", function(event)\n    assert(event.state == \"test:state8\", \"state\")\n    assert(event.output == false, \"output\")\n    event.output = true\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"has_analog_output\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.state == \"test:state8\", \"state\")\n    assert(event.output == false, \"output\")\n    event.output = true\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut output = false;
         dispatch_has_analog_output(&FakeLevel, &firing_mods, BlockStateId(8), &mut output);
         assert!(output);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_analog_output() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_analog_output",
-            "horizon.on(\"analog_output\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.face == \"south\", \"face\")\n    assert(event.output == 11, \"output\")\n    event.output = 54\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"analog_output\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.face == \"south\", \"face\")\n    assert(event.output == 11, \"output\")\n    event.output = 54\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut output = 11;
@@ -2711,14 +2761,15 @@ mod generated_tests {
             &mut output,
         );
         assert_eq!(output, 54);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_dispense_item() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_dispense_item",
-            "horizon.on(\"dispense_item\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.facing == \"north\", \"facing\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.answer == nil, \"replace seed\")\n    event.answer = { remainder = { id = \"test:replace\", count = 1, damage = 0 }, event = 2000 }\nend)",
+            "horizon.on(\"dispense_item\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.facing == \"north\", \"facing\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 4, \"stack\")\n    assert(event.stack.damage == 3, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.answer == nil, \"replace seed\")\n    event.answer = { remainder = { id = \"test:replace\", count = 1, damage = 0 }, event = 2000 }\nend)",
         );
         let firing_mods = boxed(m);
         let mut answer: Option<NativeDispensed> = None;
@@ -2748,14 +2799,15 @@ mod generated_tests {
                 2000
             ))
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_can_survive() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_can_survive",
-            "horizon.on(\"can_survive\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.survives == nil, \"replace seed\")\n    event.survives = true\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"can_survive\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.survives == nil, \"replace seed\")\n    event.survives = true\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut survives: Option<bool> = None;
@@ -2768,14 +2820,15 @@ mod generated_tests {
             &mut survives,
         );
         assert_eq!(survives, Some(true));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_may_place_on() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_may_place_on",
-            "horizon.on(\"may_place_on\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.ground == \"test:state10\", \"ground\")\n    assert(event.ground_pos.x == 4, \"ground_pos\")\n    assert(event.ground_pos.y == 5, \"ground_pos\")\n    assert(event.ground_pos.z == 6, \"ground_pos\")\n    assert(event.may == nil, \"replace seed\")\n    event.may = true\n    assert(next(event.state_props) == nil, \"state_props\")\n    assert(next(event.ground_props) == nil, \"ground_props\")\nend)",
+            "horizon.on(\"may_place_on\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.ground == \"test:state10\", \"ground\")\n    assert(event.ground_pos.x == 4, \"ground_pos\")\n    assert(event.ground_pos.y == 5, \"ground_pos\")\n    assert(event.ground_pos.z == 6, \"ground_pos\")\n    assert(event.may == nil, \"replace seed\")\n    event.may = true\n    assert(next(event.state_props) == nil, \"state_props\")\n    assert(next(event.ground_props) == nil, \"ground_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut may: Option<bool> = None;
@@ -2789,14 +2842,15 @@ mod generated_tests {
             &mut may,
         );
         assert_eq!(may, Some(true));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_is_valid_bonemeal_target() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_is_valid_bonemeal_target",
-            "horizon.on(\"is_valid_bonemeal_target\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.valid == nil, \"replace seed\")\n    event.valid = true\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"is_valid_bonemeal_target\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.valid == nil, \"replace seed\")\n    event.valid = true\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut valid: Option<bool> = None;
@@ -2809,14 +2863,15 @@ mod generated_tests {
             &mut valid,
         );
         assert_eq!(valid, Some(true));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_consume_effect() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_consume_effect",
-            "horizon.on(\"consume_effect\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.data.testkey == 8, \"data\")\nend)",
+            "horizon.on(\"consume_effect\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.data.testkey == 8, \"data\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_consume_effect(
@@ -2825,27 +2880,29 @@ mod generated_tests {
             "test:kind",
             &serde_json::json!({ "testkey": 8 }),
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_loot_table_load() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_loot_table_load",
-            "horizon.on(\"loot_table_load\", function(event)\n    assert(event.id == \"test:id\", \"id\")\n    assert(event.table.testkey == 8, \"table\")\n    event.table = { testkey = 51 }\nend)",
+            "horizon.on(\"loot_table_load\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.id == \"test:id\", \"id\")\n    assert(event.table.testkey == 8, \"table\")\n    event.table = { testkey = 51 }\nend)",
         );
         let firing_mods = boxed(m);
         let mut table = serde_json::json!({ "testkey": 8 });
         dispatch_loot_table_load(&firing_mods, "test:id", &mut table);
         assert_eq!(table, serde_json::json!({ "testkey": 51 }));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_state_for_placement() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_state_for_placement",
-            "horizon.on(\"state_for_placement\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.context.face == \"north\", \"context\")\n    assert(event.fluid.kind == \"minecraft:empty\", \"fluid\")\n    assert(event.answer == nil, \"replace seed\")\n    event.answer = event.state\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"state_for_placement\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.context.pos.x == 3, \"context\")\n    assert(event.context.pos.y == 4, \"context\")\n    assert(event.context.pos.z == 5, \"context\")\n    assert(event.context.hit_pos.x == 6, \"context\")\n    assert(event.context.hit_pos.y == 7, \"context\")\n    assert(event.context.hit_pos.z == 8, \"context\")\n    assert(event.context.face == \"north\", \"context\")\n    assert(event.context.hit.x == 9.5, \"context\")\n    assert(event.context.hit.y == 10.5, \"context\")\n    assert(event.context.hit.z == 11.5, \"context\")\n    assert(event.context.inside == true, \"context\")\n    assert(event.context.yaw == 92.0, \"context\")\n    assert(event.context.pitch == 32.0, \"context\")\n    assert(event.context.sneaking == false, \"context\")\n    assert(event.context.item == \"test:item2\", \"context\")\n    assert(event.context.replace_clicked == true, \"context\")\n    assert(event.fluid.kind == \"minecraft:empty\", \"fluid\")\n    assert(event.fluid.amount == 0, \"fluid\")\n    assert(event.fluid.falling == false, \"fluid\")\n    assert(event.answer == nil, \"replace seed\")\n    event.answer = event.state\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut answer: Option<Option<BlockStateId>> = None;
@@ -2856,12 +2913,16 @@ mod generated_tests {
             BlockStateId(9),
             &PlacementContext {
                 pos: BlockPos::new(3, 4, 5),
-                hit_pos: BlockPos::new(3, 4, 5),
+                hit_pos: BlockPos::new(6, 7, 8),
                 face: Direction::North,
-                hit: Default::default(),
+                hit: horizon_core::geometry::Vec3 {
+                    x: 9.5,
+                    y: 10.5,
+                    z: 11.5,
+                },
                 inside: true,
                 yaw: 92.0,
-                pitch: 0.0,
+                pitch: 32.0,
                 sneaking: false,
                 item: "test:item2".into(),
                 replace_clicked: true,
@@ -2870,14 +2931,15 @@ mod generated_tests {
             &mut answer,
         );
         assert_eq!(answer, Some(Some(BlockStateId(9))));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_enchant_effect() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_enchant_effect",
-            "horizon.on(\"enchant_effect\", function(event)\n    assert(event.enchantment == \"test:enchantment\", \"enchantment\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.data.testkey == 9, \"data\")\n    assert(event.level == 10, \"level\")\n    assert(event.victim == 11, \"victim\")\nend)",
+            "horizon.on(\"enchant_effect\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.enchantment == \"test:enchantment\", \"enchantment\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.data.testkey == 9, \"data\")\n    assert(event.level == 10, \"level\")\n    assert(event.victim == 11, \"victim\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_enchant_effect(
@@ -2889,14 +2951,15 @@ mod generated_tests {
             10,
             11,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_modify_default_components() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_modify_default_components",
-            "horizon.on(\"modify_default_components\", function(event)\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.components.testkey == 8, \"components\")\n    event.components = { testkey = 51 }\nend)",
+            "horizon.on(\"modify_default_components\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.components.testkey == 8, \"components\")\n    event.components = { testkey = 51 }\nend)",
         );
         let firing_mods = boxed(m);
         let mut components = [("testkey".to_owned(), serde_json::json!(8))]
@@ -2909,17 +2972,27 @@ mod generated_tests {
                 .into_iter()
                 .collect()
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_shader_params() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_shader_params",
-            "horizon.on(\"shader_params\", function(event)\n    assert(event.partial == 1.5, \"partial\")\n    assert(event.params[1].x == 2.5, \"params\")\n    assert(event.params[8].x == 2.5, \"params\")\n    event.params = { { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 13.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 14.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 15.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 16.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 17.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 18.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 19.5, y = 2.5, z = 3.5, w = 4.5 } }\nend)",
+            "horizon.on(\"shader_params\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.partial == 1.5, \"partial\")\n    assert(event.params[1].x == 2.5, \"params\")\n    assert(event.params[1].y == 3.5, \"params\")\n    assert(event.params[1].z == 4.5, \"params\")\n    assert(event.params[1].w == 5.5, \"params\")\n    assert(event.params[2].x == 12.5, \"params\")\n    assert(event.params[2].y == 13.5, \"params\")\n    assert(event.params[2].z == 14.5, \"params\")\n    assert(event.params[2].w == 15.5, \"params\")\n    assert(event.params[3].x == 22.5, \"params\")\n    assert(event.params[3].y == 23.5, \"params\")\n    assert(event.params[3].z == 24.5, \"params\")\n    assert(event.params[3].w == 25.5, \"params\")\n    assert(event.params[4].x == 32.5, \"params\")\n    assert(event.params[4].y == 33.5, \"params\")\n    assert(event.params[4].z == 34.5, \"params\")\n    assert(event.params[4].w == 35.5, \"params\")\n    assert(event.params[5].x == 42.5, \"params\")\n    assert(event.params[5].y == 43.5, \"params\")\n    assert(event.params[5].z == 44.5, \"params\")\n    assert(event.params[5].w == 45.5, \"params\")\n    assert(event.params[6].x == 52.5, \"params\")\n    assert(event.params[6].y == 53.5, \"params\")\n    assert(event.params[6].z == 54.5, \"params\")\n    assert(event.params[6].w == 55.5, \"params\")\n    assert(event.params[7].x == 62.5, \"params\")\n    assert(event.params[7].y == 63.5, \"params\")\n    assert(event.params[7].z == 64.5, \"params\")\n    assert(event.params[7].w == 65.5, \"params\")\n    assert(event.params[8].x == 72.5, \"params\")\n    assert(event.params[8].y == 73.5, \"params\")\n    assert(event.params[8].z == 74.5, \"params\")\n    assert(event.params[8].w == 75.5, \"params\")\n    event.params = { { x = 12.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 13.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 14.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 15.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 16.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 17.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 18.5, y = 2.5, z = 3.5, w = 4.5 }; { x = 19.5, y = 2.5, z = 3.5, w = 4.5 } }\nend)",
         );
         let firing_mods = boxed(m);
-        let mut params = [[2.5, 2.5, 3.5, 4.5]; 8];
+        let mut params = [
+            [2.5, 3.5, 4.5, 5.5],
+            [12.5, 13.5, 14.5, 15.5],
+            [22.5, 23.5, 24.5, 25.5],
+            [32.5, 33.5, 34.5, 35.5],
+            [42.5, 43.5, 44.5, 45.5],
+            [52.5, 53.5, 54.5, 55.5],
+            [62.5, 63.5, 64.5, 65.5],
+            [72.5, 73.5, 74.5, 75.5],
+        ];
         dispatch_shader_params(&FakeHost::empty(), &firing_mods, 1.5, &mut params);
         assert_eq!(
             params,
@@ -2934,14 +3007,15 @@ mod generated_tests {
                 [19.5, 2.5, 3.5, 4.5]
             ]
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_highlight() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_highlight",
-            "horizon.on(\"block_highlight\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.partial == 3.5, \"partial\")\n    horizon.cancel()\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"block_highlight\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.partial == 3.5, \"partial\")\n    horizon.cancel()\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -2954,14 +3028,15 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_highlight_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_highlight_nocancel",
-            "horizon.on(\"block_highlight\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"block_highlight\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -2973,15 +3048,16 @@ mod generated_tests {
             3.5,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_render_hand() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_render_hand",
-            "horizon.on(\"render_hand\", function(event)\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack == nil, \"stack\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(event.swing == 4.5, \"swing\")\n    assert(event.equip == 5.5, \"equip\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"render_hand\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack == nil, \"stack\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(event.swing == 4.5, \"swing\")\n    assert(event.equip == 5.5, \"equip\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -2996,14 +3072,15 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_render_hand_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_render_hand_nocancel",
-            "horizon.on(\"render_hand\", function(event)\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack == nil, \"stack\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(event.swing == 4.5, \"swing\")\n    assert(event.equip == 5.5, \"equip\")\nend)",
+            "horizon.on(\"render_hand\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack == nil, \"stack\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(event.swing == 4.5, \"swing\")\n    assert(event.equip == 5.5, \"equip\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -3017,26 +3094,28 @@ mod generated_tests {
             5.5,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_client_resources_reloaded() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_resources_reloaded",
-            "horizon.on(\"client_resources_reloaded\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
+            "horizon.on(\"client_resources_reloaded\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event ~= nil, \"event\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_client_resources_reloaded(&mut FakeHost::empty(), &firing_mods);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_use_duration() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_use_duration",
-            "horizon.on(\"use_duration\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.duration == 8, \"duration\")\n    event.duration = 51\nend)",
+            "horizon.on(\"use_duration\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 1, \"stack\")\n    assert(event.stack.damage == 0, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.duration == 8, \"duration\")\n    event.duration = 51\nend)",
         );
         let firing_mods = boxed(m);
         let mut duration = 8;
@@ -3052,14 +3131,15 @@ mod generated_tests {
             &mut duration,
         );
         assert_eq!(duration, 51);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_use_animation() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_use_animation",
-            "horizon.on(\"use_animation\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.animation == \"block\", \"animation\")\n    event.animation = \"drink\"\nend)",
+            "horizon.on(\"use_animation\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 1, \"stack\")\n    assert(event.stack.damage == 0, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.animation == \"block\", \"animation\")\n    event.animation = \"drink\"\nend)",
         );
         let firing_mods = boxed(m);
         let mut animation = UseAnimation::Block;
@@ -3075,14 +3155,15 @@ mod generated_tests {
             &mut animation,
         );
         assert_eq!(animation, UseAnimation::Drink);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_can_eat() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_can_eat",
-            "horizon.on(\"can_eat\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.can_eat == false, \"can_eat\")\n    event.can_eat = true\nend)",
+            "horizon.on(\"can_eat\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 1, \"stack\")\n    assert(event.stack.damage == 0, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.can_eat == false, \"can_eat\")\n    event.can_eat = true\nend)",
         );
         let firing_mods = boxed(m);
         let mut can_eat = false;
@@ -3098,14 +3179,15 @@ mod generated_tests {
             &mut can_eat,
         );
         assert!(can_eat);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_perform_console_command() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_perform_console_command",
-            "horizon.on(\"perform_console_command\", function(event)\n    assert(event.command == \"test:command\", \"command\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"perform_console_command\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.command == \"test:command\", \"command\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut ran = false;
@@ -3116,14 +3198,15 @@ mod generated_tests {
             &mut ran,
         );
         assert!(ran, "ran not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_perform_console_command_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_perform_console_command_nocancel",
-            "horizon.on(\"perform_console_command\", function(event)\n    assert(event.command == \"test:command\", \"command\")\nend)",
+            "horizon.on(\"perform_console_command\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.command == \"test:command\", \"command\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut ran = false;
@@ -3133,26 +3216,28 @@ mod generated_tests {
             "test:command",
             &mut ran,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!ran, "ran set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_server_data_loaded() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_server_data_loaded",
-            "horizon.on(\"server_data_loaded\", function(event)\n    assert(event.reload == true, \"reload\")\nend)",
+            "horizon.on(\"server_data_loaded\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.reload == true, \"reload\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_server_data_loaded(&mut FakeHost::empty(), &firing_mods, true);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_compute_fov() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_compute_fov",
-            "horizon.on(\"compute_fov\", function(event)\n    assert(event.partial == 1.5, \"partial\")\n    assert(event.camera.x == 2, \"camera\")\n    assert(event.camera.y == 2.0, \"camera\")\n    assert(event.camera.z == 3.0, \"camera\")\n    assert(event.degrees == 3.5, \"degrees\")\n    event.degrees = 17.5\nend)",
+            "horizon.on(\"compute_fov\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.partial == 1.5, \"partial\")\n    assert(event.camera.x == 2.0, \"camera\")\n    assert(event.camera.y == 3.0, \"camera\")\n    assert(event.camera.z == 4.0, \"camera\")\n    assert(event.degrees == 3.5, \"degrees\")\n    event.degrees = 17.5\nend)",
         );
         let firing_mods = boxed(m);
         let mut degrees = 3.5;
@@ -3160,18 +3245,19 @@ mod generated_tests {
             &FakeHost::empty(),
             &firing_mods,
             1.5,
-            [2.0, 2.0, 3.0],
+            [2.0, 3.0, 4.0],
             &mut degrees,
         );
         assert_eq!(degrees, 17.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_mouse_button_pre() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_mouse_button_pre",
-            "horizon.on(\"mouse_button_pre\", function(event)\n    assert(event.button == 7, \"button\")\n    assert(event.pressed == false, \"pressed\")\n    assert(event.modifiers == 9, \"modifiers\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"mouse_button_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.button == 7, \"button\")\n    assert(event.pressed == false, \"pressed\")\n    assert(event.modifiers == 9, \"modifiers\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -3184,14 +3270,15 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_mouse_button_pre_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_mouse_button_pre_nocancel",
-            "horizon.on(\"mouse_button_pre\", function(event)\n    assert(event.button == 7, \"button\")\n    assert(event.pressed == false, \"pressed\")\n    assert(event.modifiers == 9, \"modifiers\")\nend)",
+            "horizon.on(\"mouse_button_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.button == 7, \"button\")\n    assert(event.pressed == false, \"pressed\")\n    assert(event.modifiers == 9, \"modifiers\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -3203,26 +3290,28 @@ mod generated_tests {
             9,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_mouse_button_post() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_mouse_button_post",
-            "horizon.on(\"mouse_button_post\", function(event)\n    assert(event.button == 7, \"button\")\n    assert(event.pressed == false, \"pressed\")\n    assert(event.modifiers == 9, \"modifiers\")\nend)",
+            "horizon.on(\"mouse_button_post\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.button == 7, \"button\")\n    assert(event.pressed == false, \"pressed\")\n    assert(event.modifiers == 9, \"modifiers\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_mouse_button_post(&mut FakeHost::empty(), &firing_mods, 7, false, 9);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_music() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_music",
-            "horizon.on(\"music\", function(event)\n    assert(event.music.sound == \"test:sound0\", \"music\")\n    event.music = nil\n    assert(event.volume == 2.5, \"volume\")\n    event.volume = 16.5\nend)",
+            "horizon.on(\"music\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.music.sound == \"test:sound0\", \"music\")\n    assert(event.music.min_delay == 1, \"music\")\n    assert(event.music.max_delay == 2, \"music\")\n    assert(event.music.replace_current_music == true, \"music\")\n    event.music = nil\n    assert(event.volume == 2.5, \"volume\")\n    event.volume = 16.5\nend)",
         );
         let firing_mods = boxed(m);
         let mut music = Some(Music {
@@ -3235,14 +3324,15 @@ mod generated_tests {
         dispatch_music(&FakeHost::empty(), &firing_mods, &mut music, &mut volume);
         assert_eq!(music, None);
         assert_eq!(volume, 16.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_music_layers() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_music_layers",
-            "horizon.on(\"music_layers\", function(event)\n    assert(event.layers[1].sound == \"test:sound0\", \"layers\")\n    assert(event.layers[2].sound == \"test:sound1\", \"layers\")\n    event.layers = { { sound = \"test:sound50\", volume = 50.5 } }\nend)",
+            "horizon.on(\"music_layers\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.layers[1].sound == \"test:sound0\", \"layers\")\n    assert(event.layers[1].volume == 0.5, \"layers\")\n    assert(event.layers[2].sound == \"test:sound1\", \"layers\")\n    assert(event.layers[2].volume == 1.5, \"layers\")\n    event.layers = { { sound = \"test:sound50\", volume = 50.5 } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut layers = vec![
@@ -3266,14 +3356,15 @@ mod generated_tests {
                 }]
             )
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_recipes_received() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_recipes_received",
-            "horizon.on(\"recipes_received\", function(event)\n    assert(event.recipe_types[1] == \"test:seed\", \"recipe_types\")\n    assert(event.recipe_types[2] == \"test:seed2\", \"recipe_types\")\nend)",
+            "horizon.on(\"recipes_received\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.recipe_types[1] == \"test:seed\", \"recipe_types\")\n    assert(event.recipe_types[2] == \"test:seed2\", \"recipe_types\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_recipes_received(
@@ -3281,14 +3372,15 @@ mod generated_tests {
             &firing_mods,
             &["test:seed".to_owned(), "test:seed2".to_owned()],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_mouse_scrolling() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_mouse_scrolling",
-            "horizon.on(\"mouse_scrolling\", function(event)\n    assert(event.scroll.x == 1.5, \"scroll\")\n    assert(event.scroll.y == 2.5, \"scroll\")\n    assert(event.accumulated.x == 4, \"accumulated\")\n    assert(event.accumulated.y == -6, \"accumulated\")\n    assert(event.buttons[1] == true, \"buttons\")\n    assert(event.buttons[2] == false, \"buttons\")\n    assert(event.buttons[3] == false, \"buttons\")\n    assert(event.cursor.x == 4.5, \"cursor\")\n    assert(event.cursor.y == 5.5, \"cursor\")\n    assert(event.modifiers == 11, \"modifiers\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"mouse_scrolling\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.scroll.x == 1.5, \"scroll\")\n    assert(event.scroll.y == 2.5, \"scroll\")\n    assert(event.accumulated.x == 4, \"accumulated\")\n    assert(event.accumulated.y == -6, \"accumulated\")\n    assert(event.buttons[1] == true, \"buttons\")\n    assert(event.buttons[2] == false, \"buttons\")\n    assert(event.buttons[3] == false, \"buttons\")\n    assert(event.cursor.x == 4.5, \"cursor\")\n    assert(event.cursor.y == 5.5, \"cursor\")\n    assert(event.modifiers == 11, \"modifiers\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -3303,14 +3395,15 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_mouse_scrolling_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_mouse_scrolling_nocancel",
-            "horizon.on(\"mouse_scrolling\", function(event)\n    assert(event.scroll.x == 1.5, \"scroll\")\n    assert(event.scroll.y == 2.5, \"scroll\")\n    assert(event.accumulated.x == 4, \"accumulated\")\n    assert(event.accumulated.y == -6, \"accumulated\")\n    assert(event.buttons[1] == true, \"buttons\")\n    assert(event.buttons[2] == false, \"buttons\")\n    assert(event.buttons[3] == false, \"buttons\")\n    assert(event.cursor.x == 4.5, \"cursor\")\n    assert(event.cursor.y == 5.5, \"cursor\")\n    assert(event.modifiers == 11, \"modifiers\")\nend)",
+            "horizon.on(\"mouse_scrolling\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.scroll.x == 1.5, \"scroll\")\n    assert(event.scroll.y == 2.5, \"scroll\")\n    assert(event.accumulated.x == 4, \"accumulated\")\n    assert(event.accumulated.y == -6, \"accumulated\")\n    assert(event.buttons[1] == true, \"buttons\")\n    assert(event.buttons[2] == false, \"buttons\")\n    assert(event.buttons[3] == false, \"buttons\")\n    assert(event.cursor.x == 4.5, \"cursor\")\n    assert(event.cursor.y == 5.5, \"cursor\")\n    assert(event.modifiers == 11, \"modifiers\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -3324,15 +3417,16 @@ mod generated_tests {
             11,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_mod_container_viewers() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_mod_container_viewers",
-            "horizon.on(\"mod_container_viewers\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.viewers == 9, \"viewers\")\n    assert(event.previous == 10, \"previous\")\nend)",
+            "horizon.on(\"mod_container_viewers\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.viewers == 9, \"viewers\")\n    assert(event.previous == 10, \"previous\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_mod_container_viewers(
@@ -3343,14 +3437,15 @@ mod generated_tests {
             9,
             10,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_experience_orb_can_merge() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_experience_orb_can_merge",
-            "horizon.on(\"experience_orb_can_merge\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.into == 8, \"into\")\n    assert(event.from == 9, \"from\")\n    assert(event.into_value == 10, \"into_value\")\n    assert(event.from_value == 11, \"from_value\")\n    assert(event.can_merge == false, \"can_merge\")\n    event.can_merge = true\nend)",
+            "horizon.on(\"experience_orb_can_merge\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.into == 8, \"into\")\n    assert(event.from == 9, \"from\")\n    assert(event.into_value == 10, \"into_value\")\n    assert(event.from_value == 11, \"from_value\")\n    assert(event.can_merge == false, \"can_merge\")\n    event.can_merge = true\nend)",
         );
         let firing_mods = boxed(m);
         let mut can_merge = false;
@@ -3365,14 +3460,15 @@ mod generated_tests {
             &mut can_merge,
         );
         assert!(can_merge);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_experience_orb_merge() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_experience_orb_merge",
-            "horizon.on(\"experience_orb_merge\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.into == 8, \"into\")\n    assert(event.from == 9, \"from\")\n    assert(event.from_value == 10, \"from_value\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"experience_orb_merge\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.into == 8, \"into\")\n    assert(event.from == 9, \"from\")\n    assert(event.from_value == 10, \"from_value\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -3386,14 +3482,15 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_experience_orb_merge_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_experience_orb_merge_nocancel",
-            "horizon.on(\"experience_orb_merge\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.into == 8, \"into\")\n    assert(event.from == 9, \"from\")\n    assert(event.from_value == 10, \"from_value\")\nend)",
+            "horizon.on(\"experience_orb_merge\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.into == 8, \"into\")\n    assert(event.from == 9, \"from\")\n    assert(event.from_value == 10, \"from_value\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -3406,15 +3503,16 @@ mod generated_tests {
             10,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_menu_slot_rules() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_slot_rules",
-            "horizon.on(\"menu_slot_rules\", function(event)\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.slot == 8, \"slot\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.may_place == false, \"may_place\")\n    event.may_place = true\n    assert(event.max_stack == 11, \"max_stack\")\n    event.max_stack = 54\nend)",
+            "horizon.on(\"menu_slot_rules\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.slot == 8, \"slot\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 3, \"stack\")\n    assert(event.stack.damage == 2, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.may_place == false, \"may_place\")\n    event.may_place = true\n    assert(event.max_stack == 11, \"max_stack\")\n    event.max_stack = 54\nend)",
         );
         let firing_mods = boxed(m);
         let mut may_place = false;
@@ -3434,14 +3532,15 @@ mod generated_tests {
         );
         assert!(may_place);
         assert_eq!(max_stack, 54);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_entity_use_item_tick() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_entity_use_item_tick",
-            "horizon.on(\"living_entity_use_item_tick\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.duration == 10, \"duration\")\n    event.duration = 53\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_entity_use_item_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 1, \"stack\")\n    assert(event.stack.damage == 0, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.duration == 10, \"duration\")\n    event.duration = 53\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -3462,6 +3561,7 @@ mod generated_tests {
                 &mut duration,
                 &mut canceled,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -3482,6 +3582,7 @@ mod generated_tests {
                 &mut duration,
                 &mut canceled,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         let mut duration = 10;
@@ -3502,14 +3603,15 @@ mod generated_tests {
         );
         assert!(canceled, "canceled not cancelled");
         assert_eq!(duration, 53);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_entity_use_item_tick_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_entity_use_item_tick_nocancel",
-            "horizon.on(\"living_entity_use_item_tick\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.duration == 10, \"duration\")\n    event.duration = 53\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_entity_use_item_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 1, \"stack\")\n    assert(event.stack.damage == 0, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.duration == 10, \"duration\")\n    event.duration = 53\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut duration = 10;
@@ -3528,15 +3630,16 @@ mod generated_tests {
             &mut duration,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_on_use_tick() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_on_use_tick",
-            "horizon.on(\"on_use_tick\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.remaining == 9, \"remaining\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"on_use_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 1, \"stack\")\n    assert(event.stack.damage == 0, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.remaining == 9, \"remaining\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -3553,6 +3656,7 @@ mod generated_tests {
                 Some(13),
                 9,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -3569,6 +3673,7 @@ mod generated_tests {
                 None,
                 9,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_on_use_tick(
@@ -3583,14 +3688,15 @@ mod generated_tests {
             Some(11),
             9,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_entity_use_item_stop() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_entity_use_item_stop",
-            "horizon.on(\"living_entity_use_item_stop\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.duration == 10, \"duration\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_entity_use_item_stop\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 1, \"stack\")\n    assert(event.stack.damage == 0, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.duration == 10, \"duration\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -3610,6 +3716,7 @@ mod generated_tests {
                 10,
                 &mut canceled,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -3629,6 +3736,7 @@ mod generated_tests {
                 10,
                 &mut canceled,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         let mut canceled = false;
@@ -3647,14 +3755,15 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_entity_use_item_stop_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_entity_use_item_stop_nocancel",
-            "horizon.on(\"living_entity_use_item_stop\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.duration == 10, \"duration\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_entity_use_item_stop\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 1, \"stack\")\n    assert(event.stack.damage == 0, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.duration == 10, \"duration\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -3672,15 +3781,16 @@ mod generated_tests {
             10,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_release_using() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_release_using",
-            "horizon.on(\"release_using\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.time_left == 9, \"time_left\")\n    assert(event.used == false, \"used\")\n    event.used = true\nend, \"minecraft:zombie\")",
+            "horizon.on(\"release_using\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 1, \"stack\")\n    assert(event.stack.damage == 0, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.time_left == 9, \"time_left\")\n    assert(event.used == false, \"used\")\n    event.used = true\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -3699,6 +3809,7 @@ mod generated_tests {
                 9,
                 &mut used,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -3717,6 +3828,7 @@ mod generated_tests {
                 9,
                 &mut used,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         let mut used = false;
@@ -3734,58 +3846,63 @@ mod generated_tests {
             &mut used,
         );
         assert!(used);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_level_load() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_level_load",
-            "horizon.on(\"level_load\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
+            "horizon.on(\"level_load\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_level_load(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_level_unload() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_level_unload",
-            "horizon.on(\"level_unload\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
+            "horizon.on(\"level_unload\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_level_unload(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_client_level_load() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_level_load",
-            "horizon.on(\"client_level_load\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
+            "horizon.on(\"client_level_load\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_client_level_load(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_client_level_unload() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_level_unload",
-            "horizon.on(\"client_level_unload\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
+            "horizon.on(\"client_level_unload\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_client_level_unload(&mut FakeHost::empty(), &firing_mods, "test:dimension");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_mount() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_mount",
-            "horizon.on(\"entity_mount\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.vehicle == 10, \"vehicle\")\n    assert(event.vehicle_kind == \"test:vehicle_kind\", \"vehicle_kind\")\n    assert(event.mounting == false, \"mounting\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_mount\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.vehicle == 10, \"vehicle\")\n    assert(event.vehicle_kind == \"test:vehicle_kind\", \"vehicle_kind\")\n    assert(event.mounting == false, \"mounting\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -3802,6 +3919,7 @@ mod generated_tests {
                 false,
                 &mut canceled,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut canceled = false;
@@ -3817,14 +3935,15 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_mount_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_mount_nocancel",
-            "horizon.on(\"entity_mount\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.vehicle == 10, \"vehicle\")\n    assert(event.vehicle_kind == \"test:vehicle_kind\", \"vehicle_kind\")\n    assert(event.mounting == false, \"mounting\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_mount\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.vehicle == 10, \"vehicle\")\n    assert(event.vehicle_kind == \"test:vehicle_kind\", \"vehicle_kind\")\n    assert(event.mounting == false, \"mounting\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -3839,15 +3958,16 @@ mod generated_tests {
             false,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_interaction_key() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_interaction_key",
-            "horizon.on(\"interaction_key\", function(event)\n    assert(event.button == 7, \"button\")\n    assert(event.key_mapping == \"test:key_mapping\", \"key_mapping\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.swing_hand == false, \"swing_hand\")\n    event.swing_hand = true\n    horizon.cancel()\nend)",
+            "horizon.on(\"interaction_key\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.button == 7, \"button\")\n    assert(event.key_mapping == \"test:key_mapping\", \"key_mapping\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.swing_hand == false, \"swing_hand\")\n    event.swing_hand = true\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut swing_hand = false;
@@ -3863,14 +3983,15 @@ mod generated_tests {
         );
         assert!(canceled, "canceled not cancelled");
         assert!(swing_hand);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_interaction_key_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_interaction_key_nocancel",
-            "horizon.on(\"interaction_key\", function(event)\n    assert(event.button == 7, \"button\")\n    assert(event.key_mapping == \"test:key_mapping\", \"key_mapping\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.swing_hand == false, \"swing_hand\")\n    event.swing_hand = true\nend)",
+            "horizon.on(\"interaction_key\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.button == 7, \"button\")\n    assert(event.key_mapping == \"test:key_mapping\", \"key_mapping\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.swing_hand == false, \"swing_hand\")\n    event.swing_hand = true\nend)",
         );
         let firing_mods = boxed(m);
         let mut swing_hand = false;
@@ -3884,29 +4005,30 @@ mod generated_tests {
             &mut swing_hand,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_map_decorations() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_map_decorations",
-            "horizon.on(\"map_decorations\", function(event)\n    assert(event.map.id == 7, \"map\")\n    assert(event.decorations[1].sprite == \"test:sprite1\", \"decorations\")\n    assert(event.decorations[2].sprite == \"test:sprite2\", \"decorations\")\n    event.decorations = { { sprite = \"test:sprite51\", x = 52, y = 2, rot = 0, shown_on_frame = false } }\nend)",
+            "horizon.on(\"map_decorations\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.map.id == 7, \"map\")\n    assert(event.map.center.x == 3, \"map\")\n    assert(event.map.center.z == -5, \"map\")\n    assert(event.map.scale == 0, \"map\")\n    assert(event.map.dimension == \"minecraft:overworld\", \"map\")\n    assert(event.map.locked == true, \"map\")\n    assert(event.map.in_frame == false, \"map\")\n    assert(event.decorations[1].sprite == \"test:sprite1\", \"decorations\")\n    assert(event.decorations[1].x == 2, \"decorations\")\n    assert(event.decorations[1].y == 4, \"decorations\")\n    assert(event.decorations[1].rot == 0, \"decorations\")\n    assert(event.decorations[1].shown_on_frame == false, \"decorations\")\n    assert(event.decorations[2].sprite == \"test:sprite2\", \"decorations\")\n    assert(event.decorations[2].x == 3, \"decorations\")\n    assert(event.decorations[2].y == 5, \"decorations\")\n    assert(event.decorations[2].rot == 0, \"decorations\")\n    assert(event.decorations[2].shown_on_frame == true, \"decorations\")\n    event.decorations = { { sprite = \"test:sprite51\", x = 52, y = 54, rot = 0, shown_on_frame = false } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut decorations = vec![
             NativeMapDecoration {
                 sprite: "test:sprite1".into(),
                 x: 2,
-                y: 2,
+                y: 4,
                 rot: 0,
                 shown_on_frame: false,
             },
             NativeMapDecoration {
                 sprite: "test:sprite2".into(),
                 x: 3,
-                y: 2,
+                y: 5,
                 rot: 0,
                 shown_on_frame: true,
             },
@@ -3931,20 +4053,21 @@ mod generated_tests {
                 vec![NativeMapDecoration {
                     sprite: "test:sprite51".into(),
                     x: 52,
-                    y: 2,
+                    y: 54,
                     rot: 0,
                     shown_on_frame: false
                 }]
             )
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_start_tracking() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_start_tracking",
-            "horizon.on(\"player_start_tracking\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.uuid == 10, \"uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_start_tracking\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.uuid == 10, \"uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -3958,6 +4081,7 @@ mod generated_tests {
                 10,
                 "minecraft:skeleton",
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_player_start_tracking(
@@ -3969,14 +4093,15 @@ mod generated_tests {
             10,
             "minecraft:zombie",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_stop_tracking() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_stop_tracking",
-            "horizon.on(\"player_stop_tracking\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.uuid == 10, \"uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_stop_tracking\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.uuid == 10, \"uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -3990,6 +4115,7 @@ mod generated_tests {
                 10,
                 "minecraft:skeleton",
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_player_stop_tracking(
@@ -4001,14 +4127,15 @@ mod generated_tests {
             10,
             "minecraft:zombie",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_entity_energy() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_entity_energy",
-            "horizon.on(\"block_entity_energy\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.energy == nil, \"replace seed\")\n    event.energy = { capacity = 1000, max_insert = 100, max_extract = 100, insert_faces = { true, false, false, false, false, false }, extract_faces = { false, false, false, false, false, false } }\nend)",
+            "horizon.on(\"block_entity_energy\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.energy == nil, \"replace seed\")\n    event.energy = { capacity = 1000, max_insert = 100, max_extract = 100, insert_faces = { true, false, false, false, false, false }, extract_faces = { false, false, false, false, false, false } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut energy: Option<ModEnergyBuffer> = None;
@@ -4023,14 +4150,15 @@ mod generated_tests {
                 extract_faces: [false; 6]
             })
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_data_map_types() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_data_map_types",
-            "horizon.on(\"data_map_types\", function(event)\n    assert(event.types[1].id == \"test:map0\", \"types\")\n    assert(event.types[2].id == \"test:map1\", \"types\")\n    event.types = { { id = \"test:map50\", registry = \"test:registry50\" } }\nend)",
+            "horizon.on(\"data_map_types\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.types[1].id == \"test:map0\", \"types\")\n    assert(event.types[1].registry == \"test:registry0\", \"types\")\n    assert(event.types[2].id == \"test:map1\", \"types\")\n    assert(event.types[2].registry == \"test:registry1\", \"types\")\n    event.types = { { id = \"test:map50\", registry = \"test:registry50\" } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut types = vec![
@@ -4054,14 +4182,15 @@ mod generated_tests {
                 }]
             )
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_breathe() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_breathe",
-            "horizon.on(\"living_breathe\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.can_breathe == true, \"can_breathe\")\n    event.can_breathe = false\n    assert(event.consume == 10, \"consume\")\n    event.consume = 53\n    assert(event.refill == 11, \"refill\")\n    event.refill = 54\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_breathe\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.can_breathe == true, \"can_breathe\")\n    event.can_breathe = false\n    assert(event.consume == 10, \"consume\")\n    event.consume = 53\n    assert(event.refill == 11, \"refill\")\n    event.refill = 54\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -4077,6 +4206,7 @@ mod generated_tests {
                 &mut consume,
                 &mut refill,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut can_breathe = true;
@@ -4093,14 +4223,15 @@ mod generated_tests {
         assert!(!can_breathe);
         assert_eq!(consume, 53);
         assert_eq!(refill, 54);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_tick_pre() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_tick_pre",
-            "horizon.on(\"entity_tick_pre\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_tick_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -4114,6 +4245,7 @@ mod generated_tests {
                 "minecraft:skeleton",
                 &mut canceled,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut canceled = false;
@@ -4126,14 +4258,15 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_tick_pre_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_tick_pre_nocancel",
-            "horizon.on(\"entity_tick_pre\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_tick_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -4145,28 +4278,30 @@ mod generated_tests {
             "minecraft:zombie",
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_render_listened() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_render_listened",
-            "horizon.on(\"player_render_listened\", function(event)\n    assert(event.listened == true, \"listened\")\n    event.listened = false\nend)",
+            "horizon.on(\"player_render_listened\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.listened == true, \"listened\")\n    event.listened = false\nend)",
         );
         let firing_mods = boxed(m);
         let mut listened = true;
         dispatch_player_render_listened(&FakeHost::empty(), &firing_mods, &mut listened);
         assert!(!listened);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_sign_changed() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_sign_changed",
-            "horizon.on(\"sign_changed\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.front == true, \"front\")\n    assert(event.lines[1] == \"test:seed\", \"lines\")\n    assert(event.lines[2] == \"test:seed2\", \"lines\")\n    event.lines[1] = \"test:edited\"; table.insert(event.lines, \"test:added\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"sign_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.front == true, \"front\")\n    assert(event.lines[1] == \"test:seed\", \"lines\")\n    assert(event.lines[2] == \"test:seed2\", \"lines\")\n    event.lines[1] = \"test:edited\"; table.insert(event.lines, \"test:added\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
@@ -4191,14 +4326,15 @@ mod generated_tests {
                 "test:added".to_owned()
             ]
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_sign_changed_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_sign_changed_nocancel",
-            "horizon.on(\"sign_changed\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.front == true, \"front\")\n    assert(event.lines[1] == \"test:seed\", \"lines\")\n    assert(event.lines[2] == \"test:seed2\", \"lines\")\n    event.lines[1] = \"test:edited\"; table.insert(event.lines, \"test:added\")\nend)",
+            "horizon.on(\"sign_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.front == true, \"front\")\n    assert(event.lines[1] == \"test:seed\", \"lines\")\n    assert(event.lines[2] == \"test:seed2\", \"lines\")\n    event.lines[1] = \"test:edited\"; table.insert(event.lines, \"test:added\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut lines = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
@@ -4214,15 +4350,16 @@ mod generated_tests {
             &mut lines,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_standalone_models() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_standalone_models",
-            "horizon.on(\"standalone_models\", function(event)\n    assert(event.models[1] == \"test:seed\", \"models\")\n    assert(event.models[2] == \"test:seed2\", \"models\")\n    event.models[1] = \"test:edited\"; table.insert(event.models, \"test:added\")\nend)",
+            "horizon.on(\"standalone_models\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.models[1] == \"test:seed\", \"models\")\n    assert(event.models[2] == \"test:seed2\", \"models\")\n    event.models[1] = \"test:edited\"; table.insert(event.models, \"test:added\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut models = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
@@ -4235,14 +4372,15 @@ mod generated_tests {
                 "test:added".to_owned()
             ]
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_toggle_flight() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_toggle_flight",
-            "horizon.on(\"player_toggle_flight\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.flying == true, \"flying\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_toggle_flight\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.flying == true, \"flying\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4255,14 +4393,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_toggle_flight_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_toggle_flight_nocancel",
-            "horizon.on(\"player_toggle_flight\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.flying == true, \"flying\")\nend)",
+            "horizon.on(\"player_toggle_flight\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.flying == true, \"flying\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4274,15 +4413,16 @@ mod generated_tests {
             true,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_arrow_loose_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_arrow_loose_nocancel",
-            "horizon.on(\"arrow_loose\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.has_ammo == false, \"has_ammo\")\n    assert(event.charge == 9, \"charge\")\n    event.charge = 52\nend)",
+            "horizon.on(\"arrow_loose\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 1, \"stack\")\n    assert(event.stack.damage == 0, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.has_ammo == false, \"has_ammo\")\n    assert(event.charge == 9, \"charge\")\n    event.charge = 52\nend)",
         );
         let firing_mods = boxed(m);
         let mut charge = 9;
@@ -4300,15 +4440,16 @@ mod generated_tests {
             &mut charge,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_beacon_state_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_beacon_state_change",
-            "horizon.on(\"beacon_state_change\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.active == true, \"active\")\nend)",
+            "horizon.on(\"beacon_state_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.active == true, \"active\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_beacon_state_change(
@@ -4318,14 +4459,15 @@ mod generated_tests {
             [2, 3, 4],
             true,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_bell_ring_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_bell_ring_nocancel",
-            "horizon.on(\"bell_ring\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.block == \"minecraft:stone\", \"block\")\nend)",
+            "horizon.on(\"bell_ring\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.block == \"minecraft:stone\", \"block\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4337,15 +4479,16 @@ mod generated_tests {
             BlockPos::new(3, 4, 5),
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_break_progress_update() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_break_progress_update",
-            "horizon.on(\"block_break_progress_update\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.progress == 10, \"progress\")\nend)",
+            "horizon.on(\"block_break_progress_update\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.progress == 10, \"progress\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_block_break_progress_update(
@@ -4356,14 +4499,15 @@ mod generated_tests {
             [3, 4, 5],
             10,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_burn_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_burn_nocancel",
-            "horizon.on(\"block_burn\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"minecraft:stone\", \"block\")\nend)",
+            "horizon.on(\"block_burn\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"minecraft:stone\", \"block\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4374,15 +4518,16 @@ mod generated_tests {
             BlockPos::new(2, 3, 4),
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_damage_abort() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_damage_abort",
-            "horizon.on(\"block_damage_abort\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend)",
+            "horizon.on(\"block_damage_abort\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_block_damage_abort(
@@ -4392,14 +4537,15 @@ mod generated_tests {
             "test:name",
             [3, 4, 5],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_dispense_armor() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_dispense_armor",
-            "horizon.on(\"block_dispense_armor\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.target == \"test:target\", \"target\")\nend)",
+            "horizon.on(\"block_dispense_armor\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.target == \"test:target\", \"target\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_block_dispense_armor(
@@ -4410,14 +4556,15 @@ mod generated_tests {
             "test:item",
             "test:target",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_exp() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_exp",
-            "horizon.on(\"block_exp\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.experience == 10, \"experience\")\n    event.experience = 53\nend)",
+            "horizon.on(\"block_exp\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.experience == 10, \"experience\")\n    event.experience = 53\nend)",
         );
         let firing_mods = boxed(m);
         let mut experience = 10;
@@ -4430,14 +4577,15 @@ mod generated_tests {
             &mut experience,
         );
         assert_eq!(experience, 53);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_fade() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_fade",
-            "horizon.on(\"block_fade\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:state10\", \"from\")\n    assert(event.to == \"test:state11\", \"to\")\n    horizon.cancel()\n    assert(next(event.from_props) == nil, \"from_props\")\n    assert(next(event.to_props) == nil, \"to_props\")\nend)",
+            "horizon.on(\"block_fade\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:state10\", \"from\")\n    assert(event.to == \"test:state11\", \"to\")\n    horizon.cancel()\n    assert(next(event.from_props) == nil, \"from_props\")\n    assert(next(event.to_props) == nil, \"to_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4451,14 +4599,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_fade_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_fade_nocancel",
-            "horizon.on(\"block_fade\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:state10\", \"from\")\n    assert(event.to == \"test:state11\", \"to\")\n    assert(next(event.from_props) == nil, \"from_props\")\n    assert(next(event.to_props) == nil, \"to_props\")\nend)",
+            "horizon.on(\"block_fade\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:state10\", \"from\")\n    assert(event.to == \"test:state11\", \"to\")\n    assert(next(event.from_props) == nil, \"from_props\")\n    assert(next(event.to_props) == nil, \"to_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4471,15 +4620,16 @@ mod generated_tests {
             BlockStateId(11),
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_failed_dispense() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_failed_dispense",
-            "horizon.on(\"block_failed_dispense\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
+            "horizon.on(\"block_failed_dispense\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_block_failed_dispense(
@@ -4489,14 +4639,15 @@ mod generated_tests {
             [2, 3, 4],
             "test:item",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_form() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_form",
-            "horizon.on(\"block_form\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:state10\", \"from\")\n    assert(event.to == \"test:state11\", \"to\")\n    horizon.cancel()\n    assert(next(event.from_props) == nil, \"from_props\")\n    assert(next(event.to_props) == nil, \"to_props\")\nend)",
+            "horizon.on(\"block_form\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:state10\", \"from\")\n    assert(event.to == \"test:state11\", \"to\")\n    horizon.cancel()\n    assert(next(event.from_props) == nil, \"from_props\")\n    assert(next(event.to_props) == nil, \"to_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4510,14 +4661,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_form_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_form_nocancel",
-            "horizon.on(\"block_form\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:state10\", \"from\")\n    assert(event.to == \"test:state11\", \"to\")\n    assert(next(event.from_props) == nil, \"from_props\")\n    assert(next(event.to_props) == nil, \"to_props\")\nend)",
+            "horizon.on(\"block_form\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:state10\", \"from\")\n    assert(event.to == \"test:state11\", \"to\")\n    assert(next(event.from_props) == nil, \"from_props\")\n    assert(next(event.to_props) == nil, \"to_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4530,15 +4682,16 @@ mod generated_tests {
             BlockStateId(11),
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_ignite() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_ignite",
-            "horizon.on(\"block_ignite\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"block_ignite\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4552,14 +4705,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_ignite_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_ignite_nocancel",
-            "horizon.on(\"block_ignite\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\nend)",
+            "horizon.on(\"block_ignite\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4572,15 +4726,16 @@ mod generated_tests {
             "test:cause",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_lock_check_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_lock_check_nocancel",
-            "horizon.on(\"block_lock_check\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend)",
+            "horizon.on(\"block_lock_check\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut locked = false;
@@ -4592,15 +4747,16 @@ mod generated_tests {
             [3, 4, 5],
             &mut locked,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!locked, "locked set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_receive_game() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_receive_game",
-            "horizon.on(\"block_receive_game\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.event == \"test:event\", \"event\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"block_receive_game\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.event == \"test:event\", \"event\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4614,14 +4770,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_receive_game_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_receive_game_nocancel",
-            "horizon.on(\"block_receive_game\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.event == \"test:event\", \"event\")\nend)",
+            "horizon.on(\"block_receive_game\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.event == \"test:event\", \"event\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4634,15 +4791,16 @@ mod generated_tests {
             "test:event",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_shear_entity() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_shear_entity",
-            "horizon.on(\"block_shear_entity\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"block_shear_entity\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -4655,6 +4813,7 @@ mod generated_tests {
                 9,
                 "minecraft:skeleton",
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_block_shear_entity(
@@ -4665,36 +4824,39 @@ mod generated_tests {
             9,
             "minecraft:zombie",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_brewing_complete() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_brewing_complete",
-            "horizon.on(\"brewing_complete\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\nend)",
+            "horizon.on(\"brewing_complete\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_brewing_complete(&FakeHost::empty(), &firing_mods, [1, 2, 3]);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_brewing_fuel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_brewing_fuel",
-            "horizon.on(\"brewing_fuel\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.fuel == \"test:fuel\", \"fuel\")\nend)",
+            "horizon.on(\"brewing_fuel\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.fuel == \"test:fuel\", \"fuel\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_brewing_fuel(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_brewing_start() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_brewing_start",
-            "horizon.on(\"brewing_start\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.ingredient == \"test:ingredient\", \"ingredient\")\nend)",
+            "horizon.on(\"brewing_start\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.ingredient == \"test:ingredient\", \"ingredient\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_brewing_start(
@@ -4703,14 +4865,15 @@ mod generated_tests {
             [1, 2, 3],
             "test:ingredient",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_broadcast_message() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_broadcast_message",
-            "horizon.on(\"broadcast_message\", function(event)\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.line_component.text == \"test:line\", \"line\")\n    event.line = \"test:line:edited\"\n    horizon.cancel()\nend)",
+            "horizon.on(\"broadcast_message\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.line_component.text == \"test:line\", \"line\")\n    event.line = \"test:line:edited\"\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut line = Text::literal("test:line");
@@ -4718,39 +4881,42 @@ mod generated_tests {
         dispatch_broadcast_message(&FakeHost::empty(), &firing_mods, &mut line, &mut cancel);
         assert!(cancel, "cancel not cancelled");
         assert_eq!(line, Text::literal("test:line:edited"));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_broadcast_message_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_broadcast_message_nocancel",
-            "horizon.on(\"broadcast_message\", function(event)\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.line_component.text == \"test:line\", \"line\")\n    event.line = \"test:line:edited\"\nend)",
+            "horizon.on(\"broadcast_message\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.line_component.text == \"test:line\", \"line\")\n    event.line = \"test:line:edited\"\nend)",
         );
         let firing_mods = boxed(m);
         let mut line = Text::literal("test:line");
         let mut cancel = false;
         dispatch_broadcast_message(&FakeHost::empty(), &firing_mods, &mut line, &mut cancel);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_campfire_start() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_campfire_start",
-            "horizon.on(\"campfire_start\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
+            "horizon.on(\"campfire_start\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_campfire_start(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_cauldron_level_changed() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_cauldron_level_changed",
-            "horizon.on(\"cauldron_level_changed\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.from_level == 10, \"from_level\")\n    assert(event.to_level == 11, \"to_level\")\n    assert(event.reason == \"test:reason\", \"reason\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"cauldron_level_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.from_level == 10, \"from_level\")\n    assert(event.to_level == 11, \"to_level\")\n    assert(event.reason == \"test:reason\", \"reason\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4766,14 +4932,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_cauldron_level_changed_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_cauldron_level_changed_nocancel",
-            "horizon.on(\"cauldron_level_changed\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.from_level == 10, \"from_level\")\n    assert(event.to_level == 11, \"to_level\")\n    assert(event.reason == \"test:reason\", \"reason\")\nend)",
+            "horizon.on(\"cauldron_level_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.from_level == 10, \"from_level\")\n    assert(event.to_level == 11, \"to_level\")\n    assert(event.reason == \"test:reason\", \"reason\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4788,124 +4955,135 @@ mod generated_tests {
             "test:reason",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_chorus_fruit_teleport() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_chorus_fruit_teleport",
-            "horizon.on(\"chorus_fruit_teleport\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.target.x == 4.0, \"target\")\n    assert(event.target.y == 2.0, \"target\")\n    assert(event.target.z == 3.0, \"target\")\n    event.target = { x = 14.0, y = 12.0, z = 13.0 }\n    horizon.cancel()\nend)",
+            "horizon.on(\"chorus_fruit_teleport\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from.x == 3.0, \"from\")\n    assert(event.from.y == 4.0, \"from\")\n    assert(event.from.z == 5.0, \"from\")\n    assert(event.target.x == 4.0, \"target\")\n    assert(event.target.y == 5.0, \"target\")\n    assert(event.target.z == 6.0, \"target\")\n    event.target = { x = 14.0, y = 15.0, z = 16.0 }\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
-        let mut target = [4.0, 2.0, 3.0];
+        let mut target = [4.0, 5.0, 6.0];
         let mut cancel = false;
         dispatch_chorus_fruit_teleport(
             &mut FakeHost::empty(),
             &firing_mods,
             7,
             "test:name",
-            [3.0, 2.0, 3.0],
+            [3.0, 4.0, 5.0],
             &mut target,
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
-        assert_eq!(target, [14.0, 12.0, 13.0]);
+        assert_eq!(target, [14.0, 15.0, 16.0]);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_chorus_fruit_teleport_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_chorus_fruit_teleport_nocancel",
-            "horizon.on(\"chorus_fruit_teleport\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.target.x == 4.0, \"target\")\n    assert(event.target.y == 2.0, \"target\")\n    assert(event.target.z == 3.0, \"target\")\n    event.target = { x = 14.0, y = 12.0, z = 13.0 }\nend)",
+            "horizon.on(\"chorus_fruit_teleport\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from.x == 3.0, \"from\")\n    assert(event.from.y == 4.0, \"from\")\n    assert(event.from.z == 5.0, \"from\")\n    assert(event.target.x == 4.0, \"target\")\n    assert(event.target.y == 5.0, \"target\")\n    assert(event.target.z == 6.0, \"target\")\n    event.target = { x = 14.0, y = 15.0, z = 16.0 }\nend)",
         );
         let firing_mods = boxed(m);
-        let mut target = [4.0, 2.0, 3.0];
+        let mut target = [4.0, 5.0, 6.0];
         let mut cancel = false;
         dispatch_chorus_fruit_teleport(
             &mut FakeHost::empty(),
             &firing_mods,
             7,
             "test:name",
-            [3.0, 2.0, 3.0],
+            [3.0, 4.0, 5.0],
             &mut target,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_compost_item() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_compost_item",
-            "horizon.on(\"compost_item\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
+            "horizon.on(\"compost_item\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_compost_item(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_crafter_craft() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_crafter_craft",
-            "horizon.on(\"crafter_craft\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.recipe == \"test:recipe\", \"recipe\")\nend)",
+            "horizon.on(\"crafter_craft\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.recipe == \"test:recipe\", \"recipe\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_crafter_craft(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:recipe");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_creeper_ignite() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_creeper_ignite",
-            "horizon.on(\"creeper_ignite\", function(event)\n    assert(event.entity == 11, \"kind\")\n    assert(event.player == 8, \"player\")\n    assert(event.item == \"test:item\", \"item\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"creeper_ignite\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 11, \"kind\")\n    assert(event.player == 8, \"player\")\n    assert(event.item == \"test:item\", \"item\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_creeper_ignite(&mut FakeHost::empty(), &firing_mods, 13, 8, "test:item");
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
             dispatch_creeper_ignite(&mut FakeHost::empty(), &firing_mods, 99, 8, "test:item");
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_creeper_ignite(&mut FakeHost::empty(), &firing_mods, 11, 8, "test:item");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_creeper_power() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_creeper_power",
-            "horizon.on(\"creeper_power\", function(event)\n    assert(event.entity == 11, \"kind\")\n    assert(event.lightning.x == 2, \"lightning\")\n    assert(event.lightning.y == 2.0, \"lightning\")\n    assert(event.lightning.z == 3.0, \"lightning\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"creeper_power\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 11, \"kind\")\n    assert(event.lightning.x == 2.0, \"lightning\")\n    assert(event.lightning.y == 3.0, \"lightning\")\n    assert(event.lightning.z == 4.0, \"lightning\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 13, [2.0, 2.0, 3.0]);
+            dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 13, [2.0, 3.0, 4.0]);
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
-            dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 99, [2.0, 2.0, 3.0]);
+            dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 99, [2.0, 3.0, 4.0]);
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
-        dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 2.0, 3.0]);
+        dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 3.0, 4.0]);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_critical_hit() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_critical_hit",
-            "horizon.on(\"critical_hit\", function(event)\n    assert(event.target_kind == \"test:target_kind\", \"target_kind\")\n    assert(event.vanilla_critical == false, \"vanilla_critical\")\n    assert(event.critical == true, \"critical\")\n    event.critical = false\n    assert(event.damage_multiplier == 4.5, \"damage_multiplier\")\n    event.damage_multiplier = 18.5\nend)",
+            "horizon.on(\"critical_hit\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.target_kind == \"test:target_kind\", \"target_kind\")\n    assert(event.vanilla_critical == false, \"vanilla_critical\")\n    assert(event.critical == true, \"critical\")\n    event.critical = false\n    assert(event.damage_multiplier == 4.5, \"damage_multiplier\")\n    event.damage_multiplier = 18.5\nend)",
         );
         let firing_mods = boxed(m);
         let mut critical = true;
@@ -4920,25 +5098,27 @@ mod generated_tests {
         );
         assert!(!critical);
         assert_eq!(damage_multiplier, 18.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_difficulty_changed() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_difficulty_changed",
-            "horizon.on(\"difficulty_changed\", function(event)\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\nend)",
+            "horizon.on(\"difficulty_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_difficulty_changed(&mut FakeHost::empty(), &firing_mods, "test:from", "test:to");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_dragon_egg_form() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_dragon_egg_form",
-            "horizon.on(\"dragon_egg_form\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"dragon_egg_form\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4950,14 +5130,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_dragon_egg_form_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_dragon_egg_form_nocancel",
-            "horizon.on(\"dragon_egg_form\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
+            "horizon.on(\"dragon_egg_form\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -4968,15 +5149,16 @@ mod generated_tests {
             BlockPos::new(2, 3, 4),
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_enchant_item() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_enchant_item",
-            "horizon.on(\"enchant_item\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.item.id == \"test:item\", \"item\")\n    assert(event.levels == 11, \"levels\")\nend)",
+            "horizon.on(\"enchant_item\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.item.id == \"test:item\", \"item\")\n    assert(event.item.count == 4, \"item\")\n    assert(event.item.damage == 3, \"item\")\n    assert(event.item.extra == nil, \"item\")\n    assert(event.levels == 11, \"levels\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_enchant_item(
@@ -4993,17 +5175,18 @@ mod generated_tests {
             },
             11,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_ender_pearl_teleport() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_ender_pearl_teleport",
-            "horizon.on(\"ender_pearl_teleport\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pearl == 9, \"pearl\")\n    assert(event.from.x == 4, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.target.x == 5.0, \"target\")\n    assert(event.target.y == 2.0, \"target\")\n    assert(event.target.z == 3.0, \"target\")\n    event.target = { x = 15.0, y = 12.0, z = 13.0 }\n    assert(event.damage == 6.5, \"damage\")\n    event.damage = 20.5\n    horizon.cancel()\nend)",
+            "horizon.on(\"ender_pearl_teleport\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pearl == 9, \"pearl\")\n    assert(event.from.x == 4.0, \"from\")\n    assert(event.from.y == 5.0, \"from\")\n    assert(event.from.z == 6.0, \"from\")\n    assert(event.target.x == 5.0, \"target\")\n    assert(event.target.y == 6.0, \"target\")\n    assert(event.target.z == 7.0, \"target\")\n    event.target = { x = 15.0, y = 16.0, z = 17.0 }\n    assert(event.damage == 6.5, \"damage\")\n    event.damage = 20.5\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
-        let mut target = [5.0, 2.0, 3.0];
+        let mut target = [5.0, 6.0, 7.0];
         let mut damage = 6.5;
         let mut cancel = false;
         dispatch_ender_pearl_teleport(
@@ -5012,25 +5195,26 @@ mod generated_tests {
             7,
             "test:name",
             9,
-            [4.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
             &mut target,
             &mut damage,
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
-        assert_eq!(target, [15.0, 12.0, 13.0]);
+        assert_eq!(target, [15.0, 16.0, 17.0]);
         assert_eq!(damage, 20.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_ender_pearl_teleport_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_ender_pearl_teleport_nocancel",
-            "horizon.on(\"ender_pearl_teleport\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pearl == 9, \"pearl\")\n    assert(event.from.x == 4, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.target.x == 5.0, \"target\")\n    assert(event.target.y == 2.0, \"target\")\n    assert(event.target.z == 3.0, \"target\")\n    event.target = { x = 15.0, y = 12.0, z = 13.0 }\n    assert(event.damage == 6.5, \"damage\")\n    event.damage = 20.5\nend)",
+            "horizon.on(\"ender_pearl_teleport\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pearl == 9, \"pearl\")\n    assert(event.from.x == 4.0, \"from\")\n    assert(event.from.y == 5.0, \"from\")\n    assert(event.from.z == 6.0, \"from\")\n    assert(event.target.x == 5.0, \"target\")\n    assert(event.target.y == 6.0, \"target\")\n    assert(event.target.z == 7.0, \"target\")\n    event.target = { x = 15.0, y = 16.0, z = 17.0 }\n    assert(event.damage == 6.5, \"damage\")\n    event.damage = 20.5\nend)",
         );
         let firing_mods = boxed(m);
-        let mut target = [5.0, 2.0, 3.0];
+        let mut target = [5.0, 6.0, 7.0];
         let mut damage = 6.5;
         let mut cancel = false;
         dispatch_ender_pearl_teleport(
@@ -5039,20 +5223,21 @@ mod generated_tests {
             7,
             "test:name",
             9,
-            [4.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
             &mut target,
             &mut damage,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_entities_load() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entities_load",
-            "horizon.on(\"entities_load\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.chunk.x == 4, \"chunk\")\n    assert(event.chunk.z == -6, \"chunk\")\n    assert(event.count == 9, \"count\")\nend)",
+            "horizon.on(\"entities_load\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.chunk.x == 4, \"chunk\")\n    assert(event.chunk.z == -6, \"chunk\")\n    assert(event.count == 9, \"count\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_entities_load(
@@ -5062,14 +5247,15 @@ mod generated_tests {
             [4, -6],
             9,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entities_unload() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entities_unload",
-            "horizon.on(\"entities_unload\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.chunk.x == 4, \"chunk\")\n    assert(event.chunk.z == -6, \"chunk\")\n    assert(event.count == 9, \"count\")\nend)",
+            "horizon.on(\"entities_unload\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.chunk.x == 4, \"chunk\")\n    assert(event.chunk.z == -6, \"chunk\")\n    assert(event.count == 9, \"count\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_entities_unload(
@@ -5079,14 +5265,15 @@ mod generated_tests {
             [4, -6],
             9,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_break_door() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_break_door",
-            "horizon.on(\"entity_break_door\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_break_door\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -5098,6 +5285,7 @@ mod generated_tests {
                 "minecraft:skeleton",
                 [3, 4, 5],
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_entity_break_door(
@@ -5107,25 +5295,27 @@ mod generated_tests {
             "minecraft:zombie",
             [3, 4, 5],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_breed() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_breed",
-            "horizon.on(\"entity_breed\", function(event)\n    assert(event.parent == 7, \"parent\")\n    assert(event.partner == 8, \"partner\")\n    assert(event.child == 9, \"child\")\nend)",
+            "horizon.on(\"entity_breed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.parent == 7, \"parent\")\n    assert(event.partner == 8, \"partner\")\n    assert(event.child == 9, \"child\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_entity_breed(&mut FakeHost::empty(), &firing_mods, 7, 8, Some(9));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_change_block() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_change_block",
-            "horizon.on(\"entity_change_block\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_change_block\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -5139,6 +5329,7 @@ mod generated_tests {
                 "test:from",
                 "test:to",
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_entity_change_block(
@@ -5150,14 +5341,15 @@ mod generated_tests {
             "test:from",
             "test:to",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_drop_item() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_drop_item",
-            "horizon.on(\"entity_drop_item\", function(event)\n    assert(event.entity == 11, \"kind\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 9, \"count\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_drop_item\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 11, \"kind\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 9, \"count\")\n    assert(event.pos.x == 4.0, \"pos\")\n    assert(event.pos.y == 5.0, \"pos\")\n    assert(event.pos.z == 6.0, \"pos\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -5168,8 +5360,9 @@ mod generated_tests {
                 13,
                 "test:item",
                 9,
-                [4.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -5180,8 +5373,9 @@ mod generated_tests {
                 99,
                 "test:item",
                 9,
-                [4.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_entity_drop_item(
@@ -5190,16 +5384,17 @@ mod generated_tests {
             11,
             "test:item",
             9,
-            [4.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_enter_block() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_enter_block",
-            "horizon.on(\"entity_enter_block\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_enter_block\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -5212,6 +5407,7 @@ mod generated_tests {
                 [3, 4, 5],
                 "test:block",
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_entity_enter_block(
@@ -5222,14 +5418,15 @@ mod generated_tests {
             [3, 4, 5],
             "test:block",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_enter_love_mode() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_enter_love_mode",
-            "horizon.on(\"entity_enter_love_mode\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.player == \"00000000-0000-0000-0000-000000000009\", \"player\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_enter_love_mode\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.player == \"00000000-0000-0000-0000-000000000009\", \"player\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -5241,6 +5438,7 @@ mod generated_tests {
                 "minecraft:skeleton",
                 Some(9),
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_entity_enter_love_mode(
@@ -5250,14 +5448,15 @@ mod generated_tests {
             "minecraft:zombie",
             Some(9),
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_portal() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_portal",
-            "horizon.on(\"entity_portal\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_portal\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -5269,6 +5468,7 @@ mod generated_tests {
                 13,
                 [3, 4, 5],
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -5280,6 +5480,7 @@ mod generated_tests {
                 99,
                 [3, 4, 5],
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_entity_portal(
@@ -5289,14 +5490,15 @@ mod generated_tests {
             11,
             [3, 4, 5],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_pose_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_pose_change",
-            "horizon.on(\"entity_pose_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\nend)",
+            "horizon.on(\"entity_pose_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_entity_pose_change(
@@ -5307,14 +5509,15 @@ mod generated_tests {
             "test:from",
             "test:to",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_shoot_bow() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_shoot_bow",
-            "horizon.on(\"entity_shoot_bow\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.projectile == 11, \"kind\")\n    assert(event.force == 4.5, \"force\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_shoot_bow\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.projectile == 11, \"kind\")\n    assert(event.force == 4.5, \"force\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -5327,6 +5530,7 @@ mod generated_tests {
                 13,
                 4.5,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -5339,6 +5543,7 @@ mod generated_tests {
                 99,
                 4.5,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_entity_shoot_bow(
@@ -5349,14 +5554,15 @@ mod generated_tests {
             11,
             4.5,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_tame() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_tame",
-            "horizon.on(\"entity_tame\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.owner == \"00000000-0000-0000-0000-000000000009\", \"owner\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_tame\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.owner == \"00000000-0000-0000-0000-000000000009\", \"owner\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -5368,6 +5574,7 @@ mod generated_tests {
                 "minecraft:skeleton",
                 Some(9),
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_entity_tame(
@@ -5377,14 +5584,15 @@ mod generated_tests {
             "minecraft:zombie",
             Some(9),
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_teleport() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_teleport",
-            "horizon.on(\"entity_teleport\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 4, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_teleport\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.from.x == 3.0, \"from\")\n    assert(event.from.y == 4.0, \"from\")\n    assert(event.from.z == 5.0, \"from\")\n    assert(event.to.x == 4.0, \"to\")\n    assert(event.to.y == 5.0, \"to\")\n    assert(event.to.z == 6.0, \"to\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -5394,9 +5602,10 @@ mod generated_tests {
                 &firing_mods,
                 "test:dimension",
                 13,
-                [3.0, 2.0, 3.0],
-                [4.0, 2.0, 3.0],
+                [3.0, 4.0, 5.0],
+                [4.0, 5.0, 6.0],
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -5406,9 +5615,10 @@ mod generated_tests {
                 &firing_mods,
                 "test:dimension",
                 99,
-                [3.0, 2.0, 3.0],
-                [4.0, 2.0, 3.0],
+                [3.0, 4.0, 5.0],
+                [4.0, 5.0, 6.0],
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_entity_teleport(
@@ -5416,28 +5626,30 @@ mod generated_tests {
             &firing_mods,
             "test:dimension",
             11,
-            [3.0, 2.0, 3.0],
-            [4.0, 2.0, 3.0],
+            [3.0, 4.0, 5.0],
+            [4.0, 5.0, 6.0],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_toggle_glide() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_toggle_glide",
-            "horizon.on(\"entity_toggle_glide\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.gliding == true, \"gliding\")\nend)",
+            "horizon.on(\"entity_toggle_glide\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.gliding == true, \"gliding\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_entity_toggle_glide(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_transform() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_transform",
-            "horizon.on(\"entity_transform\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.transformed == 9, \"transformed\")\n    assert(event.transformed_kind == \"test:transformed_kind\", \"transformed_kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_transform\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.transformed == 9, \"transformed\")\n    assert(event.transformed_kind == \"test:transformed_kind\", \"transformed_kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -5450,6 +5662,7 @@ mod generated_tests {
                 9,
                 "test:transformed_kind",
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_entity_transform(
@@ -5460,14 +5673,15 @@ mod generated_tests {
             9,
             "test:transformed_kind",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_unleash() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_unleash",
-            "horizon.on(\"entity_unleash\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_unleash\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -5478,41 +5692,45 @@ mod generated_tests {
                 7,
                 "minecraft:skeleton",
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_entity_unleash(&mut FakeHost::empty(), &firing_mods, 7, "minecraft:zombie");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_exp_bottle() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_exp_bottle",
-            "horizon.on(\"exp_bottle\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\n    assert(event.experience == 8, \"experience\")\nend)",
+            "horizon.on(\"exp_bottle\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1.0, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\n    assert(event.experience == 8, \"experience\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_exp_bottle(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 8);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_experience_orb_pickup_listened() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_experience_orb_pickup_listened",
-            "horizon.on(\"experience_orb_pickup_listened\", function(event)\n    assert(event.listened == true, \"listened\")\n    event.listened = false\nend)",
+            "horizon.on(\"experience_orb_pickup_listened\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.listened == true, \"listened\")\n    event.listened = false\nend)",
         );
         let firing_mods = boxed(m);
         let mut listened = true;
         dispatch_experience_orb_pickup_listened(&FakeHost::empty(), &firing_mods, &mut listened);
         assert!(!listened);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_experience_orb_pickup() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_experience_orb_pickup",
-            "horizon.on(\"experience_orb_pickup\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.orb == 9, \"orb\")\n    assert(event.value == 10, \"value\")\n    event.value = 53\n    assert(event.count == 11, \"count\")\n    event.count = 54\n    horizon.cancel()\nend)",
+            "horizon.on(\"experience_orb_pickup\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.orb == 9, \"orb\")\n    assert(event.value == 10, \"value\")\n    event.value = 53\n    assert(event.count == 11, \"count\")\n    event.count = 54\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut value = 10;
@@ -5531,14 +5749,15 @@ mod generated_tests {
         assert!(canceled, "canceled not cancelled");
         assert_eq!(value, 53);
         assert_eq!(count, 54);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_experience_orb_pickup_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_experience_orb_pickup_nocancel",
-            "horizon.on(\"experience_orb_pickup\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.orb == 9, \"orb\")\n    assert(event.value == 10, \"value\")\n    event.value = 53\n    assert(event.count == 11, \"count\")\n    event.count = 54\nend)",
+            "horizon.on(\"experience_orb_pickup\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.orb == 9, \"orb\")\n    assert(event.value == 10, \"value\")\n    event.value = 53\n    assert(event.count == 11, \"count\")\n    event.count = 54\nend)",
         );
         let firing_mods = boxed(m);
         let mut value = 10;
@@ -5554,15 +5773,16 @@ mod generated_tests {
             &mut count,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_mending_repair() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_mending_repair",
-            "horizon.on(\"mending_repair\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.experience == 9, \"experience\")\n    assert(event.repair == 10, \"repair\")\n    event.repair = 53\nend)",
+            "horizon.on(\"mending_repair\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.experience == 9, \"experience\")\n    assert(event.repair == 10, \"repair\")\n    event.repair = 53\nend)",
         );
         let firing_mods = boxed(m);
         let mut repair = 10;
@@ -5580,25 +5800,27 @@ mod generated_tests {
             &mut repair,
         );
         assert_eq!(repair, 53);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_explosion_prime() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_explosion_prime",
-            "horizon.on(\"explosion_prime\", function(event)\n    assert(event.center.x == 1, \"center\")\n    assert(event.center.y == 2.0, \"center\")\n    assert(event.center.z == 3.0, \"center\")\n    assert(event.radius == 2.5, \"radius\")\nend)",
+            "horizon.on(\"explosion_prime\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.center.x == 1.0, \"center\")\n    assert(event.center.y == 2.0, \"center\")\n    assert(event.center.z == 3.0, \"center\")\n    assert(event.radius == 2.5, \"radius\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_explosion_prime(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 2.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_fire_odds() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_fire_odds",
-            "horizon.on(\"fire_odds\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.odds == nil, \"replace seed\")\n    event.odds = { min = 1, max = 2 }\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"fire_odds\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.odds == nil, \"replace seed\")\n    event.odds = { min = 1, max = 2 }\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut odds: Option<(i32, i32)> = None;
@@ -5610,14 +5832,15 @@ mod generated_tests {
             &mut odds,
         );
         assert_eq!(odds, Some((1, 2)));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_smoke_source() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_smoke_source",
-            "horizon.on(\"smoke_source\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.smoke == nil, \"replace seed\")\n    event.smoke = true\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"smoke_source\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.smoke == nil, \"replace seed\")\n    event.smoke = true\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut smoke: Option<bool> = None;
@@ -5629,35 +5852,39 @@ mod generated_tests {
             &mut smoke,
         );
         assert_eq!(smoke, Some(true));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_firework_explode() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_firework_explode",
-            "horizon.on(\"firework_explode\", function(event)\n    assert(event.entity == 11, \"kind\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\n    assert(event.bursts == 9, \"bursts\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"firework_explode\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 11, \"kind\")\n    assert(event.pos.x == 2.0, \"pos\")\n    assert(event.pos.y == 3.0, \"pos\")\n    assert(event.pos.z == 4.0, \"pos\")\n    assert(event.bursts == 9, \"bursts\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 13, [2.0, 2.0, 3.0], 9);
+            dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 13, [2.0, 3.0, 4.0], 9);
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
-            dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 99, [2.0, 2.0, 3.0], 9);
+            dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 99, [2.0, 3.0, 4.0], 9);
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
-        dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 2.0, 3.0], 9);
+        dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 3.0, 4.0], 9);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_fluid_level_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_fluid_level_change",
-            "horizon.on(\"fluid_level_change\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\n    assert(event.from == 10, \"from\")\n    assert(event.to == 11, \"to\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"fluid_level_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\n    assert(event.from == 10, \"from\")\n    assert(event.to == 11, \"to\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -5672,14 +5899,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_fluid_level_change_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_fluid_level_change_nocancel",
-            "horizon.on(\"fluid_level_change\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\n    assert(event.from == 10, \"from\")\n    assert(event.to == 11, \"to\")\nend)",
+            "horizon.on(\"fluid_level_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\n    assert(event.from == 10, \"from\")\n    assert(event.to == 11, \"to\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -5693,15 +5921,16 @@ mod generated_tests {
             11,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_framerate_limit() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_framerate_limit",
-            "horizon.on(\"framerate_limit\", function(event)\n    assert(event.focused == true, \"focused\")\n    assert(event.minimized == false, \"minimized\")\n    assert(event.in_world == true, \"in_world\")\n    assert(event.limit == 10, \"limit\")\n    event.limit = 53\nend)",
+            "horizon.on(\"framerate_limit\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.focused == true, \"focused\")\n    assert(event.minimized == false, \"minimized\")\n    assert(event.in_world == true, \"in_world\")\n    assert(event.limit == 10, \"limit\")\n    event.limit = 53\nend)",
         );
         let firing_mods = boxed(m);
         let mut limit = 10;
@@ -5714,25 +5943,27 @@ mod generated_tests {
             &mut limit,
         );
         assert_eq!(limit, 53);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_furnace_burn() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_furnace_burn",
-            "horizon.on(\"furnace_burn\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.fuel == \"test:fuel\", \"fuel\")\nend)",
+            "horizon.on(\"furnace_burn\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.fuel == \"test:fuel\", \"fuel\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_furnace_burn(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_furnace_extract() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_furnace_extract",
-            "horizon.on(\"furnace_extract\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 11, \"count\")\nend)",
+            "horizon.on(\"furnace_extract\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 11, \"count\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_furnace_extract(
@@ -5744,14 +5975,15 @@ mod generated_tests {
             "test:item",
             11,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_furnace_smelt() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_furnace_smelt",
-            "horizon.on(\"furnace_smelt\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.result == \"test:result\", \"result\")\nend)",
+            "horizon.on(\"furnace_smelt\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.result == \"test:result\", \"result\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_furnace_smelt(
@@ -5761,41 +5993,44 @@ mod generated_tests {
             "test:item",
             "test:result",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_furnace_start_smelt() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_furnace_start_smelt",
-            "horizon.on(\"furnace_start_smelt\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
+            "horizon.on(\"furnace_start_smelt\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_furnace_start_smelt(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_game_event() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_game_event",
-            "horizon.on(\"game_event\", function(event)\n    assert(event.event == \"test:event\", \"event\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\nend)",
+            "horizon.on(\"game_event\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.event == \"test:event\", \"event\")\n    assert(event.pos.x == 2.0, \"pos\")\n    assert(event.pos.y == 3.0, \"pos\")\n    assert(event.pos.z == 4.0, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_game_event(
             &mut FakeHost::empty(),
             &firing_mods,
             "test:event",
-            [2.0, 2.0, 3.0],
+            [2.0, 3.0, 4.0],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_hopper_inventory_search() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_hopper_inventory_search",
-            "horizon.on(\"hopper_inventory_search\", function(event)\n    assert(event.hopper.x == 1, \"hopper\")\n    assert(event.hopper.y == 2, \"hopper\")\n    assert(event.hopper.z == 3, \"hopper\")\n    assert(event.container.x == 2, \"container\")\n    assert(event.container.y == 3, \"container\")\n    assert(event.container.z == 4, \"container\")\n    assert(event.entity == 11, \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"hopper_inventory_search\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.hopper.x == 1, \"hopper\")\n    assert(event.hopper.y == 2, \"hopper\")\n    assert(event.hopper.z == 3, \"hopper\")\n    assert(event.container.x == 2, \"container\")\n    assert(event.container.y == 3, \"container\")\n    assert(event.container.z == 4, \"container\")\n    assert(event.entity == 11, \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -5807,6 +6042,7 @@ mod generated_tests {
                 Some([2, 3, 4]),
                 Some(13),
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -5818,6 +6054,7 @@ mod generated_tests {
                 Some([2, 3, 4]),
                 None,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_hopper_inventory_search(
@@ -5827,14 +6064,15 @@ mod generated_tests {
             Some([2, 3, 4]),
             Some(11),
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_hopper_pickup_item() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_hopper_pickup_item",
-            "horizon.on(\"hopper_pickup_item\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 10, \"count\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"hopper_pickup_item\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 10, \"count\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -5848,14 +6086,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_hopper_pickup_item_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_hopper_pickup_item_nocancel",
-            "horizon.on(\"hopper_pickup_item\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 10, \"count\")\nend)",
+            "horizon.on(\"hopper_pickup_item\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 10, \"count\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -5868,15 +6107,16 @@ mod generated_tests {
             10,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_ingredient() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_ingredient",
-            "horizon.on(\"ingredient\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.data.testkey == 8, \"data\")\n    assert(event.items[1] == \"test:seed\", \"items\")\n    assert(event.items[2] == \"test:seed2\", \"items\")\n    event.items[1] = \"test:edited\"; table.insert(event.items, \"test:added\")\nend)",
+            "horizon.on(\"ingredient\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.data.testkey == 8, \"data\")\n    assert(event.items[1] == \"test:seed\", \"items\")\n    assert(event.items[2] == \"test:seed2\", \"items\")\n    event.items[1] = \"test:edited\"; table.insert(event.items, \"test:added\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut items = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
@@ -5896,14 +6136,15 @@ mod generated_tests {
                 "test:added".to_owned()
             ]
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_inventory_block_start() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_inventory_block_start",
-            "horizon.on(\"inventory_block_start\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"inventory_block_start\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -5916,14 +6157,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_inventory_block_start_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_inventory_block_start_nocancel",
-            "horizon.on(\"inventory_block_start\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend)",
+            "horizon.on(\"inventory_block_start\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -5935,15 +6177,16 @@ mod generated_tests {
             [3, 4, 5],
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_inventory_move_item() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_inventory_move_item",
-            "horizon.on(\"inventory_move_item\", function(event)\n    assert(event.source.x == 1, \"source\")\n    assert(event.source.y == 2, \"source\")\n    assert(event.source.z == 3, \"source\")\n    assert(event.destination.x == 2, \"destination\")\n    assert(event.destination.y == 3, \"destination\")\n    assert(event.destination.z == 4, \"destination\")\n    assert(event.item == \"test:item\", \"item\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"inventory_move_item\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.source.x == 1, \"source\")\n    assert(event.source.y == 2, \"source\")\n    assert(event.source.z == 3, \"source\")\n    assert(event.destination.x == 2, \"destination\")\n    assert(event.destination.y == 3, \"destination\")\n    assert(event.destination.z == 4, \"destination\")\n    assert(event.item == \"test:item\", \"item\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -5956,14 +6199,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_inventory_move_item_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_inventory_move_item_nocancel",
-            "horizon.on(\"inventory_move_item\", function(event)\n    assert(event.source.x == 1, \"source\")\n    assert(event.source.y == 2, \"source\")\n    assert(event.source.z == 3, \"source\")\n    assert(event.destination.x == 2, \"destination\")\n    assert(event.destination.y == 3, \"destination\")\n    assert(event.destination.z == 4, \"destination\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
+            "horizon.on(\"inventory_move_item\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.source.x == 1, \"source\")\n    assert(event.source.y == 2, \"source\")\n    assert(event.source.z == 3, \"source\")\n    assert(event.destination.x == 2, \"destination\")\n    assert(event.destination.y == 3, \"destination\")\n    assert(event.destination.z == 4, \"destination\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -5975,15 +6219,16 @@ mod generated_tests {
             "test:item",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_item_despawn() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_despawn",
-            "horizon.on(\"item_despawn\", function(event)\n    assert(event.entity == 11, \"kind\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 9, \"count\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"item_despawn\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 11, \"kind\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 9, \"count\")\n    assert(event.pos.x == 4.0, \"pos\")\n    assert(event.pos.y == 5.0, \"pos\")\n    assert(event.pos.z == 6.0, \"pos\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -5994,8 +6239,9 @@ mod generated_tests {
                 13,
                 "test:item",
                 9,
-                [4.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -6006,8 +6252,9 @@ mod generated_tests {
                 99,
                 "test:item",
                 9,
-                [4.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_item_despawn(
@@ -6016,16 +6263,17 @@ mod generated_tests {
             11,
             "test:item",
             9,
-            [4.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_item_energy_buffer() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_energy_buffer",
-            "horizon.on(\"item_energy_buffer\", function(event)\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.buffer == nil, \"replace seed\")\n    event.buffer = { capacity = 1000, max_insert = 100, max_extract = 100 }\nend)",
+            "horizon.on(\"item_energy_buffer\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.buffer == nil, \"replace seed\")\n    event.buffer = { capacity = 1000, max_insert = 100, max_extract = 100 }\nend)",
         );
         let firing_mods = boxed(m);
         let mut buffer: Option<ItemEnergyBuffer> = None;
@@ -6038,14 +6286,15 @@ mod generated_tests {
                 max_extract: 100
             })
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_item_expire() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_expire",
-            "horizon.on(\"item_expire\", function(event)\n    assert(event.entity == 11, \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.extra_life == 9, \"extra_life\")\n    event.extra_life = 52\nend, \"minecraft:zombie\")",
+            "horizon.on(\"item_expire\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 11, \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.extra_life == 9, \"extra_life\")\n    event.extra_life = 52\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -6063,6 +6312,7 @@ mod generated_tests {
                 },
                 &mut extra_life,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -6080,6 +6330,7 @@ mod generated_tests {
                 },
                 &mut extra_life,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         let mut extra_life = 9;
@@ -6096,14 +6347,15 @@ mod generated_tests {
             &mut extra_life,
         );
         assert_eq!(extra_life, 52);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_item_spawn() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_spawn",
-            "horizon.on(\"item_spawn\", function(event)\n    assert(event.entity == 11, \"kind\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 9, \"count\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"item_spawn\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 11, \"kind\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 9, \"count\")\n    assert(event.pos.x == 4.0, \"pos\")\n    assert(event.pos.y == 5.0, \"pos\")\n    assert(event.pos.z == 6.0, \"pos\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -6114,8 +6366,9 @@ mod generated_tests {
                 13,
                 "test:item",
                 9,
-                [4.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -6126,8 +6379,9 @@ mod generated_tests {
                 99,
                 "test:item",
                 9,
-                [4.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_item_spawn(
@@ -6136,16 +6390,17 @@ mod generated_tests {
             11,
             "test:item",
             9,
-            [4.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_leaves_decay() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_leaves_decay",
-            "horizon.on(\"leaves_decay\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"leaves_decay\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6157,14 +6412,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_leaves_decay_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_leaves_decay_nocancel",
-            "horizon.on(\"leaves_decay\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
+            "horizon.on(\"leaves_decay\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6175,15 +6431,16 @@ mod generated_tests {
             BlockPos::new(2, 3, 4),
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_lightning_strike() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_lightning_strike",
-            "horizon.on(\"lightning_strike\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"lightning_strike\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6196,14 +6453,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_lightning_strike_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_lightning_strike_nocancel",
-            "horizon.on(\"lightning_strike\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\nend)",
+            "horizon.on(\"lightning_strike\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6215,15 +6473,16 @@ mod generated_tests {
             "test:cause",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_moisture_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_moisture_change",
-            "horizon.on(\"moisture_change\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"moisture_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6237,14 +6496,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_moisture_change_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_moisture_change_nocancel",
-            "horizon.on(\"moisture_change\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\nend)",
+            "horizon.on(\"moisture_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6257,15 +6517,16 @@ mod generated_tests {
             10,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_anvil_craft_post() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_anvil_craft_post",
-            "horizon.on(\"anvil_craft_post\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.craft.output.id == \"test:craft\", \"craft\")\nend)",
+            "horizon.on(\"anvil_craft_post\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.craft.left.id == \"test:craft\", \"craft\")\n    assert(event.craft.left.count == 1, \"craft\")\n    assert(event.craft.left.damage == 0, \"craft\")\n    assert(event.craft.right == nil, \"craft\")\n    assert(event.craft.output.id == \"test:craft:out\", \"craft\")\n    assert(event.craft.output.count == 2, \"craft\")\n    assert(event.craft.output.damage == 3, \"craft\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_anvil_craft_post(
@@ -6283,21 +6544,22 @@ mod generated_tests {
                 }),
                 right: None,
                 output: ItemStack {
-                    item: "test:craft".into(),
+                    item: "test:craft:out".into(),
                     count: 2,
-                    damage: 0,
+                    damage: 3,
                     extra: None,
                 },
             },
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_anvil_craft_pre() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_anvil_craft_pre",
-            "horizon.on(\"anvil_craft_pre\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.craft.output.id == \"test:craft\", \"craft\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"anvil_craft_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.craft.left.id == \"test:craft\", \"craft\")\n    assert(event.craft.left.count == 1, \"craft\")\n    assert(event.craft.left.damage == 0, \"craft\")\n    assert(event.craft.right == nil, \"craft\")\n    assert(event.craft.output.id == \"test:craft:out\", \"craft\")\n    assert(event.craft.output.count == 2, \"craft\")\n    assert(event.craft.output.damage == 3, \"craft\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6316,23 +6578,24 @@ mod generated_tests {
                 }),
                 right: None,
                 output: ItemStack {
-                    item: "test:craft".into(),
+                    item: "test:craft:out".into(),
                     count: 2,
-                    damage: 0,
+                    damage: 3,
                     extra: None,
                 },
             },
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_anvil_craft_pre_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_anvil_craft_pre_nocancel",
-            "horizon.on(\"anvil_craft_pre\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.craft.output.id == \"test:craft\", \"craft\")\nend)",
+            "horizon.on(\"anvil_craft_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.craft.left.id == \"test:craft\", \"craft\")\n    assert(event.craft.left.count == 1, \"craft\")\n    assert(event.craft.left.damage == 0, \"craft\")\n    assert(event.craft.right == nil, \"craft\")\n    assert(event.craft.output.id == \"test:craft:out\", \"craft\")\n    assert(event.craft.output.count == 2, \"craft\")\n    assert(event.craft.output.damage == 3, \"craft\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6351,23 +6614,24 @@ mod generated_tests {
                 }),
                 right: None,
                 output: ItemStack {
-                    item: "test:craft".into(),
+                    item: "test:craft:out".into(),
                     count: 2,
-                    damage: 0,
+                    damage: 3,
                     extra: None,
                 },
             },
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_armor_stand_manipulate() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_armor_stand_manipulate",
-            "horizon.on(\"armor_stand_manipulate\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stand_id == 9, \"stand_id\")\n    assert(event.slot == \"test:slot\", \"slot\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"armor_stand_manipulate\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stand_id == 9, \"stand_id\")\n    assert(event.slot == \"test:slot\", \"slot\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6381,14 +6645,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_armor_stand_manipulate_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_armor_stand_manipulate_nocancel",
-            "horizon.on(\"armor_stand_manipulate\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stand_id == 9, \"stand_id\")\n    assert(event.slot == \"test:slot\", \"slot\")\nend)",
+            "horizon.on(\"armor_stand_manipulate\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stand_id == 9, \"stand_id\")\n    assert(event.slot == \"test:slot\", \"slot\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6401,15 +6666,16 @@ mod generated_tests {
             "test:slot",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_bucket_empty() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_bucket_empty",
-            "horizon.on(\"bucket_empty\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"bucket_empty\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6423,14 +6689,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_bucket_empty_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_bucket_empty_nocancel",
-            "horizon.on(\"bucket_empty\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\nend)",
+            "horizon.on(\"bucket_empty\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6443,15 +6710,16 @@ mod generated_tests {
             "test:fluid",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_container_opened() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_container_opened",
-            "horizon.on(\"container_opened\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"container_opened\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6465,14 +6733,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_container_opened_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_container_opened_nocancel",
-            "horizon.on(\"container_opened\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\nend)",
+            "horizon.on(\"container_opened\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6485,15 +6754,16 @@ mod generated_tests {
             Some([4, 5, 6]),
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_creative_slot() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_creative_slot",
-            "horizon.on(\"creative_slot\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 11, \"count\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"creative_slot\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 11, \"count\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6508,14 +6778,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_creative_slot_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_creative_slot_nocancel",
-            "horizon.on(\"creative_slot\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 11, \"count\")\nend)",
+            "horizon.on(\"creative_slot\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.count == 11, \"count\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6529,15 +6800,16 @@ mod generated_tests {
             11,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_food_level_changed() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_food_level_changed",
-            "horizon.on(\"food_level_changed\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\n    event.to = 53\n    horizon.cancel()\nend)",
+            "horizon.on(\"food_level_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\n    event.to = 53\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut to = 10;
@@ -6553,14 +6825,15 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(to, 53);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_food_level_changed_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_food_level_changed_nocancel",
-            "horizon.on(\"food_level_changed\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\n    event.to = 53\nend)",
+            "horizon.on(\"food_level_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\n    event.to = 53\nend)",
         );
         let firing_mods = boxed(m);
         let mut to = 10;
@@ -6574,15 +6847,16 @@ mod generated_tests {
             &mut to,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_hanging_break() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_hanging_break",
-            "horizon.on(\"hanging_break\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"hanging_break\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -6596,6 +6870,7 @@ mod generated_tests {
                 [3, 4, 5],
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut cancel = false;
@@ -6608,14 +6883,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_hanging_break_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_hanging_break_nocancel",
-            "horizon.on(\"hanging_break\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"hanging_break\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6627,15 +6903,16 @@ mod generated_tests {
             [3, 4, 5],
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_hanging_place() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_hanging_place",
-            "horizon.on(\"hanging_place\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"hanging_place\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -6650,6 +6927,7 @@ mod generated_tests {
                 [4, 5, 6],
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut cancel = false;
@@ -6663,14 +6941,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_hanging_place_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_hanging_place_nocancel",
-            "horizon.on(\"hanging_place\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"hanging_place\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6683,15 +6962,16 @@ mod generated_tests {
             [4, 5, 6],
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_item_damaged() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_damaged",
-            "horizon.on(\"item_damaged\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.amount == 10, \"amount\")\n    event.amount = 53\n    horizon.cancel()\nend)",
+            "horizon.on(\"item_damaged\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.amount == 10, \"amount\")\n    event.amount = 53\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut amount = 10;
@@ -6707,14 +6987,15 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(amount, 53);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_item_damaged_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_damaged_nocancel",
-            "horizon.on(\"item_damaged\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.amount == 10, \"amount\")\n    event.amount = 53\nend)",
+            "horizon.on(\"item_damaged\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.amount == 10, \"amount\")\n    event.amount = 53\nend)",
         );
         let firing_mods = boxed(m);
         let mut amount = 10;
@@ -6728,26 +7009,28 @@ mod generated_tests {
             &mut amount,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_clone() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_clone",
-            "horizon.on(\"player_clone\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.was_death == true, \"was_death\")\nend)",
+            "horizon.on(\"player_clone\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.was_death == true, \"was_death\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_clone(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_commands_sent() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_commands_sent",
-            "horizon.on(\"player_commands_sent\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.names[1] == \"test:seed\", \"names\")\n    assert(event.names[2] == \"test:seed2\", \"names\")\n    event.names[1] = \"test:edited\"; table.insert(event.names, \"test:added\")\nend)",
+            "horizon.on(\"player_commands_sent\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.names[1] == \"test:seed\", \"names\")\n    assert(event.names[2] == \"test:seed2\", \"names\")\n    event.names[1] = \"test:edited\"; table.insert(event.names, \"test:added\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
@@ -6766,14 +7049,15 @@ mod generated_tests {
                 "test:added".to_owned()
             ]
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_destroy_item() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_destroy_item",
-            "horizon.on(\"player_destroy_item\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.slot == \"test:slot\", \"slot\")\nend)",
+            "horizon.on(\"player_destroy_item\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.slot == \"test:slot\", \"slot\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_destroy_item(
@@ -6784,14 +7068,15 @@ mod generated_tests {
             "test:item",
             "test:slot",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_fish() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_fish",
-            "horizon.on(\"player_fish\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.state == 9, \"state\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_fish\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.state == 9, \"state\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6804,14 +7089,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_fish_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_fish_nocancel",
-            "horizon.on(\"player_fish\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.state == 9, \"state\")\nend)",
+            "horizon.on(\"player_fish\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.state == 9, \"state\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6823,15 +7109,16 @@ mod generated_tests {
             9,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_flower_pot_manipulate() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_flower_pot_manipulate",
-            "horizon.on(\"player_flower_pot_manipulate\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.plant == \"test:plant\", \"plant\")\nend)",
+            "horizon.on(\"player_flower_pot_manipulate\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.plant == \"test:plant\", \"plant\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_flower_pot_manipulate(
@@ -6842,14 +7129,15 @@ mod generated_tests {
             [3, 4, 5],
             "test:plant",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_game_mode_changed() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_game_mode_changed",
-            "horizon.on(\"player_game_mode_changed\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_game_mode_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6863,14 +7151,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_game_mode_changed_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_game_mode_changed_nocancel",
-            "horizon.on(\"player_game_mode_changed\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\nend)",
+            "horizon.on(\"player_game_mode_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -6883,15 +7172,16 @@ mod generated_tests {
             10,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_insert_lectern_book() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_insert_lectern_book",
-            "horizon.on(\"player_insert_lectern_book\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.book == \"test:book\", \"book\")\nend)",
+            "horizon.on(\"player_insert_lectern_book\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.book == \"test:book\", \"book\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_insert_lectern_book(
@@ -6902,14 +7192,15 @@ mod generated_tests {
             [3, 4, 5],
             "test:book",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_item_frame_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_item_frame_change",
-            "horizon.on(\"player_item_frame_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.action == \"test:action\", \"action\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.rotation == 12, \"rotation\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_item_frame_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.action == \"test:action\", \"action\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.rotation == 12, \"rotation\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -6924,6 +7215,7 @@ mod generated_tests {
                 "test:item",
                 12,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -6938,6 +7230,7 @@ mod generated_tests {
                 "test:item",
                 12,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_player_item_frame_change(
@@ -6950,14 +7243,15 @@ mod generated_tests {
             "test:item",
             12,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_item_mend() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_item_mend",
-            "horizon.on(\"player_item_mend\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.repair == 10, \"repair\")\n    assert(event.experience == 11, \"experience\")\nend)",
+            "horizon.on(\"player_item_mend\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.repair == 10, \"repair\")\n    assert(event.experience == 11, \"experience\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_item_mend(
@@ -6969,14 +7263,15 @@ mod generated_tests {
             10,
             11,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_lectern_page_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_lectern_page_change",
-            "horizon.on(\"player_lectern_page_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.page == 10, \"page\")\nend)",
+            "horizon.on(\"player_lectern_page_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.page == 10, \"page\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_lectern_page_change(
@@ -6987,14 +7282,15 @@ mod generated_tests {
             [3, 4, 5],
             10,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_load_from_file() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_load_from_file",
-            "horizon.on(\"player_load_from_file\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.directory == \"test:path\", \"directory\")\nend)",
+            "horizon.on(\"player_load_from_file\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.directory == \"test:path\", \"directory\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_load_from_file(
@@ -7004,14 +7300,15 @@ mod generated_tests {
             "test:name",
             std::path::Path::new("test:path"),
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_login() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_login",
-            "horizon.on(\"player_login\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.reason == \"test:reason\", \"reason\")\n    assert(event.reason_component.text == \"test:reason\", \"reason\")\n    event.reason = nil; event.reason_component = nil\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_login\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.reason == \"test:reason\", \"reason\")\n    assert(event.reason_component.text == \"test:reason\", \"reason\")\n    event.reason = nil; event.reason_component = nil\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut reason = Some(Text::literal("test:reason"));
@@ -7026,14 +7323,15 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(reason, None);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_login_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_login_nocancel",
-            "horizon.on(\"player_login\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.reason == \"test:reason\", \"reason\")\n    assert(event.reason_component.text == \"test:reason\", \"reason\")\n    event.reason = nil; event.reason_component = nil\nend)",
+            "horizon.on(\"player_login\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.reason == \"test:reason\", \"reason\")\n    assert(event.reason_component.text == \"test:reason\", \"reason\")\n    event.reason = nil; event.reason_component = nil\nend)",
         );
         let firing_mods = boxed(m);
         let mut reason = Some(Text::literal("test:reason"));
@@ -7046,15 +7344,16 @@ mod generated_tests {
             &mut reason,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_save_to_file() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_save_to_file",
-            "horizon.on(\"player_save_to_file\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.directory == \"test:path\", \"directory\")\nend)",
+            "horizon.on(\"player_save_to_file\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.directory == \"test:path\", \"directory\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_save_to_file(
@@ -7064,25 +7363,27 @@ mod generated_tests {
             "test:name",
             std::path::Path::new("test:path"),
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_sprint() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_sprint",
-            "horizon.on(\"player_sprint\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.sprinting == true, \"sprinting\")\nend)",
+            "horizon.on(\"player_sprint\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.sprinting == true, \"sprinting\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_sprint(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_swap_hands() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_swap_hands",
-            "horizon.on(\"player_swap_hands\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_swap_hands\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -7094,14 +7395,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_swap_hands_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_swap_hands_nocancel",
-            "horizon.on(\"player_swap_hands\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
+            "horizon.on(\"player_swap_hands\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -7112,15 +7414,16 @@ mod generated_tests {
             "test:name",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_take_lectern_book() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_take_lectern_book",
-            "horizon.on(\"player_take_lectern_book\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.book == \"test:book\", \"book\")\nend)",
+            "horizon.on(\"player_take_lectern_book\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.book == \"test:book\", \"book\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_take_lectern_book(
@@ -7131,14 +7434,15 @@ mod generated_tests {
             [3, 4, 5],
             "test:book",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_teleported() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_teleported",
-            "horizon.on(\"player_teleported\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 4, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
+            "horizon.on(\"player_teleported\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from.x == 3.0, \"from\")\n    assert(event.from.y == 4.0, \"from\")\n    assert(event.from.z == 5.0, \"from\")\n    assert(event.to.x == 4.0, \"to\")\n    assert(event.to.y == 5.0, \"to\")\n    assert(event.to.z == 6.0, \"to\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_teleported(
@@ -7146,51 +7450,55 @@ mod generated_tests {
             &firing_mods,
             7,
             "test:name",
-            [3.0, 2.0, 3.0],
-            [4.0, 2.0, 3.0],
+            [3.0, 4.0, 5.0],
+            [4.0, 5.0, 6.0],
             "test:dimension",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_totem() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_totem",
-            "horizon.on(\"player_totem\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
+            "horizon.on(\"player_totem\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_totem(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_resource_pack_status() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_resource_pack_status",
-            "horizon.on(\"resource_pack_status\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.status == 9, \"status\")\nend)",
+            "horizon.on(\"resource_pack_status\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.status == 9, \"status\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_resource_pack_status(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_spawn_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_spawn_change",
-            "horizon.on(\"spawn_change\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.angle.x == 2.5, \"angle\")\n    assert(event.angle.y == 3.5, \"angle\")\nend)",
+            "horizon.on(\"spawn_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.angle.x == 2.5, \"angle\")\n    assert(event.angle.y == 3.5, \"angle\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_spawn_change(&mut FakeHost::empty(), &firing_mods, [1, 2, 3], [2.5, 3.5]);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_tnt_primed() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_tnt_primed",
-            "horizon.on(\"tnt_primed\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"tnt_primed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -7202,14 +7510,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_tnt_primed_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_tnt_primed_nocancel",
-            "horizon.on(\"tnt_primed\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
+            "horizon.on(\"tnt_primed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -7220,15 +7529,16 @@ mod generated_tests {
             [2, 3, 4],
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_vehicle_create() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_vehicle_create",
-            "horizon.on(\"vehicle_create\", function(event)\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"vehicle_create\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 2.0, \"pos\")\n    assert(event.pos.y == 3.0, \"pos\")\n    assert(event.pos.z == 4.0, \"pos\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -7237,24 +7547,26 @@ mod generated_tests {
                 &mut FakeHost::empty(),
                 &firing_mods,
                 "minecraft:skeleton",
-                [2.0, 2.0, 3.0],
+                [2.0, 3.0, 4.0],
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_vehicle_create(
             &mut FakeHost::empty(),
             &firing_mods,
             "minecraft:zombie",
-            [2.0, 2.0, 3.0],
+            [2.0, 3.0, 4.0],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_vehicle_damage() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_vehicle_damage",
-            "horizon.on(\"vehicle_damage\", function(event)\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage == 2.5, \"damage\")\n    event.damage = 16.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"vehicle_damage\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage == 2.5, \"damage\")\n    event.damage = 16.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -7268,6 +7580,7 @@ mod generated_tests {
                 &mut damage,
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut damage = 2.5;
@@ -7281,14 +7594,15 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(damage, 16.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_vehicle_damage_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_vehicle_damage_nocancel",
-            "horizon.on(\"vehicle_damage\", function(event)\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage == 2.5, \"damage\")\n    event.damage = 16.5\nend, \"minecraft:zombie\")",
+            "horizon.on(\"vehicle_damage\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage == 2.5, \"damage\")\n    event.damage = 16.5\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut damage = 2.5;
@@ -7300,15 +7614,16 @@ mod generated_tests {
             &mut damage,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_vehicle_destroy() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_vehicle_destroy",
-            "horizon.on(\"vehicle_destroy\", function(event)\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"vehicle_destroy\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 2.0, \"pos\")\n    assert(event.pos.y == 3.0, \"pos\")\n    assert(event.pos.z == 4.0, \"pos\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -7317,24 +7632,26 @@ mod generated_tests {
                 &mut FakeHost::empty(),
                 &firing_mods,
                 "minecraft:skeleton",
-                [2.0, 2.0, 3.0],
+                [2.0, 3.0, 4.0],
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_vehicle_destroy(
             &mut FakeHost::empty(),
             &firing_mods,
             "minecraft:zombie",
-            [2.0, 2.0, 3.0],
+            [2.0, 3.0, 4.0],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_vehicle_moved() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_vehicle_moved",
-            "horizon.on(\"vehicle_moved\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 4, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"vehicle_moved\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.from.x == 3.0, \"from\")\n    assert(event.from.y == 4.0, \"from\")\n    assert(event.from.z == 5.0, \"from\")\n    assert(event.to.x == 4.0, \"to\")\n    assert(event.to.y == 5.0, \"to\")\n    assert(event.to.z == 6.0, \"to\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -7344,9 +7661,10 @@ mod generated_tests {
                 &firing_mods,
                 Some(7),
                 "minecraft:skeleton",
-                [3.0, 2.0, 3.0],
-                [4.0, 2.0, 3.0],
+                [3.0, 4.0, 5.0],
+                [4.0, 5.0, 6.0],
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_vehicle_moved(
@@ -7354,39 +7672,42 @@ mod generated_tests {
             &firing_mods,
             Some(7),
             "minecraft:zombie",
-            [3.0, 2.0, 3.0],
-            [4.0, 2.0, 3.0],
+            [3.0, 4.0, 5.0],
+            [4.0, 5.0, 6.0],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_world_border_bounds_changed() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_world_border_bounds_changed",
-            "horizon.on(\"world_border_bounds_changed\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
+            "horizon.on(\"world_border_bounds_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event ~= nil, \"event\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_world_border_bounds_changed(&mut FakeHost::empty(), &firing_mods);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_world_border_center_changed() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_world_border_center_changed",
-            "horizon.on(\"world_border_center_changed\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
+            "horizon.on(\"world_border_center_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event ~= nil, \"event\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_world_border_center_changed(&mut FakeHost::empty(), &firing_mods);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_world_game_rule_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_world_game_rule_change",
-            "horizon.on(\"world_game_rule_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.rule == \"test:rule\", \"rule\")\n    assert(event.value == \"test:value\", \"value\")\nend)",
+            "horizon.on(\"world_game_rule_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.rule == \"test:rule\", \"rule\")\n    assert(event.value == \"test:value\", \"value\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_world_game_rule_change(
@@ -7397,14 +7718,15 @@ mod generated_tests {
             "test:rule",
             "test:value",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_note_play() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_note_play",
-            "horizon.on(\"note_play\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.instrument == \"test:instrument\", \"instrument\")\n    assert(event.note == 11, \"note\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"note_play\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.instrument == \"test:instrument\", \"instrument\")\n    assert(event.note == 11, \"note\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -7419,14 +7741,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_note_play_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_note_play_nocancel",
-            "horizon.on(\"note_play\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.instrument == \"test:instrument\", \"instrument\")\n    assert(event.note == 11, \"note\")\nend)",
+            "horizon.on(\"note_play\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == nil, \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.instrument == \"test:instrument\", \"instrument\")\n    assert(event.note == 11, \"note\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -7440,15 +7763,16 @@ mod generated_tests {
             11,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_advancement_criterion_grant() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_advancement_criterion_grant",
-            "horizon.on(\"player_advancement_criterion_grant\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.advancement == \"test:advancement\", \"advancement\")\n    assert(event.criterion == \"test:criterion\", \"criterion\")\nend)",
+            "horizon.on(\"player_advancement_criterion_grant\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.advancement == \"test:advancement\", \"advancement\")\n    assert(event.criterion == \"test:criterion\", \"criterion\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_advancement_criterion_grant(
@@ -7459,14 +7783,15 @@ mod generated_tests {
             "test:advancement",
             "test:criterion",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_advancement_done() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_advancement_done",
-            "horizon.on(\"player_advancement_done\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.advancement == \"test:advancement\", \"advancement\")\nend)",
+            "horizon.on(\"player_advancement_done\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.advancement == \"test:advancement\", \"advancement\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_advancement_done(
@@ -7476,14 +7801,15 @@ mod generated_tests {
             "test:name",
             "test:advancement",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_advancement_progress() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_advancement_progress",
-            "horizon.on(\"player_advancement_progress\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.advancement == \"test:advancement\", \"advancement\")\n    assert(event.criterion == \"test:criterion\", \"criterion\")\n    assert(event.granted == true, \"granted\")\nend)",
+            "horizon.on(\"player_advancement_progress\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.advancement == \"test:advancement\", \"advancement\")\n    assert(event.criterion == \"test:criterion\", \"criterion\")\n    assert(event.granted == true, \"granted\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_advancement_progress(
@@ -7495,14 +7821,15 @@ mod generated_tests {
             "test:criterion",
             true,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_arm_swing() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_arm_swing",
-            "horizon.on(\"player_arm_swing\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.hand == \"test:hand\", \"hand\")\nend)",
+            "horizon.on(\"player_arm_swing\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.hand == \"test:hand\", \"hand\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_arm_swing(
@@ -7512,25 +7839,27 @@ mod generated_tests {
             "test:name",
             "test:hand",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_attack_cooldown_reset() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_attack_cooldown_reset",
-            "horizon.on(\"player_attack_cooldown_reset\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
+            "horizon.on(\"player_attack_cooldown_reset\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_attack_cooldown_reset(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_bed_leave() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_bed_leave",
-            "horizon.on(\"player_bed_leave\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend)",
+            "horizon.on(\"player_bed_leave\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_bed_leave(
@@ -7540,14 +7869,15 @@ mod generated_tests {
             "test:name",
             [3, 4, 5],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_bucket_entity() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_bucket_entity",
-            "horizon.on(\"player_bucket_entity\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.entity == \"test:entity\", \"entity\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_bucket_entity\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.entity == \"test:entity\", \"entity\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -7560,6 +7890,7 @@ mod generated_tests {
                 13,
                 "test:entity",
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -7572,6 +7903,7 @@ mod generated_tests {
                 99,
                 "test:entity",
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_player_bucket_entity(
@@ -7582,14 +7914,15 @@ mod generated_tests {
             11,
             "test:entity",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_bundle_item_select() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_bundle_item_select",
-            "horizon.on(\"player_bundle_item_select\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.index == 10, \"index\")\nend)",
+            "horizon.on(\"player_bundle_item_select\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.index == 10, \"index\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_bundle_item_select(
@@ -7600,14 +7933,15 @@ mod generated_tests {
             9,
             10,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_change_beacon_effect() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_change_beacon_effect",
-            "horizon.on(\"player_change_beacon_effect\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.primary == \"test:primary\", \"primary\")\n    assert(event.secondary == \"test:secondary\", \"secondary\")\nend)",
+            "horizon.on(\"player_change_beacon_effect\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.primary == \"test:primary\", \"primary\")\n    assert(event.secondary == \"test:secondary\", \"secondary\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_change_beacon_effect(
@@ -7619,14 +7953,15 @@ mod generated_tests {
             "test:primary",
             "test:secondary",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_change_main_hand() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_change_main_hand",
-            "horizon.on(\"player_change_main_hand\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.left == true, \"left\")\nend)",
+            "horizon.on(\"player_change_main_hand\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.left == true, \"left\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_change_main_hand(
@@ -7636,36 +7971,39 @@ mod generated_tests {
             "test:name",
             true,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_client_loaded_world() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_client_loaded_world",
-            "horizon.on(\"player_client_loaded_world\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
+            "horizon.on(\"player_client_loaded_world\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_client_loaded_world(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_deep_sleep() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_deep_sleep",
-            "horizon.on(\"player_deep_sleep\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
+            "horizon.on(\"player_deep_sleep\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_deep_sleep(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_edit_book() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_edit_book",
-            "horizon.on(\"player_edit_book\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pages == 9, \"pages\")\n    assert(event.signing == false, \"signing\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_edit_book\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pages == 9, \"pages\")\n    assert(event.signing == false, \"signing\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -7679,14 +8017,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_edit_book_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_edit_book_nocancel",
-            "horizon.on(\"player_edit_book\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pages == 9, \"pages\")\n    assert(event.signing == false, \"signing\")\nend)",
+            "horizon.on(\"player_edit_book\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pages == 9, \"pages\")\n    assert(event.signing == false, \"signing\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -7699,48 +8038,52 @@ mod generated_tests {
             false,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_egg_throw() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_egg_throw",
-            "horizon.on(\"player_egg_throw\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
+            "horizon.on(\"player_egg_throw\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_egg_throw(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_elytra_boost() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_elytra_boost",
-            "horizon.on(\"player_elytra_boost\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
+            "horizon.on(\"player_elytra_boost\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_elytra_boost(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_input() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_input",
-            "horizon.on(\"player_input\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.flags == 9, \"flags\")\nend)",
+            "horizon.on(\"player_input\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.flags == 9, \"flags\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_input(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_item_held() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_item_held",
-            "horizon.on(\"player_item_held\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_slot == 9, \"from_slot\")\n    assert(event.to_slot == 10, \"to_slot\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_item_held\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_slot == 9, \"from_slot\")\n    assert(event.to_slot == 10, \"to_slot\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -7754,14 +8097,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_item_held_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_item_held_nocancel",
-            "horizon.on(\"player_item_held\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_slot == 9, \"from_slot\")\n    assert(event.to_slot == 10, \"to_slot\")\nend)",
+            "horizon.on(\"player_item_held\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_slot == 9, \"from_slot\")\n    assert(event.to_slot == 10, \"to_slot\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -7774,26 +8118,28 @@ mod generated_tests {
             10,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_jump() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_jump",
-            "horizon.on(\"player_jump\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
+            "horizon.on(\"player_jump\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_jump(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_kicked() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_kicked",
-            "horizon.on(\"player_kicked\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.reason == \"test:reason\", \"reason\")\nend)",
+            "horizon.on(\"player_kicked\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.reason == \"test:reason\", \"reason\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_kicked(
@@ -7803,14 +8149,15 @@ mod generated_tests {
             "test:name",
             "test:reason",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_launch_projectile() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_launch_projectile",
-            "horizon.on(\"player_launch_projectile\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
+            "horizon.on(\"player_launch_projectile\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_launch_projectile(
@@ -7820,25 +8167,27 @@ mod generated_tests {
             "test:name",
             "test:item",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_level_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_level_change",
-            "horizon.on(\"player_level_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\nend)",
+            "horizon.on(\"player_level_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from == 9, \"from\")\n    assert(event.to == 10, \"to\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_level_change(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9, 10);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_locale_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_locale_change",
-            "horizon.on(\"player_locale_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.locale == \"test:locale\", \"locale\")\nend)",
+            "horizon.on(\"player_locale_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.locale == \"test:locale\", \"locale\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_locale_change(
@@ -7848,14 +8197,15 @@ mod generated_tests {
             "test:name",
             "test:locale",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_loom_pattern_select() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_loom_pattern_select",
-            "horizon.on(\"player_loom_pattern_select\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pattern == 9, \"pattern\")\nend)",
+            "horizon.on(\"player_loom_pattern_select\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pattern == 9, \"pattern\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_loom_pattern_select(
@@ -7865,25 +8215,27 @@ mod generated_tests {
             "test:name",
             9,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_map_filled() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_map_filled",
-            "horizon.on(\"player_map_filled\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.map_id == 9, \"map_id\")\nend)",
+            "horizon.on(\"player_map_filled\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.map_id == 9, \"map_id\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_map_filled(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_name_entity() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_name_entity",
-            "horizon.on(\"player_name_entity\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.entity_name == \"test:entity_name\", \"entity_name\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_name_entity\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.entity_name == \"test:entity_name\", \"entity_name\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -7896,6 +8248,7 @@ mod generated_tests {
                 13,
                 "test:entity_name",
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -7908,6 +8261,7 @@ mod generated_tests {
                 99,
                 "test:entity_name",
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_player_name_entity(
@@ -7918,14 +8272,15 @@ mod generated_tests {
             11,
             "test:entity_name",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_open_sign() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_open_sign",
-            "horizon.on(\"player_open_sign\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.front == false, \"front\")\nend)",
+            "horizon.on(\"player_open_sign\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.front == false, \"front\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_open_sign(
@@ -7936,14 +8291,15 @@ mod generated_tests {
             [3, 4, 5],
             false,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_pick_item() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_pick_item",
-            "horizon.on(\"player_pick_item\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_entity == true, \"from_entity\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.entity_id == 11, \"kind\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_pick_item\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_entity == true, \"from_entity\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.entity_id == 11, \"kind\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -7959,6 +8315,7 @@ mod generated_tests {
                 13,
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -7974,6 +8331,7 @@ mod generated_tests {
                 99,
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         let mut cancel = false;
@@ -7988,14 +8346,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_pick_item_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_pick_item_nocancel",
-            "horizon.on(\"player_pick_item\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_entity == true, \"from_entity\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.entity_id == 11, \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_pick_item\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_entity == true, \"from_entity\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.entity_id == 11, \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8009,15 +8368,16 @@ mod generated_tests {
             11,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_pickup_arrow() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_pickup_arrow",
-            "horizon.on(\"player_pickup_arrow\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.item == \"test:item\", \"item\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_pickup_arrow\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.item == \"test:item\", \"item\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -8030,6 +8390,7 @@ mod generated_tests {
                 13,
                 "test:item",
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -8042,6 +8403,7 @@ mod generated_tests {
                 99,
                 "test:item",
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_player_pickup_arrow(
@@ -8052,14 +8414,15 @@ mod generated_tests {
             11,
             "test:item",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_portal() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_portal",
-            "horizon.on(\"player_portal\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_portal\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8074,14 +8437,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_portal_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_portal_nocancel",
-            "horizon.on(\"player_portal\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.cause == \"test:cause\", \"cause\")\nend)",
+            "horizon.on(\"player_portal\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.cause == \"test:cause\", \"cause\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8095,15 +8459,16 @@ mod generated_tests {
             "test:cause",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_ready_arrow() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_ready_arrow",
-            "horizon.on(\"player_ready_arrow\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.arrow == \"test:arrow\", \"arrow\")\nend)",
+            "horizon.on(\"player_ready_arrow\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.arrow == \"test:arrow\", \"arrow\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_ready_arrow(
@@ -8113,14 +8478,15 @@ mod generated_tests {
             "test:name",
             "test:arrow",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_recipe_book_click() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_recipe_book_click",
-            "horizon.on(\"player_recipe_book_click\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.recipe == \"test:recipe\", \"recipe\")\n    assert(event.all == false, \"all\")\nend)",
+            "horizon.on(\"player_recipe_book_click\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.recipe == \"test:recipe\", \"recipe\")\n    assert(event.all == false, \"all\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_recipe_book_click(
@@ -8131,14 +8497,15 @@ mod generated_tests {
             "test:recipe",
             false,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_recipe_book_settings_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_recipe_book_settings_change",
-            "horizon.on(\"player_recipe_book_settings_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.book == 9, \"book\")\n    assert(event.open == false, \"open\")\n    assert(event.filtering == true, \"filtering\")\nend)",
+            "horizon.on(\"player_recipe_book_settings_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.book == 9, \"book\")\n    assert(event.open == false, \"open\")\n    assert(event.filtering == true, \"filtering\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_recipe_book_settings_change(
@@ -8150,14 +8517,15 @@ mod generated_tests {
             false,
             true,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_recipe_discovered() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_recipe_discovered",
-            "horizon.on(\"player_recipe_discovered\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.recipe == \"test:recipe\", \"recipe\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_recipe_discovered\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.recipe == \"test:recipe\", \"recipe\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8170,14 +8538,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_recipe_discovered_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_recipe_discovered_nocancel",
-            "horizon.on(\"player_recipe_discovered\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.recipe == \"test:recipe\", \"recipe\")\nend)",
+            "horizon.on(\"player_recipe_discovered\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.recipe == \"test:recipe\", \"recipe\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8189,26 +8558,28 @@ mod generated_tests {
             "test:recipe",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_riptide() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_riptide",
-            "horizon.on(\"player_riptide\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
+            "horizon.on(\"player_riptide\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_riptide(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_shear_entity() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_shear_entity",
-            "horizon.on(\"player_shear_entity\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.off_hand == false, \"off_hand\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_shear_entity\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.off_hand == false, \"off_hand\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -8223,6 +8594,7 @@ mod generated_tests {
                 false,
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -8237,6 +8609,7 @@ mod generated_tests {
                 false,
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         let mut cancel = false;
@@ -8250,14 +8623,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_shear_entity_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_shear_entity_nocancel",
-            "horizon.on(\"player_shear_entity\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.off_hand == false, \"off_hand\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_shear_entity\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.off_hand == false, \"off_hand\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8270,15 +8644,16 @@ mod generated_tests {
             false,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_spawn_point_set() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_spawn_point_set",
-            "horizon.on(\"player_spawn_point_set\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_spawn_point_set\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8293,14 +8668,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_spawn_point_set_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_spawn_point_set_nocancel",
-            "horizon.on(\"player_spawn_point_set\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\nend)",
+            "horizon.on(\"player_spawn_point_set\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.cause == \"test:cause\", \"cause\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8314,15 +8690,16 @@ mod generated_tests {
             "test:cause",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_stat_award() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_stat_award",
-            "horizon.on(\"player_stat_award\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stat_type == \"test:stat_type\", \"stat_type\")\n    assert(event.stat == \"test:stat\", \"stat\")\n    assert(event.value == 11, \"value\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_stat_award\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stat_type == \"test:stat_type\", \"stat_type\")\n    assert(event.stat == \"test:stat\", \"stat\")\n    assert(event.value == 11, \"value\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8337,14 +8714,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_stat_award_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_stat_award_nocancel",
-            "horizon.on(\"player_stat_award\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stat_type == \"test:stat_type\", \"stat_type\")\n    assert(event.stat == \"test:stat\", \"stat\")\n    assert(event.value == 11, \"value\")\nend)",
+            "horizon.on(\"player_stat_award\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stat_type == \"test:stat_type\", \"stat_type\")\n    assert(event.stat == \"test:stat\", \"stat\")\n    assert(event.value == 11, \"value\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8358,15 +8736,16 @@ mod generated_tests {
             11,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_stonecutter_recipe_select() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_stonecutter_recipe_select",
-            "horizon.on(\"player_stonecutter_recipe_select\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.recipe == 9, \"recipe\")\nend)",
+            "horizon.on(\"player_stonecutter_recipe_select\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.recipe == 9, \"recipe\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_stonecutter_recipe_select(
@@ -8376,14 +8755,15 @@ mod generated_tests {
             "test:name",
             9,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_stop_spectating_entity() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_stop_spectating_entity",
-            "horizon.on(\"player_stop_spectating_entity\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_stop_spectating_entity\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -8395,6 +8775,7 @@ mod generated_tests {
                 "test:name",
                 13,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -8406,6 +8787,7 @@ mod generated_tests {
                 "test:name",
                 99,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_player_stop_spectating_entity(
@@ -8415,25 +8797,27 @@ mod generated_tests {
             "test:name",
             11,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_stop_using_item() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_stop_using_item",
-            "horizon.on(\"player_stop_using_item\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
+            "horizon.on(\"player_stop_using_item\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_stop_using_item(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_swap_with_equipment_slot() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_swap_with_equipment_slot",
-            "horizon.on(\"player_swap_with_equipment_slot\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == \"test:slot\", \"slot\")\nend)",
+            "horizon.on(\"player_swap_with_equipment_slot\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == \"test:slot\", \"slot\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_swap_with_equipment_slot(
@@ -8443,14 +8827,15 @@ mod generated_tests {
             "test:name",
             "test:slot",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_teleport_end_gateway() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_teleport_end_gateway",
-            "horizon.on(\"player_teleport_end_gateway\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.gateway.x == 3, \"gateway\")\n    assert(event.gateway.y == 4, \"gateway\")\n    assert(event.gateway.z == 5, \"gateway\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_teleport_end_gateway\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.gateway.x == 3, \"gateway\")\n    assert(event.gateway.y == 4, \"gateway\")\n    assert(event.gateway.z == 5, \"gateway\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8463,14 +8848,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_teleport_end_gateway_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_teleport_end_gateway_nocancel",
-            "horizon.on(\"player_teleport_end_gateway\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.gateway.x == 3, \"gateway\")\n    assert(event.gateway.y == 4, \"gateway\")\n    assert(event.gateway.z == 5, \"gateway\")\nend)",
+            "horizon.on(\"player_teleport_end_gateway\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.gateway.x == 3, \"gateway\")\n    assert(event.gateway.y == 4, \"gateway\")\n    assert(event.gateway.z == 5, \"gateway\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8482,15 +8868,16 @@ mod generated_tests {
             [3, 4, 5],
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_toggle_entity_age_lock() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_toggle_entity_age_lock",
-            "horizon.on(\"player_toggle_entity_age_lock\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.locked == false, \"locked\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_toggle_entity_age_lock\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.locked == false, \"locked\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -8503,6 +8890,7 @@ mod generated_tests {
                 13,
                 false,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -8515,6 +8903,7 @@ mod generated_tests {
                 99,
                 false,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_player_toggle_entity_age_lock(
@@ -8525,46 +8914,51 @@ mod generated_tests {
             11,
             false,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_toggle_sneak() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_toggle_sneak",
-            "horizon.on(\"player_toggle_sneak\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.sneaking == true, \"sneaking\")\nend)",
+            "horizon.on(\"player_toggle_sneak\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.sneaking == true, \"sneaking\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_toggle_sneak(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_trade() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_trade",
-            "horizon.on(\"player_trade\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_trade\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_player_trade(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 13);
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
             dispatch_player_trade(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 99);
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_player_trade(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 11);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_unleash_entity() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_unleash_entity",
-            "horizon.on(\"player_unleash_entity\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"player_unleash_entity\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity_id == 11, \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -8576,6 +8970,7 @@ mod generated_tests {
                 "test:name",
                 13,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -8587,17 +8982,19 @@ mod generated_tests {
                 "test:name",
                 99,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_player_unleash_entity(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 11);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_velocity() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_velocity",
-            "horizon.on(\"player_velocity\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.velocity.x == 3, \"velocity\")\n    assert(event.velocity.y == 2.0, \"velocity\")\n    assert(event.velocity.z == 3.0, \"velocity\")\nend)",
+            "horizon.on(\"player_velocity\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.velocity.x == 3.0, \"velocity\")\n    assert(event.velocity.y == 4.0, \"velocity\")\n    assert(event.velocity.z == 5.0, \"velocity\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_velocity(
@@ -8605,16 +9002,17 @@ mod generated_tests {
             &firing_mods,
             7,
             "test:name",
-            [3.0, 2.0, 3.0],
+            [3.0, 4.0, 5.0],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_portal_create() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_portal_create",
-            "horizon.on(\"portal_create\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
+            "horizon.on(\"portal_create\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_portal_create(
@@ -8623,30 +9021,32 @@ mod generated_tests {
             "test:dimension",
             [2, 3, 4],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_potion_splash() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_potion_splash",
-            "horizon.on(\"potion_splash\", function(event)\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\nend)",
+            "horizon.on(\"potion_splash\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.pos.x == 2.0, \"pos\")\n    assert(event.pos.y == 3.0, \"pos\")\n    assert(event.pos.z == 4.0, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_potion_splash(
             &mut FakeHost::empty(),
             &firing_mods,
             "test:item",
-            [2.0, 2.0, 3.0],
+            [2.0, 3.0, 4.0],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_prepare_grindstone() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_prepare_grindstone",
-            "horizon.on(\"prepare_grindstone\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.result == nil, \"replace seed\")\n    event.result = { id = \"test:result\", count = 1 }\nend)",
+            "horizon.on(\"prepare_grindstone\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.result == nil, \"replace seed\")\n    event.result = { id = \"test:result\", count = 1 }\nend)",
         );
         let firing_mods = boxed(m);
         let mut result: Option<ItemStack> = None;
@@ -8661,25 +9061,27 @@ mod generated_tests {
         let replaced = result.expect("a replaced value");
         assert_eq!(&*replaced.item, "test:result");
         assert_eq!(replaced.count, 1);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_prepare_hopper_transfer() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_prepare_hopper_transfer",
-            "horizon.on(\"prepare_hopper_transfer\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\nend)",
+            "horizon.on(\"prepare_hopper_transfer\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_prepare_hopper_transfer(&FakeHost::empty(), &firing_mods, [1, 2, 3]);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_prepare_item_craft() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_prepare_item_craft",
-            "horizon.on(\"prepare_item_craft\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.result == nil, \"replace seed\")\n    event.result = { id = \"test:result\", count = 1 }\nend)",
+            "horizon.on(\"prepare_item_craft\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.result == nil, \"replace seed\")\n    event.result = { id = \"test:result\", count = 1 }\nend)",
         );
         let firing_mods = boxed(m);
         let mut result: Option<ItemStack> = None;
@@ -8694,14 +9096,15 @@ mod generated_tests {
         let replaced = result.expect("a replaced value");
         assert_eq!(&*replaced.item, "test:result");
         assert_eq!(replaced.count, 1);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_prepare_item_enchant() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_prepare_item_enchant",
-            "horizon.on(\"prepare_item_enchant\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.costs.x == 4, \"costs\")\n    assert(event.costs.y == 5, \"costs\")\n    assert(event.costs.z == 6, \"costs\")\n    event.costs = { x = 14, y = 15, z = 16 }\nend)",
+            "horizon.on(\"prepare_item_enchant\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.costs.x == 4, \"costs\")\n    assert(event.costs.y == 5, \"costs\")\n    assert(event.costs.z == 6, \"costs\")\n    event.costs = { x = 14, y = 15, z = 16 }\nend)",
         );
         let firing_mods = boxed(m);
         let mut costs = [4, 5, 6];
@@ -8714,14 +9117,15 @@ mod generated_tests {
             &mut costs,
         );
         assert_eq!(costs, [14, 15, 16]);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_prepare_smithing() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_prepare_smithing",
-            "horizon.on(\"prepare_smithing\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.result == nil, \"replace seed\")\n    event.result = { id = \"test:result\", count = 1 }\nend)",
+            "horizon.on(\"prepare_smithing\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.result == nil, \"replace seed\")\n    event.result = { id = \"test:result\", count = 1 }\nend)",
         );
         let firing_mods = boxed(m);
         let mut result: Option<ItemStack> = None;
@@ -8736,25 +9140,27 @@ mod generated_tests {
         let replaced = result.expect("a replaced value");
         assert_eq!(&*replaced.item, "test:result");
         assert_eq!(replaced.count, 1);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_raid_spawn_wave() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_raid_spawn_wave",
-            "horizon.on(\"raid_spawn_wave\", function(event)\n    assert(event.raid == 7, \"raid\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.wave == 9, \"wave\")\n    assert(event.raiders == 10, \"raiders\")\nend)",
+            "horizon.on(\"raid_spawn_wave\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.raid == 7, \"raid\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.wave == 9, \"wave\")\n    assert(event.raiders == 10, \"raiders\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_raid_spawn_wave(&mut FakeHost::empty(), &firing_mods, 7, [2, 3, 4], 9, 10);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_raid_state_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_raid_state_change",
-            "horizon.on(\"raid_state_change\", function(event)\n    assert(event.raid == 7, \"raid\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state\", \"state\")\nend)",
+            "horizon.on(\"raid_state_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.raid == 7, \"raid\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state\", \"state\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_raid_state_change(
@@ -8764,14 +9170,15 @@ mod generated_tests {
             [2, 3, 4],
             "test:state",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_sculk_bloom() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_sculk_bloom",
-            "horizon.on(\"sculk_bloom\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
+            "horizon.on(\"sculk_bloom\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_sculk_bloom(
@@ -8780,14 +9187,15 @@ mod generated_tests {
             "test:dimension",
             [2, 3, 4],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_sleep_finished_time() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_sleep_finished_time",
-            "horizon.on(\"sleep_finished_time\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.current == 8, \"current\")\n    assert(event.new_time == 9, \"new_time\")\n    event.new_time = 52\nend)",
+            "horizon.on(\"sleep_finished_time\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.current == 8, \"current\")\n    assert(event.new_time == 9, \"new_time\")\n    event.new_time = 52\nend)",
         );
         let firing_mods = boxed(m);
         let mut new_time = 9;
@@ -8799,14 +9207,15 @@ mod generated_tests {
             &mut new_time,
         );
         assert_eq!(new_time, 52);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_sponge_absorb() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_sponge_absorb",
-            "horizon.on(\"sponge_absorb\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
+            "horizon.on(\"sponge_absorb\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_sponge_absorb(
@@ -8815,14 +9224,15 @@ mod generated_tests {
             LevelDimension::Overworld,
             BlockPos::new(2, 3, 4),
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_tab_complete() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_tab_complete",
-            "horizon.on(\"tab_complete\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.command == \"test:command\", \"command\")\n    assert(event.range.start == 10, \"range\")\n    assert(event.suggestions[1].text == \"test:suggestion4\", \"suggestions\")\n    assert(event.suggestions[2].text == \"test:suggestion5\", \"suggestions\")\n    event.suggestions = { { range = { start = 61, [\"end\"] = 66 }, text = \"test:suggestion54\" } }\nend)",
+            "horizon.on(\"tab_complete\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.command == \"test:command\", \"command\")\n    assert(event.range.start == 10, \"range\")\n    assert(event.range[\"end\"] == 15, \"range\")\n    assert(event.suggestions[1].range.start == 11, \"suggestions\")\n    assert(event.suggestions[1].range[\"end\"] == 16, \"suggestions\")\n    assert(event.suggestions[1].text == \"test:suggestion4\", \"suggestions\")\n    assert(event.suggestions[2].range.start == 12, \"suggestions\")\n    assert(event.suggestions[2].range[\"end\"] == 17, \"suggestions\")\n    assert(event.suggestions[2].text == \"test:suggestion5\", \"suggestions\")\n    event.suggestions = { { range = { start = 61, [\"end\"] = 66 }, text = \"test:suggestion54\" } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut suggestions = vec![
@@ -8860,14 +9270,15 @@ mod generated_tests {
                 }]
             )
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_target_hit() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_target_hit",
-            "horizon.on(\"target_hit\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.strength == 9, \"strength\")\nend)",
+            "horizon.on(\"target_hit\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.strength == 9, \"strength\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_target_hit(
@@ -8877,14 +9288,15 @@ mod generated_tests {
             [2, 3, 4],
             9,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_thunder_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_thunder_change",
-            "horizon.on(\"thunder_change\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.thundering == false, \"thundering\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"thunder_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.thundering == false, \"thundering\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8896,14 +9308,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_thunder_change_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_thunder_change_nocancel",
-            "horizon.on(\"thunder_change\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.thundering == false, \"thundering\")\nend)",
+            "horizon.on(\"thunder_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.thundering == false, \"thundering\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8914,15 +9327,16 @@ mod generated_tests {
             false,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_time_skip() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_time_skip",
-            "horizon.on(\"time_skip\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.from == 8, \"from\")\n    assert(event.to == 9, \"to\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"time_skip\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.from == 8, \"from\")\n    assert(event.to == 9, \"to\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8936,14 +9350,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_time_skip_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_time_skip_nocancel",
-            "horizon.on(\"time_skip\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.from == 8, \"from\")\n    assert(event.to == 9, \"to\")\n    assert(event.cause == \"test:cause\", \"cause\")\nend)",
+            "horizon.on(\"time_skip\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.from == 8, \"from\")\n    assert(event.to == 9, \"to\")\n    assert(event.cause == \"test:cause\", \"cause\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -8956,15 +9371,16 @@ mod generated_tests {
             "test:cause",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_trade_select() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_trade_select",
-            "horizon.on(\"trade_select\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.villager == 9, \"villager\")\n    assert(event.index == 10, \"index\")\nend)",
+            "horizon.on(\"trade_select\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.villager == 9, \"villager\")\n    assert(event.index == 10, \"index\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_trade_select(
@@ -8975,14 +9391,15 @@ mod generated_tests {
             Some(9),
             10,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_trade_with_villager() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_trade_with_villager",
-            "horizon.on(\"trade_with_villager\", function(event)\n    assert(event.merchant == 7, \"merchant\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.offer.uses == 2, \"offer\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"trade_with_villager\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.merchant == 7, \"merchant\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.offer.base_cost_a.stack.id == \"test:offer\", \"offer\")\n    assert(event.offer.base_cost_a.stack.count == 1, \"offer\")\n    assert(event.offer.base_cost_a.stack.damage == 0, \"offer\")\n    assert(event.offer.cost_b == nil, \"offer\")\n    assert(event.offer.result.id == \"test:offer:out\", \"offer\")\n    assert(event.offer.result.count == 2, \"offer\")\n    assert(event.offer.result.damage == 3, \"offer\")\n    assert(event.offer.uses == 12, \"offer\")\n    assert(event.offer.max_uses == 4, \"offer\")\n    assert(event.offer.reward_exp == true, \"offer\")\n    assert(event.offer.special_price_diff == 5, \"offer\")\n    assert(event.offer.demand == 6, \"offer\")\n    assert(event.offer.price_multiplier == 0.5, \"offer\")\n    assert(event.offer.xp == 7, \"offer\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -9003,20 +9420,21 @@ mod generated_tests {
                     },
                     cost_b: None,
                     result: ItemStack {
-                        item: "test:offer".into(),
-                        count: 1,
-                        damage: 0,
+                        item: "test:offer:out".into(),
+                        count: 2,
+                        damage: 3,
                         extra: None,
                     },
-                    uses: 2,
-                    max_uses: 1,
+                    uses: 12,
+                    max_uses: 4,
                     reward_exp: true,
-                    special_price_diff: 0,
-                    demand: 0,
-                    price_multiplier: 1.0,
-                    xp: 1,
+                    special_price_diff: 5,
+                    demand: 6,
+                    price_multiplier: 0.5,
+                    xp: 7,
                 },
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_trade_with_villager(
@@ -9035,28 +9453,29 @@ mod generated_tests {
                 },
                 cost_b: None,
                 result: ItemStack {
-                    item: "test:offer".into(),
-                    count: 1,
-                    damage: 0,
+                    item: "test:offer:out".into(),
+                    count: 2,
+                    damage: 3,
                     extra: None,
                 },
-                uses: 2,
-                max_uses: 1,
+                uses: 12,
+                max_uses: 4,
                 reward_exp: true,
-                special_price_diff: 0,
-                demand: 0,
-                price_multiplier: 1.0,
-                xp: 1,
+                special_price_diff: 5,
+                demand: 6,
+                price_multiplier: 0.5,
+                xp: 7,
             },
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_vault_change_state() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_vault_change_state",
-            "horizon.on(\"vault_change_state\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state\", \"state\")\nend)",
+            "horizon.on(\"vault_change_state\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state\", \"state\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_vault_change_state(
@@ -9066,25 +9485,27 @@ mod generated_tests {
             [2, 3, 4],
             "test:state",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_vault_loot() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_vault_loot",
-            "horizon.on(\"vault_loot\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
+            "horizon.on(\"vault_loot\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.item == \"test:item\", \"item\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_vault_loot(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_weather_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_weather_change",
-            "horizon.on(\"weather_change\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.raining == false, \"raining\")\n    assert(event.thundering == true, \"thundering\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"weather_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.raining == false, \"raining\")\n    assert(event.thundering == true, \"thundering\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -9097,14 +9518,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_weather_change_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_weather_change_nocancel",
-            "horizon.on(\"weather_change\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.raining == false, \"raining\")\n    assert(event.thundering == true, \"thundering\")\nend)",
+            "horizon.on(\"weather_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.raining == false, \"raining\")\n    assert(event.thundering == true, \"thundering\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -9116,48 +9538,52 @@ mod generated_tests {
             true,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_whitelist_state_update() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_whitelist_state_update",
-            "horizon.on(\"whitelist_state_update\", function(event)\n    assert(event.enabled == true, \"enabled\")\nend)",
+            "horizon.on(\"whitelist_state_update\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.enabled == true, \"enabled\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_whitelist_state_update(&mut FakeHost::empty(), &firing_mods, true);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_world_border_bounds_change_finish() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_world_border_bounds_change_finish",
-            "horizon.on(\"world_border_bounds_change_finish\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
+            "horizon.on(\"world_border_bounds_change_finish\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event ~= nil, \"event\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_world_border_bounds_change_finish(&mut FakeHost::empty(), &firing_mods);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_world_saved() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_world_saved",
-            "horizon.on(\"world_saved\", function(event)\n    assert(event.wait == true, \"wait\")\nend)",
+            "horizon.on(\"world_saved\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.wait == true, \"wait\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_world_saved(&mut FakeHost::empty(), &firing_mods, true);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_drown() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_drown",
-            "horizon.on(\"living_drown\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.is_drowning == true, \"is_drowning\")\n    event.is_drowning = false\n    assert(event.damage_amount == 4.5, \"damage_amount\")\n    event.damage_amount = 18.5\n    assert(event.bubble_count == 11, \"bubble_count\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_drown\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.is_drowning == true, \"is_drowning\")\n    event.is_drowning = false\n    assert(event.damage_amount == 4.5, \"damage_amount\")\n    event.damage_amount = 18.5\n    assert(event.bubble_count == 11, \"bubble_count\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -9174,6 +9600,7 @@ mod generated_tests {
                 11,
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut is_drowning = true;
@@ -9191,14 +9618,15 @@ mod generated_tests {
         assert!(cancel, "cancel not cancelled");
         assert!(!is_drowning);
         assert_eq!(damage_amount, 18.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_drown_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_drown_nocancel",
-            "horizon.on(\"living_drown\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.is_drowning == true, \"is_drowning\")\n    event.is_drowning = false\n    assert(event.damage_amount == 4.5, \"damage_amount\")\n    event.damage_amount = 18.5\n    assert(event.bubble_count == 11, \"bubble_count\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_drown\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.is_drowning == true, \"is_drowning\")\n    event.is_drowning = false\n    assert(event.damage_amount == 4.5, \"damage_amount\")\n    event.damage_amount = 18.5\n    assert(event.bubble_count == 11, \"bubble_count\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut is_drowning = true;
@@ -9213,31 +9641,34 @@ mod generated_tests {
             11,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_jump() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_jump",
-            "horizon.on(\"living_jump\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_jump\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_living_jump(&firing_mods, 7, "minecraft:skeleton");
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_living_jump(&firing_mods, 7, "minecraft:zombie");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_arrow_nock() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_arrow_nock",
-            "horizon.on(\"arrow_nock\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.bow.id == \"test:bow\", \"bow\")\n    assert(event.hand == \"off\", \"hand\")\n    assert(event.has_ammo == true, \"has_ammo\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"arrow_nock\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.bow.id == \"test:bow\", \"bow\")\n    assert(event.bow.count == 3, \"bow\")\n    assert(event.bow.damage == 2, \"bow\")\n    assert(event.bow.extra == nil, \"bow\")\n    assert(event.hand == \"off\", \"hand\")\n    assert(event.has_ammo == true, \"has_ammo\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -9257,14 +9688,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_arrow_nock_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_arrow_nock_nocancel",
-            "horizon.on(\"arrow_nock\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.bow.id == \"test:bow\", \"bow\")\n    assert(event.hand == \"off\", \"hand\")\n    assert(event.has_ammo == true, \"has_ammo\")\nend)",
+            "horizon.on(\"arrow_nock\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.bow.id == \"test:bow\", \"bow\")\n    assert(event.bow.count == 3, \"bow\")\n    assert(event.bow.damage == 2, \"bow\")\n    assert(event.bow.extra == nil, \"bow\")\n    assert(event.hand == \"off\", \"hand\")\n    assert(event.has_ammo == true, \"has_ammo\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -9283,15 +9715,16 @@ mod generated_tests {
             true,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_baby_entity_spawn() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_baby_entity_spawn",
-            "horizon.on(\"baby_entity_spawn\", function(event)\n    assert(event.parent == 7, \"parent\")\n    assert(event.partner == 8, \"partner\")\n    assert(event.player == 9, \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"baby_entity_spawn\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.parent == 7, \"parent\")\n    assert(event.partner == 8, \"partner\")\n    assert(event.player == 9, \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -9306,6 +9739,7 @@ mod generated_tests {
                 "minecraft:skeleton",
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut cancel = false;
@@ -9319,14 +9753,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_baby_entity_spawn_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_baby_entity_spawn_nocancel",
-            "horizon.on(\"baby_entity_spawn\", function(event)\n    assert(event.parent == 7, \"parent\")\n    assert(event.partner == 8, \"partner\")\n    assert(event.player == 9, \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"baby_entity_spawn\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.parent == 7, \"parent\")\n    assert(event.partner == 8, \"partner\")\n    assert(event.player == 9, \"player\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -9339,15 +9774,16 @@ mod generated_tests {
             "minecraft:zombie",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_can_player_sleep() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_can_player_sleep",
-            "horizon.on(\"can_player_sleep\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.problem == \"test:problem\", \"problem\")\n    event.problem = \"test:problem:edited\"\nend)",
+            "horizon.on(\"can_player_sleep\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.problem == \"test:problem\", \"problem\")\n    event.problem = \"test:problem:edited\"\nend)",
         );
         let firing_mods = boxed(m);
         let mut problem = Some("test:problem".to_owned());
@@ -9360,63 +9796,67 @@ mod generated_tests {
             &mut problem,
         );
         assert_eq!(problem, Some("test:problem:edited".to_owned()));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_explosion_knockback() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_explosion_knockback",
-            "horizon.on(\"explosion_knockback\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.center.x == 2, \"center\")\n    assert(event.center.y == 2.0, \"center\")\n    assert(event.center.z == 3.0, \"center\")\n    assert(event.blocks[1].x == 3, \"blocks\")\n    assert(event.blocks[1].y == 4, \"blocks\")\n    assert(event.blocks[1].z == 5, \"blocks\")\n    assert(event.blocks[2].x == 4, \"blocks\")\n    assert(event.blocks[2].y == 5, \"blocks\")\n    assert(event.blocks[2].z == 6, \"blocks\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.knockback_velocity.x == 5.0, \"knockback_velocity\")\n    assert(event.knockback_velocity.y == 2.0, \"knockback_velocity\")\n    assert(event.knockback_velocity.z == 3.0, \"knockback_velocity\")\n    event.knockback_velocity = { x = 15.0, y = 12.0, z = 13.0 }\nend, \"minecraft:zombie\")",
+            "horizon.on(\"explosion_knockback\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.center.x == 2.0, \"center\")\n    assert(event.center.y == 3.0, \"center\")\n    assert(event.center.z == 4.0, \"center\")\n    assert(event.blocks[1].x == 3, \"blocks\")\n    assert(event.blocks[1].y == 4, \"blocks\")\n    assert(event.blocks[1].z == 5, \"blocks\")\n    assert(event.blocks[2].x == 4, \"blocks\")\n    assert(event.blocks[2].y == 5, \"blocks\")\n    assert(event.blocks[2].z == 6, \"blocks\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.knockback_velocity.x == 5.0, \"knockback_velocity\")\n    assert(event.knockback_velocity.y == 6.0, \"knockback_velocity\")\n    assert(event.knockback_velocity.z == 7.0, \"knockback_velocity\")\n    event.knockback_velocity = { x = 15.0, y = 16.0, z = 17.0 }\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            let mut knockback_velocity = [5.0, 2.0, 3.0];
+            let mut knockback_velocity = [5.0, 6.0, 7.0];
             dispatch_explosion_knockback(
                 &mut FakeHost::empty(),
                 &firing_mods,
                 "test:dimension",
-                [2.0, 2.0, 3.0],
+                [2.0, 3.0, 4.0],
                 &[[3, 4, 5], [4, 5, 6]],
                 Some(13),
                 &mut knockback_velocity,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
-            let mut knockback_velocity = [5.0, 2.0, 3.0];
+            let mut knockback_velocity = [5.0, 6.0, 7.0];
             dispatch_explosion_knockback(
                 &mut FakeHost::empty(),
                 &firing_mods,
                 "test:dimension",
-                [2.0, 2.0, 3.0],
+                [2.0, 3.0, 4.0],
                 &[[3, 4, 5], [4, 5, 6]],
                 None,
                 &mut knockback_velocity,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
-        let mut knockback_velocity = [5.0, 2.0, 3.0];
+        let mut knockback_velocity = [5.0, 6.0, 7.0];
         dispatch_explosion_knockback(
             &mut FakeHost::empty(),
             &firing_mods,
             "test:dimension",
-            [2.0, 2.0, 3.0],
+            [2.0, 3.0, 4.0],
             &[[3, 4, 5], [4, 5, 6]],
             Some(11),
             &mut knockback_velocity,
         );
-        assert_eq!(knockback_velocity, [15.0, 12.0, 13.0]);
+        assert_eq!(knockback_velocity, [15.0, 16.0, 17.0]);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_ingredient_test() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_ingredient_test",
-            "horizon.on(\"ingredient_test\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.data.testkey == 8, \"data\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.accept == false, \"accept\")\n    event.accept = true\nend)",
+            "horizon.on(\"ingredient_test\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.data.testkey == 8, \"data\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 3, \"stack\")\n    assert(event.stack.damage == 2, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.accept == false, \"accept\")\n    event.accept = true\nend)",
         );
         let firing_mods = boxed(m);
         let mut accept = false;
@@ -9435,27 +9875,29 @@ mod generated_tests {
             &mut accept,
         );
         assert!(accept);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_item_container() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_container",
-            "horizon.on(\"item_container\", function(event)\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.slots == nil, \"replace seed\")\n    event.slots = 81000\nend)",
+            "horizon.on(\"item_container\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.slots == nil, \"replace seed\")\n    event.slots = 81000\nend)",
         );
         let firing_mods = boxed(m);
         let mut slots: Option<u32> = None;
         dispatch_item_container(&FakeHost::empty(), &firing_mods, "test:item", &mut slots);
         assert_eq!(slots, Some(81000));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_conversion_post() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_conversion_post",
-            "horizon.on(\"living_conversion_post\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.converted == 9, \"converted\")\n    assert(event.converted_kind == \"test:converted_kind\", \"converted_kind\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_conversion_post\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.converted == 9, \"converted\")\n    assert(event.converted_kind == \"test:converted_kind\", \"converted_kind\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -9468,6 +9910,7 @@ mod generated_tests {
                 9,
                 "test:converted_kind",
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_living_conversion_post(
@@ -9478,14 +9921,15 @@ mod generated_tests {
             9,
             "test:converted_kind",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_conversion_pre() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_conversion_pre",
-            "horizon.on(\"living_conversion_pre\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.outcome == \"test:outcome\", \"outcome\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_conversion_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.outcome == \"test:outcome\", \"outcome\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -9499,6 +9943,7 @@ mod generated_tests {
                 "test:outcome",
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut cancel = false;
@@ -9511,14 +9956,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_conversion_pre_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_conversion_pre_nocancel",
-            "horizon.on(\"living_conversion_pre\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.outcome == \"test:outcome\", \"outcome\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_conversion_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.outcome == \"test:outcome\", \"outcome\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -9530,15 +9976,16 @@ mod generated_tests {
             "test:outcome",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_death() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_death",
-            "horizon.on(\"living_death\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.attacker == 10, \"attacker\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_death\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.attacker == 10, \"attacker\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -9553,6 +10000,7 @@ mod generated_tests {
                 10,
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut cancel = false;
@@ -9566,14 +10014,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_death_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_death_nocancel",
-            "horizon.on(\"living_death\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.attacker == 10, \"attacker\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_death\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.attacker == 10, \"attacker\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -9586,15 +10035,16 @@ mod generated_tests {
             10,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_get_projectile() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_get_projectile",
-            "horizon.on(\"living_get_projectile\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.weapon.id == \"test:weapon\", \"weapon\")\n    assert(event.projectile.id == \"test:projectile\", \"projectile\")\n    event.projectile = nil\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_get_projectile\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.entity == 9, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.weapon.id == \"test:weapon\", \"weapon\")\n    assert(event.weapon.count == 5, \"weapon\")\n    assert(event.weapon.damage == 4, \"weapon\")\n    assert(event.weapon.extra == nil, \"weapon\")\n    assert(event.projectile.id == \"test:projectile\", \"projectile\")\n    assert(event.projectile.count == 6, \"projectile\")\n    assert(event.projectile.damage == 5, \"projectile\")\n    assert(event.projectile.extra == nil, \"projectile\")\n    event.projectile = nil\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -9620,6 +10070,7 @@ mod generated_tests {
                 },
                 &mut projectile,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut projectile = Some(ItemStack {
@@ -9644,14 +10095,15 @@ mod generated_tests {
             &mut projectile,
         );
         assert_eq!(projectile, None);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_incoming_damage_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_incoming_damage_v2",
-            "horizon.on(\"living_incoming_damage_v2\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.source_position.x == 5.0, \"source_position\")\n    assert(event.source_position.y == 2.0, \"source_position\")\n    assert(event.source_position.z == 3.0, \"source_position\")\n    assert(event.victim_position.x == 6, \"victim_position\")\n    assert(event.victim_position.y == 2.0, \"victim_position\")\n    assert(event.victim_position.z == 3.0, \"victim_position\")\n    assert(event.victim_view.x == 7, \"victim_view\")\n    assert(event.victim_view.y == 2.0, \"victim_view\")\n    assert(event.victim_view.z == 3.0, \"victim_view\")\n    assert(event.weapon == nil, \"weapon\")\n    assert(event.amount == 9.5, \"amount\")\n    event.amount = 23.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_incoming_damage_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.source_position.x == 5.0, \"source_position\")\n    assert(event.source_position.y == 6.0, \"source_position\")\n    assert(event.source_position.z == 7.0, \"source_position\")\n    assert(event.victim_position.x == 6.0, \"victim_position\")\n    assert(event.victim_position.y == 7.0, \"victim_position\")\n    assert(event.victim_position.z == 8.0, \"victim_position\")\n    assert(event.victim_view.x == 7.0, \"victim_view\")\n    assert(event.victim_view.y == 8.0, \"victim_view\")\n    assert(event.victim_view.z == 9.0, \"victim_view\")\n    assert(event.weapon == nil, \"weapon\")\n    assert(event.amount == 9.5, \"amount\")\n    event.amount = 23.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -9665,13 +10117,14 @@ mod generated_tests {
                 "minecraft:skeleton",
                 "test:damage_type",
                 10,
-                Some([5.0, 2.0, 3.0]),
-                [6.0, 2.0, 3.0],
-                [7.0, 2.0, 3.0],
+                Some([5.0, 6.0, 7.0]),
+                [6.0, 7.0, 8.0],
+                [7.0, 8.0, 9.0],
                 None,
                 &mut amount,
                 &mut canceled,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut amount = 9.5;
@@ -9683,23 +10136,24 @@ mod generated_tests {
             "minecraft:zombie",
             "test:damage_type",
             10,
-            Some([5.0, 2.0, 3.0]),
-            [6.0, 2.0, 3.0],
-            [7.0, 2.0, 3.0],
+            Some([5.0, 6.0, 7.0]),
+            [6.0, 7.0, 8.0],
+            [7.0, 8.0, 9.0],
             None,
             &mut amount,
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
         assert_eq!(amount, 23.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_incoming_damage_v2_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_incoming_damage_v2_nocancel",
-            "horizon.on(\"living_incoming_damage_v2\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.source_position.x == 5.0, \"source_position\")\n    assert(event.source_position.y == 2.0, \"source_position\")\n    assert(event.source_position.z == 3.0, \"source_position\")\n    assert(event.victim_position.x == 6, \"victim_position\")\n    assert(event.victim_position.y == 2.0, \"victim_position\")\n    assert(event.victim_position.z == 3.0, \"victim_position\")\n    assert(event.victim_view.x == 7, \"victim_view\")\n    assert(event.victim_view.y == 2.0, \"victim_view\")\n    assert(event.victim_view.z == 3.0, \"victim_view\")\n    assert(event.weapon == nil, \"weapon\")\n    assert(event.amount == 9.5, \"amount\")\n    event.amount = 23.5\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_incoming_damage_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.source_position.x == 5.0, \"source_position\")\n    assert(event.source_position.y == 6.0, \"source_position\")\n    assert(event.source_position.z == 7.0, \"source_position\")\n    assert(event.victim_position.x == 6.0, \"victim_position\")\n    assert(event.victim_position.y == 7.0, \"victim_position\")\n    assert(event.victim_position.z == 8.0, \"victim_position\")\n    assert(event.victim_view.x == 7.0, \"victim_view\")\n    assert(event.victim_view.y == 8.0, \"victim_view\")\n    assert(event.victim_view.z == 9.0, \"victim_view\")\n    assert(event.weapon == nil, \"weapon\")\n    assert(event.amount == 9.5, \"amount\")\n    event.amount = 23.5\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut amount = 9.5;
@@ -9711,22 +10165,23 @@ mod generated_tests {
             "minecraft:zombie",
             "test:damage_type",
             10,
-            Some([5.0, 2.0, 3.0]),
-            [6.0, 2.0, 3.0],
-            [7.0, 2.0, 3.0],
+            Some([5.0, 6.0, 7.0]),
+            [6.0, 7.0, 8.0],
+            [7.0, 8.0, 9.0],
             None,
             &mut amount,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_knockback_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_knockback_v2",
-            "horizon.on(\"living_knockback_v2\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.attacker == 9, \"attacker\")\n    assert(event.attacker_main == nil, \"attacker_main\")\n    assert(event.attacker_off.id == \"test:attacker_off\", \"attacker_off\")\n    assert(event.strength == 6.5, \"strength\")\n    event.strength = 20.5\n    assert(event.x == 7.5, \"x\")\n    event.x = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_knockback_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.attacker == 9, \"attacker\")\n    assert(event.attacker_main == nil, \"attacker_main\")\n    assert(event.attacker_off.id == \"test:attacker_off\", \"attacker_off\")\n    assert(event.attacker_off.count == 5, \"attacker_off\")\n    assert(event.attacker_off.damage == 4, \"attacker_off\")\n    assert(event.attacker_off.extra == nil, \"attacker_off\")\n    assert(event.strength == 6.5, \"strength\")\n    event.strength = 20.5\n    assert(event.x == 7.5, \"x\")\n    event.x = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -9743,8 +10198,8 @@ mod generated_tests {
                 None,
                 Some(&ItemStack {
                     item: "test:attacker_off".into(),
-                    count: 1,
-                    damage: 0,
+                    count: 5,
+                    damage: 4,
                     extra: None,
                 }),
                 &mut strength,
@@ -9752,6 +10207,7 @@ mod generated_tests {
                 &mut z,
                 &mut canceled,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut strength = 6.5;
@@ -9766,8 +10222,8 @@ mod generated_tests {
             None,
             Some(&ItemStack {
                 item: "test:attacker_off".into(),
-                count: 1,
-                damage: 0,
+                count: 5,
+                damage: 4,
                 extra: None,
             }),
             &mut strength,
@@ -9779,14 +10235,15 @@ mod generated_tests {
         assert_eq!(strength, 20.5);
         assert_eq!(x, 21.5);
         assert_eq!(z, 22.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_knockback_v2_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_knockback_v2_nocancel",
-            "horizon.on(\"living_knockback_v2\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.attacker == 9, \"attacker\")\n    assert(event.attacker_main == nil, \"attacker_main\")\n    assert(event.attacker_off.id == \"test:attacker_off\", \"attacker_off\")\n    assert(event.strength == 6.5, \"strength\")\n    event.strength = 20.5\n    assert(event.x == 7.5, \"x\")\n    event.x = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_knockback_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.attacker == 9, \"attacker\")\n    assert(event.attacker_main == nil, \"attacker_main\")\n    assert(event.attacker_off.id == \"test:attacker_off\", \"attacker_off\")\n    assert(event.attacker_off.count == 5, \"attacker_off\")\n    assert(event.attacker_off.damage == 4, \"attacker_off\")\n    assert(event.attacker_off.extra == nil, \"attacker_off\")\n    assert(event.strength == 6.5, \"strength\")\n    event.strength = 20.5\n    assert(event.x == 7.5, \"x\")\n    event.x = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut strength = 6.5;
@@ -9801,8 +10258,8 @@ mod generated_tests {
             None,
             Some(&ItemStack {
                 item: "test:attacker_off".into(),
-                count: 1,
-                damage: 0,
+                count: 5,
+                damage: 4,
                 extra: None,
             }),
             &mut strength,
@@ -9810,15 +10267,16 @@ mod generated_tests {
             &mut z,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_mob_split() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_mob_split",
-            "horizon.on(\"mob_split\", function(event)\n    assert(event.parent == 7, \"parent\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.size == 9, \"size\")\n    assert(event.child_size == 10, \"child_size\")\n    assert(event.count == 11, \"count\")\n    event.count = 54\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"mob_split\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.parent == 7, \"parent\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.size == 9, \"size\")\n    assert(event.child_size == 10, \"child_size\")\n    assert(event.count == 11, \"count\")\n    event.count = 54\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -9835,6 +10293,7 @@ mod generated_tests {
                 &mut count,
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut count = 11;
@@ -9851,14 +10310,15 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(count, 54);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_mob_split_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_mob_split_nocancel",
-            "horizon.on(\"mob_split\", function(event)\n    assert(event.parent == 7, \"parent\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.size == 9, \"size\")\n    assert(event.child_size == 10, \"child_size\")\n    assert(event.count == 11, \"count\")\n    event.count = 54\nend, \"minecraft:zombie\")",
+            "horizon.on(\"mob_split\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.parent == 7, \"parent\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.size == 9, \"size\")\n    assert(event.child_size == 10, \"child_size\")\n    assert(event.count == 11, \"count\")\n    event.count = 54\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut count = 11;
@@ -9873,15 +10333,16 @@ mod generated_tests {
             &mut count,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_register_configs() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_register_configs",
-            "horizon.on(\"register_configs\", function(event)\n    assert(event.configs[1].mod_id == \"test:mod0\", \"configs\")\n    assert(event.configs[2].mod_id == \"test:mod1\", \"configs\")\n    event.configs = { { mod_id = \"test:mod50\", kind = \"server\", file = \"test:file50\", default = \"test:default50\" } }\nend)",
+            "horizon.on(\"register_configs\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.configs[1].mod_id == \"test:mod0\", \"configs\")\n    assert(event.configs[1].kind == \"server\", \"configs\")\n    assert(event.configs[1].file == \"test:file0\", \"configs\")\n    assert(event.configs[1].default == \"test:default0\", \"configs\")\n    assert(event.configs[2].mod_id == \"test:mod1\", \"configs\")\n    assert(event.configs[2].kind == \"server\", \"configs\")\n    assert(event.configs[2].file == \"test:file1\", \"configs\")\n    assert(event.configs[2].default == \"test:default1\", \"configs\")\n    event.configs = { { mod_id = \"test:mod50\", kind = \"server\", file = \"test:file50\", default = \"test:default50\" } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut configs = vec![
@@ -9911,14 +10372,15 @@ mod generated_tests {
                 }]
             )
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_movement_input() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_movement_input",
-            "horizon.on(\"movement_input\", function(event)\n    assert(event.forward == 1.5, \"forward\")\n    event.forward = 15.5\n    assert(event.strafe == 2.5, \"strafe\")\n    event.strafe = 16.5\n    assert(event.jump == true, \"jump\")\n    event.jump = false\n    assert(event.sneak == false, \"sneak\")\n    event.sneak = true\nend)",
+            "horizon.on(\"movement_input\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.forward == 1.5, \"forward\")\n    event.forward = 15.5\n    assert(event.strafe == 2.5, \"strafe\")\n    event.strafe = 16.5\n    assert(event.jump == true, \"jump\")\n    event.jump = false\n    assert(event.sneak == false, \"sneak\")\n    event.sneak = true\nend)",
         );
         let firing_mods = boxed(m);
         let mut forward = 1.5;
@@ -9937,14 +10399,15 @@ mod generated_tests {
         assert_eq!(strafe, 16.5);
         assert!(!jump);
         assert!(sneak);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_note_block_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_note_block_change",
-            "horizon.on(\"note_block_change\", function(event)\n    assert(event.context.old_note == 7, \"context\")\n    assert(event.new_note == 8, \"new_note\")\n    event.new_note = 51\n    horizon.cancel()\nend)",
+            "horizon.on(\"note_block_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.context.dimension == \"minecraft:overworld\", \"context\")\n    assert(event.context.pos.x == 1, \"context\")\n    assert(event.context.pos.y == 2, \"context\")\n    assert(event.context.pos.z == 3, \"context\")\n    assert(event.context.instrument == \"test:instrument0\", \"context\")\n    assert(event.context.old_note == 7, \"context\")\n    assert(event.new_note == 8, \"new_note\")\n    event.new_note = 51\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut new_note = 8;
@@ -9963,14 +10426,15 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(new_note, 51);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_note_block_change_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_note_block_change_nocancel",
-            "horizon.on(\"note_block_change\", function(event)\n    assert(event.context.old_note == 7, \"context\")\n    assert(event.new_note == 8, \"new_note\")\n    event.new_note = 51\nend)",
+            "horizon.on(\"note_block_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.context.dimension == \"minecraft:overworld\", \"context\")\n    assert(event.context.pos.x == 1, \"context\")\n    assert(event.context.pos.y == 2, \"context\")\n    assert(event.context.pos.z == 3, \"context\")\n    assert(event.context.instrument == \"test:instrument0\", \"context\")\n    assert(event.context.old_note == 7, \"context\")\n    assert(event.new_note == 8, \"new_note\")\n    event.new_note = 51\nend)",
         );
         let firing_mods = boxed(m);
         let mut new_note = 8;
@@ -9987,15 +10451,16 @@ mod generated_tests {
             &mut new_note,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_potential_spawns() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_potential_spawns",
-            "horizon.on(\"potential_spawns\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.category == \"test:category\", \"category\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.entries[1].entity == \"test:entity3\", \"entries\")\n    assert(event.entries[2].entity == \"test:entity4\", \"entries\")\n    event.entries = { { entity = \"test:entity53\", weight = 60, min = 1, max = 2, constant = false } }\n    horizon.cancel()\nend)",
+            "horizon.on(\"potential_spawns\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.category == \"test:category\", \"category\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.entries[1].entity == \"test:entity3\", \"entries\")\n    assert(event.entries[1].weight == 10, \"entries\")\n    assert(event.entries[1].min == 1, \"entries\")\n    assert(event.entries[1].max == 2, \"entries\")\n    assert(event.entries[1].constant == false, \"entries\")\n    assert(event.entries[2].entity == \"test:entity4\", \"entries\")\n    assert(event.entries[2].weight == 11, \"entries\")\n    assert(event.entries[2].min == 1, \"entries\")\n    assert(event.entries[2].max == 2, \"entries\")\n    assert(event.entries[2].constant == true, \"entries\")\n    event.entries = { { entity = \"test:entity53\", weight = 60, min = 1, max = 2, constant = false } }\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut entries = vec![
@@ -10038,14 +10503,15 @@ mod generated_tests {
                 }]
             )
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_potential_spawns_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_potential_spawns_nocancel",
-            "horizon.on(\"potential_spawns\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.category == \"test:category\", \"category\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.entries[1].entity == \"test:entity3\", \"entries\")\n    assert(event.entries[2].entity == \"test:entity4\", \"entries\")\n    event.entries = { { entity = \"test:entity53\", weight = 60, min = 1, max = 2, constant = false } }\nend)",
+            "horizon.on(\"potential_spawns\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.category == \"test:category\", \"category\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.entries[1].entity == \"test:entity3\", \"entries\")\n    assert(event.entries[1].weight == 10, \"entries\")\n    assert(event.entries[1].min == 1, \"entries\")\n    assert(event.entries[1].max == 2, \"entries\")\n    assert(event.entries[1].constant == false, \"entries\")\n    assert(event.entries[2].entity == \"test:entity4\", \"entries\")\n    assert(event.entries[2].weight == 11, \"entries\")\n    assert(event.entries[2].min == 1, \"entries\")\n    assert(event.entries[2].max == 2, \"entries\")\n    assert(event.entries[2].constant == true, \"entries\")\n    event.entries = { { entity = \"test:entity53\", weight = 60, min = 1, max = 2, constant = false } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut entries = vec![
@@ -10074,15 +10540,16 @@ mod generated_tests {
             &mut entries,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_village_siege() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_village_siege",
-            "horizon.on(\"village_siege\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.player == 8, \"player\")\n    assert(event.attempted_pos.x == 3, \"attempted_pos\")\n    assert(event.attempted_pos.y == 2.0, \"attempted_pos\")\n    assert(event.attempted_pos.z == 3.0, \"attempted_pos\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"village_siege\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.player == 8, \"player\")\n    assert(event.attempted_pos.x == 3.0, \"attempted_pos\")\n    assert(event.attempted_pos.y == 4.0, \"attempted_pos\")\n    assert(event.attempted_pos.z == 5.0, \"attempted_pos\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -10091,18 +10558,19 @@ mod generated_tests {
             &firing_mods,
             "test:dimension",
             8,
-            [3.0, 2.0, 3.0],
+            [3.0, 4.0, 5.0],
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_village_siege_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_village_siege_nocancel",
-            "horizon.on(\"village_siege\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.player == 8, \"player\")\n    assert(event.attempted_pos.x == 3, \"attempted_pos\")\n    assert(event.attempted_pos.y == 2.0, \"attempted_pos\")\n    assert(event.attempted_pos.z == 3.0, \"attempted_pos\")\nend)",
+            "horizon.on(\"village_siege\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.player == 8, \"player\")\n    assert(event.attempted_pos.x == 3.0, \"attempted_pos\")\n    assert(event.attempted_pos.y == 4.0, \"attempted_pos\")\n    assert(event.attempted_pos.z == 5.0, \"attempted_pos\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -10111,18 +10579,19 @@ mod generated_tests {
             &firing_mods,
             "test:dimension",
             8,
-            [3.0, 2.0, 3.0],
+            [3.0, 4.0, 5.0],
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_xp_change() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_xp_change",
-            "horizon.on(\"player_xp_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.amount == 9, \"amount\")\n    event.amount = 52\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_xp_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.amount == 9, \"amount\")\n    event.amount = 52\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut amount = 9;
@@ -10137,14 +10606,15 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(amount, 52);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_xp_change_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_xp_change_nocancel",
-            "horizon.on(\"player_xp_change\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.amount == 9, \"amount\")\n    event.amount = 52\nend)",
+            "horizon.on(\"player_xp_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.amount == 9, \"amount\")\n    event.amount = 52\nend)",
         );
         let firing_mods = boxed(m);
         let mut amount = 9;
@@ -10157,15 +10627,16 @@ mod generated_tests {
             &mut amount,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_recipe_book_categories() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_recipe_book_categories",
-            "horizon.on(\"recipe_book_categories\", function(event)\n    assert(event.categories[1].id == \"test:cat0\", \"categories\")\n    assert(event.categories[2].id == \"test:cat1\", \"categories\")\n    event.categories = { { id = \"test:cat50\", recipe_type = \"test:type50\", icon = \"test:icon50\" } }\nend)",
+            "horizon.on(\"recipe_book_categories\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.categories[1].id == \"test:cat0\", \"categories\")\n    assert(event.categories[1].recipe_type == \"test:type0\", \"categories\")\n    assert(event.categories[1].icon == \"test:icon0\", \"categories\")\n    assert(event.categories[2].id == \"test:cat1\", \"categories\")\n    assert(event.categories[2].recipe_type == \"test:type1\", \"categories\")\n    assert(event.categories[2].icon == \"test:icon1\", \"categories\")\n    event.categories = { { id = \"test:cat50\", recipe_type = \"test:type50\", icon = \"test:icon50\" } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut categories = vec![
@@ -10192,14 +10663,15 @@ mod generated_tests {
                 }]
             )
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_render_hand_pose() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_render_hand_pose",
-            "horizon.on(\"render_hand_pose\", function(event)\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack == nil, \"stack\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(event.swing == 4.5, \"swing\")\n    assert(event.equip == 5.5, \"equip\")\n    assert(event.x == 6.5, \"x\")\n    event.x = 20.5\n    assert(event.y == 7.5, \"y\")\n    event.y = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\n    assert(event.pitch == 9.5, \"pitch\")\n    event.pitch = 23.5\n    assert(event.yaw == 10.5, \"yaw\")\n    event.yaw = 24.5\n    assert(event.roll == 11.5, \"roll\")\n    event.roll = 25.5\n    assert(event.scale == 12.5, \"scale\")\n    event.scale = 26.5\nend)",
+            "horizon.on(\"render_hand_pose\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack == nil, \"stack\")\n    assert(event.partial == 3.5, \"partial\")\n    assert(event.swing == 4.5, \"swing\")\n    assert(event.equip == 5.5, \"equip\")\n    assert(event.x == 6.5, \"x\")\n    event.x = 20.5\n    assert(event.y == 7.5, \"y\")\n    event.y = 21.5\n    assert(event.z == 8.5, \"z\")\n    event.z = 22.5\n    assert(event.pitch == 9.5, \"pitch\")\n    event.pitch = 23.5\n    assert(event.yaw == 10.5, \"yaw\")\n    event.yaw = 24.5\n    assert(event.roll == 11.5, \"roll\")\n    event.roll = 25.5\n    assert(event.scale == 12.5, \"scale\")\n    event.scale = 26.5\nend)",
         );
         let firing_mods = boxed(m);
         let mut x = 6.5;
@@ -10232,14 +10704,15 @@ mod generated_tests {
         assert_eq!(yaw, 24.5);
         assert_eq!(roll, 25.5);
         assert_eq!(scale, 26.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_render_item_in_frame() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_render_item_in_frame",
-            "horizon.on(\"render_item_in_frame\", function(event)\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"render_item_in_frame\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 3, \"stack\")\n    assert(event.stack.damage == 2, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -10258,6 +10731,7 @@ mod generated_tests {
                 },
                 &mut canceled,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -10276,6 +10750,7 @@ mod generated_tests {
                 },
                 &mut canceled,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         let mut canceled = false;
@@ -10293,14 +10768,15 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_render_item_in_frame_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_render_item_in_frame_nocancel",
-            "horizon.on(\"render_item_in_frame\", function(event)\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"render_item_in_frame\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity_id == 11, \"kind\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 3, \"stack\")\n    assert(event.stack.damage == 2, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -10317,15 +10793,16 @@ mod generated_tests {
             },
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_render_name_tag() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_render_name_tag",
-            "horizon.on(\"render_name_tag\", function(event)\n    assert(event.entity_id == 7, \"entity_id\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.vanilla_visible == true, \"vanilla_visible\")\n    assert(event.visible == false, \"visible\")\n    event.visible = true\n    assert(event.text == \"test:text\", \"text\")\n    event.text = \"test:text:edited\"\nend, \"minecraft:zombie\")",
+            "horizon.on(\"render_name_tag\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity_id == 7, \"entity_id\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.vanilla_visible == true, \"vanilla_visible\")\n    assert(event.visible == false, \"visible\")\n    event.visible = true\n    assert(event.text == \"test:text\", \"text\")\n    event.text = \"test:text:edited\"\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -10341,6 +10818,7 @@ mod generated_tests {
                 &mut visible,
                 &mut text,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut visible = false;
@@ -10356,14 +10834,15 @@ mod generated_tests {
         );
         assert!(visible);
         assert_eq!(text, Some("test:text:edited".to_owned()));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_tooltip_color() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_tooltip_color",
-            "horizon.on(\"tooltip_color\", function(event)\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.background == 8, \"background\")\n    event.background = 51\n    assert(event.border_top == 9, \"border_top\")\n    event.border_top = 52\n    assert(event.border_bottom == 10, \"border_bottom\")\n    event.border_bottom = 53\nend)",
+            "horizon.on(\"tooltip_color\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 1, \"stack\")\n    assert(event.stack.damage == 0, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.background == 8, \"background\")\n    event.background = 51\n    assert(event.border_top == 9, \"border_top\")\n    event.border_top = 52\n    assert(event.border_bottom == 10, \"border_bottom\")\n    event.border_bottom = 53\nend)",
         );
         let firing_mods = boxed(m);
         let mut background = 8;
@@ -10385,17 +10864,18 @@ mod generated_tests {
         assert_eq!(background, 51);
         assert_eq!(border_top, 52);
         assert_eq!(border_bottom, 53);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_camera_pose() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_camera_pose",
-            "horizon.on(\"camera_pose\", function(event)\n    assert(event.partial == 1.5, \"partial\")\n    assert(event.position.x == 2.0, \"position\")\n    assert(event.position.y == 2.0, \"position\")\n    assert(event.position.z == 3.0, \"position\")\n    event.position = { x = 12.0, y = 12.0, z = 13.0 }\n    assert(event.yaw == 3.5, \"yaw\")\n    event.yaw = 17.5\n    assert(event.pitch == 4.5, \"pitch\")\n    event.pitch = 18.5\nend)",
+            "horizon.on(\"camera_pose\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.partial == 1.5, \"partial\")\n    assert(event.position.x == 2.0, \"position\")\n    assert(event.position.y == 3.0, \"position\")\n    assert(event.position.z == 4.0, \"position\")\n    event.position = { x = 12.0, y = 13.0, z = 14.0 }\n    assert(event.yaw == 3.5, \"yaw\")\n    event.yaw = 17.5\n    assert(event.pitch == 4.5, \"pitch\")\n    event.pitch = 18.5\nend)",
         );
         let firing_mods = boxed(m);
-        let mut position = [2.0, 2.0, 3.0];
+        let mut position = [2.0, 3.0, 4.0];
         let mut yaw = 3.5;
         let mut pitch = 4.5;
         dispatch_camera_pose(
@@ -10406,17 +10886,18 @@ mod generated_tests {
             &mut yaw,
             &mut pitch,
         );
-        assert_eq!(position, [12.0, 12.0, 13.0]);
+        assert_eq!(position, [12.0, 13.0, 14.0]);
         assert_eq!(yaw, 17.5);
         assert_eq!(pitch, 18.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_client_chat_received() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_chat_received",
-            "horizon.on(\"client_chat_received\", function(event)\n    assert(event.system == true, \"system\")\n    assert(event.overlay == false, \"overlay\")\n    assert(event.sender == 9, \"sender\")\n    assert(event.chat_type == nil, \"chat_type\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.message_component.text == \"test:message\", \"message\")\n    event.message = \"test:message:edited\"\n    horizon.cancel()\nend)",
+            "horizon.on(\"client_chat_received\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.system == true, \"system\")\n    assert(event.overlay == false, \"overlay\")\n    assert(event.sender == 9, \"sender\")\n    assert(event.chat_type == nil, \"chat_type\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.message_component.text == \"test:message\", \"message\")\n    event.message = \"test:message:edited\"\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut message = Text::literal("test:message");
@@ -10433,14 +10914,15 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(message, Text::literal("test:message:edited"));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_client_chat_received_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_chat_received_nocancel",
-            "horizon.on(\"client_chat_received\", function(event)\n    assert(event.system == true, \"system\")\n    assert(event.overlay == false, \"overlay\")\n    assert(event.sender == 9, \"sender\")\n    assert(event.chat_type == nil, \"chat_type\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.message_component.text == \"test:message\", \"message\")\n    event.message = \"test:message:edited\"\nend)",
+            "horizon.on(\"client_chat_received\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.system == true, \"system\")\n    assert(event.overlay == false, \"overlay\")\n    assert(event.sender == 9, \"sender\")\n    assert(event.chat_type == nil, \"chat_type\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.message_component.text == \"test:message\", \"message\")\n    event.message = \"test:message:edited\"\nend)",
         );
         let firing_mods = boxed(m);
         let mut message = Text::literal("test:message");
@@ -10455,15 +10937,16 @@ mod generated_tests {
             &mut message,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_menu_extra_data() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_extra_data",
-            "horizon.on(\"menu_extra_data\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.data == nil, \"replace seed\")\n    event.data = \"t\" .. string.char(0, 159)\nend)",
+            "horizon.on(\"menu_extra_data\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.data == nil, \"replace seed\")\n    event.data = \"t\" .. string.char(0, 159)\nend)",
         );
         let firing_mods = boxed(m);
         let mut data: Option<Vec<u8>> = None;
@@ -10477,14 +10960,15 @@ mod generated_tests {
             &mut data,
         );
         assert_eq!(data, Some(vec![116u8, 0u8, 159u8]));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_merchant_offer_traded() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_merchant_offer_traded",
-            "horizon.on(\"merchant_offer_traded\", function(event)\n    assert(event.merchant == 7, \"merchant\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.offer.uses == 2, \"offer\")\n    event.offer = { base_cost_a = { stack = { id = \"test:offer\", count = 1, damage = 0 } }, result = { id = \"test:offer\", count = 1, damage = 0 }, uses = 52, max_uses = 1, reward_exp = true, special_price_diff = 0, demand = 0, price_multiplier = 1.0, xp = 1 }\nend, \"minecraft:zombie\")",
+            "horizon.on(\"merchant_offer_traded\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.merchant == 7, \"merchant\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.offer.base_cost_a.stack.id == \"test:offer\", \"offer\")\n    assert(event.offer.base_cost_a.stack.count == 1, \"offer\")\n    assert(event.offer.base_cost_a.stack.damage == 0, \"offer\")\n    assert(event.offer.cost_b == nil, \"offer\")\n    assert(event.offer.result.id == \"test:offer:out\", \"offer\")\n    assert(event.offer.result.count == 2, \"offer\")\n    assert(event.offer.result.damage == 3, \"offer\")\n    assert(event.offer.uses == 12, \"offer\")\n    assert(event.offer.max_uses == 4, \"offer\")\n    assert(event.offer.reward_exp == true, \"offer\")\n    assert(event.offer.special_price_diff == 5, \"offer\")\n    assert(event.offer.demand == 6, \"offer\")\n    assert(event.offer.price_multiplier == 0.5, \"offer\")\n    assert(event.offer.xp == 7, \"offer\")\n    event.offer = { base_cost_a = { stack = { id = \"test:offer\", count = 1, damage = 0 } }, result = { id = \"test:offer:out\", count = 2, damage = 3 }, uses = 52, max_uses = 4, reward_exp = true, special_price_diff = 5, demand = 6, price_multiplier = 0.5, xp = 7 }\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -10500,18 +10984,18 @@ mod generated_tests {
                 },
                 cost_b: None,
                 result: ItemStack {
-                    item: "test:offer".into(),
-                    count: 1,
-                    damage: 0,
+                    item: "test:offer:out".into(),
+                    count: 2,
+                    damage: 3,
                     extra: None,
                 },
-                uses: 2,
-                max_uses: 1,
+                uses: 12,
+                max_uses: 4,
                 reward_exp: true,
-                special_price_diff: 0,
-                demand: 0,
-                price_multiplier: 1.0,
-                xp: 1,
+                special_price_diff: 5,
+                demand: 6,
+                price_multiplier: 0.5,
+                xp: 7,
             };
             dispatch_merchant_offer_traded(
                 &mut FakeHost::empty(),
@@ -10520,6 +11004,7 @@ mod generated_tests {
                 "minecraft:skeleton",
                 &mut offer,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut offer = MerchantOffer {
@@ -10533,18 +11018,18 @@ mod generated_tests {
             },
             cost_b: None,
             result: ItemStack {
-                item: "test:offer".into(),
-                count: 1,
-                damage: 0,
+                item: "test:offer:out".into(),
+                count: 2,
+                damage: 3,
                 extra: None,
             },
-            uses: 2,
-            max_uses: 1,
+            uses: 12,
+            max_uses: 4,
             reward_exp: true,
-            special_price_diff: 0,
-            demand: 0,
-            price_multiplier: 1.0,
-            xp: 1,
+            special_price_diff: 5,
+            demand: 6,
+            price_multiplier: 0.5,
+            xp: 7,
         };
         dispatch_merchant_offer_traded(
             &mut FakeHost::empty(),
@@ -10566,28 +11051,29 @@ mod generated_tests {
                 },
                 cost_b: None,
                 result: ItemStack {
-                    item: "test:offer".into(),
-                    count: 1,
-                    damage: 0,
+                    item: "test:offer:out".into(),
+                    count: 2,
+                    damage: 3,
                     extra: None
                 },
                 uses: 52,
-                max_uses: 1,
+                max_uses: 4,
                 reward_exp: true,
-                special_price_diff: 0,
-                demand: 0,
-                price_multiplier: 1.0,
-                xp: 1
+                special_price_diff: 5,
+                demand: 6,
+                price_multiplier: 0.5,
+                xp: 7
             }
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_add_server_reload_listeners() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_add_server_reload_listeners",
-            "horizon.on(\"add_server_reload_listeners\", function(event)\n    assert(event.listeners[1].id == \"test:id0\", \"listeners\")\n    assert(event.listeners[2].id == \"test:id1\", \"listeners\")\n    event.listeners = { { id = \"test:id50\", folder = \"test:folder50\" } }\nend)",
+            "horizon.on(\"add_server_reload_listeners\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.listeners[1].id == \"test:id0\", \"listeners\")\n    assert(event.listeners[1].folder == \"test:folder0\", \"listeners\")\n    assert(event.listeners[2].id == \"test:id1\", \"listeners\")\n    assert(event.listeners[2].folder == \"test:folder1\", \"listeners\")\n    event.listeners = { { id = \"test:id50\", folder = \"test:folder50\" } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut listeners = vec![
@@ -10602,14 +11088,15 @@ mod generated_tests {
                 vec![NativeReloadListener::json("test:id50", "test:folder50")]
             )
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_server_reload_listener_apply() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_server_reload_listener_apply",
-            "horizon.on(\"server_reload_listener_apply\", function(event)\n    assert(event.listener.id == \"test:id0\", \"listener\")\n    assert(event.files[1].path == \"test:path1\", \"files\")\n    assert(event.files[2].path == \"test:path2\", \"files\")\nend)",
+            "horizon.on(\"server_reload_listener_apply\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.listener.id == \"test:id0\", \"listener\")\n    assert(event.listener.folder == \"test:folder0\", \"listener\")\n    assert(event.files[1].path == \"test:path1\", \"files\")\n    assert(event.files[1].data == 8, \"files\")\n    assert(event.files[2].path == \"test:path2\", \"files\")\n    assert(event.files[2].data == 9, \"files\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_server_reload_listener_apply(
@@ -10621,60 +11108,65 @@ mod generated_tests {
                 ("test:path2".to_owned(), serde_json::json!(9)),
             ],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_client_start() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_start",
-            "horizon.on(\"client_start\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
+            "horizon.on(\"client_start\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event ~= nil, \"event\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_client_start(&mut FakeHost::empty(), &firing_mods);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_client_disconnecting() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_disconnecting",
-            "horizon.on(\"client_disconnecting\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
+            "horizon.on(\"client_disconnecting\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event ~= nil, \"event\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_client_disconnecting(&FakeHost::empty(), &firing_mods);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_client_stopping() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_stopping",
-            "horizon.on(\"client_stopping\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
+            "horizon.on(\"client_stopping\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event ~= nil, \"event\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_client_stopping(&FakeHost::empty(), &firing_mods);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_menu_background() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_background",
-            "horizon.on(\"menu_background\", function(event)\n    assert(event.radius == 1.5, \"radius\")\n    event.radius = 15.5\nend)",
+            "horizon.on(\"menu_background\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.radius == 1.5, \"radius\")\n    event.radius = 15.5\nend)",
         );
         let firing_mods = boxed(m);
         let mut radius = Some(1.5);
         dispatch_menu_background(&FakeHost::empty(), &firing_mods, &mut radius);
         assert_eq!(radius, Some(15.5));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_anvil_update() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_anvil_update",
-            "horizon.on(\"anvil_update\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.left.id == \"test:left\", \"left\")\n    assert(event.right == nil, \"right\")\n    assert(event.item_name == \"test:item_name\", \"item_name\")\n    assert(event.vanilla_output == nil, \"vanilla_output\")\n    assert(event.vanilla_xp_cost == 13, \"vanilla_xp_cost\")\n    assert(event.vanilla_material_cost == 14, \"vanilla_material_cost\")\n    assert(event.output.id == \"test:output\", \"output\")\n    event.output = nil\n    assert(event.xp_cost == 16, \"xp_cost\")\n    event.xp_cost = 59\n    assert(event.material_cost == 17, \"material_cost\")\n    event.material_cost = 60\n    horizon.cancel()\nend)",
+            "horizon.on(\"anvil_update\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.left.id == \"test:left\", \"left\")\n    assert(event.left.count == 3, \"left\")\n    assert(event.left.damage == 2, \"left\")\n    assert(event.left.extra == nil, \"left\")\n    assert(event.right == nil, \"right\")\n    assert(event.item_name == \"test:item_name\", \"item_name\")\n    assert(event.vanilla_output == nil, \"vanilla_output\")\n    assert(event.vanilla_xp_cost == 13, \"vanilla_xp_cost\")\n    assert(event.vanilla_material_cost == 14, \"vanilla_material_cost\")\n    assert(event.output.id == \"test:output\", \"output\")\n    assert(event.output.count == 9, \"output\")\n    assert(event.output.damage == 8, \"output\")\n    assert(event.output.extra == nil, \"output\")\n    event.output = nil\n    assert(event.xp_cost == 16, \"xp_cost\")\n    event.xp_cost = 59\n    assert(event.material_cost == 17, \"material_cost\")\n    event.material_cost = 60\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut output = Some(ItemStack {
@@ -10711,14 +11203,15 @@ mod generated_tests {
         assert_eq!(output, None);
         assert_eq!(xp_cost, 59);
         assert_eq!(material_cost, 60);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_anvil_update_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_anvil_update_nocancel",
-            "horizon.on(\"anvil_update\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.left.id == \"test:left\", \"left\")\n    assert(event.right == nil, \"right\")\n    assert(event.item_name == \"test:item_name\", \"item_name\")\n    assert(event.vanilla_output == nil, \"vanilla_output\")\n    assert(event.vanilla_xp_cost == 13, \"vanilla_xp_cost\")\n    assert(event.vanilla_material_cost == 14, \"vanilla_material_cost\")\n    assert(event.output.id == \"test:output\", \"output\")\n    event.output = nil\n    assert(event.xp_cost == 16, \"xp_cost\")\n    event.xp_cost = 59\n    assert(event.material_cost == 17, \"material_cost\")\n    event.material_cost = 60\nend)",
+            "horizon.on(\"anvil_update\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.left.id == \"test:left\", \"left\")\n    assert(event.left.count == 3, \"left\")\n    assert(event.left.damage == 2, \"left\")\n    assert(event.left.extra == nil, \"left\")\n    assert(event.right == nil, \"right\")\n    assert(event.item_name == \"test:item_name\", \"item_name\")\n    assert(event.vanilla_output == nil, \"vanilla_output\")\n    assert(event.vanilla_xp_cost == 13, \"vanilla_xp_cost\")\n    assert(event.vanilla_material_cost == 14, \"vanilla_material_cost\")\n    assert(event.output.id == \"test:output\", \"output\")\n    assert(event.output.count == 9, \"output\")\n    assert(event.output.damage == 8, \"output\")\n    assert(event.output.extra == nil, \"output\")\n    event.output = nil\n    assert(event.xp_cost == 16, \"xp_cost\")\n    event.xp_cost = 59\n    assert(event.material_cost == 17, \"material_cost\")\n    event.material_cost = 60\nend)",
         );
         let firing_mods = boxed(m);
         let mut output = Some(ItemStack {
@@ -10751,15 +11244,16 @@ mod generated_tests {
             &mut material_cost,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_clone_item() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_clone_item",
-            "horizon.on(\"block_clone_item\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.stack == nil, \"replace seed\")\n    event.stack = { id = \"test:result\", count = 1 }\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"block_clone_item\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.stack == nil, \"replace seed\")\n    event.stack = { id = \"test:result\", count = 1 }\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut stack: Option<ItemStack> = None;
@@ -10774,14 +11268,15 @@ mod generated_tests {
         let replaced = stack.expect("a replaced value");
         assert_eq!(&*replaced.item, "test:result");
         assert_eq!(replaced.count, 1);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_entity_accepts_fluid() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_entity_accepts_fluid",
-            "horizon.on(\"block_entity_accepts_fluid\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.tank == 8, \"tank\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"block_entity_accepts_fluid\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.tank == 8, \"tank\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -10794,14 +11289,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_entity_accepts_fluid_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_entity_accepts_fluid_nocancel",
-            "horizon.on(\"block_entity_accepts_fluid\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.tank == 8, \"tank\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\nend)",
+            "horizon.on(\"block_entity_accepts_fluid\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.tank == 8, \"tank\")\n    assert(event.fluid == \"test:fluid\", \"fluid\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -10813,15 +11309,16 @@ mod generated_tests {
             "test:fluid",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_place() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_place",
-            "horizon.on(\"block_place\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.state == \"test:state12\", \"state\")\n    horizon.cancel()\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"block_place\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 3, \"stack\")\n    assert(event.stack.damage == 2, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.state == \"test:state12\", \"state\")\n    horizon.cancel()\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -10841,14 +11338,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_place_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_place_nocancel",
-            "horizon.on(\"block_place\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.state == \"test:state12\", \"state\")\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"block_place\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 3, \"stack\")\n    assert(event.stack.damage == 2, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.state == \"test:state12\", \"state\")\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -10867,15 +11365,16 @@ mod generated_tests {
             BlockStateId(12),
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_redstone() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_redstone",
-            "horizon.on(\"block_redstone\", function(event)\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.old == 9, \"old\")\n    assert(event.new == 10, \"new\")\n    event.new = 53\nend)",
+            "horizon.on(\"block_redstone\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.old == 9, \"old\")\n    assert(event.new == 10, \"new\")\n    event.new = 53\nend)",
         );
         let firing_mods = boxed(m);
         let mut new = 10;
@@ -10888,14 +11387,15 @@ mod generated_tests {
             &mut new,
         );
         assert_eq!(new, 53);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_break_speed() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_break_speed",
-            "horizon.on(\"break_speed\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.original == 3.5, \"original\")\n    assert(event.speed == 4.5, \"speed\")\n    event.speed = 18.5\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+            "horizon.on(\"break_speed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.state == \"test:state9\", \"state\")\n    assert(event.original == 3.5, \"original\")\n    assert(event.speed == 4.5, \"speed\")\n    event.speed = 18.5\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut speed = 4.5;
@@ -10908,14 +11408,15 @@ mod generated_tests {
             &mut speed,
         );
         assert_eq!(speed, 18.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_chat_suggestion_applied() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_chat_suggestion_applied",
-            "horizon.on(\"chat_suggestion_applied\", function(event)\n    assert(event.original == \"test:original\", \"original\")\n    assert(event.start == 8, \"start\")\n    assert(event[\"end\"] == 9, \"end\")\n    assert(event.suggestion == \"test:suggestion\", \"suggestion\")\n    assert(event.input == \"test:input\", \"input\")\nend)",
+            "horizon.on(\"chat_suggestion_applied\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.original == \"test:original\", \"original\")\n    assert(event.start == 8, \"start\")\n    assert(event[\"end\"] == 9, \"end\")\n    assert(event.suggestion == \"test:suggestion\", \"suggestion\")\n    assert(event.input == \"test:input\", \"input\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_chat_suggestion_applied(
@@ -10927,79 +11428,87 @@ mod generated_tests {
             "test:suggestion",
             "test:input",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_client_attack() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_attack",
-            "horizon.on(\"client_attack\", function(event)\n    assert(event.target == 11, \"kind\")\n    assert(event.player == false, \"player\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"client_attack\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.target == 11, \"kind\")\n    assert(event.player == false, \"player\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
             dispatch_client_attack(&mut FakeHost::empty(), &firing_mods, 13, false);
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
         {
             dispatch_client_attack(&mut FakeHost::empty(), &firing_mods, 99, false);
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         dispatch_client_attack(&mut FakeHost::empty(), &firing_mods, 11, false);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_client_hurt() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_hurt",
-            "horizon.on(\"client_hurt\", function(event)\n    assert(event.attacker == 7, \"attacker\")\n    assert(event.player == false, \"player\")\nend)",
+            "horizon.on(\"client_hurt\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.attacker == 7, \"attacker\")\n    assert(event.player == false, \"player\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_client_hurt(&mut FakeHost::empty(), &firing_mods, Some(7), false);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_client_player_network_logging_in() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_player_network_logging_in",
-            "horizon.on(\"client_player_network_logging_in\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
+            "horizon.on(\"client_player_network_logging_in\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event ~= nil, \"event\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_client_player_network_logging_in(&mut FakeHost::empty(), &firing_mods);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_client_tick_pre() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_tick_pre",
-            "horizon.on(\"client_tick_pre\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
+            "horizon.on(\"client_tick_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event ~= nil, \"event\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_client_tick_pre(&mut FakeHost::empty(), &firing_mods);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_client_tick_post() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_client_tick_post",
-            "horizon.on(\"client_tick_post\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
+            "horizon.on(\"client_tick_post\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event ~= nil, \"event\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_client_tick_post(&mut FakeHost::empty(), &firing_mods);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_console_line() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_console_line",
-            "horizon.on(\"console_line\", function(event)\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.replies[1].text == \"test:line2\", \"replies\")\n    assert(event.replies[2].text == \"test:line3\", \"replies\")\n    event.replies = { { text = \"test:line52\", component = { text = \"test:line52\" } } }\n    horizon.cancel()\nend)",
+            "horizon.on(\"console_line\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.replies[1].text == \"test:line2\", \"replies\")\n    assert(event.replies[1].component.text == \"test:line2\", \"replies\")\n    assert(event.replies[2].text == \"test:line3\", \"replies\")\n    assert(event.replies[2].component.text == \"test:line3\", \"replies\")\n    event.replies = { { text = \"test:line52\", component = { text = \"test:line52\" } } }\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut replies = vec![Text::literal("test:line2"), Text::literal("test:line3")];
@@ -11020,14 +11529,15 @@ mod generated_tests {
                 vec![Text::empty().with_component(serde_json::json!({ "text": "test:line52" }))]
             )
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_console_line_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_console_line_nocancel",
-            "horizon.on(\"console_line\", function(event)\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.replies[1].text == \"test:line2\", \"replies\")\n    assert(event.replies[2].text == \"test:line3\", \"replies\")\n    event.replies = { { text = \"test:line52\", component = { text = \"test:line52\" } } }\nend)",
+            "horizon.on(\"console_line\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.replies[1].text == \"test:line2\", \"replies\")\n    assert(event.replies[1].component.text == \"test:line2\", \"replies\")\n    assert(event.replies[2].text == \"test:line3\", \"replies\")\n    assert(event.replies[2].component.text == \"test:line3\", \"replies\")\n    event.replies = { { text = \"test:line52\", component = { text = \"test:line52\" } } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut replies = vec![Text::literal("test:line2"), Text::literal("test:line3")];
@@ -11040,15 +11550,16 @@ mod generated_tests {
             &mut replies,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_creative_slot_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_creative_slot_v2",
-            "horizon.on(\"creative_slot_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.stack == nil, \"stack\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"creative_slot_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.stack == nil, \"stack\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -11062,14 +11573,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_creative_slot_v2_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_creative_slot_v2_nocancel",
-            "horizon.on(\"creative_slot_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.stack == nil, \"stack\")\nend)",
+            "horizon.on(\"creative_slot_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.slot == 9, \"slot\")\n    assert(event.stack == nil, \"stack\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -11082,28 +11594,30 @@ mod generated_tests {
             None,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_custom_block_fluids() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_custom_block_fluids",
-            "horizon.on(\"custom_block_fluids\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.custom == false, \"custom\")\n    event.custom = true\nend)",
+            "horizon.on(\"custom_block_fluids\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.custom == false, \"custom\")\n    event.custom = true\nend)",
         );
         let firing_mods = boxed(m);
         let mut custom = false;
         dispatch_custom_block_fluids(&FakeHost::empty(), &firing_mods, "test:block", &mut custom);
         assert!(custom);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_custom_fluid_tanks() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_custom_fluid_tanks",
-            "horizon.on(\"custom_fluid_tanks\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.side == \"up\", \"side\")\n    assert(event.out == nil, \"replace seed\")\n    event.out = { { tank = 0, content = { fluid = \"test:fluid0\", amount = 7, components = {} }, capacity = 1000, can_fill = true, can_drain = false } }\nend)",
+            "horizon.on(\"custom_fluid_tanks\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.side == \"up\", \"side\")\n    assert(event.out == nil, \"replace seed\")\n    event.out = { { tank = 0, content = { fluid = \"test:fluid0\", amount = 7, components = {} }, capacity = 1000, can_fill = true, can_drain = false } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut out: Option<Vec<NativeFluidTankView>> = None;
@@ -11128,14 +11642,15 @@ mod generated_tests {
                 can_drain: false
             }])
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_custom_fluid_fill() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_custom_fluid_fill",
-            "horizon.on(\"custom_fluid_fill\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.side == \"up\", \"side\")\n    assert(event.resource.fluid == \"test:fluid2\", \"resource\")\n    assert(event.action == \"execute\", \"action\")\n    assert(event.out == nil, \"replace seed\")\n    event.out = 81000\nend)",
+            "horizon.on(\"custom_fluid_fill\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.side == \"up\", \"side\")\n    assert(event.resource.fluid == \"test:fluid2\", \"resource\")\n    assert(event.resource.amount == 9, \"resource\")\n    assert(event.resource.components.testkey == 14, \"resource\")\n    assert(event.action == \"execute\", \"action\")\n    assert(event.out == nil, \"replace seed\")\n    event.out = 81000\nend)",
         );
         let firing_mods = boxed(m);
         let mut out: Option<i32> = None;
@@ -11147,20 +11662,21 @@ mod generated_tests {
             &NativeFluidStack {
                 fluid: "test:fluid2".into(),
                 amount: 9,
-                components: Compound::new(),
+                components: Compound::from([("testkey".into(), Tag::Int(14))]),
             },
             NativeFluidAction::Execute,
             &mut out,
         );
         assert_eq!(out, Some(81000));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_custom_fluid_drain() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_custom_fluid_drain",
-            "horizon.on(\"custom_fluid_drain\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.side == \"up\", \"side\")\n    assert(event.request.kind == \"any\", \"request\")\n    assert(event.action == \"execute\", \"action\")\n    assert(event.out == nil, \"replace seed\")\n    event.out = { fluid = \"test:fluid0\", amount = 7, components = {} }\nend)",
+            "horizon.on(\"custom_fluid_drain\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.side == \"up\", \"side\")\n    assert(event.request.kind == \"any\", \"request\")\n    assert(event.request.amount == 9, \"request\")\n    assert(event.action == \"execute\", \"action\")\n    assert(event.out == nil, \"replace seed\")\n    event.out = { fluid = \"test:fluid0\", amount = 7, components = { testkey = 12 } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut out: Option<NativeFluidStack> = None;
@@ -11178,17 +11694,18 @@ mod generated_tests {
             Some(NativeFluidStack {
                 fluid: "test:fluid0".into(),
                 amount: 7,
-                components: Compound::new()
+                components: Compound::from([("testkey".into(), Tag::Int(12))])
             })
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_custom_payload_from_client() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_custom_payload_from_client",
-            "horizon.on(\"custom_payload_from_client\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.channel == \"test:channel\", \"channel\")\n    assert(event.data == \"t\" .. string.char(0, 159), \"data\")\nend)",
+            "horizon.on(\"custom_payload_from_client\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.channel == \"test:channel\", \"channel\")\n    assert(event.data == \"t\" .. string.char(0, 159), \"data\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_custom_payload_from_client(
@@ -11198,14 +11715,15 @@ mod generated_tests {
             "test:channel",
             &[116u8, 0u8, 159u8],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_change_block_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_change_block_v2",
-            "horizon.on(\"entity_change_block_v2\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.entity == nil, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_change_block_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.entity == nil, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -11222,6 +11740,7 @@ mod generated_tests {
                 "test:to",
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut cancel = false;
@@ -11237,14 +11756,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_change_block_v2_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_change_block_v2_nocancel",
-            "horizon.on(\"entity_change_block_v2\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.entity == nil, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_change_block_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.entity == nil, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -11259,15 +11779,16 @@ mod generated_tests {
             "test:to",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_interact_specific() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_interact_specific",
-            "horizon.on(\"entity_interact_specific\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.location.x == 4, \"location\")\n    assert(event.location.y == 2.0, \"location\")\n    assert(event.location.z == 3.0, \"location\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_interact_specific\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 3, \"stack\")\n    assert(event.stack.damage == 2, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.location.x == 4.0, \"location\")\n    assert(event.location.y == 5.0, \"location\")\n    assert(event.location.z == 6.0, \"location\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -11280,13 +11801,14 @@ mod generated_tests {
                 "minecraft:skeleton",
                 Some(&ItemStack {
                     item: "test:stack".into(),
-                    count: 1,
-                    damage: 0,
+                    count: 3,
+                    damage: 2,
                     extra: None,
                 }),
-                [4.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
                 &mut claimed,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut claimed = false;
@@ -11297,22 +11819,23 @@ mod generated_tests {
             "minecraft:zombie",
             Some(&ItemStack {
                 item: "test:stack".into(),
-                count: 1,
-                damage: 0,
+                count: 3,
+                damage: 2,
                 extra: None,
             }),
-            [4.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
             &mut claimed,
         );
         assert!(claimed, "claimed not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_interact_specific_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_interact_specific_nocancel",
-            "horizon.on(\"entity_interact_specific\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.location.x == 4, \"location\")\n    assert(event.location.y == 2.0, \"location\")\n    assert(event.location.z == 3.0, \"location\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_interact_specific\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 3, \"stack\")\n    assert(event.stack.damage == 2, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.location.x == 4.0, \"location\")\n    assert(event.location.y == 5.0, \"location\")\n    assert(event.location.z == 6.0, \"location\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut claimed = false;
@@ -11323,22 +11846,23 @@ mod generated_tests {
             "minecraft:zombie",
             Some(&ItemStack {
                 item: "test:stack".into(),
-                count: 1,
-                damage: 0,
+                count: 3,
+                damage: 2,
                 extra: None,
             }),
-            [4.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
             &mut claimed,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!claimed, "claimed set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_entity_outline() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_outline",
-            "horizon.on(\"entity_outline\", function(event)\n    assert(event.entity_id == 7, \"entity_id\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.outline == 9, \"outline\")\n    event.outline = 52\nend, \"minecraft:zombie\")",
+            "horizon.on(\"entity_outline\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity_id == 7, \"entity_id\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.outline == 9, \"outline\")\n    event.outline = 52\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -11351,6 +11875,7 @@ mod generated_tests {
                 "minecraft:skeleton",
                 &mut outline,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut outline = Some(9);
@@ -11362,14 +11887,15 @@ mod generated_tests {
             &mut outline,
         );
         assert_eq!(outline, Some(52));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_fishing_hook_landed() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_fishing_hook_landed",
-            "horizon.on(\"fishing_hook_landed\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.hook == 8, \"hook\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.block.x == 4, \"block\")\n    assert(event.block.y == 5, \"block\")\n    assert(event.block.z == 6, \"block\")\n    assert(event.face.x == 5, \"face\")\n    assert(event.face.y == 6, \"face\")\n    assert(event.face.z == 7, \"face\")\nend)",
+            "horizon.on(\"fishing_hook_landed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.hook == 8, \"hook\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.block.x == 4, \"block\")\n    assert(event.block.y == 5, \"block\")\n    assert(event.block.z == 6, \"block\")\n    assert(event.face.x == 5, \"face\")\n    assert(event.face.y == 6, \"face\")\n    assert(event.face.z == 7, \"face\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_fishing_hook_landed(
@@ -11381,14 +11907,15 @@ mod generated_tests {
             [4, 5, 6],
             [5, 6, 7],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_handshake() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_handshake",
-            "horizon.on(\"handshake\", function(event)\n    assert(event.address == \"127.0.0.1:25565\", \"address\")\n    assert(event.host == \"test:host\", \"host\")\n    event.host = \"test:host:edited\"\n    assert(event.intent == 9, \"intent\")\n    assert(event.reason == nil, \"reason\")\n    assert(event.reason_component == nil, \"reason\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"handshake\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.address == \"127.0.0.1:25565\", \"address\")\n    assert(event.host == \"test:host\", \"host\")\n    event.host = \"test:host:edited\"\n    assert(event.intent == 9, \"intent\")\n    assert(event.reason == nil, \"reason\")\n    assert(event.reason_component == nil, \"reason\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut host = "test:host".to_owned();
@@ -11404,14 +11931,15 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(host, "test:host:edited".to_owned());
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_handshake_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_handshake_nocancel",
-            "horizon.on(\"handshake\", function(event)\n    assert(event.address == \"127.0.0.1:25565\", \"address\")\n    assert(event.host == \"test:host\", \"host\")\n    event.host = \"test:host:edited\"\n    assert(event.intent == 9, \"intent\")\n    assert(event.reason == nil, \"reason\")\n    assert(event.reason_component == nil, \"reason\")\nend)",
+            "horizon.on(\"handshake\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.address == \"127.0.0.1:25565\", \"address\")\n    assert(event.host == \"test:host\", \"host\")\n    event.host = \"test:host:edited\"\n    assert(event.intent == 9, \"intent\")\n    assert(event.reason == nil, \"reason\")\n    assert(event.reason_component == nil, \"reason\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut host = "test:host".to_owned();
@@ -11425,15 +11953,16 @@ mod generated_tests {
             &mut reason,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_interact_entity_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_interact_entity_v2",
-            "horizon.on(\"interact_entity_v2\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack == nil, \"stack\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"interact_entity_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack == nil, \"stack\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -11448,6 +11977,7 @@ mod generated_tests {
                 None,
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut cancel = false;
@@ -11461,14 +11991,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_interact_entity_v2_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_interact_entity_v2_nocancel",
-            "horizon.on(\"interact_entity_v2\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack == nil, \"stack\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"interact_entity_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.hand == \"main\", \"hand\")\n    assert(event.stack == nil, \"stack\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -11481,15 +12012,16 @@ mod generated_tests {
             None,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_inventory_click() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_inventory_click",
-            "horizon.on(\"inventory_click\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.window == 9, \"window\")\n    assert(event.slot == 10, \"slot\")\n    assert(event.button == 11, \"button\")\n    assert(event.mode == 12, \"mode\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"inventory_click\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.window == 9, \"window\")\n    assert(event.slot == 10, \"slot\")\n    assert(event.button == 11, \"button\")\n    assert(event.mode == 12, \"mode\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -11505,14 +12037,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_inventory_click_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_inventory_click_nocancel",
-            "horizon.on(\"inventory_click\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.window == 9, \"window\")\n    assert(event.slot == 10, \"slot\")\n    assert(event.button == 11, \"button\")\n    assert(event.mode == 12, \"mode\")\nend)",
+            "horizon.on(\"inventory_click\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.window == 9, \"window\")\n    assert(event.slot == 10, \"slot\")\n    assert(event.button == 11, \"button\")\n    assert(event.mode == 12, \"mode\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -11527,15 +12060,16 @@ mod generated_tests {
             12,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_inventory_drag() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_inventory_drag",
-            "horizon.on(\"inventory_drag\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.window == 9, \"window\")\n    assert(event.kind == 10, \"kind\")\n    assert(event.slots[1] == 8 and event.slots[2] == 13, \"slots\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"inventory_drag\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.window == 9, \"window\")\n    assert(event.kind == 10, \"kind\")\n    assert(event.slots[1] == 8 and event.slots[2] == 13, \"slots\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -11550,14 +12084,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_inventory_drag_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_inventory_drag_nocancel",
-            "horizon.on(\"inventory_drag\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.window == 9, \"window\")\n    assert(event.kind == 10, \"kind\")\n    assert(event.slots[1] == 8 and event.slots[2] == 13, \"slots\")\nend)",
+            "horizon.on(\"inventory_drag\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.window == 9, \"window\")\n    assert(event.kind == 10, \"kind\")\n    assert(event.slots[1] == 8 and event.slots[2] == 13, \"slots\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -11571,15 +12106,16 @@ mod generated_tests {
             &[8, 13],
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_item_after_vertical_collision() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_after_vertical_collision",
-            "horizon.on(\"item_after_vertical_collision\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.client == false, \"client\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.state == \"test:state11\", \"state\")\n    assert(event.block_pos.x == 5, \"block_pos\")\n    assert(event.block_pos.y == 6, \"block_pos\")\n    assert(event.block_pos.z == 7, \"block_pos\")\n    assert(event.item_pos.x == 6, \"item_pos\")\n    assert(event.item_pos.y == 2.0, \"item_pos\")\n    assert(event.item_pos.z == 3.0, \"item_pos\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    event.stack = { id = \"test:stack\", count = 56, damage = 6 }\n    horizon.cancel()\n    assert(next(event.state_props) == nil, \"state_props\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"item_after_vertical_collision\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.client == false, \"client\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.state == \"test:state11\", \"state\")\n    assert(event.block_pos.x == 5, \"block_pos\")\n    assert(event.block_pos.y == 6, \"block_pos\")\n    assert(event.block_pos.z == 7, \"block_pos\")\n    assert(event.item_pos.x == 6.0, \"item_pos\")\n    assert(event.item_pos.y == 7.0, \"item_pos\")\n    assert(event.item_pos.z == 8.0, \"item_pos\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 7, \"stack\")\n    assert(event.stack.damage == 6, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    event.stack = { id = \"test:stack\", count = 56, damage = 6 }\n    horizon.cancel()\n    assert(next(event.state_props) == nil, \"state_props\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -11599,10 +12135,11 @@ mod generated_tests {
                 13,
                 BlockStateId(11),
                 [5, 6, 7],
-                [6.0, 2.0, 3.0],
+                [6.0, 7.0, 8.0],
                 &mut stack,
                 &mut discard,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         // gone event: the handler stays quiet.
@@ -11622,10 +12159,11 @@ mod generated_tests {
                 99,
                 BlockStateId(11),
                 [5, 6, 7],
-                [6.0, 2.0, 3.0],
+                [6.0, 7.0, 8.0],
                 &mut stack,
                 &mut discard,
             );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
         }
         no_error(&id);
         let mut stack = ItemStack {
@@ -11643,7 +12181,7 @@ mod generated_tests {
             11,
             BlockStateId(11),
             [5, 6, 7],
-            [6.0, 2.0, 3.0],
+            [6.0, 7.0, 8.0],
             &mut stack,
             &mut discard,
         );
@@ -11657,14 +12195,15 @@ mod generated_tests {
                 extra: None
             }
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_item_after_vertical_collision_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_after_vertical_collision_nocancel",
-            "horizon.on(\"item_after_vertical_collision\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.client == false, \"client\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.state == \"test:state11\", \"state\")\n    assert(event.block_pos.x == 5, \"block_pos\")\n    assert(event.block_pos.y == 6, \"block_pos\")\n    assert(event.block_pos.z == 7, \"block_pos\")\n    assert(event.item_pos.x == 6, \"item_pos\")\n    assert(event.item_pos.y == 2.0, \"item_pos\")\n    assert(event.item_pos.z == 3.0, \"item_pos\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    event.stack = { id = \"test:stack\", count = 56, damage = 6 }\n    assert(next(event.state_props) == nil, \"state_props\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"item_after_vertical_collision\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.client == false, \"client\")\n    assert(event.entity == 11, \"kind\")\n    assert(event.state == \"test:state11\", \"state\")\n    assert(event.block_pos.x == 5, \"block_pos\")\n    assert(event.block_pos.y == 6, \"block_pos\")\n    assert(event.block_pos.z == 7, \"block_pos\")\n    assert(event.item_pos.x == 6.0, \"item_pos\")\n    assert(event.item_pos.y == 7.0, \"item_pos\")\n    assert(event.item_pos.z == 8.0, \"item_pos\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 7, \"stack\")\n    assert(event.stack.damage == 6, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    event.stack = { id = \"test:stack\", count = 56, damage = 6 }\n    assert(next(event.state_props) == nil, \"state_props\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut stack = ItemStack {
@@ -11682,19 +12221,20 @@ mod generated_tests {
             11,
             BlockStateId(11),
             [5, 6, 7],
-            [6.0, 2.0, 3.0],
+            [6.0, 7.0, 8.0],
             &mut stack,
             &mut discard,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!discard, "discard set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_item_dropped_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_dropped_v2",
-            "horizon.on(\"item_dropped_v2\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"item_dropped_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -11711,14 +12251,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_item_dropped_v2_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_dropped_v2_nocancel",
-            "horizon.on(\"item_dropped_v2\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\nend)",
+            "horizon.on(\"item_dropped_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -11734,15 +12275,16 @@ mod generated_tests {
             },
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_item_interact_mob() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_interact_mob",
-            "horizon.on(\"item_interact_mob\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.swing == nil, \"replace seed\")\n    event.swing = true\nend, \"minecraft:zombie\")",
+            "horizon.on(\"item_interact_mob\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 3, \"stack\")\n    assert(event.stack.damage == 2, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.swing == nil, \"replace seed\")\n    event.swing = true\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -11755,12 +12297,13 @@ mod generated_tests {
                 "minecraft:skeleton",
                 Some(&ItemStack {
                     item: "test:stack".into(),
-                    count: 1,
-                    damage: 0,
+                    count: 3,
+                    damage: 2,
                     extra: None,
                 }),
                 &mut swing,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut swing: Option<bool> = None;
@@ -11771,21 +12314,22 @@ mod generated_tests {
             "minecraft:zombie",
             Some(&ItemStack {
                 item: "test:stack".into(),
-                count: 1,
-                damage: 0,
+                count: 3,
+                damage: 2,
                 extra: None,
             }),
             &mut swing,
         );
         assert_eq!(swing, Some(true));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_item_picked_up_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_picked_up_v2",
-            "horizon.on(\"item_picked_up_v2\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.thrower == \"00000000-0000-0000-0000-000000000009\", \"thrower\")\n    assert(event.position.x == 4, \"position\")\n    assert(event.position.y == 2.0, \"position\")\n    assert(event.position.z == 3.0, \"position\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"item_picked_up_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.thrower == \"00000000-0000-0000-0000-000000000009\", \"thrower\")\n    assert(event.position.x == 4.0, \"position\")\n    assert(event.position.y == 5.0, \"position\")\n    assert(event.position.z == 6.0, \"position\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -11800,18 +12344,19 @@ mod generated_tests {
                 extra: None,
             },
             Some(9),
-            [4.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_item_picked_up_v2_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_item_picked_up_v2_nocancel",
-            "horizon.on(\"item_picked_up_v2\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.thrower == \"00000000-0000-0000-0000-000000000009\", \"thrower\")\n    assert(event.position.x == 4, \"position\")\n    assert(event.position.y == 2.0, \"position\")\n    assert(event.position.z == 3.0, \"position\")\nend)",
+            "horizon.on(\"item_picked_up_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 2, \"stack\")\n    assert(event.stack.damage == 1, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    assert(event.thrower == \"00000000-0000-0000-0000-000000000009\", \"thrower\")\n    assert(event.position.x == 4.0, \"position\")\n    assert(event.position.y == 5.0, \"position\")\n    assert(event.position.z == 6.0, \"position\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -11826,18 +12371,19 @@ mod generated_tests {
                 extra: None,
             },
             Some(9),
-            [4.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_change_target() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_change_target",
-            "horizon.on(\"living_change_target\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.target == nil, \"target\")\n    assert(event.target_mob == 11, \"target_mob\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_change_target\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.target == nil, \"target\")\n    assert(event.target_mob == 11, \"target_mob\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -11852,6 +12398,7 @@ mod generated_tests {
                 Some(11),
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut cancel = false;
@@ -11865,14 +12412,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_change_target_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_change_target_nocancel",
-            "horizon.on(\"living_change_target\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.target == nil, \"target\")\n    assert(event.target_mob == 11, \"target_mob\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_change_target\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.target == nil, \"target\")\n    assert(event.target_mob == 11, \"target_mob\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -11885,15 +12433,16 @@ mod generated_tests {
             Some(11),
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_damage_pre() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_damage_pre",
-            "horizon.on(\"living_damage_pre\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.direct == 11, \"direct\")\n    assert(event.amount == 6.5, \"amount\")\n    event.amount = 20.5\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_damage_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.direct == 11, \"direct\")\n    assert(event.amount == 6.5, \"amount\")\n    event.amount = 20.5\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -11908,6 +12457,7 @@ mod generated_tests {
                 11,
                 &mut amount,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut amount = 6.5;
@@ -11921,14 +12471,15 @@ mod generated_tests {
             &mut amount,
         );
         assert_eq!(amount, 20.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_damage_post() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_damage_post",
-            "horizon.on(\"living_damage_post\", function(event)\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.direct == 11, \"direct\")\n    assert(event.amount == 6.5, \"amount\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_damage_post\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.causing == 10, \"causing\")\n    assert(event.direct == 11, \"direct\")\n    assert(event.amount == 6.5, \"amount\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -11942,6 +12493,7 @@ mod generated_tests {
                 11,
                 6.5,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         dispatch_living_damage_post(
@@ -11953,14 +12505,15 @@ mod generated_tests {
             11,
             6.5,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_incoming_damage_v3() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_incoming_damage_v3",
-            "horizon.on(\"living_incoming_damage_v3\", function(event)\n    assert(event.victim == 7, \"victim\")\n    assert(event.victim_uuid == nil, \"victim_uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.attacker == nil, \"attacker\")\n    assert(event.attacker_uuid == \"00000000-0000-0000-0000-00000000000b\", \"attacker_uuid\")\n    assert(event.direct == nil, \"direct\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 8.5, \"amount\")\n    event.amount = 22.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_incoming_damage_v3\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.victim == 7, \"victim\")\n    assert(event.victim_uuid == nil, \"victim_uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.attacker == nil, \"attacker\")\n    assert(event.attacker_uuid == \"00000000-0000-0000-0000-00000000000b\", \"attacker_uuid\")\n    assert(event.direct == nil, \"direct\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 8.5, \"amount\")\n    event.amount = 22.5\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -11979,6 +12532,7 @@ mod generated_tests {
                 &mut amount,
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut amount = 8.5;
@@ -11997,14 +12551,15 @@ mod generated_tests {
         );
         assert!(cancel, "cancel not cancelled");
         assert_eq!(amount, 22.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_living_incoming_damage_v3_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_incoming_damage_v3_nocancel",
-            "horizon.on(\"living_incoming_damage_v3\", function(event)\n    assert(event.victim == 7, \"victim\")\n    assert(event.victim_uuid == nil, \"victim_uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.attacker == nil, \"attacker\")\n    assert(event.attacker_uuid == \"00000000-0000-0000-0000-00000000000b\", \"attacker_uuid\")\n    assert(event.direct == nil, \"direct\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 8.5, \"amount\")\n    event.amount = 22.5\nend, \"minecraft:zombie\")",
+            "horizon.on(\"living_incoming_damage_v3\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.victim == 7, \"victim\")\n    assert(event.victim_uuid == nil, \"victim_uuid\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.attacker == nil, \"attacker\")\n    assert(event.attacker_uuid == \"00000000-0000-0000-0000-00000000000b\", \"attacker_uuid\")\n    assert(event.direct == nil, \"direct\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 8.5, \"amount\")\n    event.amount = 22.5\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut amount = 8.5;
@@ -12021,15 +12576,16 @@ mod generated_tests {
             &mut amount,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_log_line() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_log_line",
-            "horizon.on(\"log_line\", function(event)\n    assert(event.level == \"test:level\", \"level\")\n    assert(event.thread == \"test:thread\", \"thread\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.line == \"test:line\", \"line\")\nend)",
+            "horizon.on(\"log_line\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.level == \"test:level\", \"level\")\n    assert(event.thread == \"test:thread\", \"thread\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.line == \"test:line\", \"line\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_log_line(
@@ -12039,14 +12595,15 @@ mod generated_tests {
             "test:message",
             "test:line",
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_menu_input_closed() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_input_closed",
-            "horizon.on(\"menu_input_closed\", function(event)\n    assert(event.uuid == 7, \"uuid\")\n    assert(event.window == 8, \"window\")\n    assert(event.slots[1].id == \"test:slots\", \"slots\")\n    assert(event.slots[2].id == \"test:slots\", \"slots\")\n    event.slots = { { id = \"test:slots\", count = 53, damage = 52 } }\nend)",
+            "horizon.on(\"menu_input_closed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.uuid == 7, \"uuid\")\n    assert(event.window == 8, \"window\")\n    assert(event.slots[1].id == \"test:slots\", \"slots\")\n    assert(event.slots[1].count == 3, \"slots\")\n    assert(event.slots[1].damage == 2, \"slots\")\n    assert(event.slots[1].extra == nil, \"slots\")\n    assert(event.slots[2].id == \"test:slots\", \"slots\")\n    assert(event.slots[2].count == 4, \"slots\")\n    assert(event.slots[2].damage == 3, \"slots\")\n    assert(event.slots[2].extra == nil, \"slots\")\n    event.slots = { { id = \"test:slots\", count = 53, damage = 52 } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut slots = vec![
@@ -12076,14 +12633,15 @@ mod generated_tests {
                 })]
             )
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_menu_links() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_menu_links",
-            "horizon.on(\"menu_links\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.links[1].x == 4, \"links\")\n    assert(event.links[1].y == 5, \"links\")\n    assert(event.links[1].z == 6, \"links\")\n    assert(event.links[2].x == 5, \"links\")\n    assert(event.links[2].y == 6, \"links\")\n    assert(event.links[2].z == 7, \"links\")\n    event.links = { { x = 64, y = 65, z = 66 } }\nend)",
+            "horizon.on(\"menu_links\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.links[1].x == 4, \"links\")\n    assert(event.links[1].y == 5, \"links\")\n    assert(event.links[1].z == 6, \"links\")\n    assert(event.links[2].x == 5, \"links\")\n    assert(event.links[2].y == 6, \"links\")\n    assert(event.links[2].z == 7, \"links\")\n    event.links = { { x = 64, y = 65, z = 66 } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut links = vec![[4, 5, 6], [5, 6, 7]];
@@ -12096,14 +12654,15 @@ mod generated_tests {
             &mut links,
         );
         assert_eq!(format!("{:?}", links), format!("{:?}", vec![[64, 65, 66]]));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_permission_check() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_permission_check",
-            "horizon.on(\"permission_check\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.node == \"test:node\", \"node\")\n    assert(event.default_level == 9, \"default_level\")\n    assert(event.result == nil, \"replace seed\")\n    event.result = true\nend)",
+            "horizon.on(\"permission_check\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.node == \"test:node\", \"node\")\n    assert(event.default_level == 9, \"default_level\")\n    assert(event.result == nil, \"replace seed\")\n    event.result = true\nend)",
         );
         let firing_mods = boxed(m);
         let mut result: Option<bool> = None;
@@ -12116,14 +12675,15 @@ mod generated_tests {
             &mut result,
         );
         assert_eq!(result, Some(true));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_register_channels() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_register_channels",
-            "horizon.on(\"player_register_channels\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.channels[1] == \"test:seed\", \"channels\")\n    assert(event.channels[2] == \"test:seed2\", \"channels\")\n    assert(event.register == false, \"register\")\nend)",
+            "horizon.on(\"player_register_channels\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.channels[1] == \"test:seed\", \"channels\")\n    assert(event.channels[2] == \"test:seed2\", \"channels\")\n    assert(event.register == false, \"register\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_register_channels(
@@ -12134,14 +12694,15 @@ mod generated_tests {
             &["test:seed".to_owned(), "test:seed2".to_owned()],
             false,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_command_level() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_command_level",
-            "horizon.on(\"player_command_level\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.command == \"test:command\", \"command\")\n    assert(event.level == 10, \"level\")\n    event.level = 53\nend)",
+            "horizon.on(\"player_command_level\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.command == \"test:command\", \"command\")\n    assert(event.level == 10, \"level\")\n    event.level = 53\nend)",
         );
         let firing_mods = boxed(m);
         let mut level = 10;
@@ -12154,14 +12715,15 @@ mod generated_tests {
             &mut level,
         );
         assert_eq!(level, 53);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_commands_sent_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_commands_sent_v2",
-            "horizon.on(\"player_commands_sent_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.names[1] == \"test:seed\", \"names\")\n    assert(event.names[2] == \"test:seed2\", \"names\")\n    event.names[1] = \"test:edited\"; table.insert(event.names, \"test:added\")\n    assert(event.names_hidden[1] == \"test:seed\", \"names_hidden\")\n    assert(event.names_hidden[2] == \"test:seed2\", \"names_hidden\")\n    event.names_hidden[1] = \"test:edited\"; table.insert(event.names_hidden, \"test:added\")\nend)",
+            "horizon.on(\"player_commands_sent_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.names[1] == \"test:seed\", \"names\")\n    assert(event.names[2] == \"test:seed2\", \"names\")\n    event.names[1] = \"test:edited\"; table.insert(event.names, \"test:added\")\n    assert(event.names_hidden[1] == \"test:seed\", \"names_hidden\")\n    assert(event.names_hidden[2] == \"test:seed2\", \"names_hidden\")\n    event.names_hidden[1] = \"test:edited\"; table.insert(event.names_hidden, \"test:added\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut names = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
@@ -12190,14 +12752,15 @@ mod generated_tests {
                 "test:added".to_owned()
             ]
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_fish_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_fish_v2",
-            "horizon.on(\"player_fish_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.state == 9, \"state\")\n    assert(event.hand == \"off\", \"hand\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_fish_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.state == 9, \"state\")\n    assert(event.hand == \"off\", \"hand\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -12211,14 +12774,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_fish_v2_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_fish_v2_nocancel",
-            "horizon.on(\"player_fish_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.state == 9, \"state\")\n    assert(event.hand == \"off\", \"hand\")\nend)",
+            "horizon.on(\"player_fish_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.state == 9, \"state\")\n    assert(event.hand == \"off\", \"hand\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -12231,15 +12795,16 @@ mod generated_tests {
             Hand::Off,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_hurt_by_player() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_hurt_by_player",
-            "horizon.on(\"player_hurt_by_player\", function(event)\n    assert(event.attacker == 7, \"attacker\")\n    assert(event.attacker_entity == 8, \"attacker_entity\")\n    assert(event.victim == 9, \"victim\")\n    assert(event.victim_entity == 10, \"victim_entity\")\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 7.5, \"amount\")\n    event.amount = 21.5\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_hurt_by_player\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.attacker == 7, \"attacker\")\n    assert(event.attacker_entity == 8, \"attacker_entity\")\n    assert(event.victim == 9, \"victim\")\n    assert(event.victim_entity == 10, \"victim_entity\")\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 7.5, \"amount\")\n    event.amount = 21.5\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut amount = 7.5;
@@ -12257,14 +12822,15 @@ mod generated_tests {
         );
         assert!(canceled, "canceled not cancelled");
         assert_eq!(amount, 21.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_hurt_by_player_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_hurt_by_player_nocancel",
-            "horizon.on(\"player_hurt_by_player\", function(event)\n    assert(event.attacker == 7, \"attacker\")\n    assert(event.attacker_entity == 8, \"attacker_entity\")\n    assert(event.victim == 9, \"victim\")\n    assert(event.victim_entity == 10, \"victim_entity\")\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 7.5, \"amount\")\n    event.amount = 21.5\nend)",
+            "horizon.on(\"player_hurt_by_player\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.attacker == 7, \"attacker\")\n    assert(event.attacker_entity == 8, \"attacker_entity\")\n    assert(event.victim == 9, \"victim\")\n    assert(event.victim_entity == 10, \"victim_entity\")\n    assert(event.source == \"test:source\", \"source\")\n    assert(event.damage_type == \"test:damage_type\", \"damage_type\")\n    assert(event.amount == 7.5, \"amount\")\n    event.amount = 21.5\nend)",
         );
         let firing_mods = boxed(m);
         let mut amount = 7.5;
@@ -12280,15 +12846,16 @@ mod generated_tests {
             &mut amount,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_launch_projectile_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_launch_projectile_v2",
-            "horizon.on(\"player_launch_projectile_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_launch_projectile_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 3, \"stack\")\n    assert(event.stack.damage == 2, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -12306,14 +12873,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_launch_projectile_v2_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_launch_projectile_v2_nocancel",
-            "horizon.on(\"player_launch_projectile_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\nend)",
+            "horizon.on(\"player_launch_projectile_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 3, \"stack\")\n    assert(event.stack.damage == 2, \"stack\")\n    assert(event.stack.extra == nil, \"stack\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -12330,35 +12898,37 @@ mod generated_tests {
             },
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_logging_out() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_logging_out",
-            "horizon.on(\"player_logging_out\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
+            "horizon.on(\"player_logging_out\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_logging_out(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_move() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_move",
-            "horizon.on(\"player_move\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 4.0, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    event.to = { x = 14.0, y = 12.0, z = 13.0 }\n    assert(event.yaw == 5.5, \"yaw\")\n    assert(event.pitch == 6.5, \"pitch\")\n    assert(event.on_ground == true, \"on_ground\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_move\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.from.x == 3.0, \"from\")\n    assert(event.from.y == 4.0, \"from\")\n    assert(event.from.z == 5.0, \"from\")\n    assert(event.to.x == 4.0, \"to\")\n    assert(event.to.y == 5.0, \"to\")\n    assert(event.to.z == 6.0, \"to\")\n    event.to = { x = 14.0, y = 15.0, z = 16.0 }\n    assert(event.yaw == 5.5, \"yaw\")\n    assert(event.pitch == 6.5, \"pitch\")\n    assert(event.on_ground == true, \"on_ground\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
-        let mut to = [4.0, 2.0, 3.0];
+        let mut to = [4.0, 5.0, 6.0];
         let mut cancel = false;
         dispatch_player_move(
             &firing_mods,
             7,
             "test:name",
-            [3.0, 2.0, 3.0],
+            [3.0, 4.0, 5.0],
             &mut to,
             5.5,
             6.5,
@@ -12366,39 +12936,41 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
-        assert_eq!(to, [14.0, 12.0, 13.0]);
+        assert_eq!(to, [14.0, 15.0, 16.0]);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_move_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_move_nocancel",
-            "horizon.on(\"player_move\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.from.x == 3, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 4.0, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    event.to = { x = 14.0, y = 12.0, z = 13.0 }\n    assert(event.yaw == 5.5, \"yaw\")\n    assert(event.pitch == 6.5, \"pitch\")\n    assert(event.on_ground == true, \"on_ground\")\nend)",
+            "horizon.on(\"player_move\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.from.x == 3.0, \"from\")\n    assert(event.from.y == 4.0, \"from\")\n    assert(event.from.z == 5.0, \"from\")\n    assert(event.to.x == 4.0, \"to\")\n    assert(event.to.y == 5.0, \"to\")\n    assert(event.to.z == 6.0, \"to\")\n    event.to = { x = 14.0, y = 15.0, z = 16.0 }\n    assert(event.yaw == 5.5, \"yaw\")\n    assert(event.pitch == 6.5, \"pitch\")\n    assert(event.on_ground == true, \"on_ground\")\nend)",
         );
         let firing_mods = boxed(m);
-        let mut to = [4.0, 2.0, 3.0];
+        let mut to = [4.0, 5.0, 6.0];
         let mut cancel = false;
         dispatch_player_move(
             &firing_mods,
             7,
             "test:name",
-            [3.0, 2.0, 3.0],
+            [3.0, 4.0, 5.0],
             &mut to,
             5.5,
             6.5,
             true,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_pre_login() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_pre_login",
-            "horizon.on(\"player_pre_login\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.address == \"127.0.0.1:25567\", \"address\")\n    assert(event.defer.count == 0, \"defer\")\n    event.defer = { refuse = \"test:refused\" }\nend)",
+            "horizon.on(\"player_pre_login\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.address == \"127.0.0.1:25567\", \"address\")\n    assert(event.defer.count == 0, \"defer\")\n    event.defer = { refuse = \"test:refused\" }\nend)",
         );
         let firing_mods = boxed(m);
         let mut defer = Vec::new();
@@ -12410,18 +12982,19 @@ mod generated_tests {
             &mut defer,
         );
         assert_eq!(defer.len(), 1);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_respawn_position() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_respawn_position",
-            "horizon.on(\"player_respawn_position\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    event.dimension = \"test:dimension:edited\"\n    assert(event.pos.x == 4.0, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\n    event.pos = { x = 14.0, y = 12.0, z = 13.0 }\n    assert(event.yaw == 5.5, \"yaw\")\n    event.yaw = 19.5\n    assert(event.pitch == 6.5, \"pitch\")\n    event.pitch = 20.5\nend)",
+            "horizon.on(\"player_respawn_position\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    event.dimension = \"test:dimension:edited\"\n    assert(event.pos.x == 4.0, \"pos\")\n    assert(event.pos.y == 5.0, \"pos\")\n    assert(event.pos.z == 6.0, \"pos\")\n    event.pos = { x = 14.0, y = 15.0, z = 16.0 }\n    assert(event.yaw == 5.5, \"yaw\")\n    event.yaw = 19.5\n    assert(event.pitch == 6.5, \"pitch\")\n    event.pitch = 20.5\nend)",
         );
         let firing_mods = boxed(m);
         let mut dimension = "test:dimension".to_owned();
-        let mut pos = [4.0, 2.0, 3.0];
+        let mut pos = [4.0, 5.0, 6.0];
         let mut yaw = 5.5;
         let mut pitch = 6.5;
         dispatch_player_respawn_position(
@@ -12435,22 +13008,23 @@ mod generated_tests {
             &mut pitch,
         );
         assert_eq!(dimension, "test:dimension:edited".to_owned());
-        assert_eq!(pos, [14.0, 12.0, 13.0]);
+        assert_eq!(pos, [14.0, 15.0, 16.0]);
         assert_eq!(yaw, 19.5);
         assert_eq!(pitch, 20.5);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_spawn_location() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_spawn_location",
-            "horizon.on(\"player_spawn_location\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    event.dimension = \"test:dimension:edited\"\n    assert(event.position.x == 4.0, \"position\")\n    assert(event.position.y == 2.0, \"position\")\n    assert(event.position.z == 3.0, \"position\")\n    event.position = { x = 14.0, y = 12.0, z = 13.0 }\n    assert(event.rotation.x == 5.0, \"rotation\")\n    assert(event.rotation.y == 2.0, \"rotation\")\n    event.rotation = { x = 15.0, y = 12.0 }\nend)",
+            "horizon.on(\"player_spawn_location\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    event.dimension = \"test:dimension:edited\"\n    assert(event.position.x == 4.0, \"position\")\n    assert(event.position.y == 5.0, \"position\")\n    assert(event.position.z == 6.0, \"position\")\n    event.position = { x = 14.0, y = 15.0, z = 16.0 }\n    assert(event.rotation.x == 5.0, \"rotation\")\n    assert(event.rotation.y == 6.0, \"rotation\")\n    event.rotation = { x = 15.0, y = 16.0 }\nend)",
         );
         let firing_mods = boxed(m);
         let mut dimension = "test:dimension".to_owned();
-        let mut position = [4.0, 2.0, 3.0];
-        let mut rotation = [5.0, 2.0];
+        let mut position = [4.0, 5.0, 6.0];
+        let mut rotation = [5.0, 6.0];
         dispatch_player_spawn_location(
             &mut FakeHost::empty(),
             &firing_mods,
@@ -12461,19 +13035,20 @@ mod generated_tests {
             &mut rotation,
         );
         assert_eq!(dimension, "test:dimension:edited".to_owned());
-        assert_eq!(position, [14.0, 12.0, 13.0]);
-        assert_eq!(rotation, [15.0, 12.0]);
+        assert_eq!(position, [14.0, 15.0, 16.0]);
+        assert_eq!(rotation, [15.0, 16.0]);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_teleport() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_teleport",
-            "horizon.on(\"player_teleport\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.from.x == 5, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.to.x == 7.0, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    event.to = { x = 17.0, y = 12.0, z = 13.0 }\n    assert(event.relative == 14, \"relative\")\n    event.relative = 57\n    horizon.cancel()\nend)",
+            "horizon.on(\"player_teleport\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.from.x == 5.0, \"from\")\n    assert(event.from.y == 6.0, \"from\")\n    assert(event.from.z == 7.0, \"from\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.to.x == 7.0, \"to\")\n    assert(event.to.y == 8.0, \"to\")\n    assert(event.to.z == 9.0, \"to\")\n    event.to = { x = 17.0, y = 18.0, z = 19.0 }\n    assert(event.relative == 14, \"relative\")\n    event.relative = 57\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
-        let mut to = [7.0, 2.0, 3.0];
+        let mut to = [7.0, 8.0, 9.0];
         let mut relative = 14;
         let mut cancel = false;
         dispatch_player_teleport(
@@ -12482,26 +13057,27 @@ mod generated_tests {
             "test:name",
             "test:cause",
             "test:from_dimension",
-            [5.0, 2.0, 3.0],
+            [5.0, 6.0, 7.0],
             "test:to_dimension",
             &mut to,
             &mut relative,
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
-        assert_eq!(to, [17.0, 12.0, 13.0]);
+        assert_eq!(to, [17.0, 18.0, 19.0]);
         assert_eq!(relative, 57);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_teleport_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_teleport_nocancel",
-            "horizon.on(\"player_teleport\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.from.x == 5, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.to.x == 7.0, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    event.to = { x = 17.0, y = 12.0, z = 13.0 }\n    assert(event.relative == 14, \"relative\")\n    event.relative = 57\nend)",
+            "horizon.on(\"player_teleport\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    assert(event.from_dimension == \"test:from_dimension\", \"from_dimension\")\n    assert(event.from.x == 5.0, \"from\")\n    assert(event.from.y == 6.0, \"from\")\n    assert(event.from.z == 7.0, \"from\")\n    assert(event.to_dimension == \"test:to_dimension\", \"to_dimension\")\n    assert(event.to.x == 7.0, \"to\")\n    assert(event.to.y == 8.0, \"to\")\n    assert(event.to.z == 9.0, \"to\")\n    event.to = { x = 17.0, y = 18.0, z = 19.0 }\n    assert(event.relative == 14, \"relative\")\n    event.relative = 57\nend)",
         );
         let firing_mods = boxed(m);
-        let mut to = [7.0, 2.0, 3.0];
+        let mut to = [7.0, 8.0, 9.0];
         let mut relative = 14;
         let mut cancel = false;
         dispatch_player_teleport(
@@ -12510,38 +13086,40 @@ mod generated_tests {
             "test:name",
             "test:cause",
             "test:from_dimension",
-            [5.0, 2.0, 3.0],
+            [5.0, 6.0, 7.0],
             "test:to_dimension",
             &mut to,
             &mut relative,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_player_tick_pre() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_tick_pre",
-            "horizon.on(\"player_tick_pre\", function(event)\n    assert(event ~= nil, \"event\")\nend)",
+            "horizon.on(\"player_tick_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event ~= nil, \"event\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_player_tick_pre(&mut FakeHost::empty(), &firing_mods);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_projectile_world_border() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_projectile_world_border",
-            "horizon.on(\"projectile_world_border\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4.0, \"pos\")\n    assert(event.pos.y == 2.0, \"pos\")\n    assert(event.pos.z == 3.0, \"pos\")\n    event.pos = { x = 14.0, y = 12.0, z = 13.0 }\n    assert(event.velocity.x == 5.0, \"velocity\")\n    assert(event.velocity.y == 2.0, \"velocity\")\n    assert(event.velocity.z == 3.0, \"velocity\")\n    event.velocity = { x = 15.0, y = 12.0, z = 13.0 }\n    assert(event.collide == false, \"collide\")\n    event.collide = true\nend, \"minecraft:zombie\")",
+            "horizon.on(\"projectile_world_border\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4.0, \"pos\")\n    assert(event.pos.y == 5.0, \"pos\")\n    assert(event.pos.z == 6.0, \"pos\")\n    event.pos = { x = 14.0, y = 15.0, z = 16.0 }\n    assert(event.velocity.x == 5.0, \"velocity\")\n    assert(event.velocity.y == 6.0, \"velocity\")\n    assert(event.velocity.z == 7.0, \"velocity\")\n    event.velocity = { x = 15.0, y = 16.0, z = 17.0 }\n    assert(event.collide == false, \"collide\")\n    event.collide = true\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            let mut pos = [4.0, 2.0, 3.0];
-            let mut velocity = [5.0, 2.0, 3.0];
+            let mut pos = [4.0, 5.0, 6.0];
+            let mut velocity = [5.0, 6.0, 7.0];
             let mut collide = false;
             dispatch_projectile_world_border(
                 &firing_mods,
@@ -12552,10 +13130,11 @@ mod generated_tests {
                 &mut velocity,
                 &mut collide,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
-        let mut pos = [4.0, 2.0, 3.0];
-        let mut velocity = [5.0, 2.0, 3.0];
+        let mut pos = [4.0, 5.0, 6.0];
+        let mut velocity = [5.0, 6.0, 7.0];
         let mut collide = false;
         dispatch_projectile_world_border(
             &firing_mods,
@@ -12566,17 +13145,18 @@ mod generated_tests {
             &mut velocity,
             &mut collide,
         );
-        assert_eq!(pos, [14.0, 12.0, 13.0]);
-        assert_eq!(velocity, [15.0, 12.0, 13.0]);
+        assert_eq!(pos, [14.0, 15.0, 16.0]);
+        assert_eq!(velocity, [15.0, 16.0, 17.0]);
         assert!(collide);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_recipe_sources() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_recipe_sources",
-            "horizon.on(\"recipe_sources\", function(event)\n    assert(event.player == 7, \"player\")\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.sources[1].x == 4, \"sources\")\n    assert(event.sources[1].y == 5, \"sources\")\n    assert(event.sources[1].z == 6, \"sources\")\n    assert(event.sources[2].x == 5, \"sources\")\n    assert(event.sources[2].y == 6, \"sources\")\n    assert(event.sources[2].z == 7, \"sources\")\n    event.sources = { { x = 64, y = 65, z = 66 } }\nend)",
+            "horizon.on(\"recipe_sources\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == 7, \"player\")\n    assert(event.menu == \"test:menu\", \"menu\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.sources[1].x == 4, \"sources\")\n    assert(event.sources[1].y == 5, \"sources\")\n    assert(event.sources[1].z == 6, \"sources\")\n    assert(event.sources[2].x == 5, \"sources\")\n    assert(event.sources[2].y == 6, \"sources\")\n    assert(event.sources[2].z == 7, \"sources\")\n    event.sources = { { x = 64, y = 65, z = 66 } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut sources = vec![[4, 5, 6], [5, 6, 7]];
@@ -12592,14 +13172,15 @@ mod generated_tests {
             format!("{:?}", sources),
             format!("{:?}", vec![[64, 65, 66]])
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_resource_pack_status_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_resource_pack_status_v2",
-            "horizon.on(\"resource_pack_status_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pack == 9, \"pack\")\n    assert(event.status == 10, \"status\")\nend)",
+            "horizon.on(\"resource_pack_status_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.pack == 9, \"pack\")\n    assert(event.status == 10, \"status\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_resource_pack_status_v2(
@@ -12610,14 +13191,15 @@ mod generated_tests {
             9,
             10,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_right_click_block_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_right_click_block_v2",
-            "horizon.on(\"right_click_block_v2\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.face.x == 2, \"face\")\n    assert(event.face.y == 3, \"face\")\n    assert(event.face.z == 4, \"face\")\n    assert(event.hand == \"main\", \"hand\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"right_click_block_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.face.x == 2, \"face\")\n    assert(event.face.y == 3, \"face\")\n    assert(event.face.z == 4, \"face\")\n    assert(event.hand == \"main\", \"hand\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -12630,14 +13212,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_right_click_block_v2_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_right_click_block_v2_nocancel",
-            "horizon.on(\"right_click_block_v2\", function(event)\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.face.x == 2, \"face\")\n    assert(event.face.y == 3, \"face\")\n    assert(event.face.z == 4, \"face\")\n    assert(event.hand == \"main\", \"hand\")\nend)",
+            "horizon.on(\"right_click_block_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.pos.x == 1, \"pos\")\n    assert(event.pos.y == 2, \"pos\")\n    assert(event.pos.z == 3, \"pos\")\n    assert(event.face.x == 2, \"face\")\n    assert(event.face.y == 3, \"face\")\n    assert(event.face.z == 4, \"face\")\n    assert(event.hand == \"main\", \"hand\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -12649,15 +13232,16 @@ mod generated_tests {
             Hand::Main,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_screen_mouse_dragged_pre_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_screen_mouse_dragged_pre_v2",
-            "horizon.on(\"screen_mouse_dragged_pre_v2\", function(event)\n    assert(event.screen == \"test:screen\", \"screen\")\n    assert(event.mouse.x == 2.5, \"mouse\")\n    assert(event.mouse.y == 3.5, \"mouse\")\n    assert(event.button == 9, \"button\")\n    assert(event.delta.x == 4.5, \"delta\")\n    assert(event.delta.y == 5.5, \"delta\")\n    assert(event.modifiers == 11, \"modifiers\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"screen_mouse_dragged_pre_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen == \"test:screen\", \"screen\")\n    assert(event.mouse.x == 2.5, \"mouse\")\n    assert(event.mouse.y == 3.5, \"mouse\")\n    assert(event.button == 9, \"button\")\n    assert(event.delta.x == 4.5, \"delta\")\n    assert(event.delta.y == 5.5, \"delta\")\n    assert(event.modifiers == 11, \"modifiers\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -12672,14 +13256,15 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_screen_mouse_dragged_pre_v2_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_screen_mouse_dragged_pre_v2_nocancel",
-            "horizon.on(\"screen_mouse_dragged_pre_v2\", function(event)\n    assert(event.screen == \"test:screen\", \"screen\")\n    assert(event.mouse.x == 2.5, \"mouse\")\n    assert(event.mouse.y == 3.5, \"mouse\")\n    assert(event.button == 9, \"button\")\n    assert(event.delta.x == 4.5, \"delta\")\n    assert(event.delta.y == 5.5, \"delta\")\n    assert(event.modifiers == 11, \"modifiers\")\nend)",
+            "horizon.on(\"screen_mouse_dragged_pre_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen == \"test:screen\", \"screen\")\n    assert(event.mouse.x == 2.5, \"mouse\")\n    assert(event.mouse.y == 3.5, \"mouse\")\n    assert(event.button == 9, \"button\")\n    assert(event.delta.x == 4.5, \"delta\")\n    assert(event.delta.y == 5.5, \"delta\")\n    assert(event.modifiers == 11, \"modifiers\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -12693,15 +13278,16 @@ mod generated_tests {
             11,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_screen_mouse_scrolled_pre_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_screen_mouse_scrolled_pre_v2",
-            "horizon.on(\"screen_mouse_scrolled_pre_v2\", function(event)\n    assert(event.screen == \"test:screen\", \"screen\")\n    assert(event.mouse.x == 2.5, \"mouse\")\n    assert(event.mouse.y == 3.5, \"mouse\")\n    assert(event.scroll.x == 3.5, \"scroll\")\n    assert(event.scroll.y == 4.5, \"scroll\")\n    assert(event.modifiers == 10, \"modifiers\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"screen_mouse_scrolled_pre_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen == \"test:screen\", \"screen\")\n    assert(event.mouse.x == 2.5, \"mouse\")\n    assert(event.mouse.y == 3.5, \"mouse\")\n    assert(event.scroll.x == 3.5, \"scroll\")\n    assert(event.scroll.y == 4.5, \"scroll\")\n    assert(event.modifiers == 10, \"modifiers\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -12715,14 +13301,15 @@ mod generated_tests {
             &mut canceled,
         );
         assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_screen_mouse_scrolled_pre_v2_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_screen_mouse_scrolled_pre_v2_nocancel",
-            "horizon.on(\"screen_mouse_scrolled_pre_v2\", function(event)\n    assert(event.screen == \"test:screen\", \"screen\")\n    assert(event.mouse.x == 2.5, \"mouse\")\n    assert(event.mouse.y == 3.5, \"mouse\")\n    assert(event.scroll.x == 3.5, \"scroll\")\n    assert(event.scroll.y == 4.5, \"scroll\")\n    assert(event.modifiers == 10, \"modifiers\")\nend)",
+            "horizon.on(\"screen_mouse_scrolled_pre_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen == \"test:screen\", \"screen\")\n    assert(event.mouse.x == 2.5, \"mouse\")\n    assert(event.mouse.y == 3.5, \"mouse\")\n    assert(event.scroll.x == 3.5, \"scroll\")\n    assert(event.scroll.y == 4.5, \"scroll\")\n    assert(event.modifiers == 10, \"modifiers\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut canceled = false;
@@ -12735,15 +13322,16 @@ mod generated_tests {
             10,
             &mut canceled,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!canceled, "canceled set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_server_tick_timed() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_server_tick_timed",
-            "horizon.on(\"server_tick_timed\", function(event)\n    assert(event.wall_ms == 1.5, \"wall_ms\")\n    assert(event.cpu_ms == nil, \"cpu_ms\")\n    assert(event.spans[1].name == \"test:span2\", \"spans\")\n    assert(event.spans[2].name == \"test:span3\", \"spans\")\nend)",
+            "horizon.on(\"server_tick_timed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.wall_ms == 1.5, \"wall_ms\")\n    assert(event.cpu_ms == nil, \"cpu_ms\")\n    assert(event.spans[1].name == \"test:span2\", \"spans\")\n    assert(event.spans[1].ms == 3.5, \"spans\")\n    assert(event.spans[1].cpu_ms == 0.5, \"spans\")\n    assert(event.spans[1].depth == 0, \"spans\")\n    assert(event.spans[2].name == \"test:span3\", \"spans\")\n    assert(event.spans[2].ms == 4.5, \"spans\")\n    assert(event.spans[2].cpu_ms == 0.5, \"spans\")\n    assert(event.spans[2].depth == 0, \"spans\")\nend)",
         );
         let firing_mods = boxed(m);
         dispatch_server_tick_timed(
@@ -12766,14 +13354,15 @@ mod generated_tests {
                 },
             ],
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_stateful_block_entity() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_stateful_block_entity",
-            "horizon.on(\"stateful_block_entity\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.stateful == false, \"stateful\")\n    event.stateful = true\nend)",
+            "horizon.on(\"stateful_block_entity\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.stateful == false, \"stateful\")\n    event.stateful = true\nend)",
         );
         let firing_mods = boxed(m);
         let mut stateful = false;
@@ -12784,14 +13373,15 @@ mod generated_tests {
             &mut stateful,
         );
         assert!(stateful);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_block_entity_from_state() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_entity_from_state",
-            "horizon.on(\"block_entity_from_state\", function(event)\n    assert(event.block == \"test:block\", \"block\")\n    assert(next(event.properties) == nil, \"properties\")\n    assert(event.entity == nil, \"replace seed\")\n    event.entity = { name = \"test:entity0\", tag = { testkey = 7 } }\nend)",
+            "horizon.on(\"block_entity_from_state\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.block == \"test:block\", \"block\")\n    assert(next(event.properties) == nil, \"properties\")\n    assert(event.entity == nil, \"replace seed\")\n    event.entity = { name = \"test:entity0\", tag = { testkey = 7 } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut entity: Option<(String, Compound)> = None;
@@ -12808,14 +13398,15 @@ mod generated_tests {
                 Compound::from([("testkey".into(), Tag::Int(7))])
             ))
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_tab_complete_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_tab_complete_v2",
-            "horizon.on(\"tab_complete_v2\", function(event)\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.label == \"test:label\", \"label\")\n    assert(event.arguments[1] == \"test:seed\", \"arguments\")\n    assert(event.arguments[2] == \"test:seed2\", \"arguments\")\n    assert(event.range.start == 11, \"range\")\n    assert(event.suggestions[1].text == \"test:suggestion5\", \"suggestions\")\n    assert(event.suggestions[2].text == \"test:suggestion6\", \"suggestions\")\n    event.suggestions = { { range = { start = 62, [\"end\"] = 67 }, text = \"test:suggestion55\" } }\nend)",
+            "horizon.on(\"tab_complete_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.label == \"test:label\", \"label\")\n    assert(event.arguments[1] == \"test:seed\", \"arguments\")\n    assert(event.arguments[2] == \"test:seed2\", \"arguments\")\n    assert(event.range.start == 11, \"range\")\n    assert(event.range[\"end\"] == 16, \"range\")\n    assert(event.suggestions[1].range.start == 12, \"suggestions\")\n    assert(event.suggestions[1].range[\"end\"] == 17, \"suggestions\")\n    assert(event.suggestions[1].text == \"test:suggestion5\", \"suggestions\")\n    assert(event.suggestions[2].range.start == 13, \"suggestions\")\n    assert(event.suggestions[2].range[\"end\"] == 18, \"suggestions\")\n    assert(event.suggestions[2].text == \"test:suggestion6\", \"suggestions\")\n    event.suggestions = { { range = { start = 62, [\"end\"] = 67 }, text = \"test:suggestion55\" } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut suggestions = vec![
@@ -12854,14 +13445,15 @@ mod generated_tests {
                 }]
             )
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_toast_add() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_toast_add",
-            "horizon.on(\"toast_add\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.id == \"test:id\", \"id\")\n    horizon.cancel()\nend)",
+            "horizon.on(\"toast_add\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.id == \"test:id\", \"id\")\n    horizon.cancel()\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -12873,14 +13465,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_toast_add_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_toast_add_nocancel",
-            "horizon.on(\"toast_add\", function(event)\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.id == \"test:id\", \"id\")\nend)",
+            "horizon.on(\"toast_add\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.kind == \"test:kind\", \"kind\")\n    assert(event.id == \"test:id\", \"id\")\nend)",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -12891,15 +13484,16 @@ mod generated_tests {
             "test:id",
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_trample() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_trample",
-            "horizon.on(\"trample\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.fall_distance == 5.5, \"fall_distance\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"trample\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.fall_distance == 5.5, \"fall_distance\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
@@ -12914,6 +13508,7 @@ mod generated_tests {
                 5.5,
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
         let mut cancel = false;
@@ -12927,14 +13522,15 @@ mod generated_tests {
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_trample_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_trample_nocancel",
-            "horizon.on(\"trample\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.fall_distance == 5.5, \"fall_distance\")\nend, \"minecraft:zombie\")",
+            "horizon.on(\"trample\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.entity == 8, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.fall_distance == 5.5, \"fall_distance\")\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         let mut cancel = false;
@@ -12947,20 +13543,21 @@ mod generated_tests {
             5.5,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_vehicle_moved_v2() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_vehicle_moved_v2",
-            "horizon.on(\"vehicle_moved_v2\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.vehicle == 9, \"vehicle\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.from.x == 5, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 6.0, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    event.to = { x = 16.0, y = 12.0, z = 13.0 }\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+            "horizon.on(\"vehicle_moved_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.vehicle == 9, \"vehicle\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.from.x == 5.0, \"from\")\n    assert(event.from.y == 6.0, \"from\")\n    assert(event.from.z == 7.0, \"from\")\n    assert(event.to.x == 6.0, \"to\")\n    assert(event.to.y == 7.0, \"to\")\n    assert(event.to.z == 8.0, \"to\")\n    event.to = { x = 16.0, y = 17.0, z = 18.0 }\n    horizon.cancel()\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
         // K2 event: the handler stays quiet.
         {
-            let mut to = [6.0, 2.0, 3.0];
+            let mut to = [6.0, 7.0, 8.0];
             let mut cancel = false;
             dispatch_vehicle_moved_v2(
                 &mut FakeHost::empty(),
@@ -12969,13 +13566,14 @@ mod generated_tests {
                 "test:dimension",
                 9,
                 "minecraft:skeleton",
-                [5.0, 2.0, 3.0],
+                [5.0, 6.0, 7.0],
                 &mut to,
                 &mut cancel,
             );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
         }
         no_error(&id);
-        let mut to = [6.0, 2.0, 3.0];
+        let mut to = [6.0, 7.0, 8.0];
         let mut cancel = false;
         dispatch_vehicle_moved_v2(
             &mut FakeHost::empty(),
@@ -12984,23 +13582,24 @@ mod generated_tests {
             "test:dimension",
             9,
             "minecraft:zombie",
-            [5.0, 2.0, 3.0],
+            [5.0, 6.0, 7.0],
             &mut to,
             &mut cancel,
         );
         assert!(cancel, "cancel not cancelled");
-        assert_eq!(to, [16.0, 12.0, 13.0]);
+        assert_eq!(to, [16.0, 17.0, 18.0]);
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_vehicle_moved_v2_no_cancel() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_vehicle_moved_v2_nocancel",
-            "horizon.on(\"vehicle_moved_v2\", function(event)\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.vehicle == 9, \"vehicle\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.from.x == 5, \"from\")\n    assert(event.from.y == 2.0, \"from\")\n    assert(event.from.z == 3.0, \"from\")\n    assert(event.to.x == 6.0, \"to\")\n    assert(event.to.y == 2.0, \"to\")\n    assert(event.to.z == 3.0, \"to\")\n    event.to = { x = 16.0, y = 12.0, z = 13.0 }\nend, \"minecraft:zombie\")",
+            "horizon.on(\"vehicle_moved_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.vehicle == 9, \"vehicle\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.from.x == 5.0, \"from\")\n    assert(event.from.y == 6.0, \"from\")\n    assert(event.from.z == 7.0, \"from\")\n    assert(event.to.x == 6.0, \"to\")\n    assert(event.to.y == 7.0, \"to\")\n    assert(event.to.z == 8.0, \"to\")\n    event.to = { x = 16.0, y = 17.0, z = 18.0 }\nend, \"minecraft:zombie\")",
         );
         let firing_mods = boxed(m);
-        let mut to = [6.0, 2.0, 3.0];
+        let mut to = [6.0, 7.0, 8.0];
         let mut cancel = false;
         dispatch_vehicle_moved_v2(
             &mut FakeHost::empty(),
@@ -13009,19 +13608,20 @@ mod generated_tests {
             "test:dimension",
             9,
             "minecraft:zombie",
-            [5.0, 2.0, 3.0],
+            [5.0, 6.0, 7.0],
             &mut to,
             &mut cancel,
         );
+        assert_eq!(witness(&lua), 1, "the handler ran");
         assert!(!cancel, "cancel set with no cancel");
         no_error(&id);
     }
 
     #[test]
     fn generated_wind_burst() {
-        let (m, id, _dir) = loaded(
+        let (m, id, _dir, lua) = loaded_tracked(
             "gen_wind_burst",
-            "horizon.on(\"wind_burst\", function(event)\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.center.x == 2, \"center\")\n    assert(event.center.y == 2.0, \"center\")\n    assert(event.center.z == 3.0, \"center\")\n    assert(event.blocks[1].x == 3, \"blocks\")\n    assert(event.blocks[1].y == 4, \"blocks\")\n    assert(event.blocks[1].z == 5, \"blocks\")\n    assert(event.blocks[2].x == 4, \"blocks\")\n    assert(event.blocks[2].y == 5, \"blocks\")\n    assert(event.blocks[2].z == 6, \"blocks\")\n    event.blocks = { { x = 63, y = 64, z = 65 } }\nend)",
+            "horizon.on(\"wind_burst\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.center.x == 2.0, \"center\")\n    assert(event.center.y == 3.0, \"center\")\n    assert(event.center.z == 4.0, \"center\")\n    assert(event.blocks[1].x == 3, \"blocks\")\n    assert(event.blocks[1].y == 4, \"blocks\")\n    assert(event.blocks[1].z == 5, \"blocks\")\n    assert(event.blocks[2].x == 4, \"blocks\")\n    assert(event.blocks[2].y == 5, \"blocks\")\n    assert(event.blocks[2].z == 6, \"blocks\")\n    event.blocks = { { x = 63, y = 64, z = 65 } }\nend)",
         );
         let firing_mods = boxed(m);
         let mut blocks = vec![[3, 4, 5], [4, 5, 6]];
@@ -13029,17 +13629,18 @@ mod generated_tests {
             &mut FakeHost::empty(),
             &firing_mods,
             "test:dimension",
-            [2.0, 2.0, 3.0],
+            [2.0, 3.0, 4.0],
             &mut blocks,
         );
         assert_eq!(format!("{:?}", blocks), format!("{:?}", vec![[63, 64, 65]]));
+        assert_eq!(witness(&lua), 1, "the handler ran");
         no_error(&id);
     }
 
     #[test]
     fn generated_no_handler_does_no_lua_work() {
         const LUA: &str = "-- nothing registered";
-        let (m, id, dir) = loaded("gen_no_handler", LUA);
+        let (m, id, dir, lua) = loaded_tracked("gen_no_handler", LUA);
         let firing_mods = boxed(m);
         // frame: unregistered, nothing runs.
         {
@@ -13533,12 +14134,16 @@ mod generated_tests {
                 BlockStateId(9),
                 &PlacementContext {
                     pos: BlockPos::new(3, 4, 5),
-                    hit_pos: BlockPos::new(3, 4, 5),
+                    hit_pos: BlockPos::new(6, 7, 8),
                     face: Direction::North,
-                    hit: Default::default(),
+                    hit: horizon_core::geometry::Vec3 {
+                        x: 9.5,
+                        y: 10.5,
+                        z: 11.5,
+                    },
                     inside: true,
                     yaw: 92.0,
-                    pitch: 0.0,
+                    pitch: 32.0,
                     sneaking: false,
                     item: "test:item2".into(),
                     replace_clicked: true,
@@ -13568,7 +14173,16 @@ mod generated_tests {
         }
         // shader_params: unregistered, nothing runs.
         {
-            let mut params = [[2.5, 2.5, 3.5, 4.5]; 8];
+            let mut params = [
+                [2.5, 3.5, 4.5, 5.5],
+                [12.5, 13.5, 14.5, 15.5],
+                [22.5, 23.5, 24.5, 25.5],
+                [32.5, 33.5, 34.5, 35.5],
+                [42.5, 43.5, 44.5, 45.5],
+                [52.5, 53.5, 54.5, 55.5],
+                [62.5, 63.5, 64.5, 65.5],
+                [72.5, 73.5, 74.5, 75.5],
+            ];
             dispatch_shader_params(&FakeHost::empty(), &firing_mods, 1.5, &mut params);
         }
         // block_highlight: unregistered, nothing runs.
@@ -13670,7 +14284,7 @@ mod generated_tests {
                 &FakeHost::empty(),
                 &firing_mods,
                 1.5,
-                [2.0, 2.0, 3.0],
+                [2.0, 3.0, 4.0],
                 &mut degrees,
             );
         }
@@ -13925,14 +14539,14 @@ mod generated_tests {
                 NativeMapDecoration {
                     sprite: "test:sprite1".into(),
                     x: 2,
-                    y: 2,
+                    y: 4,
                     rot: 0,
                     shown_on_frame: false,
                 },
                 NativeMapDecoration {
                     sprite: "test:sprite2".into(),
                     x: 3,
-                    y: 2,
+                    y: 5,
                     rot: 0,
                     shown_on_frame: true,
                 },
@@ -14338,14 +14952,14 @@ mod generated_tests {
         }
         // chorus_fruit_teleport: unregistered, nothing runs.
         {
-            let mut target = [4.0, 2.0, 3.0];
+            let mut target = [4.0, 5.0, 6.0];
             let mut cancel = false;
             dispatch_chorus_fruit_teleport(
                 &mut FakeHost::empty(),
                 &firing_mods,
                 7,
                 "test:name",
-                [3.0, 2.0, 3.0],
+                [3.0, 4.0, 5.0],
                 &mut target,
                 &mut cancel,
             );
@@ -14365,7 +14979,7 @@ mod generated_tests {
         }
         // creeper_power: unregistered, nothing runs.
         {
-            dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 7, [2.0, 2.0, 3.0]);
+            dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 7, [2.0, 3.0, 4.0]);
         }
         // critical_hit: unregistered, nothing runs.
         {
@@ -14420,7 +15034,7 @@ mod generated_tests {
         }
         // ender_pearl_teleport: unregistered, nothing runs.
         {
-            let mut target = [5.0, 2.0, 3.0];
+            let mut target = [5.0, 6.0, 7.0];
             let mut damage = 6.5;
             let mut cancel = false;
             dispatch_ender_pearl_teleport(
@@ -14429,7 +15043,7 @@ mod generated_tests {
                 7,
                 "test:name",
                 9,
-                [4.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
                 &mut target,
                 &mut damage,
                 &mut cancel,
@@ -14490,7 +15104,7 @@ mod generated_tests {
                 7,
                 "test:item",
                 9,
-                [4.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
             );
         }
         // entity_enter_block: unregistered, nothing runs.
@@ -14556,8 +15170,8 @@ mod generated_tests {
                 &firing_mods,
                 "test:dimension",
                 8,
-                [3.0, 2.0, 3.0],
-                [4.0, 2.0, 3.0],
+                [3.0, 4.0, 5.0],
+                [4.0, 5.0, 6.0],
             );
         }
         // entity_toggle_glide: unregistered, nothing runs.
@@ -14660,7 +15274,7 @@ mod generated_tests {
         }
         // firework_explode: unregistered, nothing runs.
         {
-            dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 7, [2.0, 2.0, 3.0], 9);
+            dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 7, [2.0, 3.0, 4.0], 9);
         }
         // fluid_level_change: unregistered, nothing runs.
         {
@@ -14725,7 +15339,7 @@ mod generated_tests {
                 &mut FakeHost::empty(),
                 &firing_mods,
                 "test:event",
-                [2.0, 2.0, 3.0],
+                [2.0, 3.0, 4.0],
             );
         }
         // hopper_inventory_search: unregistered, nothing runs.
@@ -14798,7 +15412,7 @@ mod generated_tests {
                 7,
                 "test:item",
                 9,
-                [4.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
             );
         }
         // item_energy_buffer: unregistered, nothing runs.
@@ -14830,7 +15444,7 @@ mod generated_tests {
                 7,
                 "test:item",
                 9,
-                [4.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
             );
         }
         // leaves_decay: unregistered, nothing runs.
@@ -14889,9 +15503,9 @@ mod generated_tests {
                     }),
                     right: None,
                     output: ItemStack {
-                        item: "test:craft".into(),
+                        item: "test:craft:out".into(),
                         count: 2,
-                        damage: 0,
+                        damage: 3,
                         extra: None,
                     },
                 },
@@ -14915,9 +15529,9 @@ mod generated_tests {
                     }),
                     right: None,
                     output: ItemStack {
-                        item: "test:craft".into(),
+                        item: "test:craft:out".into(),
                         count: 2,
-                        damage: 0,
+                        damage: 3,
                         extra: None,
                     },
                 },
@@ -15218,8 +15832,8 @@ mod generated_tests {
                 &firing_mods,
                 7,
                 "test:name",
-                [3.0, 2.0, 3.0],
-                [4.0, 2.0, 3.0],
+                [3.0, 4.0, 5.0],
+                [4.0, 5.0, 6.0],
                 "test:dimension",
             );
         }
@@ -15253,7 +15867,7 @@ mod generated_tests {
                 &mut FakeHost::empty(),
                 &firing_mods,
                 "test:kind",
-                [2.0, 2.0, 3.0],
+                [2.0, 3.0, 4.0],
             );
         }
         // vehicle_damage: unregistered, nothing runs.
@@ -15275,7 +15889,7 @@ mod generated_tests {
                 &mut FakeHost::empty(),
                 &firing_mods,
                 "test:kind",
-                [2.0, 2.0, 3.0],
+                [2.0, 3.0, 4.0],
             );
         }
         // vehicle_moved: unregistered, nothing runs.
@@ -15285,8 +15899,8 @@ mod generated_tests {
                 &firing_mods,
                 Some(7),
                 "test:kind",
-                [3.0, 2.0, 3.0],
-                [4.0, 2.0, 3.0],
+                [3.0, 4.0, 5.0],
+                [4.0, 5.0, 6.0],
             );
         }
         // world_border_bounds_changed: unregistered, nothing runs.
@@ -15781,7 +16395,7 @@ mod generated_tests {
                 &firing_mods,
                 7,
                 "test:name",
-                [3.0, 2.0, 3.0],
+                [3.0, 4.0, 5.0],
             );
         }
         // portal_create: unregistered, nothing runs.
@@ -15799,7 +16413,7 @@ mod generated_tests {
                 &mut FakeHost::empty(),
                 &firing_mods,
                 "test:item",
-                [2.0, 2.0, 3.0],
+                [2.0, 3.0, 4.0],
             );
         }
         // prepare_anvil: unregistered, nothing runs.
@@ -16002,18 +16616,18 @@ mod generated_tests {
                     },
                     cost_b: None,
                     result: ItemStack {
-                        item: "test:offer".into(),
-                        count: 1,
-                        damage: 0,
+                        item: "test:offer:out".into(),
+                        count: 2,
+                        damage: 3,
                         extra: None,
                     },
-                    uses: 2,
-                    max_uses: 1,
+                    uses: 12,
+                    max_uses: 4,
                     reward_exp: true,
-                    special_price_diff: 0,
-                    demand: 0,
-                    price_multiplier: 1.0,
-                    xp: 1,
+                    special_price_diff: 5,
+                    demand: 6,
+                    price_multiplier: 0.5,
+                    xp: 7,
                 },
             );
         }
@@ -16124,12 +16738,12 @@ mod generated_tests {
         }
         // explosion_knockback: unregistered, nothing runs.
         {
-            let mut knockback_velocity = [5.0, 2.0, 3.0];
+            let mut knockback_velocity = [5.0, 6.0, 7.0];
             dispatch_explosion_knockback(
                 &mut FakeHost::empty(),
                 &firing_mods,
                 "test:dimension",
-                [2.0, 2.0, 3.0],
+                [2.0, 3.0, 4.0],
                 &[[3, 4, 5], [4, 5, 6]],
                 None,
                 &mut knockback_velocity,
@@ -16231,9 +16845,9 @@ mod generated_tests {
                 "test:kind",
                 "test:damage_type",
                 10,
-                Some([5.0, 2.0, 3.0]),
-                [6.0, 2.0, 3.0],
-                [7.0, 2.0, 3.0],
+                Some([5.0, 6.0, 7.0]),
+                [6.0, 7.0, 8.0],
+                [7.0, 8.0, 9.0],
                 None,
                 &mut amount,
                 &mut canceled,
@@ -16254,8 +16868,8 @@ mod generated_tests {
                 None,
                 Some(&ItemStack {
                     item: "test:attacker_off".into(),
-                    count: 1,
-                    damage: 0,
+                    count: 5,
+                    damage: 4,
                     extra: None,
                 }),
                 &mut strength,
@@ -16370,7 +16984,7 @@ mod generated_tests {
                 &firing_mods,
                 "test:dimension",
                 8,
-                [3.0, 2.0, 3.0],
+                [3.0, 4.0, 5.0],
                 &mut canceled,
             );
             assert!(!canceled, "canceled changed with no handler");
@@ -16484,7 +17098,7 @@ mod generated_tests {
         }
         // camera_pose: unregistered, nothing runs.
         {
-            let mut position = [2.0, 2.0, 3.0];
+            let mut position = [2.0, 3.0, 4.0];
             let mut yaw = 3.5;
             let mut pitch = 4.5;
             dispatch_camera_pose(
@@ -16538,18 +17152,18 @@ mod generated_tests {
                 },
                 cost_b: None,
                 result: ItemStack {
-                    item: "test:offer".into(),
-                    count: 1,
-                    damage: 0,
+                    item: "test:offer:out".into(),
+                    count: 2,
+                    damage: 3,
                     extra: None,
                 },
-                uses: 2,
-                max_uses: 1,
+                uses: 12,
+                max_uses: 4,
                 reward_exp: true,
-                special_price_diff: 0,
-                demand: 0,
-                price_multiplier: 1.0,
-                xp: 1,
+                special_price_diff: 5,
+                demand: 6,
+                price_multiplier: 0.5,
+                xp: 7,
             };
             dispatch_merchant_offer_traded(
                 &mut FakeHost::empty(),
@@ -16795,7 +17409,7 @@ mod generated_tests {
                 &NativeFluidStack {
                     fluid: "test:fluid2".into(),
                     amount: 9,
-                    components: Compound::new(),
+                    components: Compound::from([("testkey".into(), Tag::Int(14))]),
                 },
                 NativeFluidAction::Execute,
                 &mut out,
@@ -16850,11 +17464,11 @@ mod generated_tests {
                 "test:kind",
                 Some(&ItemStack {
                     item: "test:stack".into(),
-                    count: 1,
-                    damage: 0,
+                    count: 3,
+                    damage: 2,
                     extra: None,
                 }),
-                [4.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
                 &mut claimed,
             );
             assert!(!claimed, "claimed changed with no handler");
@@ -16959,7 +17573,7 @@ mod generated_tests {
                 9,
                 BlockStateId(11),
                 [5, 6, 7],
-                [6.0, 2.0, 3.0],
+                [6.0, 7.0, 8.0],
                 &mut stack,
                 &mut discard,
             );
@@ -16992,8 +17606,8 @@ mod generated_tests {
                 "test:kind",
                 Some(&ItemStack {
                     item: "test:stack".into(),
-                    count: 1,
-                    damage: 0,
+                    count: 3,
+                    damage: 2,
                     extra: None,
                 }),
                 &mut swing,
@@ -17013,7 +17627,7 @@ mod generated_tests {
                     extra: None,
                 },
                 Some(9),
-                [4.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
                 &mut canceled,
             );
             assert!(!canceled, "canceled changed with no handler");
@@ -17218,13 +17832,13 @@ mod generated_tests {
         }
         // player_move: unregistered, nothing runs.
         {
-            let mut to = [4.0, 2.0, 3.0];
+            let mut to = [4.0, 5.0, 6.0];
             let mut cancel = false;
             dispatch_player_move(
                 &firing_mods,
                 7,
                 "test:name",
-                [3.0, 2.0, 3.0],
+                [3.0, 4.0, 5.0],
                 &mut to,
                 5.5,
                 6.5,
@@ -17247,7 +17861,7 @@ mod generated_tests {
         // player_respawn_position: unregistered, nothing runs.
         {
             let mut dimension = "test:dimension".to_owned();
-            let mut pos = [4.0, 2.0, 3.0];
+            let mut pos = [4.0, 5.0, 6.0];
             let mut yaw = 5.5;
             let mut pitch = 6.5;
             dispatch_player_respawn_position(
@@ -17264,8 +17878,8 @@ mod generated_tests {
         // player_spawn_location: unregistered, nothing runs.
         {
             let mut dimension = "test:dimension".to_owned();
-            let mut position = [4.0, 2.0, 3.0];
-            let mut rotation = [5.0, 2.0];
+            let mut position = [4.0, 5.0, 6.0];
+            let mut rotation = [5.0, 6.0];
             dispatch_player_spawn_location(
                 &mut FakeHost::empty(),
                 &firing_mods,
@@ -17278,7 +17892,7 @@ mod generated_tests {
         }
         // player_teleport: unregistered, nothing runs.
         {
-            let mut to = [7.0, 2.0, 3.0];
+            let mut to = [7.0, 8.0, 9.0];
             let mut relative = 14;
             let mut cancel = false;
             dispatch_player_teleport(
@@ -17287,7 +17901,7 @@ mod generated_tests {
                 "test:name",
                 "test:cause",
                 "test:from_dimension",
-                [5.0, 2.0, 3.0],
+                [5.0, 6.0, 7.0],
                 "test:to_dimension",
                 &mut to,
                 &mut relative,
@@ -17301,8 +17915,8 @@ mod generated_tests {
         }
         // projectile_world_border: unregistered, nothing runs.
         {
-            let mut pos = [4.0, 2.0, 3.0];
-            let mut velocity = [5.0, 2.0, 3.0];
+            let mut pos = [4.0, 5.0, 6.0];
+            let mut velocity = [5.0, 6.0, 7.0];
             let mut collide = false;
             dispatch_projectile_world_border(
                 &firing_mods,
@@ -17477,7 +18091,7 @@ mod generated_tests {
         }
         // vehicle_moved_v2: unregistered, nothing runs.
         {
-            let mut to = [6.0, 2.0, 3.0];
+            let mut to = [6.0, 7.0, 8.0];
             let mut cancel = false;
             dispatch_vehicle_moved_v2(
                 &mut FakeHost::empty(),
@@ -17486,7 +18100,7 @@ mod generated_tests {
                 "test:dimension",
                 9,
                 "test:kind",
-                [5.0, 2.0, 3.0],
+                [5.0, 6.0, 7.0],
                 &mut to,
                 &mut cancel,
             );
@@ -17499,10 +18113,11 @@ mod generated_tests {
                 &mut FakeHost::empty(),
                 &firing_mods,
                 "test:dimension",
-                [2.0, 2.0, 3.0],
+                [2.0, 3.0, 4.0],
                 &mut blocks,
             );
         }
+        assert_eq!(witness(&lua), 0, "no handler ran");
         no_error(&id);
         drop_dir(dir);
     }

@@ -10,6 +10,7 @@ use horizon_client::mod_api::{
     LegacyRandom, LevelHost, LevelRandomHost, NativeServerPlayer, NativeWorldEpoch,
 };
 use horizon_mods::Package;
+use mlua::Lua;
 use std::path::PathBuf;
 
 pub const MANIFEST_TEXT: &str = "id = \"ruby\"\nname = \"Ruby\"\nversion = \"0.1.0\"\napi = \"0.2\"\nside = \"both\"\ncapabilities = [\"scripts\"]\nexperimental = [\"scripts\"]\n";
@@ -42,6 +43,26 @@ pub fn loaded(name: &str, lua: &str) -> (LuaMod, String, PathBuf) {
 
 pub fn boxed(m: LuaMod) -> Vec<Box<dyn Hooks>> {
     vec![Box::new(m) as Box<dyn Hooks>]
+}
+
+/// Load a mod and keep its Lua state beside it: the generated (and spike)
+/// tests read the `__witness` counter their handlers bump, proving the
+/// handler ran. An `assert` that never fires leaves no error row, so
+/// `no_error` alone cannot tell silence from success.
+pub fn loaded_tracked(name: &str, lua: &str) -> (LuaMod, String, PathBuf, Lua) {
+    let (m, id, dir) = loaded(name, lua);
+    let state = m.lua.clone();
+    (m, id, dir, state)
+}
+
+/// Handler firings since load: the generated handlers start with
+/// `__witness = (__witness or 0) + 1`, so 1 means the handler ran for this
+/// firing and 0 means it stayed quiet.
+pub fn witness(lua: &Lua) -> i64 {
+    match lua.globals().get::<mlua::Value>("__witness") {
+        Ok(mlua::Value::Integer(i)) => i,
+        _ => 0,
+    }
 }
 
 pub fn drop_dir(dir: PathBuf) {

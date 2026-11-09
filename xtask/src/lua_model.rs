@@ -1438,7 +1438,12 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 ),
                 text_lua(&format!("test:line{n}")),
             );
-            s.leaves = vec![leaf("text", format!("\"test:line{n}\""))];
+            // The nested component carries the same text (see
+            // `DUP_LEAF_ALLOWLIST`): still asserted, for the shape.
+            s.leaves = vec![
+                leaf("text", format!("\"test:line{n}\"")),
+                (".component.text".into(), format!("\"test:line{n}\"")),
+            ];
             s
         }
         "Compound" => fixed(
@@ -1485,7 +1490,15 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                     50 + n as i32
                 ),
             );
-            s.leaves = vec![leaf("id", format!("\"test:{field}\""))];
+            // `extra` is `None` in every seed (nil on the Lua side; the
+            // NBT round-trip itself is pinned by the round-3 tests), `plain`
+            // is derived from it, so neither carries a seed value to vary.
+            s.leaves = vec![
+                leaf("id", format!("\"test:{field}\"")),
+                leaf("count", format!("{}", 1 + n as i32)),
+                leaf("damage", format!("{n}")),
+                leaf("extra", "nil".into()),
+            ];
             s
         }
         "Option<ItemStack>" => mutable(
@@ -1495,43 +1508,87 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             "nil".into(),
         ),
         "[f64;3]" => {
+            // Every component varies with `n`: a constant `y` would collide
+            // with `x` for some `n`, and swapping the two would pass.
             let mut s = mutable(
-                format!("[{:?}, 2.0, 3.0]", 1.0 + n as f64),
-                format!("{{ x = {:?}, y = 2.0, z = 3.0 }}", 1.0 + n as f64),
-                format!("[{:?}, 12.0, 13.0]", 11.0 + n as f64),
-                format!("{{ x = {:?}, y = 12.0, z = 13.0 }}", 11.0 + n as f64),
+                format!(
+                    "[{:?}, {:?}, {:?}]",
+                    1.0 + n as f64,
+                    2.0 + n as f64,
+                    3.0 + n as f64
+                ),
+                format!(
+                    "{{ x = {:?}, y = {:?}, z = {:?} }}",
+                    1.0 + n as f64,
+                    2.0 + n as f64,
+                    3.0 + n as f64
+                ),
+                format!(
+                    "[{:?}, {:?}, {:?}]",
+                    11.0 + n as f64,
+                    12.0 + n as f64,
+                    13.0 + n as f64
+                ),
+                format!(
+                    "{{ x = {:?}, y = {:?}, z = {:?} }}",
+                    11.0 + n as f64,
+                    12.0 + n as f64,
+                    13.0 + n as f64
+                ),
             );
             s.leaves = vec![
                 leaf("x", format!("{:?}", 1.0 + n as f64)),
-                leaf("y", "2.0".into()),
-                leaf("z", "3.0".into()),
+                leaf("y", format!("{:?}", 2.0 + n as f64)),
+                leaf("z", format!("{:?}", 3.0 + n as f64)),
             ];
             s
         }
         "[f32;3]" => {
+            // Every component varies with `n`, as for `[f64;3]` above.
             let mut s = mutable(
-                format!("[{:?}, 2.0, 3.0]", 1.0 + n as f32),
-                format!("{{ x = {:?}, y = 2.0, z = 3.0 }}", 1.0 + n as f32),
-                format!("[{:?}, 12.0, 13.0]", 11.0 + n as f32),
-                format!("{{ x = {:?}, y = 12.0, z = 13.0 }}", 11.0 + n as f32),
+                format!(
+                    "[{:?}, {:?}, {:?}]",
+                    1.0 + n as f32,
+                    2.0 + n as f32,
+                    3.0 + n as f32
+                ),
+                format!(
+                    "{{ x = {:?}, y = {:?}, z = {:?} }}",
+                    1.0 + n as f32,
+                    2.0 + n as f32,
+                    3.0 + n as f32
+                ),
+                format!(
+                    "[{:?}, {:?}, {:?}]",
+                    11.0 + n as f32,
+                    12.0 + n as f32,
+                    13.0 + n as f32
+                ),
+                format!(
+                    "{{ x = {:?}, y = {:?}, z = {:?} }}",
+                    11.0 + n as f32,
+                    12.0 + n as f32,
+                    13.0 + n as f32
+                ),
             );
             s.leaves = vec![
                 leaf("x", format!("{:?}", 1.0 + n as f32)),
-                leaf("y", "2.0".into()),
-                leaf("z", "3.0".into()),
+                leaf("y", format!("{:?}", 2.0 + n as f32)),
+                leaf("z", format!("{:?}", 3.0 + n as f32)),
             ];
             s
         }
         "[f32;2]" => {
+            // Both components vary with `n`, as for `[f64;3]` above.
             let mut s = mutable(
-                format!("[{:?}, 2.0]", 1.0 + n as f32),
-                format!("{{ x = {:?}, y = 2.0 }}", 1.0 + n as f32),
-                format!("[{:?}, 12.0]", 11.0 + n as f32),
-                format!("{{ x = {:?}, y = 12.0 }}", 11.0 + n as f32),
+                format!("[{:?}, {:?}]", 1.0 + n as f32, 2.0 + n as f32),
+                format!("{{ x = {:?}, y = {:?} }}", 1.0 + n as f32, 2.0 + n as f32),
+                format!("[{:?}, {:?}]", 11.0 + n as f32, 12.0 + n as f32),
+                format!("{{ x = {:?}, y = {:?} }}", 11.0 + n as f32, 12.0 + n as f32),
             );
             s.leaves = vec![
                 leaf("x", format!("{:?}", 1.0 + n as f32)),
-                leaf("y", "2.0".into()),
+                leaf("y", format!("{:?}", 2.0 + n as f32)),
             ];
             s
         }
@@ -1561,16 +1618,54 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
         "[usize;2]" => fixed(
             format!("[{}, {}]", 7 + n, 12 + n),
             format!("{{ start = {}, [\"end\"] = {} }}", 7 + n, 12 + n),
-            vec![leaf("start", format!("{}", 7 + n))],
+            // `end` is a keyword, so the assert reads it with brackets.
+            vec![
+                leaf("start", format!("{}", 7 + n)),
+                ("[\"end\"]".into(), format!("{}", 12 + n)),
+            ],
         ),
         "(usize,usize)" => fixed(
             format!("({}, {})", 7 + n, 12 + n),
             format!("{{ start = {}, [\"end\"] = {} }}", 7 + n, 12 + n),
-            vec![leaf("start", format!("{}", 7 + n))],
+            vec![
+                leaf("start", format!("{}", 7 + n)),
+                ("[\"end\"]".into(), format!("{}", 12 + n)),
+            ],
         ),
         "[[f32;4];8]" => {
-            // Eight different values, so a permuted or padded write fails
-            // the Rust-side assert.
+            // Every row and every component is its own value (row `i`
+            // counts up from `n` in tens): zeroing `y`/`z`/`w` or reversing
+            // the rows changes an asserted leaf. Eight different write `x`
+            // values, so a permuted write fails the Rust-side assert too.
+            let seed_row = |i: usize| {
+                let (x, y, z, w) = (
+                    1.5 + n as f32 + 10.0 * i as f32,
+                    2.5 + n as f32 + 10.0 * i as f32,
+                    3.5 + n as f32 + 10.0 * i as f32,
+                    4.5 + n as f32 + 10.0 * i as f32,
+                );
+                (
+                    format!("[{x:?}, {y:?}, {z:?}, {w:?}]"),
+                    format!("{{ x = {x:?}, y = {y:?}, z = {z:?}, w = {w:?} }}"),
+                )
+            };
+            let seed_rows: Vec<(String, String)> = (0..8).map(seed_row).collect();
+            let seed_rust = format!(
+                "[{}]",
+                seed_rows
+                    .iter()
+                    .map(|(rust, _)| rust.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            let seed_lua = format!(
+                "{{ {} }}",
+                seed_rows
+                    .iter()
+                    .map(|(_, lua)| lua.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            );
             let write_x: Vec<f32> = (0..8).map(|i| 11.5 + n as f32 + i as f32).collect();
             let write_rust = format!(
                 "[{}]",
@@ -1588,27 +1683,21 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                     .collect::<Vec<_>>()
                     .join("; ")
             );
-            let mut s = mutable(
-                format!("[[{:?}, 2.5, 3.5, 4.5]; 8]", 1.5 + n as f32),
-                format!(
-                    "{{ {}; {}; {}; {}; {}; {}; {}; {} }}",
-                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
-                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
-                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
-                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
-                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
-                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
-                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }",
-                    "{ x = 1.5, y = 2.5, z = 3.5, w = 4.5 }"
-                )
-                .replace("1.5", &format!("{:?}", 1.5 + n as f32)),
-                write_rust,
-                write_lua,
-            );
-            s.leaves = vec![
-                ("[1].x".into(), format!("{:?}", 1.5 + n as f32)),
-                ("[8].x".into(), format!("{:?}", 1.5 + n as f32)),
-            ];
+            let mut s = mutable(seed_rust, seed_lua, write_rust, write_lua);
+            s.leaves = (0..8)
+                .flat_map(|i: usize| {
+                    let idx = i + 1;
+                    ["x", "y", "z", "w"].map(|c| {
+                        let v = match c {
+                            "x" => 1.5 + n as f32 + 10.0 * i as f32,
+                            "y" => 2.5 + n as f32 + 10.0 * i as f32,
+                            "z" => 3.5 + n as f32 + 10.0 * i as f32,
+                            _ => 4.5 + n as f32 + 10.0 * i as f32,
+                        };
+                        (format!("[{idx}].{c}"), format!("{v:?}"))
+                    })
+                })
+                .collect();
             s
         }
         "[i32;3]" => {
@@ -1648,7 +1737,11 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 2 + n as i32,
                 3 + n as i32
             ),
-            vec![leaf("x", format!("{}", 1 + n as i32))],
+            vec![
+                leaf("x", format!("{}", 1 + n as i32)),
+                leaf("y", format!("{}", 2 + n as i32)),
+                leaf("z", format!("{}", 3 + n as i32)),
+            ],
         ),
         "&'static str" => fixed(
             format!("\"test:seed{n}\""),
@@ -1679,6 +1772,9 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             );
             s.leaves = vec![
                 leaf("text", format!("\"test:line{n}\"")),
+                // The nested component carries the same text (see
+                // `DUP_LEAF_ALLOWLIST`): still asserted, for the shape.
+                (".component.text".into(), format!("\"test:line{n}\"")),
                 leaf("count", format!("{}", 2 + n as u32)),
             ];
             s
@@ -1686,12 +1782,18 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
         "(i32,u32)" => fixed(
             format!("({}, 2)", 7 + n),
             format!("{{ value = {}, max = 2 }}", 7 + n as i32),
-            vec![leaf("value", format!("{}", 7 + n as i32))],
+            vec![
+                leaf("value", format!("{}", 7 + n as i32)),
+                leaf("max", "2".into()),
+            ],
         ),
         "(i32,i32)" => fixed(
             format!("({}, {})", 1 + n, 2 + n),
             format!("{{ min = {}, max = {} }}", 1 + n as i32, 2 + n as i32),
-            vec![leaf("min", format!("{}", 1 + n as i32))],
+            vec![
+                leaf("min", format!("{}", 1 + n as i32)),
+                leaf("max", format!("{}", 2 + n as i32)),
+            ],
         ),
         "NativeDispensed" | "(Option<ItemStack>,i32)" => fixed(
             format!("(Some({}), {})", item(1, 0), 2000 + n),
@@ -1699,7 +1801,12 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 "{{ remainder = {{ id = \"test:{field}\", count = 1, damage = 0 }}, event = {} }}",
                 2000 + n
             ),
-            vec![leaf("event", format!("{}", 2000 + n))],
+            vec![
+                leaf("remainder.id", format!("\"test:{field}\"")),
+                leaf("remainder.count", "1".into()),
+                leaf("remainder.damage", "0".into()),
+                leaf("event", format!("{}", 2000 + n)),
+            ],
         ),
         "(String,Value)" => fixed(
             format!(
@@ -1707,7 +1814,10 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 7 + n as i32
             ),
             format!("{{ path = \"test:path{n}\", data = {} }}", 7 + n as i32),
-            vec![leaf("path", format!("\"test:path{n}\""))],
+            vec![
+                leaf("path", format!("\"test:path{n}\"")),
+                leaf("data", format!("{}", 7 + n as i32)),
+            ],
         ),
         "(String,Compound)" => fixed(
             format!(
@@ -1718,12 +1828,18 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 "{{ name = \"test:entity{n}\", tag = {{ testkey = {} }} }}",
                 7 + n as i32
             ),
-            vec![leaf("name", format!("\"test:entity{n}\""))],
+            vec![
+                leaf("name", format!("\"test:entity{n}\"")),
+                (".tag.testkey".into(), format!("{}", 7 + n as i32)),
+            ],
         ),
         "(&'staticstr,&'staticstr)" | "EmissiveLayer" => fixed(
             format!("(\"test:a{n}\", \"test:b{n}\")"),
             format!("{{ a = \"test:a{n}\", b = \"test:b{n}\" }}"),
-            vec![leaf("a", format!("\"test:a{n}\""))],
+            vec![
+                leaf("a", format!("\"test:a{n}\"")),
+                leaf("b", format!("\"test:b{n}\"")),
+            ],
         ),
         "NativeZoom" => fixed(
             format!(
@@ -1762,7 +1878,14 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             format!(
                 "{{ id = \"test:mod{n}\", title = \"test:title{n}\", description = \"test:desc{n}\", keys = {{ {{ key = \"test:key{n}\", label = \"test:label{n}\", default = \"test:default{n}\" }} }} }}"
             ),
-            vec![leaf("id", format!("\"test:mod{n}\""))],
+            vec![
+                leaf("id", format!("\"test:mod{n}\"")),
+                leaf("title", format!("\"test:title{n}\"")),
+                leaf("description", format!("\"test:desc{n}\"")),
+                leaf("keys[1].key", format!("\"test:key{n}\"")),
+                leaf("keys[1].label", format!("\"test:label{n}\"")),
+                leaf("keys[1].default", format!("\"test:default{n}\"")),
+            ],
         ),
         "NativeScreen" => fixed(
             format!(
@@ -1851,28 +1974,48 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 n.is_multiple_of(2),
                 n % 2 == 1
             ),
-            vec![leaf("id", format!("{}", 7 + n as i32))],
+            vec![
+                leaf("id", format!("{}", 7 + n as i32)),
+                leaf("center.x", format!("{}", 3 + n as i32)),
+                leaf("center.z", format!("{}", -5 - n as i32)),
+                leaf("scale", "0".into()),
+                leaf("dimension", "\"minecraft:overworld\"".into()),
+                leaf("locked", format!("{}", n.is_multiple_of(2))),
+                leaf("in_frame", format!("{}", n % 2 == 1)),
+            ],
         ),
+        // `y` varies with `n`: a constant `y = 2` would collide with `x`
+        // for `n = 1`, and swapping the two would pass.
         "NativeMapDecoration" => fixed(
             format!(
                 "NativeMapDecoration {{ sprite: \"test:sprite{n}\".into(), x: {}, y: {}, rot: 0, shown_on_frame: {} }}",
                 1 + n as i8,
-                2,
+                3 + n as i8,
                 n.is_multiple_of(2)
             ),
             format!(
-                "{{ sprite = \"test:sprite{n}\", x = {}, y = 2, rot = 0, shown_on_frame = {} }}",
+                "{{ sprite = \"test:sprite{n}\", x = {}, y = {}, rot = 0, shown_on_frame = {} }}",
                 1 + n as i8,
+                3 + n as i8,
                 n.is_multiple_of(2)
             ),
-            vec![leaf("sprite", format!("\"test:sprite{n}\""))],
+            vec![
+                leaf("sprite", format!("\"test:sprite{n}\"")),
+                leaf("x", format!("{}", 1 + n as i8)),
+                leaf("y", format!("{}", 3 + n as i8)),
+                leaf("rot", "0".into()),
+                leaf("shown_on_frame", format!("{}", n.is_multiple_of(2))),
+            ],
         ),
         "NativeDataMapType" => fixed(
             format!(
                 "NativeDataMapType {{ id: \"test:map{n}\".into(), registry: \"test:registry{n}\".into() }}"
             ),
             format!("{{ id = \"test:map{n}\", registry = \"test:registry{n}\" }}"),
-            vec![leaf("id", format!("\"test:map{n}\""))],
+            vec![
+                leaf("id", format!("\"test:map{n}\"")),
+                leaf("registry", format!("\"test:registry{n}\"")),
+            ],
         ),
         "NativeConfig" => fixed(
             format!(
@@ -1881,7 +2024,12 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             format!(
                 "{{ mod_id = \"test:mod{n}\", kind = \"server\", file = \"test:file{n}\", default = \"test:default{n}\" }}"
             ),
-            vec![leaf("mod_id", format!("\"test:mod{n}\""))],
+            vec![
+                leaf("mod_id", format!("\"test:mod{n}\"")),
+                leaf("kind", "\"server\"".into()),
+                leaf("file", format!("\"test:file{n}\"")),
+                leaf("default", format!("\"test:default{n}\"")),
+            ],
         ),
         "NativeConfigFile" => fixed(
             format!(
@@ -1890,7 +2038,13 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             format!(
                 "{{ mod_id = \"test:mod{n}\", kind = \"server\", file = \"test:file{n}\", path = \"test:path{n}\", text = \"test:text{n}\" }}"
             ),
-            vec![leaf("mod_id", format!("\"test:mod{n}\""))],
+            vec![
+                leaf("mod_id", format!("\"test:mod{n}\"")),
+                leaf("kind", "\"server\"".into()),
+                leaf("file", format!("\"test:file{n}\"")),
+                leaf("path", format!("\"test:path{n}\"")),
+                leaf("text", format!("\"test:text{n}\"")),
+            ],
         ),
         "SpawnEntry" => fixed(
             format!(
@@ -1903,7 +2057,13 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 7 + n as u32,
                 n.is_multiple_of(2)
             ),
-            vec![leaf("entity", format!("\"test:entity{n}\""))],
+            vec![
+                leaf("entity", format!("\"test:entity{n}\"")),
+                leaf("weight", format!("{}", 7 + n as u32)),
+                leaf("min", "1".into()),
+                leaf("max", "2".into()),
+                leaf("constant", format!("{}", n.is_multiple_of(2))),
+            ],
         ),
         "RecipeBookCategory" => fixed(
             format!(
@@ -1912,12 +2072,19 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             format!(
                 "{{ id = \"test:cat{n}\", recipe_type = \"test:type{n}\", icon = \"test:icon{n}\" }}"
             ),
-            vec![leaf("id", format!("\"test:cat{n}\""))],
+            vec![
+                leaf("id", format!("\"test:cat{n}\"")),
+                leaf("recipe_type", format!("\"test:type{n}\"")),
+                leaf("icon", format!("\"test:icon{n}\"")),
+            ],
         ),
         "NativeReloadListener" => fixed(
             format!("NativeReloadListener::json(\"test:id{n}\", \"test:folder{n}\")"),
             format!("{{ id = \"test:id{n}\", folder = \"test:folder{n}\" }}"),
-            vec![leaf("id", format!("\"test:id{n}\""))],
+            vec![
+                leaf("id", format!("\"test:id{n}\"")),
+                leaf("folder", format!("\"test:folder{n}\"")),
+            ],
         ),
         "Suggestion" => fixed(
             format!(
@@ -1929,43 +2096,81 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 7 + n,
                 12 + n
             ),
-            vec![leaf("text", format!("\"test:suggestion{n}\""))],
+            vec![
+                leaf("range.start", format!("{}", 7 + n)),
+                (".range[\"end\"]".into(), format!("{}", 12 + n)),
+                leaf("text", format!("\"test:suggestion{n}\"")),
+            ],
         ),
         "MerchantOffer" => {
+            // Every number below is its own Lua value (the cost and the
+            // result are different stacks, `uses` sits far above the small
+            // constants for every `n`): swapping or zeroing any leaf changes
+            // an asserted value. `cost_b` is absent, read back as nil.
+            let result_rust =
+                "ItemStack { item: \"test:{field}:out\".into(), count: 2, damage: 3, extra: None }"
+                    .replace("{field}", field);
+            let result_lua = format!("{{ id = \"test:{field}:out\", count = 2, damage = 3 }}");
             let mut s = mutable(
                 format!(
-                    "MerchantOffer {{ base_cost_a: ItemCost {{ stack: {} }}, cost_b: None, result: {}, uses: {}, max_uses: 1, reward_exp: true, special_price_diff: 0, demand: 0, price_multiplier: 1.0, xp: 1 }}",
+                    "MerchantOffer {{ base_cost_a: ItemCost {{ stack: {} }}, cost_b: None, result: {}, uses: {}, max_uses: 4, reward_exp: true, special_price_diff: 5, demand: 6, price_multiplier: 0.5, xp: 7 }}",
                     item(1, 0),
-                    item(1, 0),
-                    n as i32
+                    result_rust,
+                    10 + n as i32
                 ),
                 format!(
-                    "{{ base_cost_a = {{ stack = {{ id = \"test:{field}\", count = 1, damage = 0 }} }}, result = {{ id = \"test:{field}\", count = 1, damage = 0 }}, uses = {n}, max_uses = 1, reward_exp = true, special_price_diff = 0, demand = 0, price_multiplier = 1.0, xp = 1 }}"
+                    "{{ base_cost_a = {{ stack = {{ id = \"test:{field}\", count = 1, damage = 0 }} }}, result = {result_lua}, uses = {}, max_uses = 4, reward_exp = true, special_price_diff = 5, demand = 6, price_multiplier = 0.5, xp = 7 }}",
+                    10 + n as i32
                 ),
                 format!(
-                    "MerchantOffer {{ base_cost_a: ItemCost {{ stack: {} }}, cost_b: None, result: {}, uses: {}, max_uses: 1, reward_exp: true, special_price_diff: 0, demand: 0, price_multiplier: 1.0, xp: 1 }}",
+                    "MerchantOffer {{ base_cost_a: ItemCost {{ stack: {} }}, cost_b: None, result: {}, uses: {}, max_uses: 4, reward_exp: true, special_price_diff: 5, demand: 6, price_multiplier: 0.5, xp: 7 }}",
                     item(1, 0),
-                    item(1, 0),
+                    result_rust,
                     50 + n as i32
                 ),
                 format!(
-                    "{{ base_cost_a = {{ stack = {{ id = \"test:{field}\", count = 1, damage = 0 }} }}, result = {{ id = \"test:{field}\", count = 1, damage = 0 }}, uses = {}, max_uses = 1, reward_exp = true, special_price_diff = 0, demand = 0, price_multiplier = 1.0, xp = 1 }}",
+                    "{{ base_cost_a = {{ stack = {{ id = \"test:{field}\", count = 1, damage = 0 }} }}, result = {result_lua}, uses = {}, max_uses = 4, reward_exp = true, special_price_diff = 5, demand = 6, price_multiplier = 0.5, xp = 7 }}",
                     50 + n as i32
                 ),
             );
-            s.leaves = vec![leaf("uses", format!("{n}"))];
+            s.leaves = vec![
+                (".base_cost_a.stack.id".into(), format!("\"test:{field}\"")),
+                (".base_cost_a.stack.count".into(), "1".into()),
+                (".base_cost_a.stack.damage".into(), "0".into()),
+                (".cost_b".into(), "nil".into()),
+                (".result.id".into(), format!("\"test:{field}:out\"")),
+                (".result.count".into(), "2".into()),
+                (".result.damage".into(), "3".into()),
+                leaf("uses", format!("{}", 10 + n as i32)),
+                leaf("max_uses", "4".into()),
+                leaf("reward_exp", "true".into()),
+                leaf("special_price_diff", "5".into()),
+                leaf("demand", "6".into()),
+                leaf("price_multiplier", "0.5".into()),
+                leaf("xp", "7".into()),
+            ];
             s
         }
         "AnvilCraft" => fixed(
+            // The input and the output are different stacks (different ids
+            // and counts): swapping `left` and `output` changes an asserted
+            // leaf. `right` is absent, read back as nil.
             format!(
-                "AnvilCraft {{ left: Some({}), right: None, output: {} }}",
-                item(1, 0),
-                item(2, 0)
+                "AnvilCraft {{ left: Some({}), right: None, output: ItemStack {{ item: \"test:{field}:out\".into(), count: 2, damage: 3, extra: None }} }}",
+                item(1, 0)
             ),
             format!(
-                "{{ left = {{ id = \"test:{field}\", count = 1, damage = 0 }}, output = {{ id = \"test:{field}\", count = 2, damage = 0 }} }}"
+                "{{ left = {{ id = \"test:{field}\", count = 1, damage = 0 }}, output = {{ id = \"test:{field}:out\", count = 2, damage = 3 }} }}"
             ),
-            vec![leaf("output.id", format!("\"test:{field}\""))],
+            vec![
+                leaf("left.id", format!("\"test:{field}\"")),
+                leaf("left.count", "1".into()),
+                leaf("left.damage", "0".into()),
+                leaf("right", "nil".into()),
+                (".output.id".into(), format!("\"test:{field}:out\"")),
+                (".output.count".into(), "2".into()),
+                (".output.damage".into(), "3".into()),
+            ],
         ),
         "NativeNoteBlockChange" => fixed(
             format!(
@@ -1982,18 +2187,33 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 3 + n as i32,
                 7 + n as i32
             ),
-            vec![leaf("old_note", format!("{}", 7 + n as i32))],
+            vec![
+                leaf("dimension", "\"minecraft:overworld\"".into()),
+                leaf("pos.x", format!("{}", 1 + n as i32)),
+                leaf("pos.y", format!("{}", 2 + n as i32)),
+                leaf("pos.z", format!("{}", 3 + n as i32)),
+                leaf("instrument", format!("\"test:instrument{n}\"")),
+                leaf("old_note", format!("{}", 7 + n as i32)),
+            ],
         ),
         "NativeFluidStack" => fixed(
             format!(
-                "NativeFluidStack {{ fluid: \"test:fluid{n}\".into(), amount: {}, components: Compound::new() }}",
-                7 + n as i32
+                "NativeFluidStack {{ fluid: \"test:fluid{n}\".into(), amount: {}, components: Compound::from([(\"testkey\".into(), Tag::Int({}))]) }}",
+                7 + n as i32,
+                12 + n as i32
             ),
             format!(
-                "{{ fluid = \"test:fluid{n}\", amount = {}, components = {{}} }}",
-                7 + n as i32
+                "{{ fluid = \"test:fluid{n}\", amount = {}, components = {{ testkey = {} }} }}",
+                7 + n as i32,
+                12 + n as i32
             ),
-            vec![leaf("fluid", format!("\"test:fluid{n}\""))],
+            // The components carry one test key (not an empty compound), so
+            // the leaf has a value to assert.
+            vec![
+                leaf("fluid", format!("\"test:fluid{n}\"")),
+                leaf("amount", format!("{}", 7 + n as i32)),
+                (".components.testkey".into(), format!("{}", 12 + n as i32)),
+            ],
         ),
         "Option<NativeFluidStack>" => mutable(
             format!(
@@ -2010,7 +2230,10 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
         "NativeFluidDrain" => fixed(
             format!("NativeFluidDrain::Any({})", 7 + n as i32),
             format!("{{ kind = \"any\", amount = {} }}", 7 + n as i32),
-            vec![leaf("kind", "\"any\"".into())],
+            vec![
+                leaf("kind", "\"any\"".into()),
+                leaf("amount", format!("{}", 7 + n as i32)),
+            ],
         ),
         "NativeFluidTankView" => fixed(
             format!(
@@ -2038,7 +2261,12 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 "None".into(),
                 "nil".into(),
             );
-            s.leaves = vec![leaf("sound", format!("\"test:sound{n}\""))];
+            s.leaves = vec![
+                leaf("sound", format!("\"test:sound{n}\"")),
+                leaf("min_delay", format!("{}", 1 + n as i32)),
+                leaf("max_delay", format!("{}", 2 + n as i32)),
+                leaf("replace_current_music", format!("{}", n.is_multiple_of(2))),
+            ];
             s
         }
         "Option<Music>" => mutable(
@@ -2066,7 +2294,10 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 "{{ sound = \"test:sound{n}\", volume = {:?} }}",
                 0.5 + n as f32
             ),
-            vec![leaf("sound", format!("\"test:sound{n}\""))],
+            vec![
+                leaf("sound", format!("\"test:sound{n}\"")),
+                leaf("volume", format!("{:?}", 0.5 + n as f32)),
+            ],
         ),
         "SoundPlayback" => fixed(
             format!(
@@ -2094,43 +2325,82 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 "{{ name = \"test:span{n}\", ms = {:?}, cpu_ms = 0.5, depth = 0 }}",
                 1.5 + n as f32
             ),
-            vec![leaf("name", format!("\"test:span{n}\""))],
+            vec![
+                leaf("name", format!("\"test:span{n}\"")),
+                leaf("ms", format!("{:?}", 1.5 + n as f32)),
+                leaf("cpu_ms", "0.5".into()),
+                leaf("depth", "0".into()),
+            ],
         ),
         "BlockProperties" => fixed("BlockProperties::new()".into(), "{}".into(), vec![]),
         "PlacementContext" => fixed(
+            // The clicked block and the hit location differ (else swapping
+            // `pos` and `hit_pos` passes), the fractional `hit` differs from
+            // every integer leaf, and `yaw`/`pitch` differ from each other:
+            // every numeric leaf below is its own Lua value.
             format!(
-                "PlacementContext {{ pos: BlockPos::new({}, {}, {}), hit_pos: BlockPos::new({}, {}, {}), face: Direction::North, hit: Default::default(), inside: {}, yaw: {:?}, pitch: {:?}, sneaking: {}, item: \"test:item{n}\".into(), replace_clicked: {} }}",
+                "PlacementContext {{ pos: BlockPos::new({}, {}, {}), hit_pos: BlockPos::new({}, {}, {}), face: Direction::North, hit: horizon_core::geometry::Vec3 {{ x: {:?}, y: {:?}, z: {:?} }}, inside: {}, yaw: {:?}, pitch: {:?}, sneaking: {}, item: \"test:item{n}\".into(), replace_clicked: {} }}",
                 1 + n as i32,
                 2 + n as i32,
                 3 + n as i32,
-                1 + n as i32,
-                2 + n as i32,
-                3 + n as i32,
+                4 + n as i32,
+                5 + n as i32,
+                6 + n as i32,
+                7.5 + n as f64,
+                8.5 + n as f64,
+                9.5 + n as f64,
                 n.is_multiple_of(2),
                 90.0 + n as f32,
-                0.0,
+                30.0 + n as f32,
                 n % 2 == 1,
                 n.is_multiple_of(2)
             ),
             format!(
-                "{{ pos = {{ x = {}, y = {}, z = {} }}, hit_pos = {{ x = {}, y = {}, z = {} }}, face = \"north\", hit = {{ x = 0.0, y = 0.0, z = 0.0 }}, inside = {}, yaw = {:?}, pitch = 0.0, sneaking = {}, item = \"test:item{n}\", replace_clicked = {} }}",
+                "{{ pos = {{ x = {}, y = {}, z = {} }}, hit_pos = {{ x = {}, y = {}, z = {} }}, face = \"north\", hit = {{ x = {:?}, y = {:?}, z = {:?} }}, inside = {}, yaw = {:?}, pitch = {:?}, sneaking = {}, item = \"test:item{n}\", replace_clicked = {} }}",
                 1 + n as i32,
                 2 + n as i32,
                 3 + n as i32,
-                1 + n as i32,
-                2 + n as i32,
-                3 + n as i32,
+                4 + n as i32,
+                5 + n as i32,
+                6 + n as i32,
+                7.5 + n as f64,
+                8.5 + n as f64,
+                9.5 + n as f64,
                 n.is_multiple_of(2),
                 90.0 + n as f32,
+                30.0 + n as f32,
                 n % 2 == 1,
                 n.is_multiple_of(2)
             ),
-            vec![leaf("face", "\"north\"".into())],
+            vec![
+                leaf("pos.x", format!("{}", 1 + n as i32)),
+                leaf("pos.y", format!("{}", 2 + n as i32)),
+                leaf("pos.z", format!("{}", 3 + n as i32)),
+                leaf("hit_pos.x", format!("{}", 4 + n as i32)),
+                leaf("hit_pos.y", format!("{}", 5 + n as i32)),
+                leaf("hit_pos.z", format!("{}", 6 + n as i32)),
+                leaf("face", "\"north\"".into()),
+                leaf("hit.x", format!("{:?}", 7.5 + n as f64)),
+                leaf("hit.y", format!("{:?}", 8.5 + n as f64)),
+                leaf("hit.z", format!("{:?}", 9.5 + n as f64)),
+                leaf("inside", format!("{}", n.is_multiple_of(2))),
+                leaf("yaw", format!("{:?}", 90.0 + n as f32)),
+                leaf("pitch", format!("{:?}", 30.0 + n as f32)),
+                leaf("sneaking", format!("{}", n % 2 == 1)),
+                leaf("item", format!("\"test:item{n}\"")),
+                leaf("replace_clicked", format!("{}", n.is_multiple_of(2))),
+            ],
         ),
         "FluidState" => fixed(
+            // `EMPTY` is amount 0, not falling (the seed used to claim a
+            // water-like 8/true, which no assert ever checked).
             "FluidState::EMPTY".into(),
-            "{ kind = \"minecraft:empty\", amount = 8, falling = true }".into(),
-            vec![leaf("kind", "\"minecraft:empty\"".into())],
+            "{ kind = \"minecraft:empty\", amount = 0, falling = false }".into(),
+            vec![
+                leaf("kind", "\"minecraft:empty\"".into()),
+                leaf("amount", "0".into()),
+                leaf("falling", "false".into()),
+            ],
         ),
         _ => return None,
     };
@@ -2982,11 +3252,16 @@ pub fn assert_lines(
             a(&format!("{e}.x == {}", 1.5 + n as f64)),
             a(&format!("{e}.y == {}", 2.5 + n as f64)),
         ],
-        Conv::Vec3f | Conv::MutVec3 => vec![
-            a(&format!("{e}.x == {}", 1.0 + n as f64)),
-            a(&format!("{e}.y == 2.0")),
-            a(&format!("{e}.z == 3.0")),
-        ],
+        Conv::Vec3f | Conv::MutVec3 => {
+            // Same varying components as the `Vec3f` sample: constants here
+            // would collide with `x` (and each other) for some `n`.
+            let (x, y, z) = (1.0 + n as f64, 2.0 + n as f64, 3.0 + n as f64);
+            vec![
+                a(&format!("{e}.x == {x:?}")),
+                a(&format!("{e}.y == {y:?}")),
+                a(&format!("{e}.z == {z:?}")),
+            ]
+        }
         Conv::IntSeq => vec![a(&format!("{e}[1] == {} and {e}[2] == {}", 4 + n, 9 + n))],
         Conv::StrSeq | Conv::MutStrVec => {
             vec![
@@ -2995,13 +3270,26 @@ pub fn assert_lines(
             ]
         }
         Conv::Item => {
-            vec![a(&format!("{e}.id == {lua}"))]
+            // The stack's value-carrying leaves: `extra` is `None` in every
+            // seed (see the `ItemStack` sample), `plain` is derived from it.
+            vec![
+                a(&format!("{e}.id == {lua}")),
+                a(&format!("{e}.count == {}", 1 + n)),
+                a(&format!("{e}.damage == {n}")),
+                a(&format!("{e}.extra == nil")),
+            ]
         }
         Conv::OptItem => {
             if lua == "nil" {
                 vec![a(&format!("{e} == nil"))]
             } else {
-                vec![a(&format!("{e}.id == {lua}"))]
+                // Same varying stack as `Conv::Item` (see `sample`).
+                vec![
+                    a(&format!("{e}.id == {lua}")),
+                    a(&format!("{e}.count == {}", 1 + n)),
+                    a(&format!("{e}.damage == {n}")),
+                    a(&format!("{e}.extra == nil")),
+                ]
             }
         }
         Conv::OptPos => {
@@ -3017,6 +3305,172 @@ pub fn assert_lines(
         }
         _ => vec![a(&format!("{e} == {lua}"))],
     }
+}
+
+/// A leaf that shares its asserted value with another leaf of the same seed
+/// by construction: still asserted (for the delivery shape), exempt from the
+/// distinct-values check below. A nested text component carries the same text
+/// as the string beside it.
+const DUP_LEAF_ALLOWLIST: &[(&str, &str, &str)] = &[
+    (
+        "Text",
+        ".component.text",
+        "the component carries the same text",
+    ),
+    (
+        "(Text,u32)",
+        ".component.text",
+        "the component carries the same text",
+    ),
+];
+
+/// Every `(leaf suffix, value)` the generated handler asserts for one
+/// table-shaped field: the same leaves `assert_lines` emits, as data, so the
+/// distinct-values check cannot drift from the asserts. Scalar and
+/// single-value converters assert one value or a fixed note, so they carry
+/// nothing to reorder and list nothing here.
+pub fn table_leaves(
+    conv: &Conv,
+    field: &str,
+    lua: &str,
+    key: Option<&str>,
+    n: usize,
+) -> Vec<(String, String)> {
+    match conv {
+        Conv::Struct => {
+            let key = key.unwrap_or("");
+            if key == "BlockProperties" {
+                return Vec::new();
+            }
+            struct_sample(key, field, n)
+                .unwrap_or_else(|| panic!("no struct asserts for {key}"))
+                .leaves
+        }
+        // The varying stack of `sample`: `extra` is `None` in every seed.
+        Conv::Item => vec![
+            (".id".into(), lua.to_owned()),
+            (".count".into(), format!("{}", 1 + n)),
+            (".damage".into(), format!("{n}")),
+            (".extra".into(), "nil".into()),
+        ],
+        Conv::OptItem => {
+            if lua == "nil" {
+                Vec::new()
+            } else {
+                // Same varying stack as `Conv::Item` (see `sample`).
+                vec![
+                    (".id".into(), lua.to_owned()),
+                    (".count".into(), format!("{}", 1 + n)),
+                    (".damage".into(), format!("{n}")),
+                    (".extra".into(), "nil".into()),
+                ]
+            }
+        }
+        Conv::Player | Conv::PlayerOpt => vec![
+            (".uuid".into(), lua.to_owned()),
+            (".name".into(), "\"test:name\"".into()),
+        ],
+        Conv::Pos | Conv::PosStruct | Conv::MutPos => vec![
+            (".x".into(), format!("{}", 1 + n as i32)),
+            (".y".into(), format!("{}", 2 + n as i32)),
+            (".z".into(), format!("{}", 3 + n as i32)),
+        ],
+        Conv::OptPos => {
+            if lua == "nil" {
+                Vec::new()
+            } else {
+                vec![
+                    (".x".into(), format!("{}", 1 + n as i32)),
+                    (".y".into(), format!("{}", 2 + n as i32)),
+                    (".z".into(), format!("{}", 3 + n as i32)),
+                ]
+            }
+        }
+        Conv::Chunk => vec![
+            (".x".into(), format!("{}", 3 + n as i32)),
+            (".z".into(), format!("{}", -5 - n as i32)),
+        ],
+        Conv::Pair | Conv::MutPair => vec![
+            (".x".into(), format!("{}", 1.5 + n as f64)),
+            (".y".into(), format!("{}", 2.5 + n as f64)),
+        ],
+        Conv::Vec3f | Conv::MutVec3 => vec![
+            (".x".into(), format!("{:?}", 1.0 + n as f64)),
+            (".y".into(), format!("{:?}", 2.0 + n as f64)),
+            (".z".into(), format!("{:?}", 3.0 + n as f64)),
+        ],
+        Conv::IntSeq => vec![
+            ("[1]".into(), format!("{}", 4 + n)),
+            ("[2]".into(), format!("{}", 9 + n)),
+        ],
+        Conv::StrSeq | Conv::MutStrVec => vec![
+            ("[1]".into(), "\"test:seed\"".into()),
+            ("[2]".into(), "\"test:seed2\"".into()),
+        ],
+        _ => Vec::new(),
+    }
+}
+
+/// A sequence row's leaf with its row prefix stripped (`[1].x` to `.x`):
+/// the allowlist names the row-relative leaf.
+fn bare_leaf(suffix: &str) -> &str {
+    // `dot` counts in `rest` (one past the `[`): `[1].x` strips to `.x`.
+    if let Some(rest) = suffix.strip_prefix('[')
+        && let Some(dot) = rest.find("].")
+    {
+        &suffix[dot + 2..]
+    } else {
+        suffix
+    }
+}
+
+/// A struct key with its `Vec`, slice and `Option` wrappers stripped: the
+/// exemption below is about the inner type's shape, whatever wraps it (a
+/// sequence of texts doubles the same component as one text).
+fn inner_key(key: &str) -> &str {
+    let mut key = key;
+    loop {
+        if let Some(inner) = key.strip_prefix("Vec<").and_then(|s| s.strip_suffix('>')) {
+            key = inner;
+        } else if let Some(inner) = key.strip_prefix("&[").and_then(|s| s.strip_suffix(']')) {
+            key = inner;
+        } else if let Some(inner) = key
+            .strip_prefix("Option<")
+            .and_then(|s| s.strip_suffix('>'))
+        {
+            key = inner;
+        } else {
+            return key;
+        }
+    }
+}
+
+/// The first leaf asserting a value another leaf of the same row already
+/// asserts, if any: `None` means every asserted value is its own. Boolean and
+/// nil seeds carry no distinguishing value (three bool leaves cannot be
+/// pairwise distinct; absence has one spelling), and `DUP_LEAF_ALLOWLIST`
+/// names the inherent textual doubles. Anything else is a seed reordering or
+/// zeroing cannot fail.
+pub fn dup_leaf(key: Option<&str>, leaves: &[(String, String)]) -> Option<String> {
+    let key = inner_key(key.unwrap_or(""));
+    let exempt = |suffix: &str, value: &str| {
+        matches!(value, "true" | "false" | "nil")
+            || DUP_LEAF_ALLOWLIST
+                .iter()
+                .any(|(k, s, _)| *k == key && *s == bare_leaf(suffix))
+    };
+    for (i, (suffix, value)) in leaves.iter().enumerate() {
+        if exempt(suffix, value) {
+            continue;
+        }
+        let double = leaves[..i].iter().any(|(prev_suffix, prev_value)| {
+            prev_value == value && !exempt(prev_suffix, prev_value)
+        });
+        if double {
+            return Some(suffix.clone());
+        }
+    }
+    None
 }
 
 /// The handler line editing a mutable field: the Rust side then asserts the
@@ -3224,10 +3678,11 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
             plain(format!("[{x}, {y}]"), format!("{{ x = {x}, y = {y} }}"))
         }
         Conv::Vec3f => {
-            let x = 1.0 + n as f64;
+            // Every component varies with `n`, as for the `[f64;3]` struct.
+            let (x, y, z) = (1.0 + n as f64, 2.0 + n as f64, 3.0 + n as f64);
             plain(
-                format!("[{x:?}, 2.0, 3.0]"),
-                format!("{{ x = {x:?}, y = 2.0, z = 3.0 }}"),
+                format!("[{x:?}, {y:?}, {z:?}]"),
+                format!("{{ x = {x:?}, y = {y:?}, z = {z:?} }}"),
             )
         }
         Conv::IntSeq => {
@@ -3253,9 +3708,13 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
             if n % 2 == 1 {
                 return plain("None".into(), "nil".into());
             }
+            // Same varying stack as `Conv::Item`, so the leaf asserts share
+            // one formula (see `table_leaves`).
             plain(
                 format!(
-                    "Some(&ItemStack {{ item: \"test:{field}\".into(), count: 1, damage: 0, extra: None }})"
+                    "Some(&ItemStack {{ item: \"test:{field}\".into(), count: {}, damage: {}, extra: None }})",
+                    1 + n,
+                    n
                 ),
                 format!("\"test:{field}\""),
             )
@@ -3310,13 +3769,15 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
             )
         }
         Conv::MutVec3 => {
-            let x = 1.0 + n as f64;
-            let w = x + 10.0;
+            // Every component varies with `n`, as for the `[f64;3]` struct;
+            // the write sits ten above the seed on every axis.
+            let (x, y, z) = (1.0 + n as f64, 2.0 + n as f64, 3.0 + n as f64);
+            let (wx, wy, wz) = (x + 10.0, y + 10.0, z + 10.0);
             mut_sample(
-                format!("[{x:?}, 2.0, 3.0]"),
-                format!("{{ x = {x:?}, y = 2.0, z = 3.0 }}"),
-                format!("[{w:?}, 2.0, 3.0]"),
-                format!("{{ x = {w:?}, y = 2.0, z = 3.0 }}"),
+                format!("[{x:?}, {y:?}, {z:?}]"),
+                format!("{{ x = {x:?}, y = {y:?}, z = {z:?} }}"),
+                format!("[{wx:?}, {wy:?}, {wz:?}]"),
+                format!("{{ x = {wx:?}, y = {wy:?}, z = {wz:?} }}"),
             )
         }
         Conv::MutPair => {

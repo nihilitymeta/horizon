@@ -2,7 +2,8 @@
 //! samples (`ruby:drum`, `Alex`, `81000`) the model-derived tests do not
 //! replace. The model-derived tests in `mod.rs` skip these hooks.
 use super::test_support::{
-    FakeHost, FakeLevel, boxed, drop_dir, entity_reads, loaded, no_error, reset_entity_reads,
+    FakeHost, FakeLevel, boxed, drop_dir, entity_reads, loaded, loaded_tracked, no_error,
+    reset_entity_reads, witness,
 };
 use horizon_client::mod_api::{
     BlockPos, BlockStateId, ItemStack, LevelDimension, dispatch_anvil_damaged,
@@ -16,22 +17,25 @@ use horizon_client::mod_api::{
 #[test]
 fn generated_level_tick_pre() {
     const LUA: &str = r#"horizon.on("level_tick_pre", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.dimension == "minecraft:overworld", "dimension")
 end)"#;
-    let (m, id, dir) = loaded("gen_level_tick_pre", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_level_tick_pre", LUA);
     let mods = boxed(m);
     dispatch_level_tick_pre(&mut FakeHost::empty(), &mods, "minecraft:overworld");
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_chunk_load() {
     const LUA: &str = r#"horizon.on("chunk_load", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.dimension == "minecraft:overworld", "dimension")
   assert(event.chunk.x == 3 and event.chunk.z == -5, "chunk")
   assert(event.new == true, "new")
 end)"#;
-    let (m, id, dir) = loaded("gen_chunk_load", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_chunk_load", LUA);
     let mods = boxed(m);
     dispatch_chunk_load(
         &mut FakeHost::empty(),
@@ -40,17 +44,19 @@ end)"#;
         [3, -5],
         true,
     );
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_block_cook() {
     const LUA: &str = r#"horizon.on("block_cook", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.pos.x == 1 and event.pos.y == 2 and event.pos.z == 3, "pos")
   assert(event.item == "minecraft:wheat", "item")
   assert(event.result == "minecraft:bread", "result")
 end)"#;
-    let (m, id, dir) = loaded("gen_block_cook", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_block_cook", LUA);
     let mods = boxed(m);
     dispatch_block_cook(
         &FakeHost::empty(),
@@ -59,18 +65,20 @@ end)"#;
         "minecraft:wheat",
         "minecraft:bread",
     );
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_anvil_damaged() {
     const LUA: &str = r#"horizon.on("anvil_damaged", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.dimension == "minecraft:overworld", "dimension")
   assert(event.pos.x == 4 and event.pos.y == 64 and event.pos.z == -2, "pos")
   assert(event.from == "minecraft:damaged_anvil", "from")
   assert(event.to == "minecraft:chipped_anvil", "to")
 end)"#;
-    let (m, id, dir) = loaded("gen_anvil_damaged", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_anvil_damaged", LUA);
     let mods = boxed(m);
     dispatch_anvil_damaged(
         &mut FakeHost::empty(),
@@ -80,19 +88,21 @@ end)"#;
         "minecraft:damaged_anvil",
         "minecraft:chipped_anvil",
     );
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_player_container_close() {
     const LUA: &str = r#"horizon.on("player_container_close", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.player.uuid == "00000000-0000-0000-0000-000000000007", "uuid")
   assert(event.player.name == "Alex", "name")
   assert(event.dimension == "minecraft:overworld", "dimension")
   assert(event.menu == "minecraft:chest", "menu")
   assert(event.pos == nil, "pos")
 end)"#;
-    let (m, id, dir) = loaded("gen_player_container_close", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_player_container_close", LUA);
     let mods = boxed(m);
     dispatch_player_container_close(
         &mut FakeHost::empty(),
@@ -103,18 +113,20 @@ end)"#;
         "minecraft:chest",
         None,
     );
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_block_burn() {
     const LUA: &str = r#"horizon.on("block_burn", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.dimension == "minecraft:overworld", "dimension")
   assert(event.pos.x == 1 and event.pos.y == 2 and event.pos.z == 3, "pos")
   assert(event.block == "minecraft:stone", "block")
   horizon.cancel()
 end)"#;
-    let (m, id, dir) = loaded("gen_block_burn", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_block_burn", LUA);
     let mods = boxed(m);
     let mut cancel = false;
     dispatch_block_burn(
@@ -125,18 +137,20 @@ end)"#;
         &mut cancel,
     );
     assert!(cancel, "a cancel takes the burn");
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_bell_ring() {
     const LUA: &str = r#"horizon.on("bell_ring", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.player == "00000000-0000-0000-0000-000000000007", "player")
   assert(event.block == "minecraft:stone", "block")
   assert(event.pos.x == 0 and event.pos.y == 64 and event.pos.z == 0, "pos")
   horizon.cancel()
 end)"#;
-    let (m, id, dir) = loaded("gen_bell_ring", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_bell_ring", LUA);
     let mods = boxed(m);
     let mut cancel = false;
     dispatch_bell_ring(
@@ -148,19 +162,21 @@ end)"#;
         &mut cancel,
     );
     assert!(cancel, "a cancel stills the bell");
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_arrow_loose() {
     const LUA: &str = r#"horizon.on("arrow_loose", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.stack.id == "minecraft:bow", "item")
   assert(event.has_ammo == true, "ammo")
   assert(event.charge == 0, "charge")
   event.charge = 3
   horizon.cancel()
 end)"#;
-    let (m, id, dir) = loaded("gen_arrow_loose", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_arrow_loose", LUA);
     let mods = boxed(m);
     let stack = ItemStack {
         item: "minecraft:bow".into(),
@@ -180,17 +196,19 @@ end)"#;
     );
     assert!(canceled, "a cancel holds the arrow");
     assert_eq!(charge, 3, "the edited charge is written back");
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_block_lock_check() {
     const LUA: &str = r#"horizon.on("block_lock_check", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.player.name == "Alex", "player")
   assert(event.pos.x == 5 and event.pos.y == 6 and event.pos.z == 7, "pos")
   horizon.cancel()
 end)"#;
-    let (m, id, dir) = loaded("gen_block_lock_check", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_block_lock_check", LUA);
     let mods = boxed(m);
     let mut locked = false;
     dispatch_block_lock_check(
@@ -202,40 +220,46 @@ end)"#;
         &mut locked,
     );
     assert!(locked, "a cancel keeps the lock");
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_component_types() {
     const LUA: &str = r#"horizon.on("component_types", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.types[1] == "minecraft:existing", "seed")
   table.insert(event.types, "ruby:part")
 end)"#;
-    let (m, id, dir) = loaded("gen_component_types", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_component_types", LUA);
     let mods = boxed(m);
     let mut types = vec!["minecraft:existing".to_owned()];
     dispatch_component_types(&mods, &mut types);
     assert_eq!(types, ["minecraft:existing", "ruby:part"]);
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_datapack_sync() {
     const LUA: &str = r#"horizon.on("datapack_sync", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.recipe_types[1] == "minecraft:crafting", "seed")
   event.recipe_types[1] = "ruby:pressing"
 end)"#;
-    let (m, id, dir) = loaded("gen_datapack_sync", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_datapack_sync", LUA);
     let mods = boxed(m);
     let mut types = vec!["minecraft:crafting".to_owned()];
     dispatch_datapack_sync(&mut FakeHost::empty(), &mods, &mut types);
     assert_eq!(types, ["ruby:pressing"]);
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_screen_tooltip() {
     const LUA: &str = r#"horizon.on("screen_tooltip", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.block == "ruby:gauge", "block")
   assert(event.data[1] == 4 and event.data[2] == 9, "data")
   assert(event.at.x == 1.5 and event.at.y == 2.5, "at")
@@ -243,7 +267,7 @@ fn generated_screen_tooltip() {
   event.lines[1] = "new"
   table.insert(event.lines, "added")
 end)"#;
-    let (m, id, dir) = loaded("gen_screen_tooltip", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_screen_tooltip", LUA);
     let mods = boxed(m);
     let mut lines = vec!["old".to_owned()];
     dispatch_screen_tooltip(
@@ -255,18 +279,26 @@ end)"#;
         &mut lines,
     );
     assert_eq!(lines, ["new", "added"]);
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_is_bonemeal_success() {
+    // The dispatched state (8, `test:state8`) differs from the level's state
+    // at the position (`FakeLevel` answers 7, stone, everywhere): asserting
+    // the dispatched state's block proves `block` comes from the event's
+    // `state`, not from the position's state. Sourcing it from the position
+    // would deliver stone and fail this test.
     const LUA: &str = r#"horizon.on("is_bonemeal_success", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.dimension == "minecraft:overworld", "dimension")
-  assert(event.block == "minecraft:stone", "block")
+  assert(event.pos.x == 1 and event.pos.y == 2 and event.pos.z == 3, "pos")
+  assert(event.block == "test:state8", "block")
   assert(event.success == false, "seed")
   event.success = true
 end)"#;
-    let (m, id, dir) = loaded("gen_is_bonemeal_success", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_is_bonemeal_success", LUA);
     let mods = boxed(m);
     let mut success = false;
     dispatch_is_bonemeal_success(
@@ -274,36 +306,40 @@ end)"#;
         &mods,
         LevelDimension::Overworld,
         BlockPos::new(1, 2, 3),
-        BlockStateId(7),
+        BlockStateId(8),
         &mut success,
     );
     assert!(success, "the grown flag is written back");
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_item_fluid_tank() {
     const LUA: &str = r#"horizon.on("item_fluid_tank", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.item == "ruby:drum", "item")
   assert(event.capacity == nil, "seed")
   event.capacity = 81000
 end)"#;
-    let (m, id, dir) = loaded("gen_item_fluid_tank", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_item_fluid_tank", LUA);
     let mods = boxed(m);
     let mut capacity = None;
     dispatch_item_fluid_tank(&FakeHost::empty(), &mods, "ruby:drum", &mut capacity);
     assert_eq!(capacity, Some(81000));
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_tooltip_component() {
     const LUA: &str = r#"horizon.on("tooltip_component", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.stack.id == "ruby:gauge", "item")
   assert(event.size == nil, "seed")
   event.size = { x = 16, y = 8 }
 end)"#;
-    let (m, id, dir) = loaded("gen_tooltip_component", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_tooltip_component", LUA);
     let mods = boxed(m);
     let stack = ItemStack {
         item: "ruby:gauge".into(),
@@ -314,19 +350,21 @@ end)"#;
     let mut size = None;
     dispatch_tooltip_component(&FakeHost::empty(), &mods, &stack, &mut size);
     assert_eq!(size, Some([16.0, 8.0]));
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_screen_click() {
     const LUA: &str = r#"horizon.on("screen_click", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.block == "ruby:gauge", "block")
   assert(event.data[1] == 4, "data")
   assert(event.right == true, "button kind")
   assert(event.button == nil, "seed")
   event.button = 2
 end)"#;
-    let (m, id, dir) = loaded("gen_screen_click", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_screen_click", LUA);
     let mods = boxed(m);
     let mut button = None;
     dispatch_screen_click(
@@ -339,19 +377,21 @@ end)"#;
         &mut button,
     );
     assert_eq!(button, Some(2));
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_prepare_anvil() {
     const LUA: &str = r#"horizon.on("prepare_anvil", function(event)
+  __witness = (__witness or 0) + 1
   assert(event.player.name == "Alex", "player")
   assert(event.cost == 5, "cost")
   assert(event.result == nil, "seed")
   event.result = { id = "minecraft:diamond_sword", count = 1 }
   event.cost = 9
 end)"#;
-    let (m, id, dir) = loaded("gen_prepare_anvil", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_prepare_anvil", LUA);
     let mods = boxed(m);
     let mut result = None;
     let mut cost = 5;
@@ -368,13 +408,14 @@ end)"#;
     let result = result.expect("a replaced result");
     assert_eq!(&*result.item, "minecraft:diamond_sword");
     assert_eq!(result.count, 1);
+    assert_eq!(witness(&lua), 1, "the handler ran");
     no_error(&id);
     drop_dir(dir);
 }
 #[test]
 fn generated_no_handler_does_no_lua_work() {
     const LUA: &str = "-- nothing registered";
-    let (m, id, dir) = loaded("gen_no_handler", LUA);
+    let (m, id, dir, lua) = loaded_tracked("gen_no_handler", LUA);
     let mods = boxed(m);
     dispatch_level_tick_pre(&mut FakeHost::empty(), &mods, "minecraft:overworld");
     dispatch_chunk_load(
@@ -508,6 +549,7 @@ fn generated_no_handler_does_no_lua_work() {
         &mut result,
     );
     assert!(result.is_none() && cost == 5);
+    assert_eq!(witness(&lua), 0, "no handler ran");
     no_error(&id);
     drop_dir(dir);
 }
