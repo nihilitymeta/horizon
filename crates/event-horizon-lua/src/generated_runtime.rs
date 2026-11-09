@@ -1569,6 +1569,53 @@ macro_rules! gen_mob_ai_register {
     };
 }
 
+/// The `batch` function table every frame hook seeds in its event table:
+/// the eight draw helpers as scoped functions over the shared host and
+/// the frame's borrow. One copy for both `gen_frame!` arms; the arms keep
+/// their own early-out, `Reader::Shared`, `FRAME_BUDGET` and `finish`, so
+/// a third shape cannot inherit them by accident.
+pub(crate) fn batch_table<'s, 'e: 's, 'h: 's>(
+    scope: &'s mlua::Scope<'s, 'e>,
+    lua: &mlua::Lua,
+    shared: &'h dyn horizon_client::mod_api::Host,
+    batch: &'h std::cell::RefCell<&mut horizon_client::mod_api::HudBatch>,
+) -> mlua::Result<mlua::Table> {
+    let batch_table = lua.create_table()?;
+    batch_table.set(
+        "fill",
+        scope.create_function(crate::hud_hooks::fill_fn(shared, batch))?,
+    )?;
+    batch_table.set(
+        "text",
+        scope.create_function(crate::hud_hooks::text_fn(shared, batch))?,
+    )?;
+    batch_table.set(
+        "sprite",
+        scope.create_function(crate::hud_hooks::sprite_fn(shared, batch))?,
+    )?;
+    batch_table.set(
+        "item",
+        scope.create_function(crate::hud_hooks::item_fn(shared, batch))?,
+    )?;
+    batch_table.set(
+        "item_stack",
+        scope.create_function(crate::hud_hooks::item_stack_fn(shared, batch))?,
+    )?;
+    batch_table.set(
+        "item_model",
+        scope.create_function(crate::hud_hooks::item_model_fn(shared, batch))?,
+    )?;
+    batch_table.set(
+        "quad",
+        scope.create_function(crate::hud_hooks::quad_fn(shared, batch))?,
+    )?;
+    batch_table.set(
+        "text_width",
+        scope.create_function(crate::hud_hooks::text_width_fn(shared))?,
+    )?;
+    Ok(batch_table)
+}
+
 /// A frame hook (`hud`, `gui_layer_post`): like a `game_mut` listen hook,
 /// but the event carries borrowed draw handles as tables of scoped
 /// functions, the handlers read through the hook's shared host, and the
@@ -1602,39 +1649,8 @@ macro_rules! gen_frame {
                 let table = lua.create_table()?;
                 #[cfg(test)]
                 crate::generated_runtime::note_event_table();
-                let batch_table = lua.create_table()?;
-                batch_table.set(
-                    "fill",
-                    scope.create_function(crate::hud_hooks::fill_fn(shared, &batch))?,
-                )?;
-                batch_table.set(
-                    "text",
-                    scope.create_function(crate::hud_hooks::text_fn(shared, &batch))?,
-                )?;
-                batch_table.set(
-                    "sprite",
-                    scope.create_function(crate::hud_hooks::sprite_fn(shared, &batch))?,
-                )?;
-                batch_table.set(
-                    "item",
-                    scope.create_function(crate::hud_hooks::item_fn(shared, &batch))?,
-                )?;
-                batch_table.set(
-                    "item_stack",
-                    scope.create_function(crate::hud_hooks::item_stack_fn(shared, &batch))?,
-                )?;
-                batch_table.set(
-                    "item_model",
-                    scope.create_function(crate::hud_hooks::item_model_fn(shared, &batch))?,
-                )?;
-                batch_table.set(
-                    "quad",
-                    scope.create_function(crate::hud_hooks::quad_fn(shared, &batch))?,
-                )?;
-                batch_table.set(
-                    "text_width",
-                    scope.create_function(crate::hud_hooks::text_width_fn(shared))?,
-                )?;
+                let batch_table =
+                    crate::generated_runtime::batch_table(scope, lua, shared, &batch)?;
                 table.set("batch", batch_table)?;
                 let corners_table = lua.create_table()?;
                 corners_table.set(
@@ -1666,39 +1682,8 @@ macro_rules! gen_frame {
                 #[cfg(test)]
                 crate::generated_runtime::note_event_table();
                 table.set("layer", _event.layer)?;
-                let batch_table = lua.create_table()?;
-                batch_table.set(
-                    "fill",
-                    scope.create_function(crate::hud_hooks::fill_fn(shared, &batch))?,
-                )?;
-                batch_table.set(
-                    "text",
-                    scope.create_function(crate::hud_hooks::text_fn(shared, &batch))?,
-                )?;
-                batch_table.set(
-                    "sprite",
-                    scope.create_function(crate::hud_hooks::sprite_fn(shared, &batch))?,
-                )?;
-                batch_table.set(
-                    "item",
-                    scope.create_function(crate::hud_hooks::item_fn(shared, &batch))?,
-                )?;
-                batch_table.set(
-                    "item_stack",
-                    scope.create_function(crate::hud_hooks::item_stack_fn(shared, &batch))?,
-                )?;
-                batch_table.set(
-                    "item_model",
-                    scope.create_function(crate::hud_hooks::item_model_fn(shared, &batch))?,
-                )?;
-                batch_table.set(
-                    "quad",
-                    scope.create_function(crate::hud_hooks::quad_fn(shared, &batch))?,
-                )?;
-                batch_table.set(
-                    "text_width",
-                    scope.create_function(crate::hud_hooks::text_width_fn(shared))?,
-                )?;
+                let batch_table =
+                    crate::generated_runtime::batch_table(scope, lua, shared, &batch)?;
                 table.set("batch", batch_table)?;
                 self.run_handlers_with(hook, None, Reader::Shared(shared), table, FRAME_BUDGET)
             });

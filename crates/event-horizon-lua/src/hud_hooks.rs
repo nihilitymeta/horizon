@@ -844,6 +844,59 @@ mod tests {
     }
 
     #[test]
+    fn an_unheard_frame_clears_a_stale_overrun_count() {
+        let (m, id, dir) = hmod(
+            "stale",
+            "ruby_hud_stale",
+            r#"horizon.on("hud", function() while true do end end)"#,
+        );
+        let cell = Arc::new(Mutex::new(m));
+        let mods = vec![Box::new(Shared(cell.clone())) as Box<dyn Hooks>];
+        let dispatch = |host: &mut RecordingHost| {
+            let mut batch = HudBatch::new([800, 600]);
+            let mut corners = Corners::new(800.0, 600.0, 0.0);
+            dispatch_hud(host, &mods, &mut batch, &mut corners);
+        };
+        let mut host = RecordingHost::default();
+        // Three consecutive misses disable the hook.
+        for _ in 0..3 {
+            dispatch(&mut host);
+        }
+        assert!(
+            last_error(&id)
+                .expect("the loop failed")
+                .contains("disabled"),
+            "{:?}",
+            last_error(&id)
+        );
+        // One more dispatch while the handlers are already nil: the
+        // early-out treats the unheard frame as a clean outcome and
+        // clears the stale count of 3. Nothing new is reported.
+        dispatch(&mut host);
+        assert!(
+            last_error(&id)
+                .expect("the loop failed")
+                .contains("disabled"),
+            "{:?}",
+            last_error(&id)
+        );
+        // Re-register without `/reload`: the next miss stops the handler
+        // without disabling it, which only holds when the unheard frame
+        // cleared the count above.
+        cell.lock()
+            .unwrap()
+            .lua
+            .load(r#"horizon.on("hud", function() while true do end end)"#)
+            .exec()
+            .unwrap();
+        dispatch(&mut host);
+        let e = last_error(&id).expect("the loop failed");
+        assert!(e.contains("ran over its time budget"), "{e}");
+        assert!(!e.contains("disabled"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn a_kind_filter_on_a_frame_hook_fails_the_load() {
         let dir = std::env::temp_dir().join(format!("horizon-lua-hud-kind-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

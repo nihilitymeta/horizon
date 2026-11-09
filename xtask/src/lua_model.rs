@@ -915,6 +915,13 @@ fn mentions_stack(ty: &syn::Type) -> bool {
 }
 
 /// `&mut` fields: copied into the table and written back after the call.
+/// The frame hooks: the hooks whose `HudBatch` (and, for `hud`, `Corners`)
+/// the `gen_frame!` macro's arms implement. A new frame hook needs an entry
+/// here AND a new `gen_frame!` arm whose tokens match its fields; the
+/// `model.frame` flag alone never suffices, and widening this list to a
+/// hook with any other shape fails macro expansion by design.
+const FRAME_HOOKS: &[&str] = &["hud", "gui_layer_post"];
+
 /// `is_out` is the hook's collect out (the only `&mut` whose write-back the
 /// contract owns).
 fn mut_of(
@@ -1037,17 +1044,20 @@ fn mut_of(
     }
     // A draw hook's borrowed handles: the event table carries them as
     // scoped-function tables, seeded inline by the bespoke frame arm
-    // calling the `hud_hooks` builders. Name-gated, not shape-gated:
-    // half a dozen other hooks hold a `&mut HudBatch` (`screen_draw`,
-    // `gui_layer_pre`, `item_decorations`, `gui_render_post`,
-    // `screen_render_post`, `tooltip_component_draw`) with no frame
-    // design of their own, and a shape gate would flip them all to
-    // generated. They keep the `cannot_id` reason below; `cannot_id`
+    // calling the `hud_hooks` builders. Name-gated on `FRAME_HOOKS`,
+    // not shape-gated: eight other hooks hold a `&mut HudBatch`
+    // (`screen_draw`, `gui_layer_pre`, `item_decorations`,
+    // `gui_render_post`, `screen_render_post`, `tooltip_component_draw`,
+    // `screen_transparent_background`, `tooltip_render_pre`) with no
+    // frame design of their own, and a shape gate would flip them all
+    // to generated. They keep the `cannot_id` reason below; `cannot_id`
     // keeps its entries for them.
-    if (hook == "hud" || hook == "gui_layer_post") && is_path(elem, "HudBatch") {
+    if FRAME_HOOKS.contains(&hook) && is_path(elem, "HudBatch") {
         return FieldOutcome::Conv(Conv::HudBatch, "HudBatch".into());
     }
-    if hook == "hud" && is_path(elem, "Corners") {
+    // Only `hud` (`FRAME_HOOKS[0]`) carries `Corners`: the only hook
+    // whose `gen_frame!` arm seeds a corners table.
+    if hook == FRAME_HOOKS[0] && is_path(elem, "Corners") {
         return FieldOutcome::Conv(Conv::Corners, "HudCorners".into());
     }
     opaque_of(hook, elem, adapter, cannot)
@@ -4817,7 +4827,9 @@ mod tests {
             class => panic!("gui_layer_post should generate, got {class:?}"),
         }
         // The other draw-handle holders keep no frame design: their batch
-        // still cannot enter the Lua state, so they stay cannot.
+        // still cannot enter the Lua state, so they stay cannot with the
+        // render-state refusal (a bare `Cannot` would also pass if the
+        // reason ever changed shape).
         for name in [
             "screen_draw",
             "gui_layer_pre",
@@ -4825,11 +4837,16 @@ mod tests {
             "gui_render_post",
             "screen_render_post",
             "tooltip_component_draw",
+            "screen_transparent_background",
+            "tooltip_render_pre",
         ] {
-            assert!(
-                matches!(class_of(name), Class::Cannot(_)),
-                "{name} stays cannot with its borrowed batch"
-            );
+            match class_of(name) {
+                Class::Cannot(reason) => assert!(
+                    reason.contains("HudBatch") && reason.contains("render state"),
+                    "{name} refusal still names the HudBatch render-state reason: {reason}"
+                ),
+                class => panic!("{name} stays cannot with its borrowed batch, got {class:?}"),
+            }
         }
         // A plain `ticks` number never meant the level-tick host.
         match class_of("player_item_cooldown") {

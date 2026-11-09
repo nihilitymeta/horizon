@@ -398,9 +398,11 @@ fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
         } else if matches!(model.kind, Kind::Mob { .. }) {
             Some("gen_mob_ai_register")
         } else if model.frame {
-            // Gated on the model flag (a `HudBatch` parameter), not the
-            // hook's name: the next frame hook classifies into this arm
-            // without an emitter edit.
+            // A frame hook needs both an allowlist entry (`FRAME_HOOKS`
+            // in `lua_model.rs`, which gates the `HudBatch`/`Corners`
+            // conversion) and a `gen_frame!` arm whose tokens match its
+            // fields: the two arms' patterns are literal, so any other
+            // shape fails expansion. Nothing else is threaded through.
             Some("gen_frame")
         } else {
             None
