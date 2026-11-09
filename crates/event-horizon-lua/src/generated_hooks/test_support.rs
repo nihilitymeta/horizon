@@ -7,10 +7,12 @@ use crate::lua_mods::LuaMod;
 use horizon_client::dev_input::mods::{ModStatus, set_status, status};
 use horizon_client::mod_api::{
     AttachmentError, Attachments, BlockStateId, Compound, EntityRef, Holder, Hooks, Host,
-    LegacyRandom, LevelHost, LevelRandomHost, NativeServerPlayer, NativeWorldEpoch, Text,
+    LegacyRandom, LevelHost, LevelRandomHost, LevelTicksHost, LevelWriteHost, NativeServerPlayer,
+    NativeWorldEpoch, ParticleOptions, Text,
 };
 use horizon_mods::Package;
 use mlua::Lua;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// One mod per name, so duo tests loading two mods get two status rows:
@@ -270,9 +272,9 @@ impl LevelHost for FakeLevel {
         count_level_read();
         None
     }
-    fn mod_block_entity_data(&self, _: [i32; 3]) -> Option<Compound> {
+    fn mod_block_entity_data(&self, pos: [i32; 3]) -> Option<Compound> {
         count_level_read();
-        None
+        LEVEL_DATA.with(|slot| slot.borrow().get(&pos).cloned())
     }
     fn state_block(&self, state: BlockStateId) -> Option<String> {
         count_level_read();
@@ -289,5 +291,104 @@ impl LevelRandomHost for FakeLevel {
     }
     fn random(&mut self) -> Option<&mut LegacyRandom> {
         None
+    }
+}
+
+thread_local! {
+    /// `set_block_property` calls the fake level answered since
+    /// `reset_level_writes`: what the level-tick tests assert.
+    static LEVEL_WRITES: std::cell::RefCell<Vec<([i32; 3], String, String, i32)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// `schedule_block_tick` calls since `reset_level_scheduled`.
+    static LEVEL_SCHEDULED: std::cell::RefCell<Vec<([i32; 3], String, i32)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// `summon` calls since `reset_level_summons`.
+    static LEVEL_SUMMONS: std::cell::RefCell<Vec<(String, [f64; 3])>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// `set_mod_block_entity_data` calls since `reset_level_data_writes`.
+    static LEVEL_DATA_WRITES: std::cell::RefCell<Vec<([i32; 3], Compound)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// The mod block entities' saved data by position: what
+    /// `mod_block_entity_data` answers. Empty unless a test sets it, so the
+    /// stock tests seed `data` as nil.
+    static LEVEL_DATA: std::cell::RefCell<HashMap<[i32; 3], Compound>> = std::cell::RefCell::new(HashMap::new());
+}
+
+/// Every `set_block_property` call the fake level answered.
+pub fn level_writes() -> Vec<([i32; 3], String, String, i32)> {
+    LEVEL_WRITES.with(|writes| writes.borrow().clone())
+}
+pub fn reset_level_writes() {
+    LEVEL_WRITES.with(|writes| writes.borrow_mut().clear());
+}
+/// Every `schedule_block_tick` call the fake level answered.
+pub fn level_scheduled() -> Vec<([i32; 3], String, i32)> {
+    LEVEL_SCHEDULED.with(|ticks| ticks.borrow().clone())
+}
+pub fn reset_level_scheduled() {
+    LEVEL_SCHEDULED.with(|ticks| ticks.borrow_mut().clear());
+}
+/// Every `summon` call the fake level answered.
+pub fn level_summons() -> Vec<(String, [f64; 3])> {
+    LEVEL_SUMMONS.with(|summons| summons.borrow().clone())
+}
+pub fn reset_level_summons() {
+    LEVEL_SUMMONS.with(|summons| summons.borrow_mut().clear());
+}
+/// Every `set_mod_block_entity_data` call the fake level answered.
+pub fn level_data_writes() -> Vec<([i32; 3], Compound)> {
+    LEVEL_DATA_WRITES.with(|writes| writes.borrow().clone())
+}
+pub fn reset_level_data_writes() {
+    LEVEL_DATA_WRITES.with(|writes| writes.borrow_mut().clear());
+}
+/// Answer `data` for `mod_block_entity_data` at `pos`.
+pub fn set_level_data(pos: [i32; 3], data: Compound) {
+    LEVEL_DATA.with(|slot| slot.borrow_mut().insert(pos, data));
+}
+pub fn reset_level_data() {
+    LEVEL_DATA.with(|slot| slot.borrow_mut().clear());
+}
+
+impl LevelTicksHost for FakeLevel {
+    fn schedule_block_tick(&mut self, pos: [i32; 3], block: &str, delay: i32) -> bool {
+        LEVEL_SCHEDULED.with(|ticks| ticks.borrow_mut().push((pos, block.to_owned(), delay)));
+        true
+    }
+    fn schedule_fluid_tick(&mut self, _: [i32; 3], _: &str, _: i32) -> bool {
+        false
+    }
+}
+
+impl LevelWriteHost for FakeLevel {
+    fn set_block_property(&mut self, pos: [i32; 3], key: &str, value: &str, flags: i32) -> bool {
+        LEVEL_WRITES.with(|writes| {
+            writes
+                .borrow_mut()
+                .push((pos, key.to_owned(), value.to_owned(), flags))
+        });
+        true
+    }
+    fn summon(&mut self, kind: &str, pos: [f64; 3], _: Compound) -> bool {
+        LEVEL_SUMMONS.with(|summons| summons.borrow_mut().push((kind.to_owned(), pos)));
+        true
+    }
+    fn set_mod_block_entity_data(&mut self, pos: [i32; 3], data: Compound) -> bool {
+        LEVEL_DATA_WRITES.with(|writes| writes.borrow_mut().push((pos, data)));
+        true
+    }
+    fn play_sound(&mut self, _: &str, _: [f64; 3], _: usize, _: f32, _: f32) -> bool {
+        false
+    }
+    fn send_particles(
+        &mut self,
+        _: &ParticleOptions,
+        _: Option<BlockStateId>,
+        _: [f64; 3],
+        _: [f64; 3],
+        _: f64,
+        _: i32,
+    ) -> bool {
+        false
     }
 }

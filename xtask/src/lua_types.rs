@@ -111,21 +111,14 @@ const TYPES: &[(&str, &str)] = &[
 /// Every hook a script registers for (`horizon.on(name, fn[, kind])`) and
 /// its handler's type; the runtime's `LUA_HOOK_NAMES` names the same hooks.
 const HOOKS: &[(&str, &str)] = &[
-    // `server_tick`, `world_lifecycle` and `loot_drops` are generated now
-    // (an event table each): their overloads come from the model below.
+    // `server_tick`, `world_lifecycle`, `loot_drops`, `random_tick` and
+    // `tick_block` are generated now (an event table each): their overloads
+    // come from the model below.
     (
         "mob_spawned",
         "(dimension: string, kind: string, x: number, y: number, z: number, natural: boolean) -> ()",
     ),
     ("mob_ai_register", "(mob: MobView) -> ()"),
-    (
-        "random_tick",
-        "(dimension: string, block: string, x: number, y: number, z: number, props: Props, data: Data?) -> ()",
-    ),
-    (
-        "tick_block",
-        "(dimension: string, block: string, x: number, y: number, z: number, props: Props, data: Data?) -> ()",
-    ),
     (
         "right_click_block",
         "(x: number, y: number, z: number, block: string, face: Vec3, player: Player, held: Held?, data: Data?) -> ()",
@@ -281,11 +274,13 @@ struct GeneratedHook {
 }
 
 /// The `.d.lua` type of an extra table field (the spike's hand notes: the
-/// block at the event's `pos`, or the block of its `state`).
+/// block at the event's `pos`, or the block of its `state`; a level tick's
+/// `block` with its `props` and `data`).
 fn extra_ts(conv: &super::lua_model::Conv) -> &'static str {
     match conv {
         super::lua_model::Conv::BlockAtPos | super::lua_model::Conv::BlockFromState => "string",
-        super::lua_model::Conv::StateProps => "Props",
+        super::lua_model::Conv::StateProps | super::lua_model::Conv::LevelProps => "Props",
+        super::lua_model::Conv::LevelData => "Data?",
         _ => "any",
     }
 }

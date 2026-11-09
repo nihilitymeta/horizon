@@ -309,6 +309,7 @@ export type PlayerDestroyItemEvent = { player: PlayerRef, item: string, slot: st
 export type PlayerEditBookEvent = { player: PlayerRef, pages: number, signing: boolean }
 export type PlayerEggThrowEvent = { player: PlayerRef }
 export type PlayerElytraBoostEvent = { player: PlayerRef }
+export type PlayerExpCooldownChangeEvent = { player: PlayerRef, ticks: number }
 export type PlayerFishEvent = { player: PlayerRef, state: number }
 export type PlayerFishV2Event = { player: PlayerRef, state: number, hand: "main" | "off" }
 export type PlayerFlowerPotManipulateEvent = { player: PlayerRef, pos: Vec3, plant: string }
@@ -316,6 +317,7 @@ export type PlayerGameModeChangedEvent = { player: PlayerRef, from: number, to: 
 export type PlayerHurtByPlayerEvent = { attacker: number, attacker_entity: number, victim: number, victim_entity: number, source: string, damage_type: string, amount: number }
 export type PlayerInputEvent = { player: PlayerRef, flags: number }
 export type PlayerInsertLecternBookEvent = { player: PlayerRef, pos: Vec3, book: string }
+export type PlayerItemCooldownEvent = { player: PlayerRef, item: string, ticks: number }
 export type PlayerItemFrameChangeEvent = { player: PlayerRef, entity_id: number, action: string, item: string, rotation: number }
 export type PlayerItemHeldEvent = { player: PlayerRef, from_slot: number, to_slot: number }
 export type PlayerItemMendEvent = { player: PlayerRef, item: string, repair: number, experience: number }
@@ -348,6 +350,7 @@ export type PlayerRespawnPositionEvent = { player: PlayerRef, dimension: string,
 export type PlayerRiptideEvent = { player: PlayerRef }
 export type PlayerSaveToFileEvent = { player: PlayerRef, directory: string }
 export type PlayerShearEntityEvent = { player: PlayerRef, entity_id: number, off_hand: boolean }
+export type PlayerShieldDisableEvent = { player: PlayerRef, ticks: number }
 export type PlayerSpawnLocationEvent = { player: PlayerRef, dimension: string, position: Vec3, rotation: Vec2 }
 export type PlayerSpawnPointSetEvent = { player: PlayerRef, dimension: string, pos: Vec3, cause: string }
 export type PlayerSprintEvent = { player: PlayerRef, sprinting: boolean }
@@ -384,6 +387,7 @@ export type PrepareSmithingEvent = { player: PlayerRef, pos: Vec3, result: Item?
 export type ProjectileWorldBorderEvent = { dimension: string, entity: number, kind: string, pos: Vec3, velocity: Vec3, collide: boolean }
 export type RaidSpawnWaveEvent = { raid: number, pos: Vec3, wave: number, raiders: number }
 export type RaidStateChangeEvent = { raid: number, pos: Vec3, state: string }
+export type RandomTickEvent = { dimension: string, pos: Vec3, block: string, props: Props, data: Data? }
 export type RecipeBookCategoriesEvent = { categories: { { id: string, recipe_type: string, icon: string } } }
 export type RecipeSourcesEvent = { player: number, menu: string, pos: Vec3, sources: { Vec3 } }
 export type RecipesReceivedEvent = { recipe_types: { string } }
@@ -426,6 +430,7 @@ export type TabCompleteV2Event = { player: PlayerRef, label: string, arguments: 
 export type TargetHitEvent = { dimension: string, pos: Vec3, strength: number }
 export type ThunderChangeEvent = { dimension: string, thundering: boolean }
 export type TickEvent = {  }
+export type TickBlockEvent = { dimension: string, pos: Vec3, block: string, props: Props, data: Data? }
 export type TimeSkipEvent = { dimension: string, from: number, to: number, cause: string }
 export type TntPrimedEvent = { player: string?, pos: Vec3 }
 export type ToastAddEvent = { kind: string, id: string }
@@ -461,8 +466,6 @@ export type ZoomEvent = { zoom: { factor: number, smooth: boolean, turn: number 
 export type HorizonOn =
     ((name: "mob_spawned", fn: (dimension: string, kind: string, x: number, y: number, z: number, natural: boolean) -> (), kind: string?) -> ()) &
     ((name: "mob_ai_register", fn: (mob: MobView) -> (), kind: string?) -> ()) &
-    ((name: "random_tick", fn: (dimension: string, block: string, x: number, y: number, z: number, props: Props, data: Data?) -> (), kind: string?) -> ()) &
-    ((name: "tick_block", fn: (dimension: string, block: string, x: number, y: number, z: number, props: Props, data: Data?) -> (), kind: string?) -> ()) &
     ((name: "right_click_block", fn: (x: number, y: number, z: number, block: string, face: Vec3, player: Player, held: Held?, data: Data?) -> (), kind: string?) -> ()) &
     ((name: "block_entity_tick", fn: (dimension: string, block: string, x: number, y: number, z: number, data: Data) -> (), kind: string?) -> ()) &
     ((name: "mob_hurt", fn: (mob: IdKind, damage_type: string, causing: number, direct: number, amount: number) -> (), kind: string?) -> ()) &
@@ -755,6 +758,7 @@ export type HorizonOn =
     ((name: "player_edit_book", fn: (event: PlayerEditBookEvent) -> ()) -> ()) &
     ((name: "player_egg_throw", fn: (event: PlayerEggThrowEvent) -> ()) -> ()) &
     ((name: "player_elytra_boost", fn: (event: PlayerElytraBoostEvent) -> ()) -> ()) &
+    ((name: "player_exp_cooldown_change", fn: (event: PlayerExpCooldownChangeEvent) -> ()) -> ()) &
     ((name: "player_fish", fn: (event: PlayerFishEvent) -> ()) -> ()) &
     ((name: "player_fish_v2", fn: (event: PlayerFishV2Event) -> ()) -> ()) &
     ((name: "player_flower_pot_manipulate", fn: (event: PlayerFlowerPotManipulateEvent) -> ()) -> ()) &
@@ -762,6 +766,7 @@ export type HorizonOn =
     ((name: "player_hurt_by_player", fn: (event: PlayerHurtByPlayerEvent) -> ()) -> ()) &
     ((name: "player_input", fn: (event: PlayerInputEvent) -> ()) -> ()) &
     ((name: "player_insert_lectern_book", fn: (event: PlayerInsertLecternBookEvent) -> ()) -> ()) &
+    ((name: "player_item_cooldown", fn: (event: PlayerItemCooldownEvent) -> ()) -> ()) &
     ((name: "player_item_frame_change", fn: (event: PlayerItemFrameChangeEvent) -> (), kind: string?) -> ()) &
     ((name: "player_item_held", fn: (event: PlayerItemHeldEvent) -> ()) -> ()) &
     ((name: "player_item_mend", fn: (event: PlayerItemMendEvent) -> ()) -> ()) &
@@ -794,6 +799,7 @@ export type HorizonOn =
     ((name: "player_riptide", fn: (event: PlayerRiptideEvent) -> ()) -> ()) &
     ((name: "player_save_to_file", fn: (event: PlayerSaveToFileEvent) -> ()) -> ()) &
     ((name: "player_shear_entity", fn: (event: PlayerShearEntityEvent) -> (), kind: string?) -> ()) &
+    ((name: "player_shield_disable", fn: (event: PlayerShieldDisableEvent) -> ()) -> ()) &
     ((name: "player_spawn_location", fn: (event: PlayerSpawnLocationEvent) -> ()) -> ()) &
     ((name: "player_spawn_point_set", fn: (event: PlayerSpawnPointSetEvent) -> ()) -> ()) &
     ((name: "player_sprint", fn: (event: PlayerSprintEvent) -> ()) -> ()) &
@@ -830,6 +836,7 @@ export type HorizonOn =
     ((name: "projectile_world_border", fn: (event: ProjectileWorldBorderEvent) -> (), kind: string?) -> ()) &
     ((name: "raid_spawn_wave", fn: (event: RaidSpawnWaveEvent) -> ()) -> ()) &
     ((name: "raid_state_change", fn: (event: RaidStateChangeEvent) -> ()) -> ()) &
+    ((name: "random_tick", fn: (event: RandomTickEvent) -> (), kind: string?) -> ()) &
     ((name: "recipe_book_categories", fn: (event: RecipeBookCategoriesEvent) -> ()) -> ()) &
     ((name: "recipe_sources", fn: (event: RecipeSourcesEvent) -> ()) -> ()) &
     ((name: "recipes_received", fn: (event: RecipesReceivedEvent) -> ()) -> ()) &
@@ -872,6 +879,7 @@ export type HorizonOn =
     ((name: "target_hit", fn: (event: TargetHitEvent) -> ()) -> ()) &
     ((name: "thunder_change", fn: (event: ThunderChangeEvent) -> ()) -> ()) &
     ((name: "tick", fn: (event: TickEvent) -> ()) -> ()) &
+    ((name: "tick_block", fn: (event: TickBlockEvent) -> (), kind: string?) -> ()) &
     ((name: "time_skip", fn: (event: TimeSkipEvent) -> ()) -> ()) &
     ((name: "tnt_primed", fn: (event: TntPrimedEvent) -> ()) -> ()) &
     ((name: "toast_add", fn: (event: ToastAddEvent) -> ()) -> ()) &

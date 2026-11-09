@@ -294,6 +294,11 @@ macro_rules! gen_kind {
     ((loot), $host:expr, $event:ident) => {
         crate::generated_runtime::loot_kind_key($host, $event.context)
     };
+    // A level tick filters by its state's block id, read through the level;
+    // an unknown state resolves to nothing and tells nobody.
+    ((block $f:ident), $level:expr, $event:ident) => {
+        $level.state_block($event.$f)
+    };
 }
 
 /// One _event-table field's seed: the value the handler is told. The host
@@ -1167,6 +1172,133 @@ macro_rules! gen_loot_drops {
             })();
             if let Err(e) = outcome {
                 self.error(format!("{hook}: {e}"));
+            }
+        }
+    };
+}
+
+/// A level tick (`random_tick`, `tick_block`): like a `game_mut` cancel
+/// hook, but the host is the ticked level and the kind is the ticked
+/// block's id (an unknown state tells nobody, not even unfiltered
+/// handlers). The write actions run on the level itself — they are this
+/// hook's point, unlike the stock level arms, which drop them — and the
+/// block entity's saved table rides `data`, written back with the
+/// before-template rule. The field tags document the inline seed (as the
+/// perform arm's do); only the kind token expands.
+///
+/// Moved from the hand-written `level_hook`: the props and data seeds, the
+/// apply closure and the writeback are that body, over an event table.
+macro_rules! gen_level_tick {
+    ($name:ident, level_write, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(($st:ty))? $(=> $write:ident $(($wt:ty))?)?),* $(,)?]) => {
+        fn $name(
+            &self,
+            level: &mut dyn horizon_client::mod_api::LevelWriteHost,
+            _event: &mut $event,
+        ) -> horizon_client::mod_api::Flow {
+            use horizon_client::mod_api::Flow;
+            let hook = stringify!($name);
+            if !self.has_any_handlers(hook) {
+                return Flow::Continue;
+            }
+            // The ticked block: its id filters the handlers, and an
+            // unknown state tells nobody.
+            let kind: Option<String> = gen_kind!($kind, level, _event);
+            let Some(block) = kind else {
+                return Flow::Continue;
+            };
+            if !self.watches(hook, &block) {
+                return Flow::Continue;
+            }
+            let at = [_event.pos.x, _event.pos.y, _event.pos.z];
+            let mut handled = false;
+            let outcome = (|| -> mlua::Result<()> {
+                let lua = &self.lua;
+                let table = lua.create_table()?;
+                #[cfg(test)]
+                crate::generated_runtime::note_event_table();
+                table.set("dimension", dimension_id(_event.dimension))?;
+                table.set("block", block.clone())?;
+                table.set(
+                    "pos",
+                    crate::generated_runtime::pos_table(
+                        lua,
+                        [_event.pos.x, _event.pos.y, _event.pos.z],
+                    )?,
+                )?;
+                table.set(
+                    "props",
+                    crate::generated_runtime::props_of(lua, level.state_properties(_event.state))?,
+                )?;
+                // The block entity's saved data, as a table the handler may
+                // change.
+                let before = level.mod_block_entity_data(at);
+                let data = match before
+                    .as_ref()
+                    .map(|c| nbt::compound_to_table(lua, c))
+                    .transpose()
+                {
+                    Ok(t) => t,
+                    Err(e) => return Err(e),
+                };
+                table.set("data", data.clone())?;
+                self.call_level(
+                    hook,
+                    Some(&block),
+                    &mut *level,
+                    table.clone(),
+                    &mut |level, action, args| {
+                        match action {
+                            "set_block_property" => {
+                                let (key, value): (String, String) = (args.get(1)?, args.get(2)?);
+                                let flags = args.get::<Option<i32>>(3)?.unwrap_or(UPDATE_CLIENTS);
+                                level.set_block_property(at, &key, &value, flags);
+                            }
+                            "schedule_tick" => {
+                                let delay: i32 = args.get(1)?;
+                                level.schedule_block_tick(at, &block, delay);
+                            }
+                            // As the host's `summon(dimension, kind, x, y,
+                            // z)`: this level's dimension is the only one
+                            // here, so the first argument is accepted and
+                            // ignored.
+                            "summon" => {
+                                let kind: String = args.get(2)?;
+                                let pos = [
+                                    args.get::<f64>(3)?,
+                                    args.get::<f64>(4)?,
+                                    args.get::<f64>(5)?,
+                                ];
+                                if !level.summon(&kind, pos, Default::default()) {
+                                    log::warn!("[lua:{}] {hook}: summon {kind}: not here", self.id);
+                                }
+                            }
+                            "handled" => handled = true,
+                            other => log::warn!(
+                                "[lua:{}] {hook}: {other} needs a host; dropped",
+                                self.id
+                            ),
+                        }
+                        Ok(())
+                    },
+                )?;
+                if let (Some(before), Some(data)) = (before, data) {
+                    match nbt::table_to_compound(&data, Some(&before)) {
+                        Ok(after) if after != before => {
+                            level.set_mod_block_entity_data(at, after);
+                        }
+                        Ok(_) => {}
+                        Err(e) => return Err(e),
+                    }
+                }
+                Ok(())
+            })();
+            if let Err(e) = outcome {
+                self.error(format!("{hook}: {e}"));
+            }
+            if handled {
+                Flow::Cancel
+            } else {
+                Flow::Continue
             }
         }
     };

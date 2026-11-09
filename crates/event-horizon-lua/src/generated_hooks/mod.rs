@@ -31,14 +31,8 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "neighbor_changed",
         "adapter: neighbor_changed: adapter: a block id needs its name",
     ),
-    (
-        "random_tick",
-        "cannot: random_tick: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
-    (
-        "tick_block",
-        "cannot: tick_block: unsupported: the hand-written hook keeps this name (removing it is #44)",
-    ),
+    ("random_tick", "generated"),
+    ("tick_block", "generated"),
     (
         "update_shape",
         "tick: a `ticks` parameter (level-tick host)",
@@ -589,15 +583,9 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "player_exp_change",
         "cannot: player_exp_change: unsupported: the hand-written hook keeps this name (removing it is #44)",
     ),
-    (
-        "player_exp_cooldown_change",
-        "tick: a `ticks` parameter (level-tick host)",
-    ),
+    ("player_exp_cooldown_change", "generated"),
     ("player_input", "generated"),
-    (
-        "player_item_cooldown",
-        "tick: a `ticks` parameter (level-tick host)",
-    ),
+    ("player_item_cooldown", "generated"),
     ("player_item_held", "generated"),
     ("player_jump", "generated"),
     ("player_kicked", "generated"),
@@ -617,10 +605,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("player_recipe_discovered", "generated"),
     ("player_riptide", "generated"),
     ("player_shear_entity", "generated"),
-    (
-        "player_shield_disable",
-        "tick: a `ticks` parameter (level-tick host)",
-    ),
+    ("player_shield_disable", "generated"),
     ("player_spawn_point_set", "generated"),
     ("player_stat_award", "generated"),
     ("player_stonecutter_recipe_select", "generated"),
@@ -915,6 +900,8 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "level_tick_pre",
     "level_tick_post",
     "block_changed",
+    "random_tick",
+    "tick_block",
     "key",
     "wheel",
     "command",
@@ -1141,7 +1128,9 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "player_edit_book",
     "player_egg_throw",
     "player_elytra_boost",
+    "player_exp_cooldown_change",
     "player_input",
+    "player_item_cooldown",
     "player_item_held",
     "player_jump",
     "player_kicked",
@@ -1161,6 +1150,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "player_recipe_discovered",
     "player_riptide",
     "player_shear_entity",
+    "player_shield_disable",
     "player_spawn_point_set",
     "player_stat_award",
     "player_stonecutter_recipe_select",
@@ -1305,6 +1295,8 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
 /// The generated hooks whose `kind` filter runs: `horizon.on` rejects a
 /// kind for every other generated hook.
 pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
+    "random_tick",
+    "tick_block",
     "perform_command",
     "entity_leave_level",
     "apply_effect_tick",
@@ -1399,6 +1391,8 @@ macro_rules! impl_generated_hooks {
     gen_listen!(level_tick_pre, game_mut, horizon_client::mod_api::LevelTickPreEvent<'_>, (none), [dimension: cloned]);
     gen_listen!(level_tick_post, game_mut, horizon_client::mod_api::LevelTickPostEvent<'_>, (none), [dimension: cloned]);
     gen_listen!(block_changed, level, horizon_client::mod_api::BlockChangedEvent, (none), [dimension: dim, pos: pos_struct, old: state_level, new: state_level, old_props: state_props_note, new_props: state_props_note]);
+    gen_level_tick!(random_tick, level_write, horizon_client::mod_api::RandomTickEvent, (block state), [dimension: dim, pos: pos_struct, block: block_from_state, props: level_props, data: level_data]);
+    gen_level_tick!(tick_block, level_write, horizon_client::mod_api::TickBlockEvent, (block state), [dimension: dim, pos: pos_struct, block: block_from_state, props: level_props, data: level_data]);
     gen_listen!(key, game_mut, horizon_client::mod_api::KeyEvent<'_>, (none), [key: cloned, pressed: copy]);
     gen_cancel!(wheel, game_mut, horizon_client::mod_api::WheelEvent, (none), [steps: copy]);
     gen_cancel!(command, game_mut, horizon_client::mod_api::CommandEvent<'_>, (none), [command: cloned]);
@@ -1625,7 +1619,9 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(player_edit_book, game_mut, horizon_client::mod_api::PlayerEditBookEvent<'_>, (none), [player: player, pages: copy, signing: copy]);
     gen_listen!(player_egg_throw, game_mut, horizon_client::mod_api::PlayerEggThrowEvent<'_>, (none), [player: player]);
     gen_listen!(player_elytra_boost, game_mut, horizon_client::mod_api::PlayerElytraBoostEvent<'_>, (none), [player: player]);
+    gen_listen!(player_exp_cooldown_change, game_mut, horizon_client::mod_api::PlayerExpCooldownChangeEvent<'_>, (none), [player: player, ticks: copy]);
     gen_listen!(player_input, game_mut, horizon_client::mod_api::PlayerInputEvent<'_>, (none), [player: player, flags: copy]);
+    gen_cancel!(player_item_cooldown, game_mut, horizon_client::mod_api::PlayerItemCooldownEvent<'_>, (none), [player: player, item: cloned, ticks: copy]);
     gen_cancel!(player_item_held, game_mut, horizon_client::mod_api::PlayerItemHeldEvent<'_>, (none), [player: player, from_slot: copy, to_slot: copy]);
     gen_listen!(player_jump, game_mut, horizon_client::mod_api::PlayerJumpEvent<'_>, (none), [player: player]);
     gen_listen!(player_kicked, game_mut, horizon_client::mod_api::PlayerKickedEvent<'_>, (none), [player: player, reason: cloned]);
@@ -1645,6 +1641,7 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(player_recipe_discovered, game_mut, horizon_client::mod_api::PlayerRecipeDiscoveredEvent<'_>, (none), [player: player, recipe: cloned]);
     gen_listen!(player_riptide, game_mut, horizon_client::mod_api::PlayerRiptideEvent<'_>, (none), [player: player]);
     gen_cancel!(player_shear_entity, game_mut, horizon_client::mod_api::PlayerShearEntityEvent<'_>, (entity entity_id), [player: player, entity_id: copy, off_hand: copy]);
+    gen_listen!(player_shield_disable, game_mut, horizon_client::mod_api::PlayerShieldDisableEvent<'_>, (none), [player: player, ticks: copy]);
     gen_cancel!(player_spawn_point_set, game_mut, horizon_client::mod_api::PlayerSpawnPointSetEvent<'_>, (none), [player: player, dimension: cloned, pos: pos, cause: cloned]);
     gen_cancel!(player_stat_award, game_mut, horizon_client::mod_api::PlayerStatAwardEvent<'_>, (none), [player: player, stat_type: cloned, stat: cloned, value: copy]);
     gen_listen!(player_stonecutter_recipe_select, game_mut, horizon_client::mod_api::PlayerStonecutterRecipeSelectEvent<'_>, (none), [player: player, recipe: copy]);
@@ -2722,6 +2719,920 @@ mod generated_tests {
             assert!(
                 level_reads() > 0,
                 "block_changed read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_random_tick() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_random_tick",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.handled()\n    assert(event.block == \"minecraft:stone\", \"block\")\n    assert(next(event.props) == nil, \"props\")\n    assert(event.data == nil, \"data\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(9),
+                &mut handled,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut handled = false;
+        dispatch_random_tick(
+            &mut FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            BlockStateId(7),
+            &mut handled,
+        );
+        assert!(handled, "handled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_random_tick_write_actions() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_random_tick_actions",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_block_property(\"stage\", \"growing\")\n    horizon.set_block_property(\"lit\", \"true\", 1)\n    horizon.schedule_tick(40)\n    horizon.summon(event.dimension, \"minecraft:zombie\", 1.5, 65.0, -2.5)\n    horizon.handled()\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        {
+            let mut handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(handled, "handled() cancelled the tick");
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            level_writes(),
+            [
+                ([1, 64, -3], "stage".to_owned(), "growing".to_owned(), 2),
+                ([1, 64, -3], "lit".to_owned(), "true".to_owned(), 1)
+            ],
+            "set_block_property ran with the default flags and the explicit ones"
+        );
+        assert_eq!(
+            level_scheduled(),
+            [([1, 64, -3], "minecraft:stone".to_owned(), 40)],
+            "schedule_tick ran for the ticked block"
+        );
+        assert_eq!(
+            level_summons(),
+            [("minecraft:zombie".to_owned(), [1.5, 65.0, -2.5])],
+            "summon ran with its first argument ignored"
+        );
+        assert_eq!(level_data_writes(), [], "no block entity, no data write");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_random_tick_handler_error_drops_actions_and_data() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_random_tick_errordrops",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    event.data.charge = event.data.charge + 1\n    horizon.set_block_property(\"stage\", \"growing\")\nend, \"minecraft:stone\")\nhorizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 10\n    error(\"boom\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        set_level_data(
+            [1, 64, -3],
+            [(
+                horizon_world::nbt::JavaString::from("charge"),
+                horizon_world::nbt::Tag::Int(0),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        {
+            let mut handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "an errored tick is not handled");
+        }
+        assert_eq!(witness(&lua), 11, "both handlers ran");
+        assert_eq!(level_writes(), [], "the queued write was dropped");
+        assert_eq!(level_scheduled(), [], "nothing scheduled");
+        assert_eq!(level_summons(), [], "nothing summoned");
+        assert_eq!(level_data_writes(), [], "the data edit was dropped");
+        has_error(&id);
+        reset_level_data();
+    }
+
+    #[test]
+    fn generated_random_tick_data_round_trip() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_random_tick_data",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.data.charge == 0, \"data\")\n    event.data.charge = event.data.charge * 10 + 1\n    event.data.extra = \"new\"\n    event.data.name = nil\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        set_level_data(
+            [1, 64, -3],
+            [
+                (
+                    horizon_world::nbt::JavaString::from("charge"),
+                    horizon_world::nbt::Tag::Int(0),
+                ),
+                (
+                    horizon_world::nbt::JavaString::from("name"),
+                    horizon_world::nbt::Tag::String("x".into()),
+                ),
+                (
+                    horizon_world::nbt::JavaString::from("kept"),
+                    horizon_world::nbt::Tag::Long(5),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        {
+            let mut handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "no handled() call leaves the tick running");
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            level_data_writes().len(),
+            1,
+            "the data edit was written back"
+        );
+        let (at, after) = &level_data_writes()[0];
+        assert_eq!(*at, [1, 64, -3], "the write lands at the ticked position");
+        assert_eq!(
+            after.get(&horizon_world::nbt::JavaString::from("charge")),
+            Some(&horizon_world::nbt::Tag::Int(1)),
+            "the int stays an int"
+        );
+        assert_eq!(
+            after.get(&horizon_world::nbt::JavaString::from("extra")),
+            Some(&horizon_world::nbt::Tag::String("new".into())),
+            "the added key arrives"
+        );
+        assert_eq!(
+            after.get(&horizon_world::nbt::JavaString::from("name")),
+            None,
+            "the removed key stays removed"
+        );
+        assert_eq!(
+            after.get(&horizon_world::nbt::JavaString::from("kept")),
+            Some(&horizon_world::nbt::Tag::Long(5)),
+            "untouched keys survive with their NBT types"
+        );
+        no_error(&id);
+        reset_level_data();
+    }
+
+    #[test]
+    fn generated_random_tick_absent_data_is_nil_and_writes_nothing() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_random_tick_nodata",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.data == nil, \"data\")\n    horizon.set_block_property(\"stage\", \"growing\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        {
+            let mut handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "no handled() call leaves the tick running");
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            level_writes(),
+            [([1, 64, -3], "stage".to_owned(), "growing".to_owned(), 2)],
+            "the write action still ran"
+        );
+        assert_eq!(level_data_writes(), [], "nil data writes nothing");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_random_tick_two_mods_share_a_tick() {
+        let (a, a_id, _a_dir, a_lua) = loaded_tracked(
+            "gen_random_tick_duo_a",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_block_property(\"a\", \"1\")\nend, \"minecraft:stone\")",
+        );
+        let (b, b_id, _b_dir, b_lua) = loaded_tracked(
+            "gen_random_tick_duo_b",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_block_property(\"b\", \"2\")\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        {
+            let mut handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the kind-filtered mod ran");
+        assert_eq!(witness(&b_lua), 1, "the every-block mod ran");
+        assert_eq!(
+            level_writes(),
+            [
+                ([1, 64, -3], "a".to_owned(), "1".to_owned(), 2),
+                ([1, 64, -3], "b".to_owned(), "2".to_owned(), 2)
+            ],
+            "both mods wrote in load order"
+        );
+        no_error(&a_id);
+        no_error(&b_id);
+    }
+
+    #[test]
+    fn generated_random_tick_ignores_the_sibling_tick() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_random_tick_sibling",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        {
+            let mut other_handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut other_handled,
+            );
+            assert_eq!(witness(&lua), 0, "the sibling tick stays quiet");
+        }
+        {
+            let mut handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "no handled() call leaves the tick running");
+        }
+        assert_eq!(witness(&lua), 1, "the hook's own tick runs its handler");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_random_tick_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_random_tick_nocancel",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"minecraft:stone\", \"block\")\n    assert(next(event.props) == nil, \"props\")\n    assert(event.data == nil, \"data\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        let mut handled = false;
+        dispatch_random_tick(
+            &mut FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            BlockStateId(7),
+            &mut handled,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!handled, "handled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_random_tick_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_random_tick_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut handled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut handled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "random_tick read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "random_tick read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "random_tick read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_random_tick_cost_kind",
+            "horizon.on(\"random_tick\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut handled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "random_tick read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "random_tick read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                1,
+                "random_tick read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_random_tick_cost_live",
+            "horizon.on(\"random_tick\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut handled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "random_tick built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "random_tick read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "random_tick read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_tick_block() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tick_block",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    horizon.handled()\n    assert(event.block == \"minecraft:stone\", \"block\")\n    assert(next(event.props) == nil, \"props\")\n    assert(event.data == nil, \"data\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(9),
+                &mut handled,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut handled = false;
+        dispatch_tick_block(
+            &mut FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            BlockStateId(7),
+            &mut handled,
+        );
+        assert!(handled, "handled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_tick_block_write_actions() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tick_block_actions",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_block_property(\"stage\", \"growing\")\n    horizon.set_block_property(\"lit\", \"true\", 1)\n    horizon.schedule_tick(40)\n    horizon.summon(event.dimension, \"minecraft:zombie\", 1.5, 65.0, -2.5)\n    horizon.handled()\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        {
+            let mut handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(handled, "handled() cancelled the tick");
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            level_writes(),
+            [
+                ([1, 64, -3], "stage".to_owned(), "growing".to_owned(), 2),
+                ([1, 64, -3], "lit".to_owned(), "true".to_owned(), 1)
+            ],
+            "set_block_property ran with the default flags and the explicit ones"
+        );
+        assert_eq!(
+            level_scheduled(),
+            [([1, 64, -3], "minecraft:stone".to_owned(), 40)],
+            "schedule_tick ran for the ticked block"
+        );
+        assert_eq!(
+            level_summons(),
+            [("minecraft:zombie".to_owned(), [1.5, 65.0, -2.5])],
+            "summon ran with its first argument ignored"
+        );
+        assert_eq!(level_data_writes(), [], "no block entity, no data write");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_tick_block_handler_error_drops_actions_and_data() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tick_block_errordrops",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    event.data.charge = event.data.charge + 1\n    horizon.set_block_property(\"stage\", \"growing\")\nend, \"minecraft:stone\")\nhorizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 10\n    error(\"boom\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        set_level_data(
+            [1, 64, -3],
+            [(
+                horizon_world::nbt::JavaString::from("charge"),
+                horizon_world::nbt::Tag::Int(0),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        {
+            let mut handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "an errored tick is not handled");
+        }
+        assert_eq!(witness(&lua), 11, "both handlers ran");
+        assert_eq!(level_writes(), [], "the queued write was dropped");
+        assert_eq!(level_scheduled(), [], "nothing scheduled");
+        assert_eq!(level_summons(), [], "nothing summoned");
+        assert_eq!(level_data_writes(), [], "the data edit was dropped");
+        has_error(&id);
+        reset_level_data();
+    }
+
+    #[test]
+    fn generated_tick_block_data_round_trip() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tick_block_data",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.data.charge == 0, \"data\")\n    event.data.charge = event.data.charge * 10 + 1\n    event.data.extra = \"new\"\n    event.data.name = nil\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        set_level_data(
+            [1, 64, -3],
+            [
+                (
+                    horizon_world::nbt::JavaString::from("charge"),
+                    horizon_world::nbt::Tag::Int(0),
+                ),
+                (
+                    horizon_world::nbt::JavaString::from("name"),
+                    horizon_world::nbt::Tag::String("x".into()),
+                ),
+                (
+                    horizon_world::nbt::JavaString::from("kept"),
+                    horizon_world::nbt::Tag::Long(5),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        {
+            let mut handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "no handled() call leaves the tick running");
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            level_data_writes().len(),
+            1,
+            "the data edit was written back"
+        );
+        let (at, after) = &level_data_writes()[0];
+        assert_eq!(*at, [1, 64, -3], "the write lands at the ticked position");
+        assert_eq!(
+            after.get(&horizon_world::nbt::JavaString::from("charge")),
+            Some(&horizon_world::nbt::Tag::Int(1)),
+            "the int stays an int"
+        );
+        assert_eq!(
+            after.get(&horizon_world::nbt::JavaString::from("extra")),
+            Some(&horizon_world::nbt::Tag::String("new".into())),
+            "the added key arrives"
+        );
+        assert_eq!(
+            after.get(&horizon_world::nbt::JavaString::from("name")),
+            None,
+            "the removed key stays removed"
+        );
+        assert_eq!(
+            after.get(&horizon_world::nbt::JavaString::from("kept")),
+            Some(&horizon_world::nbt::Tag::Long(5)),
+            "untouched keys survive with their NBT types"
+        );
+        no_error(&id);
+        reset_level_data();
+    }
+
+    #[test]
+    fn generated_tick_block_absent_data_is_nil_and_writes_nothing() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tick_block_nodata",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.data == nil, \"data\")\n    horizon.set_block_property(\"stage\", \"growing\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        {
+            let mut handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "no handled() call leaves the tick running");
+        }
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert_eq!(
+            level_writes(),
+            [([1, 64, -3], "stage".to_owned(), "growing".to_owned(), 2)],
+            "the write action still ran"
+        );
+        assert_eq!(level_data_writes(), [], "nil data writes nothing");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_tick_block_two_mods_share_a_tick() {
+        let (a, a_id, _a_dir, a_lua) = loaded_tracked(
+            "gen_tick_block_duo_a",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_block_property(\"a\", \"1\")\nend, \"minecraft:stone\")",
+        );
+        let (b, b_id, _b_dir, b_lua) = loaded_tracked(
+            "gen_tick_block_duo_b",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_block_property(\"b\", \"2\")\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        {
+            let mut handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the kind-filtered mod ran");
+        assert_eq!(witness(&b_lua), 1, "the every-block mod ran");
+        assert_eq!(
+            level_writes(),
+            [
+                ([1, 64, -3], "a".to_owned(), "1".to_owned(), 2),
+                ([1, 64, -3], "b".to_owned(), "2".to_owned(), 2)
+            ],
+            "both mods wrote in load order"
+        );
+        no_error(&a_id);
+        no_error(&b_id);
+    }
+
+    #[test]
+    fn generated_tick_block_ignores_the_sibling_tick() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tick_block_sibling",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        reset_level_writes();
+        reset_level_scheduled();
+        reset_level_summons();
+        reset_level_data_writes();
+        reset_level_data();
+        {
+            let mut other_handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut other_handled,
+            );
+            assert_eq!(witness(&lua), 0, "the sibling tick stays quiet");
+        }
+        {
+            let mut handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(1, 64, -3),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert!(!handled, "no handled() call leaves the tick running");
+        }
+        assert_eq!(witness(&lua), 1, "the hook's own tick runs its handler");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_tick_block_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tick_block_nocancel",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"minecraft:stone\", \"block\")\n    assert(next(event.props) == nil, \"props\")\n    assert(event.data == nil, \"data\")\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        let mut handled = false;
+        dispatch_tick_block(
+            &mut FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            BlockStateId(7),
+            &mut handled,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!handled, "handled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_tick_block_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tick_block_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut handled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut handled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "tick_block read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "tick_block read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "tick_block read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tick_block_cost_kind",
+            "horizon.on(\"tick_block\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut handled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "tick_block read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "tick_block read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                1,
+                "tick_block read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tick_block_cost_live",
+            "horizon.on(\"tick_block\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:stone\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut handled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(7),
+                &mut handled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "tick_block built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "tick_block read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "tick_block read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -33715,6 +34626,103 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_exp_cooldown_change() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_player_exp_cooldown_change",
+            "horizon.on(\"player_exp_cooldown_change\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.ticks == 9, \"ticks\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_player_exp_cooldown_change(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_exp_cooldown_change_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_exp_cooldown_change_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_exp_cooldown_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_exp_cooldown_change read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_exp_cooldown_change read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_exp_cooldown_change read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_exp_cooldown_change_cost_live",
+            "horizon.on(\"player_exp_cooldown_change\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_exp_cooldown_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_exp_cooldown_change built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_exp_cooldown_change read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_exp_cooldown_change read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_input() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_input",
@@ -33787,6 +34795,135 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_input read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_player_item_cooldown() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_player_item_cooldown",
+            "horizon.on(\"player_item_cooldown\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.ticks == 10, \"ticks\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_item_cooldown(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:item",
+            10,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_item_cooldown_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_player_item_cooldown_nocancel",
+            "horizon.on(\"player_item_cooldown\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.ticks == 10, \"ticks\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_item_cooldown(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:item",
+            10,
+            &mut cancel,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_item_cooldown_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_item_cooldown_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_item_cooldown(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:item",
+                10,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_item_cooldown read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_item_cooldown read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_item_cooldown read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_item_cooldown_cost_live",
+            "horizon.on(\"player_item_cooldown\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_item_cooldown(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:item",
+                10,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_item_cooldown built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_item_cooldown read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_item_cooldown read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -36053,6 +37190,85 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_shear_entity read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_player_shield_disable() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_player_shield_disable",
+            "horizon.on(\"player_shield_disable\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.ticks == 9, \"ticks\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_player_shield_disable(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_shield_disable_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_shield_disable_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_shield_disable(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_shield_disable read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_shield_disable read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_shield_disable read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_shield_disable_cost_live",
+            "horizon.on(\"player_shield_disable\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_shield_disable(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert!(
+                event_tables() >= 1,
+                "player_shield_disable built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_shield_disable read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_shield_disable read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -57992,6 +59208,32 @@ mod generated_tests {
                 BlockStateId(11),
             );
         }
+        // random_tick: unregistered, nothing runs.
+        {
+            let mut handled = false;
+            dispatch_random_tick(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut handled,
+            );
+            assert!(!handled, "handled changed with no handler");
+        }
+        // tick_block: unregistered, nothing runs.
+        {
+            let mut handled = false;
+            dispatch_tick_block(
+                &mut FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                &mut handled,
+            );
+            assert!(!handled, "handled changed with no handler");
+        }
         // key: unregistered, nothing runs.
         {
             dispatch_key(&mut FakeHost::empty(), &firing_mods, "test:key", false);
@@ -60479,9 +61721,33 @@ mod generated_tests {
         {
             dispatch_player_elytra_boost(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
         }
+        // player_exp_cooldown_change: unregistered, nothing runs.
+        {
+            dispatch_player_exp_cooldown_change(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+            );
+        }
         // player_input: unregistered, nothing runs.
         {
             dispatch_player_input(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
+        }
+        // player_item_cooldown: unregistered, nothing runs.
+        {
+            let mut cancel = false;
+            dispatch_player_item_cooldown(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:item",
+                10,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
         }
         // player_item_held: unregistered, nothing runs.
         {
@@ -60682,6 +61948,10 @@ mod generated_tests {
                 &mut cancel,
             );
             assert!(!cancel, "cancel changed with no handler");
+        }
+        // player_shield_disable: unregistered, nothing runs.
+        {
+            dispatch_player_shield_disable(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
         }
         // player_spawn_point_set: unregistered, nothing runs.
         {

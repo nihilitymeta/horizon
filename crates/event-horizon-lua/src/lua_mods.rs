@@ -24,10 +24,10 @@ use horizon_client::dev_input::mods::{
 use horizon_client::mod_api::NativeCommand;
 use horizon_client::mod_api::{
     AttachmentCodec, AttachmentType, BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
-    BlockPos, BlockStateId, Compound, EntityTickListenedEvent, EntityTickPostEvent, Flow, Holder,
-    Hooks, Host, InteractEntityEvent, LevelDimension, LevelHost, LevelWriteHost,
+    BlockStateId, Compound, EntityTickListenedEvent, EntityTickPostEvent, Flow, Holder, Hooks,
+    Host, InteractEntityEvent, LevelDimension, LevelHost, LevelWriteHost,
     LivingIncomingDamageEvent, MobAiRegisterEvent, MobKilledEvent, MobSpawnedEvent, MobView,
-    RandomTickEvent, RightClickBlockEvent, TickBlockEvent,
+    RightClickBlockEvent,
 };
 use horizon_client::mod_api::{
     AttackEntityEvent, DestroyBlockEvent, InventoryTickEvent, ItemPickedUpEvent, ItemStack,
@@ -134,8 +134,6 @@ pub const ENTRY: &str = horizon_mods::content::SCRIPT_ENTRY;
 pub const LUA_HOOK_NAMES: &[&str] = &[
     "mob_spawned",
     "mob_ai_register",
-    "random_tick",
-    "tick_block",
     "right_click_block",
     "block_entity_tick",
     "mob_hurt",
@@ -2262,112 +2260,6 @@ impl LuaMod {
         }
     }
 
-    /// A block hook on a level (`random_tick`, `tick_block`): handlers get
-    /// `(dimension, block, x, y, z, props, data)`, `data` the block entity's
-    /// saved table when the block has one (nil without), written back after
-    /// the call, and may queue `set_block_property(key, value[, flags])`,
-    /// `schedule_tick(delay)`, `summon(...)` and `handled()`, which skips the
-    /// block's own tick.
-    fn level_hook(
-        &self,
-        hook: &str,
-        level: &mut dyn LevelWriteHost,
-        dimension: LevelDimension,
-        pos: BlockPos,
-        state: BlockStateId,
-    ) -> Flow {
-        let Some(block) = level.state_block(state) else {
-            return Flow::Continue;
-        };
-        // Handlers for every block hear every random tick of the level
-        // (hundreds a tick): a mod's own blocks register by block id.
-        if !self.watches(hook, &block) {
-            return Flow::Continue;
-        }
-        let at = [pos.x, pos.y, pos.z];
-        let props = match self.lua.create_table() {
-            Ok(t) => t,
-            Err(e) => return self.hook_error(hook, e),
-        };
-        for (k, v) in level.state_properties(state) {
-            if let Err(e) = props.set(k, v) {
-                return self.hook_error(hook, e);
-            }
-        }
-        // The block entity's saved data, as a table the handler may change.
-        let before = level.mod_block_entity_data(at);
-        let data = match before
-            .as_ref()
-            .map(|c| nbt::compound_to_table(&self.lua, c))
-            .transpose()
-        {
-            Ok(t) => t,
-            Err(e) => return self.hook_error(hook, e),
-        };
-        let mut handled = false;
-        let r = self.call_level(
-            hook,
-            Some(&block),
-            level,
-            (
-                dimension_id(dimension),
-                block.as_str(),
-                pos.x,
-                pos.y,
-                pos.z,
-                props,
-                data.clone(),
-            ),
-            &mut |level, action, args| {
-                match action {
-                    "set_block_property" => {
-                        let (key, value): (String, String) = (args.get(1)?, args.get(2)?);
-                        let flags = args.get::<Option<i32>>(3)?.unwrap_or(UPDATE_CLIENTS);
-                        level.set_block_property(at, &key, &value, flags);
-                    }
-                    "schedule_tick" => {
-                        let delay: i32 = args.get(1)?;
-                        level.schedule_block_tick(at, &block, delay);
-                    }
-                    // As the host's `summon(dimension, kind, x, y, z)`: this
-                    // level's dimension is the only one here, so the first
-                    // argument is accepted and ignored.
-                    "summon" => {
-                        let kind: String = args.get(2)?;
-                        let pos = [
-                            args.get::<f64>(3)?,
-                            args.get::<f64>(4)?,
-                            args.get::<f64>(5)?,
-                        ];
-                        if !level.summon(&kind, pos, Default::default()) {
-                            log::warn!("[lua:{}] {hook}: summon {kind}: not here", self.id);
-                        }
-                    }
-                    "handled" => handled = true,
-                    other => log::warn!("[lua:{}] {hook}: {other} needs a host; dropped", self.id),
-                }
-                Ok(())
-            },
-        );
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if let (Some(before), Some(data)) = (before, data) {
-            match nbt::table_to_compound(&data, Some(&before)) {
-                Ok(after) if after != before => {
-                    level.set_mod_block_entity_data(at, after);
-                }
-                Ok(_) => {}
-                Err(e) => return self.hook_error(hook, e),
-            }
-        }
-        if handled {
-            Flow::Cancel
-        } else {
-            Flow::Continue
-        }
-    }
-
     /// Writes a block entity's data table back through `host` when the
     /// handlers changed it.
     fn store_data(
@@ -3095,23 +2987,6 @@ impl LuaMod {
 }
 
 impl Hooks for LuaMod {
-    /// A block that ticks randomly does: `random_tick(dimension, block, x, y,
-    /// z, props, data)`, `data` the block entity's saved table when the block
-    /// has one, written back after the call.
-    fn random_tick(&self, level: &mut dyn LevelWriteHost, event: &mut RandomTickEvent) -> Flow {
-        self.level_hook(
-            "random_tick",
-            level,
-            event.dimension,
-            event.pos,
-            event.state,
-        )
-    }
-    /// A scheduled block tick is due: `tick_block(dimension, block, x, y, z,
-    /// props, data)`, `data` as in `random_tick`.
-    fn tick_block(&self, level: &mut dyn LevelWriteHost, event: &mut TickBlockEvent) -> Flow {
-        self.level_hook("tick_block", level, event.dimension, event.pos, event.state)
-    }
     /// A player right-clicks a block: `right_click_block(x, y, z, block, face,
     /// player, held)`, `face` and `player.position` as `{x, y, z}`, `player`
     /// with `name`, `dimension` and `game_mode`, `held` with `item`, `count`
@@ -4576,7 +4451,7 @@ mod tests {
     use super::*;
     // The engine's `#[non_exhaustive]` events are built by their defining
     // crate's test-support constructors (horizon-client's `test_events`).
-    use horizon_client::mod_api::ServerTickPhase;
+    use horizon_client::mod_api::{BlockPos, ServerTickPhase};
     use horizon_client::test_events;
 
     const MANIFEST_TEXT: &str = r#"
@@ -4858,15 +4733,18 @@ experimental = ["scripts"]
                 "scripts/init.lua",
                 br#"
                 LAMPS = 0
+                TICKS = 0
                 horizon.on("random_tick", function() LAMPS = LAMPS + 1 end, "ruby:lamp")
-                horizon.on("random_tick", function(dimension, block, x, y, z, props)
-                  if block ~= "ruby:hive" then return end
-                  if props.stage == "dormant" then
+                horizon.on("random_tick", function(event)
+                  TICKS = TICKS + 1
+                  if event.block ~= "ruby:hive" then return end
+                  if event.props.stage == "dormant" then
                     horizon.set_block_property("stage", "growing")
+                    horizon.set_block_property("lit", "true", 1)
                     horizon.schedule_tick(40)
                     horizon.handled()
-                  elseif props.stage == "mature" then
-                    horizon.summon(dimension, "ruby:crawler", x + 0.5, y + 1, z + 0.5)
+                  elseif event.props.stage == "mature" then
+                    horizon.summon(event.dimension, "ruby:crawler", event.pos.x + 0.5, event.pos.y + 1, event.pos.z + 0.5)
                   end
                 end)
                 "#,
@@ -4890,13 +4768,31 @@ experimental = ["scripts"]
             m.random_tick(&mut level, &mut event),
             Flow::Cancel
         ));
+        // The default flags tell the clients; the explicit ones ride along.
         assert_eq!(
             level.writes,
-            [([1, 64, -3], "stage".to_owned(), "growing".to_owned(), 2)]
+            [
+                ([1, 64, -3], "stage".to_owned(), "growing".to_owned(), 2),
+                ([1, 64, -3], "lit".to_owned(), "true".to_owned(), 1),
+            ]
         );
         assert_eq!(level.ticks, [([1, 64, -3], "ruby:hive".to_owned(), 40)]);
         // The handler registered for the lamp never heard the hive's tick.
         assert_eq!(m.lua.globals().get::<i32>("LAMPS").unwrap(), 0);
+        assert_eq!(m.lua.globals().get::<i32>("TICKS").unwrap(), 1);
+
+        // An unknown state tells nobody, not even unfiltered handlers.
+        let mut unknown = test_events::random_tick_event(
+            LevelDimension::Nether,
+            BlockPos::new(1, 64, -3),
+            BlockStateId(9),
+        );
+        assert!(matches!(
+            m.random_tick(&mut level, &mut unknown),
+            Flow::Continue
+        ));
+        assert_eq!(m.lua.globals().get::<i32>("TICKS").unwrap(), 1);
+        assert_eq!(level.writes.len(), 2);
 
         // A mature hive summons (queued on the level, made after the pass)
         // and keeps its tick; another block: nothing happens.
@@ -4911,6 +4807,22 @@ experimental = ["scripts"]
         );
         level.block = "minecraft:grass_block";
         assert!(matches!(
+            m.random_tick(
+                &mut level,
+                &mut test_events::random_tick_event(
+                    LevelDimension::Overworld,
+                    BlockPos::new(0, 0, 0),
+                    BlockStateId(7)
+                )
+            ),
+            Flow::Continue
+        ));
+        // The every-block handler still ran for the grass block (its body
+        // returned on the block id), but queued nothing.
+        assert_eq!(m.lua.globals().get::<i32>("TICKS").unwrap(), 3);
+        assert_eq!(level.writes.len(), 2);
+        // The sibling hook stays quiet: nothing listens to `tick_block`.
+        assert!(matches!(
             m.tick_block(
                 &mut level,
                 &mut test_events::tick_block_event(
@@ -4921,7 +4833,69 @@ experimental = ["scripts"]
             ),
             Flow::Continue
         ));
-        assert_eq!(level.writes.len(), 1);
+        assert_eq!(m.lua.globals().get::<i32>("TICKS").unwrap(), 3);
+        assert_eq!(level.writes.len(), 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_tick_block_handler_that_errors_drops_its_write_and_data_edit() {
+        use horizon_world::nbt::Tag;
+        let (dir, path) = hmod(
+            "ticks-error",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.on("tick_block", function(event)
+                  event.data.charge = event.data.charge + 1
+                  horizon.set_block_property("stage", "growing")
+                end, "ruby:hive")
+                horizon.on("tick_block", function(event)
+                  error("boom")
+                end, "ruby:hive")
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        // `load` leaves no status row behind on its own; without one the
+        // error lookup below sees nothing.
+        set_status(ModStatus {
+            id: m.id().into(),
+            ..Default::default()
+        });
+        let key = |k: &str| horizon_world::nbt::JavaString::from(k);
+        let mut data = Compound::new();
+        data.insert(key("charge"), Tag::Int(0));
+        let mut level = FakeLevel {
+            block: "ruby:hive",
+            props: Vec::new(),
+            writes: Vec::new(),
+            ticks: Vec::new(),
+            summons: Vec::new(),
+            data: HashMap::from([([1, 64, -3], data)]),
+        };
+        let mut event = test_events::tick_block_event(
+            LevelDimension::Overworld,
+            BlockPos::new(1, 64, -3),
+            BlockStateId(7),
+        );
+        assert!(matches!(
+            m.tick_block(&mut level, &mut event),
+            Flow::Continue
+        ));
+        // The queued write never ran and the data edit never landed: the
+        // int is still there, untouched.
+        assert!(level.writes.is_empty());
+        assert_eq!(
+            level.data[&[1, 64, -3]].get(&key("charge")),
+            Some(&Tag::Int(0))
+        );
+        let failed = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == m.id())
+            .and_then(|s| s.error)
+            .expect("the erroring handler is recorded");
+        assert!(failed.contains("boom"), "{failed}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -7448,8 +7422,8 @@ experimental = ["scripts"]
                   data.seen = dimension .. ":" .. x
                   data.name = nil
                 end)
-                horizon.on("random_tick", function(dimension, block, x, y, z, props, data)
-                  if data then data.charge = data.charge * 10; data.under = horizon.block(x, y - 1, z) end
+                horizon.on("random_tick", function(event)
+                  if event.data then event.data.charge = event.data.charge * 10; event.data.under = horizon.block(event.pos.x, event.pos.y - 1, event.pos.z) end
                   if pcall(horizon.players) then error("a level hook reads blocks only") end
                 end)
                 "#,
@@ -7527,6 +7501,17 @@ experimental = ["scripts"]
             level.data[&[1, 64, -3]].get(&key("under")),
             Some(&Tag::String("ruby:hive".into()))
         );
+        // A block with no mod entity gets `data` as nil, and the firing
+        // writes nothing back: the data map gains no entry.
+        m.random_tick(
+            &mut level,
+            &mut test_events::random_tick_event(
+                LevelDimension::Overworld,
+                BlockPos::new(9, 9, 9),
+                BlockStateId(7),
+            ),
+        );
+        assert!(!level.data.contains_key(&[9, 9, 9]));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

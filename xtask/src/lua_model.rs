@@ -36,6 +36,13 @@ pub enum Host {
     Level,
     /// `level: &mut dyn LevelRandomHost`: level reads build the table.
     LevelMut,
+    /// `level: &mut dyn LevelWriteHost`: level reads build the table and
+    /// the write actions run on it (a level tick's whole point, which the
+    /// stock level arms drop).
+    LevelWrite,
+    /// `level: &mut dyn LevelTicksHost`: the schedule-tick level reads
+    /// build the table (a shape update answers read-only).
+    LevelTicks,
 }
 
 /// How a generated hook's handlers filter by kind (`horizon.on(name, fn,
@@ -54,6 +61,13 @@ pub enum Kind {
     /// Loot (`loot_drops` only): the block id or entity kind of the loot
     /// context, with the absent-both early-out (`loot_kind_key`).
     Loot,
+    /// A level tick's block id: the ticked `state` names its block through
+    /// the level (`level.state_block`); an unknown state tells nobody, not
+    /// even unfiltered handlers.
+    Block {
+        /// The dispatch parameter the block id derives from (`state`).
+        field: String,
+    },
 }
 
 /// One converter tag per event-table field: the seed expression, the
@@ -159,6 +173,17 @@ pub enum Conv {
     LootDrops,
     /// A state field's `_props` note: seeded beside the state itself.
     StateProps,
+    /// A level-tick hook's `props`: the ticked state's properties by name,
+    /// seeded from the level (`level.state_properties(event.state)`),
+    /// read-only. A documentary tag: the bespoke arm seeds it inline with
+    /// the hand-written body it replaces.
+    LevelProps,
+    /// A level-tick hook's `data`: the mod block entity's saved table at
+    /// the ticked position, or nil without one, written back with the
+    /// before-template rule (`table_to_compound(&data, Some(&before))`,
+    /// never the typeless `Compound::from_value`). A documentary tag: the
+    /// bespoke arm seeds and writes it back inline.
+    LevelData,
 }
 
 /// How a `replace` out value reads back: nil stays `None`, a table or value
@@ -207,6 +232,7 @@ impl Model {
             Kind::Field => Some("kind"),
             Kind::Entity { field, .. } => Some(field.as_str()),
             Kind::Loot => Some("context"),
+            Kind::Block { field } => Some(field.as_str()),
             Kind::None => None,
         }
     }
@@ -262,8 +288,9 @@ pub enum Class {
     Generated(Model),
     /// A hand-written converter would unblock it: the missing converters.
     Adapter(Vec<String>),
-    /// A `ticks` parameter: the level-tick host the Lua runtime does not
-    /// implement.
+    /// A level-tick shape the Lua runtime does not implement yet (a listen
+    /// bonemeal, a replace shape update): the cancel-contract level writes
+    /// generate, the rest waits for its own chunk.
     Tick,
     /// No event-table mapping exists: the reason.
     Cannot(String),
@@ -688,7 +715,9 @@ fn field_of(hook: &str, param: &str, ty: &syn::Type, host: Host, is_out: bool) -
         Some("LevelDimension") => FieldOutcome::Conv(Conv::Dim, "string".into()),
         Some("BlockPos") => FieldOutcome::Conv(Conv::PosStruct, "Vec3".into()),
         Some("BlockStateId") => match host {
-            Host::Level | Host::LevelMut => FieldOutcome::Conv(Conv::StateLevel, "string".into()),
+            Host::Level | Host::LevelMut | Host::LevelWrite | Host::LevelTicks => {
+                FieldOutcome::Conv(Conv::StateLevel, "string".into())
+            }
             Host::GameMut | Host::GameRef => FieldOutcome::Conv(Conv::StateGame, "string".into()),
             _ => adapter("a block state needs a host to name it"),
         },
@@ -3010,19 +3039,38 @@ fn model_of(
             }
         }
     }
-    // Any parameter named `ticks`: the level-tick host the Lua runtime does
-    // not implement (a plain `u32` of that name is scheduling-adjacent too,
-    // so the name alone decides).
-    if params.iter().any(|(n, _)| n == "ticks") {
-        return Err(Class::Tick);
+    // A `ticks: &mut Ticks` on a `GameLevel` target: the level-tick host
+    // (MIRRORED from `horizon-mod-api-gen`, which strips exactly this
+    // shape: only the name AND the `&mut Ticks` type on a level target
+    // count, so a plain `u32 ticks` and `block_entity_ticks`' `&mut bool
+    // ticks` classify as ordinary scalars for their own chunks).
+    // The shape check is structural (a lifetime-free `&mut Ticks`, which is
+    // exactly what that crate's token-stream comparison accepts); `quote`
+    // is not a dependency here.
+    // MIRRORED from `host_for` both in the strip and in the host below.
+    let is_level = target.contains("::GameLevel<");
+    let ticks = is_level
+        && params.iter().any(|(n, t)| {
+            n == "ticks"
+                && matches!(t, syn::Type::Reference(r)
+                if r.mutability.is_some()
+                    && r.lifetime.is_none()
+                    && matches!(&*r.elem, syn::Type::Path(p) if p.path.is_ident("Ticks")))
+        });
+    if ticks {
+        params.retain(|(n, _)| n != "ticks");
     }
     // MIRRORED from `host_for`: which host type a receiver gets.
-    let is_level = target.contains("::GameLevel<");
     let host = match receiver {
         None => Host::None,
         Some(mutable) => {
             if is_level {
-                if mutable { Host::LevelMut } else { Host::Level }
+                match (mutable, ticks) {
+                    (true, true) => Host::LevelWrite,
+                    (false, true) => Host::LevelTicks,
+                    (true, false) => Host::LevelMut,
+                    (false, false) => Host::Level,
+                }
             } else if mutable {
                 Host::GameMut
             } else {
@@ -3030,6 +3078,14 @@ fn model_of(
             }
         }
     };
+    // Only the cancel-contract level writes generate: the bespoke arm runs
+    // the write actions and cancels through `handled()`. Every other
+    // level-tick shape (a listen bonemeal, a replace shape update) stays
+    // `Tick` for its own chunk: a pure host rule would emit them through
+    // an arm that does not exist.
+    if ticks && !(host == Host::LevelWrite && contract == "cancel") {
+        return Err(Class::Tick);
+    }
     // A collect out stays a parameter: the event carries it as a value for
     // every mod to edit in turn. Every other out leaves the parameters: the
     // method returns it instead.
@@ -3198,9 +3254,19 @@ fn model_of(
     // The kind filter: a `kind` string field names an entity type (minus
     // the documented non-entity kinds), else the hook's single entity id
     // resolves through a game host. Loot filters by the block id or entity
-    // kind of its context instead, with the absent-both early-out.
+    // kind of its context instead, with the absent-both early-out. A level
+    // write about a state filters by that state's block id through the
+    // level; an unknown state tells nobody.
     let kind = if name == "loot_drops" {
         Kind::Loot
+    } else if host == Host::LevelWrite
+        && params
+            .iter()
+            .any(|(n, t)| n == "state" && is_path(t, "BlockStateId"))
+    {
+        Kind::Block {
+            field: "state".to_owned(),
+        }
     } else if params.iter().any(|(n, t)| n == "kind" && is_str_ref(t))
         && !NON_ENTITY_KINDS.iter().any(|(n, _)| n == &name)
     {
@@ -3257,6 +3323,25 @@ fn model_of(
         extras.push(Extra {
             name: "block".to_owned(),
             conv: Conv::BlockFromState,
+        });
+    }
+    // A level tick exposes its `state` as `block` (the id) with `props`
+    // (the state's properties) and `data` (the mod block entity's saved
+    // table, or nil): the native id is opaque to scripts, so the event
+    // carries what the legacy positional hook did, by name.
+    if host == Host::LevelWrite {
+        fields.retain(|f| f.name != "state");
+        extras.push(Extra {
+            name: "block".to_owned(),
+            conv: Conv::BlockFromState,
+        });
+        extras.push(Extra {
+            name: "props".to_owned(),
+            conv: Conv::LevelProps,
+        });
+        extras.push(Extra {
+            name: "data".to_owned(),
+            conv: Conv::LevelData,
         });
     }
     // Every state field seeds its `_props` table beside itself (the state
@@ -3399,6 +3484,13 @@ pub fn assert_lines(
         }
         Conv::PreLogin => vec![a(&format!("{e}.count == 0"))],
         Conv::StateProps => vec![a(&format!("next({e}) == nil"))],
+        // A level tick's props seed from the fake level's empty properties
+        // (a block without any), so the stock test pins the empty table;
+        // tables with properties are the hand-written tests'.
+        Conv::LevelProps => vec![a(&format!("next({e}) == nil"))],
+        // A level tick's data seeds nil without a mod block entity (the
+        // fake level has none); data present is the hand-written tests'.
+        Conv::LevelData => vec![a(&format!("{e} == nil"))],
         Conv::Bytes | Conv::PathStr => vec![a(&format!("{e} == {lua}"))],
         Conv::Player | Conv::PlayerOpt => vec![
             a(&format!("{e}.uuid == {lua}")),
@@ -3896,6 +3988,10 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
             "{ refuse = \"test:refused\" }".into(),
         ),
         Conv::StateProps => panic!("no sample for a state _props note"),
+        // A level tick's extras seed inline in the bespoke arm (their tags
+        // only document the seed): sampling one is a model bug.
+        Conv::LevelProps => panic!("no sample for a level tick's props"),
+        Conv::LevelData => panic!("no sample for a level tick's data"),
         // The lifecycle context both lifecycle hooks carry: the authority
         // alternates with `n`, the epoch and tick count up, so every leaf
         // has its own value.
@@ -4383,4 +4479,67 @@ pub fn event_name(hook: &str) -> String {
     }
     out.push_str("Event");
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
+    }
+
+    /// The level-tick hosts classify where their chunks expect them: the
+    /// two cancel-contract level writes generate through `LevelWrite`,
+    /// every other level-tick shape stays `Tick`, and the cooldown hooks'
+    /// plain `u32`/`i32 ticks` are ordinary scalars (they generate through
+    /// their game hosts).
+    #[test]
+    fn level_tick_hosts_classify() {
+        let root = repo_root();
+        let classes = classify(&root).unwrap();
+        let class_of = |name: &str| {
+            classes
+                .iter()
+                .find(|row| row.name == name)
+                .unwrap()
+                .class
+                .clone()
+        };
+        for name in ["random_tick", "tick_block"] {
+            match class_of(name) {
+                Class::Generated(model) => {
+                    assert_eq!(model.host, Host::LevelWrite, "{name} host");
+                    assert!(
+                        matches!(model.kind, Kind::Block { .. }),
+                        "{name} kind filters by block id"
+                    );
+                }
+                class => panic!("{name} should generate, got {class:?}"),
+            }
+        }
+        for name in ["update_shape", "perform_bonemeal"] {
+            assert!(
+                matches!(class_of(name), Class::Tick),
+                "{name} stays tick-host for its own chunk"
+            );
+        }
+        // `block_entity_ticks` keeps its hand-written hook (H3b owns it).
+        match class_of("block_entity_ticks") {
+            Class::Cannot(reason) => {
+                assert!(reason.contains("keeps this name"), "{reason}");
+            }
+            class => panic!("block_entity_ticks keeps its hook, got {class:?}"),
+        }
+        // A plain `ticks` number never meant the level-tick host.
+        match class_of("player_item_cooldown") {
+            Class::Generated(model) => {
+                assert_eq!(model.host, Host::GameMut, "cooldown host");
+                let ticks = model.fields.iter().find(|f| f.name == "ticks").unwrap();
+                assert_eq!(ticks.conv, Conv::Plain, "cooldown ticks are a number");
+            }
+            class => panic!("player_item_cooldown should generate, got {class:?}"),
+        }
+    }
 }

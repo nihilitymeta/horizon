@@ -38,6 +38,8 @@ fn host_ident(host: Host) -> &'static str {
         Host::GameRef => "game_ref",
         Host::Level => "level",
         Host::LevelMut => "level_mut",
+        Host::LevelWrite => "level_write",
+        Host::LevelTicks => "level_ticks",
     }
 }
 
@@ -56,6 +58,8 @@ fn kind_tt(model: &Model) -> String {
         }
         // Loot filters by the block id or entity kind of its context.
         Kind::Loot => "(loot)".to_owned(),
+        // A level tick filters by its state's block id through the level.
+        Kind::Block { field } => format!("(block {field})"),
     }
 }
 
@@ -127,6 +131,11 @@ fn seed_tag(conv: &Conv, ty: &str, key: Option<&str>) -> String {
         Conv::StateGame => "state_game",
         Conv::BlockAtPos => "block_at_pos",
         Conv::BlockFromState => "block_from_state",
+        // Documentary tags only: the bespoke level-tick arm seeds these
+        // inline (like `perform_command`'s fields document its parameters),
+        // so no `gen_seed` arm expands them.
+        Conv::LevelProps => "level_props",
+        Conv::LevelData => "level_data",
         Conv::MutScalar => {
             if owned_mut_scalar(ty) {
                 "copy"
@@ -333,7 +342,10 @@ fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
     // run. The loot, tick and pack arms still seed and write back through
     // the shared arms; only the dispatch shell is bespoke. The perform arm
     // seeds nothing through the shared arms (its fields only document the
-    // parameters); it dispatches, parses and cancels itself.
+    // parameters); it dispatches, parses and cancels itself. A level tick
+    // resolves its block through the level and runs the write actions on
+    // it (unlike the stock level arms, which drop them); its field tags
+    // document the inline seed the same way.
     let bespoke = match model.name.as_str() {
         "server_tick" => Some("gen_server_tick"),
         "loot_drops" => Some("gen_loot_drops"),
@@ -342,12 +354,18 @@ fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
         "register_commands" => Some("gen_register_commands"),
         _ => None,
     };
-    let contract = match model.contract.as_str() {
-        "collect" => "gen_collect",
-        "cancel" => "gen_cancel",
-        "replace" => "gen_replace",
-        _ => "gen_listen",
-    };
+    let macro_name = bespoke.unwrap_or_else(|| {
+        if model.host == Host::LevelWrite {
+            "gen_level_tick"
+        } else {
+            match model.contract.as_str() {
+                "collect" => "gen_collect",
+                "cancel" => "gen_cancel",
+                "replace" => "gen_replace",
+                _ => "gen_listen",
+            }
+        }
+    });
     let mut tags: Vec<String> = model
         .fields
         .iter()
@@ -364,7 +382,6 @@ fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
     let fields = tags.join(", ");
     // A bespoke arm keeps the kind token: it filters through it like the
     // stock arms do.
-    let macro_name = bespoke.unwrap_or(contract);
     let mut out = format!(
         "    {macro_name}!({}, {}, {}, {}, [{fields}]",
         model.name,
@@ -414,6 +431,8 @@ fn dispatch_call(
         Host::GameRef => "&FakeHost::empty(), ".to_owned(),
         Host::Level => "&FakeLevel, ".to_owned(),
         Host::LevelMut => "&mut FakeLevel, ".to_owned(),
+        Host::LevelWrite => "&mut FakeLevel, ".to_owned(),
+        Host::LevelTicks => "&mut FakeLevel, ".to_owned(),
     };
     let mut bindings = Vec::new();
     let mut args = Vec::new();
@@ -525,6 +544,23 @@ fn kind_values(model: &Model) -> Option<KindPlan> {
                 assert_kind: Some(ENTITY_ONE.to_string()),
             })
         }
+        // A level tick filters by its state's block id through the level
+        // (`FakeLevel` names id 7 stone, every other id itself): K1 is the
+        // stone tick the handler watches, so the K1 firing's asserts match
+        // it exactly; K2 is another block's tick, which stays quiet. There
+        // is no gone firing: an unknown state is a fake-level concern, and
+        // the hand-written tests pin it.
+        Kind::Block { .. } => {
+            let k1 = "BlockStateId(7)".to_owned();
+            let k2 = "BlockStateId(9)".to_owned();
+            Some(KindPlan {
+                k1,
+                k2,
+                gone: None,
+                register: "minecraft:stone".to_owned(),
+                assert_kind: Some("\"minecraft:stone\"".to_owned()),
+            })
+        }
         // Loot filters by the block id or entity kind of its context. K1
         // is the `n = 0` dispatch sample (a stone break), so the K1
         // firing's asserts match it exactly; K2 is a skeleton death, which
@@ -548,7 +584,18 @@ fn kind_values(model: &Model) -> Option<KindPlan> {
 /// hook, the field, and the one-line reason. Anything missing from here
 /// fails the generator (see `uncovered_fields`): a silent skip is a stale
 /// test, not a passing one.
-const FIELD_ALLOWLIST: &[(&str, &str, &str)] = &[];
+const FIELD_ALLOWLIST: &[(&str, &str, &str)] = &[
+    (
+        "random_tick",
+        "state",
+        "the event carries the state as `block` (asserted through the `block` extra), not as an id",
+    ),
+    (
+        "tick_block",
+        "state",
+        "the event carries the state as `block` (asserted through the `block` extra), not as an id",
+    ),
+];
 
 fn allowlisted(hook: &str, field: &str) -> bool {
     FIELD_ALLOWLIST
@@ -956,7 +1003,14 @@ fn handler_body(
         lines.push("    assert(event ~= nil, \"event\")".to_owned());
     }
     if cancel && model.contract == "cancel" {
-        lines.push("    horizon.cancel()".to_owned());
+        // A level tick cancels through `handled()`: the stock `cancel()`
+        // spelling is dropped with a warning there, so the generated
+        // handlers use the hook's own cancel.
+        if model.host == Host::LevelWrite {
+            lines.push("    horizon.handled()".to_owned());
+        } else {
+            lines.push("    horizon.cancel()".to_owned());
+        }
     }
     if let Some(out) = &model.out {
         let (rust, lua) = replace_sample(out.read, &out.ret, 0);
@@ -1245,6 +1299,134 @@ fn no_cancel_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
     out
 }
 
+/// A level tick's own contract, beside the stock event-table firing: the
+/// write actions reach the level (with the flags default and an explicit
+/// one, the tick for the ticked block, the summon with its first argument
+/// ignored), `handled()` cancels, a later handler's error drops the actions
+/// and the data edits alike, the data round-trips with its NBT types (a nil
+/// key stays removed) while absent data is nil and writes nothing, two mods
+/// share one tick in load order, and each hook fires only its own handlers.
+/// Every test resets the fake level's recorders first, and the data tests
+/// clear the data slot after, so no test leaks into the stock firings.
+fn level_tick_tests(model: &Model) -> Vec<String> {
+    vec![
+        level_tick_write_actions_test(model),
+        level_tick_error_drops_test(model),
+        level_tick_data_test(model),
+        level_tick_absent_data_test(model),
+        level_tick_two_mods_test(model),
+        level_tick_independence_test(model),
+    ]
+}
+
+/// One level-tick firing at the stone block the tests watch: the K1 stone
+/// state at the position the legacy tests ticked.
+fn level_tick_fire(name: &str, flag: &str) -> String {
+    format!(
+        "    let mut {flag} = false;\n    dispatch_{name}(&mut FakeLevel, &firing_mods, LevelDimension::Overworld, BlockPos::new(1, 64, -3), BlockStateId(7), &mut {flag});\n"
+    )
+}
+
+/// The recorder resets every level-tick test starts with, so a firing
+/// asserts exactly what it ran.
+fn level_tick_resets() -> &'static str {
+    "    reset_level_writes();\n    reset_level_scheduled();\n    reset_level_summons();\n    reset_level_data_writes();\n    reset_level_data();\n"
+}
+
+/// The write actions reach the level: `set_block_property` with the default
+/// flags and an explicit one, `schedule_tick` for the ticked block,
+/// `summon` with its first argument ignored, and `handled()` cancels.
+fn level_tick_write_actions_test(model: &Model) -> String {
+    let name = model.name.as_str();
+    let lua = format!(
+        "horizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_block_property(\"stage\", \"growing\")\n    horizon.set_block_property(\"lit\", \"true\", 1)\n    horizon.schedule_tick(40)\n    horizon.summon(event.dimension, \"minecraft:zombie\", 1.5, 65.0, -2.5)\n    horizon.handled()\nend, \"minecraft:stone\")"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_write_actions() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_actions\", {lua:?});\n    let firing_mods = boxed(m);\n{}    {{\n{}        assert!(handled, \"handled() cancelled the tick\");\n    }}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    assert_eq!(level_writes(), [([1, 64, -3], \"stage\".to_owned(), \"growing\".to_owned(), 2), ([1, 64, -3], \"lit\".to_owned(), \"true\".to_owned(), 1)], \"set_block_property ran with the default flags and the explicit ones\");\n    assert_eq!(level_scheduled(), [([1, 64, -3], \"minecraft:stone\".to_owned(), 40)], \"schedule_tick ran for the ticked block\");\n    assert_eq!(level_summons(), [(\"minecraft:zombie\".to_owned(), [1.5, 65.0, -2.5])], \"summon ran with its first argument ignored\");\n    assert_eq!(level_data_writes(), [], \"no block entity, no data write\");\n    no_error(&id);\n}}\n",
+        level_tick_resets(),
+        level_tick_fire(name, "handled"),
+    )
+}
+
+/// A later handler's error drops the queued actions and the data edits
+/// alike: nothing reaches the level and the flag stays unset.
+fn level_tick_error_drops_test(model: &Model) -> String {
+    let name = model.name.as_str();
+    let lua = format!(
+        "horizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    event.data.charge = event.data.charge + 1\n    horizon.set_block_property(\"stage\", \"growing\")\nend, \"minecraft:stone\")\nhorizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 10\n    error(\"boom\")\nend, \"minecraft:stone\")"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_handler_error_drops_actions_and_data() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_errordrops\", {lua:?});\n    let firing_mods = boxed(m);\n{}    set_level_data([1, 64, -3], [(horizon_world::nbt::JavaString::from(\"charge\"), horizon_world::nbt::Tag::Int(0))].into_iter().collect());\n    {{\n{}        assert!(!handled, \"an errored tick is not handled\");\n    }}\n    assert_eq!(witness(&lua), 11, \"both handlers ran\");\n    assert_eq!(level_writes(), [], \"the queued write was dropped\");\n    assert_eq!(level_scheduled(), [], \"nothing scheduled\");\n    assert_eq!(level_summons(), [], \"nothing summoned\");\n    assert_eq!(level_data_writes(), [], \"the data edit was dropped\");\n    has_error(&id);\n    reset_level_data();\n}}\n",
+        level_tick_resets(),
+        level_tick_fire(name, "handled"),
+    )
+}
+
+/// The data round-trips with its NBT types: the int stays an int, the
+/// added key arrives, the removed key stays removed, and an untouched long
+/// stays a long (which is what pins the before-template rule: the typeless
+/// write would narrow it to an int).
+fn level_tick_data_test(model: &Model) -> String {
+    let name = model.name.as_str();
+    let lua = format!(
+        "horizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.data.charge == 0, \"data\")\n    event.data.charge = event.data.charge * 10 + 1\n    event.data.extra = \"new\"\n    event.data.name = nil\nend, \"minecraft:stone\")"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_data_round_trip() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_data\", {lua:?});\n    let firing_mods = boxed(m);\n{}    set_level_data([1, 64, -3], [(horizon_world::nbt::JavaString::from(\"charge\"), horizon_world::nbt::Tag::Int(0)), (horizon_world::nbt::JavaString::from(\"name\"), horizon_world::nbt::Tag::String(\"x\".into())), (horizon_world::nbt::JavaString::from(\"kept\"), horizon_world::nbt::Tag::Long(5))].into_iter().collect());\n    {{\n{}        assert!(!handled, \"no handled() call leaves the tick running\");\n    }}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    assert_eq!(level_data_writes().len(), 1, \"the data edit was written back\");\n    let (at, after) = &level_data_writes()[0];\n    assert_eq!(*at, [1, 64, -3], \"the write lands at the ticked position\");\n    assert_eq!(after.get(&horizon_world::nbt::JavaString::from(\"charge\")), Some(&horizon_world::nbt::Tag::Int(1)), \"the int stays an int\");\n    assert_eq!(after.get(&horizon_world::nbt::JavaString::from(\"extra\")), Some(&horizon_world::nbt::Tag::String(\"new\".into())), \"the added key arrives\");\n    assert_eq!(after.get(&horizon_world::nbt::JavaString::from(\"name\")), None, \"the removed key stays removed\");\n    assert_eq!(after.get(&horizon_world::nbt::JavaString::from(\"kept\")), Some(&horizon_world::nbt::Tag::Long(5)), \"untouched keys survive with their NBT types\");\n    no_error(&id);\n    reset_level_data();\n}}\n",
+        level_tick_resets(),
+        level_tick_fire(name, "handled"),
+    )
+}
+
+/// A block with no mod entity gets `data` as nil, and a firing that only
+/// reads it writes nothing: the hook does nothing harmful.
+fn level_tick_absent_data_test(model: &Model) -> String {
+    let name = model.name.as_str();
+    let lua = format!(
+        "horizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.data == nil, \"data\")\n    horizon.set_block_property(\"stage\", \"growing\")\nend, \"minecraft:stone\")"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_absent_data_is_nil_and_writes_nothing() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_nodata\", {lua:?});\n    let firing_mods = boxed(m);\n{}    {{\n{}        assert!(!handled, \"no handled() call leaves the tick running\");\n    }}\n    assert_eq!(witness(&lua), 1, \"the handler ran\");\n    assert_eq!(level_writes(), [([1, 64, -3], \"stage\".to_owned(), \"growing\".to_owned(), 2)], \"the write action still ran\");\n    assert_eq!(level_data_writes(), [], \"nil data writes nothing\");\n    no_error(&id);\n}}\n",
+        level_tick_resets(),
+        level_tick_fire(name, "handled"),
+    )
+}
+
+/// Two mods share one tick in load order: the kind-filtered mod and the
+/// every-block mod both hear the stone tick.
+fn level_tick_two_mods_test(model: &Model) -> String {
+    let name = model.name.as_str();
+    let lua_a = format!(
+        "horizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_block_property(\"a\", \"1\")\nend, \"minecraft:stone\")"
+    );
+    let lua_b = format!(
+        "horizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\n    horizon.set_block_property(\"b\", \"2\")\nend)"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_two_mods_share_a_tick() {{\n    let (a, a_id, _a_dir, a_lua) = loaded_tracked(\"gen_{name}_duo_a\", {lua_a:?});\n    let (b, b_id, _b_dir, b_lua) = loaded_tracked(\"gen_{name}_duo_b\", {lua_b:?});\n    let firing_mods = duo_boxed(a, b);\n{}    {{\n{}    }}\n    assert_eq!(witness(&a_lua), 1, \"the kind-filtered mod ran\");\n    assert_eq!(witness(&b_lua), 1, \"the every-block mod ran\");\n    assert_eq!(level_writes(), [([1, 64, -3], \"a\".to_owned(), \"1\".to_owned(), 2), ([1, 64, -3], \"b\".to_owned(), \"2\".to_owned(), 2)], \"both mods wrote in load order\");\n    no_error(&a_id);\n    no_error(&b_id);\n}}\n",
+        level_tick_resets(),
+        level_tick_fire(name, "handled"),
+    )
+}
+
+/// Each hook fires only its own handlers: the sibling tick's dispatch stays
+/// quiet, then the hook's own dispatch runs its handler.
+fn level_tick_independence_test(model: &Model) -> String {
+    let name = model.name.as_str();
+    let other = if name == "random_tick" {
+        "tick_block"
+    } else {
+        "random_tick"
+    };
+    let lua = format!(
+        "horizon.on(\"{name}\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:stone\")"
+    );
+    format!(
+        "#[test]\nfn generated_{name}_ignores_the_sibling_tick() {{\n    let (m, id, _dir, lua) = loaded_tracked(\"gen_{name}_sibling\", {lua:?});\n    let firing_mods = boxed(m);\n{}    {{\n        let mut other_handled = false;\n        dispatch_{other}(&mut FakeLevel, &firing_mods, LevelDimension::Overworld, BlockPos::new(1, 64, -3), BlockStateId(7), &mut other_handled);\n        assert_eq!(witness(&lua), 0, \"the sibling tick stays quiet\");\n    }}\n    {{\n{}        assert!(!handled, \"no handled() call leaves the tick running\");\n    }}\n    assert_eq!(witness(&lua), 1, \"the hook's own tick runs its handler\");\n    no_error(&id);\n}}\n",
+        level_tick_resets(),
+        level_tick_fire(name, "handled"),
+    )
+}
 /// `perform_command` answers `(player, args)`, not an event table, and its
 /// kind is the dispatched command words: the stock emitters (an `event`
 /// handler, a kind plan) do not fit, so these bespoke tests pin the same
@@ -1544,7 +1726,7 @@ fn cost_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
         tys,
         None,
         &unregistered,
-        (0, 0),
+        (0, 0, 0),
         "with no handler",
         unheard_tables,
         unheard_msg,
@@ -1559,11 +1741,13 @@ fn cost_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
         // A field kind resolves without the host; an entity kind resolves
         // through it (one `entity`, one `entity_kind`), before the watches
         // check that turns the event away. Loot resolves its block's name
-        // through the host (one `state_name`) for the same check.
+        // through the host (one `state_name`) for the same check. A level
+        // tick resolves its block through the level (one `state_block`).
         let reads = match model.kind {
-            Kind::Entity { .. } => (2, 2),
-            Kind::Loot => (0, 1),
-            _ => (0, 0),
+            Kind::Entity { .. } => (2, 2, 0),
+            Kind::Loot => (0, 1, 0),
+            Kind::Block { .. } => (0, 0, 1),
+            _ => (0, 0, 0),
         };
         cost_part(
             &mut out,
@@ -1585,9 +1769,10 @@ fn cost_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
 /// One cost-test part: a loaded mod, then a single measured dispatch with
 /// the host counters reset. `kind` is the K1 dispatch argument for
 /// kind-filtered hooks; `reads` is the pinned per-dispatch (`entity`,
-/// `host`) read count; `table_count` is how many event tables the dispatch
-/// built (zero here: the table is built past every early return, except the
-/// tick's own timers, which always listen), and `tables` states that.
+/// `host`, `level`) read count; `table_count` is how many event tables the
+/// dispatch built (zero here: the table is built past every early return,
+/// except the tick's own timers, which always listen), and `tables` states
+/// that.
 #[allow(clippy::too_many_arguments)]
 fn cost_part(
     out: &mut String,
@@ -1595,7 +1780,7 @@ fn cost_part(
     tys: &BTreeMap<String, String>,
     kind: Option<String>,
     load: &str,
-    reads: (usize, usize),
+    reads: (usize, usize, usize),
     when: &str,
     table_count: usize,
     tables: &str,
@@ -1627,8 +1812,8 @@ fn cost_part(
         reads.1, model.name, when
     ));
     out.push_str(&format!(
-        "    assert_eq!(level_reads(), 0, \"{} read the level {}\");\n",
-        model.name, when
+        "    assert_eq!(level_reads(), {}, \"{} read the level {}\");\n",
+        reads.2, model.name, when
     ));
     out.push_str("    no_error(&id);\n");
     out.push_str("    drop_dir(dir);\n");
@@ -1654,7 +1839,11 @@ fn cost_control_reads(model: &Model) -> (bool, bool) {
     for conv in convs {
         match conv {
             Conv::Player | Conv::PlayerOpt | Conv::StateGame => seed_reads_host = true,
-            Conv::StateLevel | Conv::BlockAtPos | Conv::BlockFromState => reads_level = true,
+            Conv::StateLevel
+            | Conv::BlockAtPos
+            | Conv::BlockFromState
+            | Conv::LevelProps
+            | Conv::LevelData => reads_level = true,
             // Loot's seed names its block through the host and its player
             // through the host's players.
             Conv::LootCtx => seed_reads_host = true,
@@ -2694,6 +2883,12 @@ pub fn run(check: bool) -> Result<(), String> {
             tests.extend(perform_command_tests(model, &tys));
         } else if !spike {
             tests.push(test_fn(model, &tys));
+        }
+        // A level tick runs its write actions on the level and carries the
+        // block entity's data: bespoke tests pin that contract beside the
+        // stock event-table firing.
+        if model.host == Host::LevelWrite {
+            tests.extend(level_tick_tests(model));
         }
         // The second firing covers the optional-stack state the dispatch
         // index misses (odd is always nil): the name cannot collide with a
