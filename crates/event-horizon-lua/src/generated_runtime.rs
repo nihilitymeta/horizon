@@ -1274,21 +1274,48 @@ pub(crate) fn seed_seq_len(
     Ok(())
 }
 
+/// How far past its seeded length an in-place sequence write may grow: a
+/// script appending entries stays cheap, while a far sparse index errors
+/// instead of reserving a giant backing store.
+const SEQ_APPEND_CAP: usize = 65_536;
+
 /// A sequence table's element count: a table the script kept in place reads
 /// its seeded length, trimmed of trailing slots the script cleared (a
 /// seeded hole stays pinned, so an untouched trailing hole survives, while
-/// `slots[3] = nil` shrinks; `false` pins an explicit hole instead); a
-/// table the script replaced wholesale reads its own length. No script key
-/// is ever trusted: a `__len` the script sets is just another ignored key.
-fn seq_len(lua: &Lua, t: &Table) -> mlua::Result<usize> {
+/// `slots[3] = nil` shrinks; `false` pins an explicit hole instead), grown
+/// by entries the script appended past the seed; a table the script
+/// replaced wholesale reads its own length. No script key is ever trusted:
+/// a `__len` the script sets is just another ignored key (only the hidden
+/// seed and the table's own integer keys count), and growth past the seed
+/// plus [`SEQ_APPEND_CAP`] errors instead of allocating.
+fn seq_len(lua: &Lua, t: &Table, field: &str) -> mlua::Result<usize> {
     let entry: Value = hidden_table(lua)?.get(t.clone())?;
-    let (mut len, holes): (usize, Option<Table>) = match entry {
+    let (seeded, holes): (usize, Option<Table>) = match entry {
         Value::Table(entry) => (
             entry.get::<i64>("len")?.max(0) as usize,
             entry.get::<Option<Table>>("holes")?,
         ),
         _ => return Ok(t.raw_len()),
     };
+    // Appends past the seed are kept: the length starts at the seeded count
+    // or the table's own length, whichever is larger. A sparse index the
+    // border skips (`slots[1e9] = x` leaves `raw_len` alone) still counts,
+    // so nothing the script set silently vanishes.
+    let mut top = seeded.max(t.raw_len());
+    for pair in t.pairs::<Value, Value>() {
+        let (k, _) = pair?;
+        if let Value::Integer(k) = k {
+            top = top.max(k.max(0) as usize);
+        }
+    }
+    if top.saturating_sub(seeded) > SEQ_APPEND_CAP {
+        return Err(mlua::Error::runtime(format!(
+            "{field}: sequence grew from {seeded} to {top} elements, \
+             over the {SEQ_APPEND_CAP}-element in-place append limit; \
+             replace the table to grow it further"
+        )));
+    }
+    let mut len = top;
     while len > 0 {
         let v: Value = t.get(len)?;
         if !matches!(v, Value::Nil) {
@@ -1325,15 +1352,16 @@ pub(crate) fn struct_vec_to_lua<T: LuaStruct>(lua: &Lua, items: &[T]) -> mlua::R
 /// A sequence table back into elements; `false` reads as `nil`, and so does
 /// a hole inside the seeded length (element positions are fixed:
 /// `{slot, nil, slot}` is three elements with a `None` in the middle,
-/// while a cleared trailing slot shrinks the list). A `nil` where the
-/// element type is not optional errors instead of silently dropping the
-/// tail.
+/// while a cleared trailing slot shrinks the list and an in-place append
+/// past the seeded length grows it, up to the append limit in `seq_len`).
+/// A `nil` where the element type is not optional errors instead of
+/// silently dropping the tail.
 pub(crate) fn struct_vec_from_lua<T: LuaStruct>(
     lua: &Lua,
     t: &Table,
     field: &str,
 ) -> mlua::Result<Vec<T>> {
-    let len = seq_len(lua, t)?;
+    let len = seq_len(lua, t, field)?;
     let mut out = Vec::with_capacity(len);
     for i in 1..=len {
         let v: Value = t.get(i)?;

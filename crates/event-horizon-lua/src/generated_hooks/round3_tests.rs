@@ -895,6 +895,61 @@ fn seq_trailing_nil_shrinks() {
     no_error(&id);
 }
 
+/// Regression (round 3c dropped it): an in-place append past the seeded
+/// length is kept. Slots seed {test:a, test:b}, so `#event.slots + 1` is
+/// index 3; the write-back length grows to 3 instead of dropping test:c.
+#[test]
+fn seq_append_past_seed_kept() {
+    let stack = |item: &str| {
+        Some(ItemStack {
+            item: item.into(),
+            count: 1,
+            damage: 0,
+            extra: None,
+        })
+    };
+    let (m, id, _dir) = loaded(
+        "gen_menu_append",
+        "horizon.on(\"menu_input_closed\", function(event) event.slots[#event.slots + 1] = { id = \"test:c\", count = 1, damage = 0 } end)",
+    );
+    let mods = boxed(m);
+    let mut slots = vec![stack("test:a"), stack("test:b")];
+    dispatch_menu_input_closed(&mut FakeHost::empty(), &mods, 7, 8, &mut slots);
+    assert_eq!(slots.len(), 3);
+    assert_eq!(slots[2].as_ref().unwrap().item.to_string(), "test:c");
+    no_error(&id);
+}
+
+/// A far sparse index errors instead of allocating: `slots[1e9] = x`
+/// leaves the length border alone, so without the key scan it would
+/// silently vanish (or, with a naive max-key length, reserve a giant
+/// backing store). The native values stay.
+#[test]
+fn seq_huge_sparse_index_errors() {
+    let stack = |item: &str| {
+        Some(ItemStack {
+            item: item.into(),
+            count: 1,
+            damage: 0,
+            extra: None,
+        })
+    };
+    let (m, id, _dir) = loaded(
+        "gen_menu_huge_index",
+        "horizon.on(\"menu_input_closed\", function(event) event.slots[1000000000] = { id = \"test:c\", count = 1, damage = 0 } end)",
+    );
+    let mods = boxed(m);
+    let mut slots = vec![stack("test:a"), stack("test:b")];
+    dispatch_menu_input_closed(&mut FakeHost::empty(), &mods, 7, 8, &mut slots);
+    assert_eq!(slots.len(), 2);
+    let err = horizon_client::dev_input::mods::status()
+        .into_iter()
+        .find(|s| s.id == id)
+        .and_then(|s| s.error)
+        .expect("a far sparse index errors");
+    assert!(err.contains("append limit"), "names the limit: {err}");
+}
+
 /// Finding 4: the write-back keeps no snapshot keys on the event table, so
 /// `pairs` never sees them, and a forged one cannot confuse the write-back.
 #[test]

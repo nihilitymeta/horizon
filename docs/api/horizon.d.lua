@@ -51,9 +51,11 @@ export type GuiLayerPostEvent = { layer: string, batch: HudBatch }
 --
 -- A sequence field reads its holes as nil. Edits in place keep positions:
 -- a cleared trailing slot shrinks the list (`false` pins an explicit hole
--- instead), while a table the script replaces wholesale reads its own
--- length (use `false` for holes there). An item's `extra` keeps its NBT
--- types when edited in place; a fresh table reads with default types.
+-- instead), an append past the seeded length grows it (up to 65536 extra
+-- entries; replace the table to grow it further), while a table the script
+-- replaces wholesale reads its own length (use `false` for holes there).
+-- An item's `extra` keeps its NBT types when edited in place; a fresh
+-- table reads with default types.
 export type AddServerReloadListenersEvent = { listeners: any }
 export type AnalogOutputEvent = { dimension: string, pos: Vec3, state: string, face: "down" | "up" | "north" | "south" | "west" | "east", output: number, state_props: Props }
 export type AnvilCraftPostEvent = { player: PlayerRef, pos: Vec3, craft: { left: Item?, right: Item?, output: Item } }
