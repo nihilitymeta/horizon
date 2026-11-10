@@ -59,17 +59,21 @@ impl Launcher {
         if text.is_empty() {
             return;
         }
-        self.sources.message = Some(game_sources::add(&text, true).map(|(repo, took_over)| {
+        let message = game_sources::add(&text, true).map(|(repo, took_over)| {
             if took_over {
+                // The disk's settings changed; the window's copy must too, or its next save
+                // undoes the step-aside.
+                game_sources::step_aside_for_horizon_updates(&mut self.settings);
                 trf(
-                    "Added {repo}. It updates itself, and Horizon's own updates are off.",
+                    "Added {repo}. It updates itself, and Horizon's game updates are off.",
                     &[("repo", &repo)],
                 )
                 .to_string()
             } else {
                 trf("Added {repo}.", &[("repo", &repo)]).to_string()
             }
-        }));
+        });
+        self.sources.message = Some(message);
         if matches!(self.sources.message, Some(Ok(_))) {
             self.sources.text = LineEdit::new(String::new(), 200, 40);
         }

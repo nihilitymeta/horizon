@@ -1215,7 +1215,7 @@
   "Update the launcher automatically": "自动更新启动器",
   "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "找到更新的启动器版本时自动安装。关闭后本地构建保持不变。",
   "Added {repo}.": "已添加 {repo}。",
-  "Added {repo}. It updates itself, and Horizon's own updates are off.": "Added {repo}. It updates itself, and Horizon's own updates are off.",
+  "Added {repo}. It updates itself, and Horizon's game updates are off.": "Added {repo}. It updates itself, and Horizon's game updates are off.",
   "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "仓库以 GitHub 发布版发布的游戏构建，例如 Event Horizon 的构建。每个构建都安装在某个已安装版本的游戏文件之上。",
   "GitHub sources": "GitHub 来源",
   "Installed {tag}": "已安装 {tag}",

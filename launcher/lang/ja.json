@@ -1215,7 +1215,7 @@
   "Update the launcher automatically": "ランチャーを自動的に更新する",
   "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "新しいランチャーのリリースが見つかるとインストールします。オフにするとローカルビルドはそのまま残ります。",
   "Added {repo}.": "{repo} を追加しました。",
-  "Added {repo}. It updates itself, and Horizon's own updates are off.": "Added {repo}. It updates itself, and Horizon's own updates are off.",
+  "Added {repo}. It updates itself, and Horizon's game updates are off.": "Added {repo}. It updates itself, and Horizon's game updates are off.",
   "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "リポジトリが GitHub リリースとして公開するゲームのビルド（Event Horizon のものなど）。それぞれ、インストール済みバージョンのゲームファイルの上にインストールされます。",
   "GitHub sources": "GitHub ソース",
   "Installed {tag}": "{tag} をインストール済み",
