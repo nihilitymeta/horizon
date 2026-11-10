@@ -18,8 +18,9 @@ for c in "check.sh --self-test" docs-check.sh scaffold-check.sh example-check.sh
   tools/$c > "$log" 2>&1; rc=$?
   echo "$c: exit $rc, $(( $(date +%s)-start )) s: $(tail -1 "$log")"
   [ $rc = 0 ] || failed=1
-  # Whatever a failed check left running goes before the next one starts.
-  pkill -f "$H/target/fast/horizon-client" 2>/dev/null; sleep 1
+  # Whatever a failed check left running goes before the next one starts. Matched by exact process name: a
+  # pattern (-f) also matches any command line that contains the path, this script's own included.
+  pkill -x horizon-client 2>/dev/null; sleep 1
 done
 echo "logs: $scratch"
 exit $failed
