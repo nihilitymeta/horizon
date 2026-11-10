@@ -22,7 +22,6 @@ Horizon follows upstream when upstream has something it wants: upstream is merge
 | set up a machine the same way as the others | [docs/dev-setup.md](docs/dev-setup.md) |
 | see what Event Horizon adds, and where each part lives | [docs/fork-branches.md](docs/fork-branches.md) |
 | change the engine, or sync with upstream | [docs/fork-workflow.md](docs/fork-workflow.md) |
-| give a coding agent the rules | [docs/agents.md](docs/agents.md) |
 
 ## Branches
 

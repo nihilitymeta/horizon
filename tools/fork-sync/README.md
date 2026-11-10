@@ -14,7 +14,6 @@ and checking the result. Run them in the one checkout, on `engine-work`
 | `verify.sh [summary]` | Clippy (`--tests`), fmt and the whole test suite for the game, then the launcher's clippy and suite. Lists upstream's known macOS failures apart from real ones |
 | `game-checks.sh [modkit]` | The modkit's checks against the built game, one at a time, in a scratch game folder |
 | `metal-launch.sh [png]` | Opens the built game in a window, prints frame stats and takes a screenshot (macOS) |
-| `install-agent-rules.sh` | Copies `docs/agents.md` to `.kimi-code/AGENTS.md` and `.agents/rules/horizon-fork.md`, the files Kimi Code and Antigravity read. Run it after `docs/agents.md` changes, and commit both |
 
 ## A sync, in order
 

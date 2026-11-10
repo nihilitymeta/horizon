@@ -112,15 +112,6 @@ build into `target/debug` only, so the game in `target/fast` stays as it was unt
 The modkit's [getting started](https://github.com/whos-carmen/horizon-modkit/blob/main/docs/getting-started.md)
 walks through a first mod.
 
-## 6. Coding agents
-
-Kimi Code and Antigravity read an `AGENTS.md` at the top of the modkit and of the mod. Event Horizon's root
-`AGENTS.md` is upstream's, so its own rules ([agents.md](agents.md)) are also in `.kimi-code/AGENTS.md` and
-`.agents/rules/horizon-fork.md`, where those tools look. A clone has them already. After you change
-`docs/agents.md`, run `tools/fork-sync/install-agent-rules.sh` to update both copies, and commit them.
-
-Claude Code reads its own memory and `CLAUDE.md`, not these files.
-
 ## Keep the builds small
 
 The checkout has two build folders, and nothing else uses disk:
@@ -149,8 +140,6 @@ by necessity. Set them up again on a new machine:
 | The launcher's data: versions, instances, accounts, settings | the launcher's data folder | a player's own data, and account tokens |
 | Your worlds, options and installed mods | the game folder (`~/Library/Application Support/horizon` on macOS) | a player's own data |
 | The Microsoft sign-in client ID | your shell profile, and the repository variable `HORIZON_MSA_CLIENT_ID` | a setting, set once ([event-horizon-sign-in.md](event-horizon-sign-in.md)) |
-| Claude Code's memory and settings | `~/.claude/` | the agent's own notes about this project, on this machine |
-| Drafts of issues not posted yet | `~/src/horizon-upstream-drafts` | not meant to be public yet |
 
 GitHub's own settings for the repository are kept by GitHub, not in a file: the default branch is `engine-work`,
 upstream's workflows are turned off (Actions tab), and Event Horizon's own release workflow is
