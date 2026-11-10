@@ -2744,6 +2744,23 @@ pub fn flat_ts(conv: &Conv) -> Vec<(String, String)> {
     }
 }
 
+/// One model field's event-table keys with their `.d.lua` types: a flat
+/// seed's table keys (not the native parameter name, which has no table key
+/// of its own), else the field name itself, plus the `{name}_component`
+/// sibling of every text field (a write is the string, the component table,
+/// or both). Both the `horizon.d.lua` event types and the reference's field
+/// lists derive from this, so the two cannot disagree about a field.
+pub fn event_keys(f: &Field) -> Vec<(String, String)> {
+    let mut keys = flat_ts(&f.conv);
+    if keys.is_empty() {
+        keys.push((f.name.clone(), f.ts.clone()));
+    }
+    if matches!(f.conv, Conv::TextVal | Conv::TextOpt) {
+        keys.push((format!("{}_component", f.name), "Component?".to_owned()));
+    }
+    keys
+}
+
 /// The `.d.lua` type of a `LuaStruct` key, with `Vec`, slice and `Option`
 /// wrappers applied.
 fn struct_ts_owned(key: &str) -> String {

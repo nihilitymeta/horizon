@@ -516,7 +516,7 @@ that is the same when done twice, such as lighting a lamp rather than toggling i
 | `attack_entity(event)` | a player attacks an entity, before the blow. The event holds `entity` (its id), `kind` and `pos` (`{x, y, z}`). Register it by entity kind. `horizon.cancel()` and the blow does nothing. The event names no stack: the acting player's hand is `horizon.acting_player().held` |
 | `hurt_enemy(event)` | a player's blow has landed on an entity, after the damage. The event holds `stack` (the weapon, `{id, count, damage, plain}`), `entity` and `kind`. Register it by entity kind. It only listens |
 | `living_entity_use_item_start(event)` | a player starts to use an item over time: eating, drinking, drawing a bow, or a mod item with a `use_duration`. The event holds `stack`, `entity` (nil for the player's own use), `hand` (`"main"` or `"off"`) and `duration`, the ticks it takes. Set `event.duration` to change it, or `horizon.cancel()` to stop the use. Mob uses filter by kind; the player's own use reaches bare handlers |
-| `living_entity_use_item_finish(event)` | a player has finished using an item over time: eaten or drunk it, or held a mod item for its `use_duration`. The event holds `stack`, `entity` (nil for the player's own use), `hand` and `duration`. Set `event.result` to an item table for what stays in the hand, or nil for nothing. Mob uses filter by kind; the player's own use reaches bare handlers |
+| `living_entity_use_item_finish(event)` | a player has finished using an item over time: eaten or drunk it, or held a mod item for its `use_duration`. The event holds `stack`, `entity` (nil for the player's own use), `hand`, `duration` and `result`. Set `event.result` to an item table for what stays in the hand, or nil for nothing. Mob uses filter by kind; the player's own use reaches bare handlers |
 | `inventory_tick(event)` | a server tick of a stack that a player carries. The event holds `slot` (as the inventory saves it: 0 to 35, armour 100 to 103, the off hand -106) and `selected`, true for the held stack. The ticking stack is not on the event, and there is no count to change (`horizon.set_count` fails: it has nothing to write to). The ticking player is `horizon.acting_player()`. The ticking stack itself is not available — take/give items act on the player — and `held` is only the selected hotbar stack, not the stack in the ticking slot. Every stack of every player ticks, so keep it light |
 | `item_crafted(event)` | a player takes a crafting grid's result. The event holds `player` (their uuid text: `horizon.player(event.player)` reads their table), `recipe` (its id) and `stack` (the result). Every craft wakes the handler: keep the recipes it cares about in Lua. It only listens |
 | `item_dropped(event)` | a player throws an item, with the drop key or from a menu; items scattered at death do not count. The event holds `player` (their uuid text), `item` (the id) and `count`. It only listens |
@@ -556,15 +556,17 @@ player; on a client window, which has none, those reads are empty too, like `pla
 
 ### Hooks Lua does not hear
 
-Lua hears every generated hook (448 of 516 hook points) as an event table. The tables above spell out the hooks this page describes;
+Lua hears 443 of the 516 hook points as event tables (`GENERATED_HOOK_NAMES`). The tables above spell out the hooks this page describes;
 every other generated name is still an event table whose shape is its `HorizonOn` overload in
 [horizon.d.lua](api/horizon.d.lua). [hook-exposure.md](api/hook-exposure.md) lists only the hooks that are not
 generated, for one reason each: borrows of render state (38 hooks, among them the screens and the draw
 calls outside `hud`), of the generating chunk (2), of loot state (2), of client input (1); hooks that need a
 converter the generator does not have (14 adapters), a live handle of their own design (6), or raw packets (3); and the
-level-tick host the runtime does not implement (2). The two declaration-served hooks, `block_entity` and
-`block_entity_ticks`, are generated but take no `horizon.on` registration: they are served from the
-`horizon.block_entity` declarations.
+level-tick host the runtime does not implement (2). Five of the 448 generated hooks take no `horizon.on`
+registration: the two declaration-served hooks, `block_entity` and `block_entity_ticks`, which are served from the
+`horizon.block_entity` declarations, and the three listened queries, `entity_tick_listened`,
+`living_equipment_listened` and `hears_projectile_impacts`, which the game answers from the sibling hooks'
+handlers instead.
 
 ## Shared tables
 

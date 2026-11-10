@@ -164,22 +164,10 @@ fn generated_hooks() -> Result<Vec<GeneratedHook>, String> {
         let event_ty = event_name(&model.name);
         let mut fields: Vec<String> = Vec::new();
         for f in &model.fields {
-            // A flat seed writes its table keys, not the native parameter
-            // name: the event type lists those keys instead.
-            let flat = super::lua_model::flat_ts(&f.conv);
-            if flat.is_empty() {
-                fields.push(format!("{}: {}", f.name, f.ts));
-            } else {
-                for (name, ts) in flat {
-                    fields.push(format!("{name}: {ts}"));
-                }
-            }
-            // A text field reads alongside its vanilla JSON component table.
-            if matches!(
-                f.conv,
-                super::lua_model::Conv::TextVal | super::lua_model::Conv::TextOpt
-            ) {
-                fields.push(format!("{}_component: Component?", f.name));
+            // Flat seeds, text-component siblings and all: the same keys
+            // the reference's field lists derive from.
+            for (name, ts) in super::lua_model::event_keys(f) {
+                fields.push(format!("{name}: {ts}"));
             }
         }
         for extra in &model.extras {

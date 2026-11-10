@@ -4,7 +4,7 @@
 //! own docs, so the list never trails the code. `--check` fails when the file
 //! is not what the sources say.
 use super::lua_model::{
-    Class, Conv, Field, Host, Kind, Model, classify, declaration_served, flat_ts, listened_flag,
+    Class, Conv, Field, Host, Kind, Model, classify, declaration_served, event_keys, listened_flag,
 };
 use horizon_mod_api_gen::{
     catalog_hooks, doc_comments, free_function_source, impl_functions, one_function,
@@ -47,7 +47,10 @@ const LUA_VERBATIM: &[(&str, &str)] = &[
 /// always-present-field notes. Everything else the curated row said now
 /// comes from the model itself.
 const LUA_NOTES: &[(&str, &str)] = &[
-    ("data_pack_files", "reloads the scripts on `/reload`"),
+    (
+        "data_pack_files",
+        "appended to `event.files` in load order; reloads the scripts on `/reload`",
+    ),
     ("random_tick", "`data` is not a native field"),
     ("tick_block", "`data` is not a native field"),
     (
@@ -62,10 +65,7 @@ const LUA_NOTES: &[(&str, &str)] = &[
         "player_respawned",
         "the full table while they are on; `uuid` and the told `name` otherwise",
     ),
-    (
-        "player_died",
-        "`player` is uuid text; `cause` is the death message's key, or nil",
-    ),
+    ("player_died", "`cause` is the death message's key, or nil"),
     (
         "register_commands",
         "declare commands with `horizon.command(usage, level, fn)`",
@@ -92,9 +92,10 @@ const LUA_NOTES: &[(&str, &str)] = &[
         "also fires for players, kind `minecraft:player`; `native_on_equip` is the other hook",
     ),
     (
-        "living_entity_use_item_start",
-        "mob uses filter by kind; the player's own use reaches bare handlers",
+        "right_click_block",
+        "`horizon.cancel()` takes the click for that hand: the other hand still gets its turn",
     ),
+    ("command", "drops the line on cancel"),
     (
         "projectile_impact",
         "branch on `event.entity`: on an entity hit `block` and `face` are still `{0, 0, 0}`, and on a block hit `entity` is nil and `entity_kind` is `\"\"`",
@@ -118,71 +119,34 @@ fn ticked(names: &[String]) -> String {
 }
 
 /// Whether the script can change an event-table field: the `write_tag` rule
-/// of `lua_hooks.rs` (which `=>` markers the emitted arms carry), restated
-/// over the model's converter, the parameter's canonical type and the
-/// struct key, so the reference and the runtime cannot drift.
+/// of `lua_hooks.rs` (which `=>` markers the emitted arms carry), so the
+/// reference and the runtime cannot drift. The level-tick `data` and the
+/// block-entity tick's entity table are written back by their bespoke arms
+/// (which carry no tag), so they count as writable too.
 fn writable(conv: &Conv, ty: &str, key: Option<&str>) -> bool {
-    match conv {
-        Conv::MutScalar
-        | Conv::MutString
-        | Conv::MutOptString
-        | Conv::MutPos
-        | Conv::MutVec3
-        | Conv::MutPair
-        | Conv::MutStrVec
-        | Conv::TextVal
-        | Conv::TextOpt
-        | Conv::LootDrops
-        | Conv::PreLogin => true,
-        // The level-tick `data` and the block-entity tick's entity table are
-        // written back by their bespoke arms; the mob view is not set, it
-        // queues the goal/body actions instead, and the draw handles are
-        // dot-called rather than set.
-        Conv::LevelData | Conv::BlockEntity => true,
-        Conv::Mob | Conv::HudBatch | Conv::Corners => false,
-        // Flat seeds and hand notes only read.
-        Conv::LifecycleCtx
-        | Conv::TickPhase
-        | Conv::WorldPhaseName
-        | Conv::LootCtx
-        | Conv::StateProps
-        | Conv::LevelProps
-        | Conv::HostDimension
-        | Conv::BlockAtPos
-        | Conv::BlockFromState => false,
-        Conv::Struct => {
-            let key = key.unwrap_or("?");
-            let norm: String = ty.chars().filter(|c| !c.is_whitespace()).collect();
-            if key.starts_with("Vec<") {
-                return true;
-            }
-            if key.starts_with("&[") {
-                return false;
-            }
-            if key.starts_with("Option<") {
-                return norm.starts_with("&mut");
-            }
-            if matches!(
-                key,
-                "NativeMapInfo" | "NativeNoteBlockChange" | "SoundPlayback"
-            ) {
-                return false;
-            }
-            norm.starts_with("&mut")
-        }
-        _ => false,
-    }
+    super::lua_hooks::write_tag(conv, ty, key).is_some()
+        || matches!(conv, Conv::LevelData | Conv::BlockEntity)
 }
 
-/// The event-table keys of one model field: the flat seeds write their table
-/// keys, not the native parameter name (which has no table key of its own).
+/// The event-table keys of one model field: the same keys the `horizon.d.lua`
+/// event types derive from (flat seeds write their table keys, and every
+/// text field reads alongside its `{name}_component` sibling).
 fn field_keys(f: &Field) -> Vec<String> {
-    let flat = flat_ts(&f.conv);
-    if flat.is_empty() {
-        vec![f.name.clone()]
-    } else {
-        flat.into_iter().map(|(name, _)| name).collect()
+    event_keys(f).into_iter().map(|(name, _)| name).collect()
+}
+
+/// The event-table keys a cell's field list names: every model field's keys
+/// (flat seeds write their table keys, text fields add their `_component`
+/// sibling), then the extras' and the answer field's names.
+fn cell_keys(model: &Model) -> Vec<String> {
+    let mut keys: Vec<String> = model.fields.iter().flat_map(field_keys).collect();
+    for extra in &model.extras {
+        keys.push(extra.name.clone());
     }
+    if let Some(out) = &model.out {
+        keys.push(out.name.clone());
+    }
+    keys
 }
 
 /// The Lua cell of one generated hook from the model: `an event table with
@@ -191,15 +155,9 @@ fn field_keys(f: &Field) -> Vec<String> {
 /// it names that shape; the frame hooks draw rather than hear.
 fn lua_cell(model: &Model) -> String {
     if model.name == "perform_command" {
-        return "calls `fn(player, args)` of `horizon.command`; kind: command words, the longest usage first; the matched usage runs".to_owned();
+        return "calls `fn(player, args)` of `horizon.command`; kind: command words, the longest usage first; a matched usage always cancels, even when argument parsing refuses or the handler errors".to_owned();
     }
-    let mut keys: Vec<String> = model.fields.iter().flat_map(field_keys).collect();
-    for extra in &model.extras {
-        keys.push(extra.name.clone());
-    }
-    if let Some(out) = &model.out {
-        keys.push(out.name.clone());
-    }
+    let keys = cell_keys(model);
     let mut cell = if keys.is_empty() {
         "an empty event table".to_owned()
     } else {
@@ -208,12 +166,37 @@ fn lua_cell(model: &Model) -> String {
     cell.push_str(&match &model.kind {
         Kind::None => "; kind: none".to_owned(),
         Kind::Field => "; kind: entity kind (`kind`)".to_owned(),
-        Kind::Entity { field, .. } => format!("; kind: kind of `{field}`"),
+        Kind::Entity { field, opt } => {
+            let mut s = format!("; kind: kind of `{field}`");
+            if *opt {
+                // An `opt_entity` id resolves to no kind when it is nil, so
+                // only bare handlers run. The use-item hooks' `entity` is a
+                // mob's id, nil for the player's own use: a kind registration
+                // hears mob uses, never the player.
+                if model.name.starts_with("living_entity_use_item_") {
+                    s.push_str(
+                        "; mob uses filter by kind; the player's own use reaches bare handlers",
+                    );
+                } else {
+                    s.push_str(&format!("; a nil `{field}` reaches bare handlers"));
+                }
+            }
+            s
+        }
         Kind::Loot => "; kind: loot block or entity kind".to_owned(),
         Kind::Block { field } => format!("; kind: block (`{field}`)"),
         Kind::BlockEntity { field } => format!("; kind: block-entity id (`{field}`)"),
         Kind::Mob { field } => format!("; kind: mob kind (`{field}`)"),
     });
+    // A uuid-text field reads as its `8-4-4-4-12` text, not a player table:
+    // name it on every hook, so no hook can lose the fact again.
+    for f in &model.fields {
+        if matches!(f.conv, Conv::Uuid) {
+            cell.push_str(&format!("; `{}` is uuid text", f.name));
+        } else if matches!(f.conv, Conv::OptUuid) {
+            cell.push_str(&format!("; `{}` is uuid text, or nil", f.name));
+        }
+    }
     // What the handler may set, in the model's own terms.
     let mut powers: Vec<String> = Vec::new();
     if let Some(out) = &model.out {
@@ -314,6 +297,11 @@ fn sets_of(model: &Model) -> Vec<String> {
             sets.push("event.entity.data".to_owned());
         } else {
             sets.push(format!("event.{}", f.name));
+        }
+        // A text write is the string, the component table, or both: name
+        // the sibling too.
+        if matches!(f.conv, Conv::TextVal | Conv::TextOpt) {
+            sets.push(format!("event.{}_component", f.name));
         }
     }
     for extra in &model.extras {
@@ -944,55 +932,153 @@ mod tests {
         assert_eq!(called, named);
     }
 
-    /// A hook with a kind says so in its cell: three pins across the kind
-    /// shapes, then the global rule that every kind but none names its
-    /// domain and every kind-less hook says none.
+    /// Every hook with a kind names its kind token's domain phrase in its
+    /// cell (`perform_command` its command words), and every kind-less hook
+    /// says none. The phrases live in the test's words, not the renderer's,
+    /// so a changed phrase fails here.
     #[test]
     fn a_hook_with_a_kind_says_so() {
+        // `perform_command` answers `(player, args)`, so it is no event
+        // table, but its cell still names its command words.
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let classes = super::classify(&root).unwrap();
-        let cell_of = |name: &str| {
-            let row = classes.iter().find(|row| row.name == name).unwrap();
-            let super::Class::Generated(model) = &row.class else {
-                panic!("{name} should generate");
-            };
-            super::lua_cell(model)
+        let row = classes
+            .iter()
+            .find(|r| r.name == "perform_command")
+            .unwrap();
+        let super::Class::Generated(model) = &row.class else {
+            panic!("perform_command should generate");
         };
         assert!(
-            cell_of("attack_entity").contains("kind: entity kind (`kind`)"),
-            "attack_entity names its entity kind"
+            super::lua_cell(model).contains("kind: command words"),
+            "perform_command names its command words"
         );
-        assert!(
-            cell_of("random_tick").contains("kind: block (`state`)"),
-            "random_tick names its block"
-        );
-        assert!(
-            cell_of("loot_drops").contains("kind: loot block or entity kind"),
-            "loot_drops names its loot kind"
-        );
+        for (name, model, cell) in event_tables() {
+            let domain: String = match &model.kind {
+                super::Kind::None => "kind: none".to_owned(),
+                super::Kind::Field => "kind: entity kind (`kind`)".to_owned(),
+                super::Kind::Entity { field, .. } => format!("kind: kind of `{field}`"),
+                super::Kind::Loot => "kind: loot block or entity kind".to_owned(),
+                super::Kind::Block { field } => format!("kind: block (`{field}`)"),
+                super::Kind::BlockEntity { field } => {
+                    format!("kind: block-entity id (`{field}`)")
+                }
+                super::Kind::Mob { field } => format!("kind: mob kind (`{field}`)"),
+            };
+            assert!(cell.contains(&domain), "{name} names its kind domain");
+            if !matches!(model.kind, super::Kind::None) {
+                assert!(!cell.contains("kind: none"), "{name} hides its kind");
+            }
+        }
+    }
+
+    /// Every hook with a generated event-table cell: its name, model and
+    /// cell. The declaration-served hooks and listened queries keep verbatim
+    /// cells (no event table), and `perform_command` answers `(player, args)`.
+    fn event_tables() -> Vec<(String, super::Model, String)> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let classes = super::classify(&root).unwrap();
+        let mut out = Vec::new();
         for row in &classes {
             let super::Class::Generated(model) = &row.class else {
                 continue;
             };
             if super::declaration_served(row.name.as_str())
                 || super::listened_flag(row.name.as_str()).is_some()
+                || row.name == "perform_command"
             {
                 continue;
             }
-            let cell = super::lua_cell(model);
-            if row.name == "perform_command" {
+            out.push((row.name.clone(), model.clone(), super::lua_cell(model)));
+        }
+        assert!(
+            out.len() > 400,
+            "only {} event tables; the per-hook checks are vacuous",
+            out.len()
+        );
+        out
+    }
+
+    /// Every text field's `{name}_component` sibling appears in the cell's
+    /// field list and in a set clause: the reference cannot disagree with
+    /// the event type again.
+    #[test]
+    fn text_fields_bring_their_component_sibling() {
+        let mut checked = 0;
+        for (name, model, cell) in event_tables() {
+            for f in &model.fields {
+                if !matches!(f.conv, super::Conv::TextVal | super::Conv::TextOpt) {
+                    continue;
+                }
+                checked += 1;
                 assert!(
-                    cell.contains("kind: command words"),
-                    "perform_command names its command words"
+                    cell.contains(&format!("`{}_component`", f.name)),
+                    "{name} names `{}_component`",
+                    f.name
                 );
-            } else if matches!(model.kind, super::Kind::None) {
                 assert!(
-                    cell.contains("kind: none"),
-                    "{} says it takes no kind",
-                    row.name
+                    super::sets_of(&model)
+                        .iter()
+                        .any(|s| s == &format!("event.{}_component", f.name)),
+                    "{name} lets the script set `event.{}_component`",
+                    f.name
                 );
-            } else {
-                assert!(!cell.contains("kind: none"), "{} hides its kind", row.name);
+            }
+        }
+        assert!(
+            checked > 0,
+            "no text field found; the sibling check is vacuous"
+        );
+    }
+
+    /// Every uuid-text field says so in its cell: a uuid string is not a
+    /// player table, and no hook may lose the fact again.
+    #[test]
+    fn uuid_text_fields_say_so() {
+        let mut checked = 0;
+        for (name, model, cell) in event_tables() {
+            for f in &model.fields {
+                if !matches!(f.conv, super::Conv::Uuid | super::Conv::OptUuid) {
+                    continue;
+                }
+                checked += 1;
+                assert!(
+                    cell.contains(&format!("`{}` is uuid text", f.name)),
+                    "{name} says `{}` is uuid text",
+                    f.name
+                );
+            }
+        }
+        assert!(
+            checked > 0,
+            "no uuid-text field found; the uuid check is vacuous"
+        );
+    }
+
+    /// Every generated cell's field list is its model's field list: the
+    /// flat keys, the text-component siblings, the extras and the answer
+    /// out. The expectation derives from the model layer, never from the
+    /// cell renderer, so a dropped field fails here.
+    #[test]
+    fn every_cell_lists_its_models_fields() {
+        for (name, model, cell) in event_tables() {
+            let mut expected: Vec<String> = Vec::new();
+            for f in &model.fields {
+                expected.extend(super::event_keys(f).into_iter().map(|(name, _)| name));
+            }
+            for extra in &model.extras {
+                expected.push(extra.name.clone());
+            }
+            if let Some(out) = &model.out {
+                expected.push(out.name.clone());
+            }
+            assert_eq!(
+                super::cell_keys(&model),
+                expected,
+                "{name} lists exactly its model's keys"
+            );
+            for key in &expected {
+                assert!(cell.contains(&format!("`{key}`")), "{name} names `{key}`");
             }
         }
     }
