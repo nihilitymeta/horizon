@@ -2,7 +2,7 @@
 commit's paragraphs that HEAD does not already have. Paragraphs are compared without their number, so a
 fork hook renumbered on HEAD is not added again under its old number."""
 import re, sys
-R = re.compile(r'<<<<<<< [^\n]*\n(.*?)=======\n(.*?)>>>>>>> [^\n]*\n', re.S)
+R = re.compile(r'<<<<<<< [^\n]*\n(.*?)(?:\|\|\|\|\|\|\| [^\n]*\n.*?)?=======\n(.*?)>>>>>>> [^\n]*\n', re.S)
 SPLIT = re.compile(r'(?m)^(?=API \d+ adds)')
 def body(p):
     return re.sub(r'^API \d+ adds', '', p).replace('"hooks": ', '').strip()
