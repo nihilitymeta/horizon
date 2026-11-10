@@ -1665,13 +1665,6 @@ impl LuaMod {
                             "horizon.on({name:?}): this hook takes no kind"
                         )));
                     }
-                    // The frame hooks answer every event to every handler:
-                    // a kind would silently never fire.
-                    if kind.is_some() && (name == "hud" || name == "gui_layer_post") {
-                        return Err(mlua::Error::runtime(format!(
-                            "horizon.on({name:?}): this hook takes no kind"
-                        )));
-                    }
                     let list = match kind {
                         None => {
                             let handlers: Table = lua.named_registry_value(HANDLERS)?;
@@ -1872,7 +1865,7 @@ impl LuaMod {
             ),
             (
                 "set_amount",
-                "horizon.set_amount does nothing: set event.amount = n in player_exp_change.",
+                "horizon.set_amount does nothing: set event.amount = n in item_damaged, living_damage_pre, living_heal, living_incoming_damage, living_incoming_damage_v2, living_incoming_damage_v3, player_exp_change, player_hurt_by_player or player_xp_change.",
             ),
             (
                 "reply",
@@ -3223,6 +3216,9 @@ experimental = ["scripts"]
         assert!(e.contains("horizon.set_amount does nothing"), "{e}");
         assert!(e.contains("event.amount"), "{e}");
         assert!(e.contains("player_exp_change"), "{e}");
+        assert!(e.contains("living_heal"), "{e}");
+        assert!(e.contains("living_incoming_damage"), "{e}");
+        assert!(e.contains("item_damaged"), "{e}");
         assert_eq!(exp.amount, 3);
         let mut replies = Vec::new();
         assert_eq!(

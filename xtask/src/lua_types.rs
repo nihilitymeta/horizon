@@ -504,12 +504,26 @@ mod tests {
             .take_while(|l| !l.starts_with("## Cross-cutting"))
             .filter(|l| l.starts_with('|'))
             .collect();
-        // rows[0] is the `|---|---|...` separator: it names no hook, so the
-        // per-hook rows start at rows[1].
-        let rows = &rows[1..];
         assert!(
             !rows.is_empty(),
             "no per-hook rows parsed; the migration-table check is vacuous"
+        );
+        // The `|---|---|...` separator names no hook: skip separator rows
+        // (every cell empty or all dashes), never index 0 blindly.
+        let (separators, rows): (Vec<&str>, Vec<&str>) = rows.into_iter().partition(|row| {
+            row.split('|')
+                .all(|cell| cell.trim().is_empty() || cell.trim().chars().all(|c| c == '-'))
+        });
+        assert_eq!(
+            separators.len(),
+            1,
+            "expected the single |---| separator row in the migration table"
+        );
+        assert_eq!(
+            rows.len(),
+            52,
+            "expected 52 per-hook rows in the migration table, found {}",
+            rows.len()
         );
         let mut missing = Vec::new();
         for row in rows {
