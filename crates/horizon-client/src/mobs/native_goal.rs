@@ -822,4 +822,56 @@ mod tests {
         assert!(m.ai.goals.has("Counting"));
         assert!(!m.ai.goals.is_running("Counting"));
     }
+
+    /// A first goal despawns the mob (a convert or a despawn): the goals
+    /// after it in the same pass must not run (no Hurt, no Summon).
+    #[test]
+    fn goals_after_a_despawn_do_not_run_in_the_same_pass() {
+        let ran = crate::mobs::world::with_test_world(&[], |w, _| {
+            #[derive(Debug)]
+            struct Vanish;
+            impl NativeBehaviour for Vanish {
+                type State = u32;
+                fn can_use(&self, _state: &mut u32, _mob: &MobView, _out: &mut Actions) -> bool {
+                    true
+                }
+                fn tick(&self, _state: &mut u32, _mob: &MobView, out: &mut Actions) {
+                    out.despawn();
+                }
+            }
+            #[derive(Debug)]
+            struct Late;
+            impl NativeBehaviour for Late {
+                type State = u32;
+                fn can_use(&self, _state: &mut u32, _mob: &MobView, _out: &mut Actions) -> bool {
+                    true
+                }
+                fn tick(&self, _state: &mut u32, _mob: &MobView, out: &mut Actions) {
+                    out.hurt(Who::Player, 1.0);
+                }
+            }
+            let mut m = mob();
+            m.ai.goals.add(0, NativeGoal::new("Vanish", MOVE, Vanish));
+            m.ai.goals.add(1, NativeGoal::new("Late", LOOK, Late));
+            let mut events = Vec::new();
+            let mut lr = horizon_core::random::LegacyRandom::new(1);
+            let mut cx = crate::mobs::goals::Cx {
+                w,
+                lr: &mut lr,
+                events: &mut events,
+            };
+            let mut goals = std::mem::take(&mut m.ai.goals);
+            goals.tick(&mut m, &mut cx);
+            m.ai.goals = goals;
+            assert!(m.removed, "the first goal despawned the mob");
+            assert!(
+                cx.events.is_empty(),
+                "goals after a despawn must not run: {:?}",
+                cx.events
+            );
+        });
+        if !ran {
+            eprintln!("skipped: no vanilla data");
+        }
+    }
 }

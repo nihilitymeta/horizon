@@ -183,6 +183,11 @@ impl GoalSelector {
         for g in &mut self.goals {
             if g.running && (force || g.goal.every_tick()) {
                 g.goal.tick(m, cx);
+                // A convert or a despawn mid-pass: the mob is gone, so the
+                // goals after it must not run on it (no Hurt, no Summon).
+                if m.removed {
+                    break;
+                }
             }
         }
     }
