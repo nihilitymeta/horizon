@@ -4,7 +4,7 @@ What a machine needs, on any platform (upstream's own list plus what the integra
 
 | Need | Why | Windows | macOS | Linux |
 |---|---|---|---|---|
-| Rust 1.90 or newer, from [rustup](https://rustup.rs) | the game, the launcher and the tools are Rust | the default `x86_64-pc-windows-msvc` toolchain | Homebrew `rustup` or rustup.rs | rustup.rs |
+| Rust 1.95 or newer, from [rustup](https://rustup.rs) | the game, the launcher and the tools are Rust | the default `x86_64-pc-windows-msvc` toolchain | Homebrew `rustup` or rustup.rs | rustup.rs |
 | A C/C++ compiler | `lua-bindings` builds Luau from source (`mlua`, vendored); a few C crates | **Visual Studio 2022 Build Tools** with the "Desktop development with C++" workload (MSVC and the Windows SDK; the Rust MSVC toolchain's linker needs it too) | Xcode command line tools (`xcode-select --install`) | `gcc`/`clang` |
 | Python 3.10 or newer | build and research scripts | python.org or `winget install Python.Python.3.12` | Homebrew | distro |
 | Prepared resources | the game's data and assets, from your own copy of Java Edition 26.3 | see below | see below | see below |

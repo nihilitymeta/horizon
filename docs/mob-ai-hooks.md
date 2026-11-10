@@ -1,8 +1,8 @@
 # Mob AI for Mods
 
 This page describes how mods change what mobs do: a hook point that runs as a mob's goals are set up, a goal type
-that mods can write without borrowing the mob, and mobs that a content mod declares in its data. It lives on the
-`mob-ai-hooks` branch of whos-carmen/horizon, which is `main` plus this one concern. It was written for
+that mods can write without borrowing the mob, and mobs that a content mod declares in its data. It is on
+`engine-work`, merged with the rest of the fork; the code is named in each section. It was written for
 horizon-parasite-mod, which needs custom blocks and custom mob behaviour first.
 
 | Part | Status |
@@ -22,7 +22,7 @@ control flags it locks. `mobs/ai.rs` (`register`) and the family files, such as 
 `mobs/raider.rs`, fill the selectors for each species. Some species run a brain instead, such as
 `villager_brain.rs` and `warden_brain.rs`.
 
-Before this branch, hook points touched mobs only from the outside: `mob_spawned`, `mob_killed`,
+Before these hooks, hook points touched mobs only from the outside: `mob_spawned`, `mob_killed`,
 `entity_tick_pre` and `entity_tick_post`, the draw hooks `mob_submit` and `mob_layer`, and the helpers
 `native_spawn_mob` (with `no_ai`), `native_teleport_mob` and `native_push_mob`. Nothing reached the goals. The
 documented way to make a mod's own creature was a vanilla mob, redrawn and steered by hand from a tick hook

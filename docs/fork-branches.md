@@ -24,7 +24,7 @@ scripts to fill. `/summon <id>:<name>` makes one, and it drops its own loot tabl
   `maxCount`), in its template's spawn category.
 - Code: `crates/horizon-client/src/mobs/native_goal.rs`, `game/creatures.rs`, `game/native_mobs.rs`. Reference:
   [mob-ai-hooks.md](mob-ai-hooks.md).
-- Planned: target and navigate helpers for tick hooks, mob templates in data, a per-AI-tick hook, brain species.
+- Planned: target and navigate helpers for tick hooks, a per-AI-tick hook, brain species.
 
 **Lua mods** (`archive/lua-bindings`). A content `.hmod` with the capability `scripts` carries Lua (Luau) in
 `scripts/`. The game runs the scripts of every installed mod that is on, and of every `--dev-mod` folder: one state

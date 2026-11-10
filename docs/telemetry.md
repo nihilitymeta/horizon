@@ -4,7 +4,7 @@ Horizon collects nothing unless the player says yes. The launcher asks once, wit
 
 Two exceptions:
 
-- The anonymous ["I'm playing" ping](#the-im-playing-ping) behind the launcher's "N playing now": it holds nothing about the player, and the launcher says so next to the switches.
+- The anonymous ["I'm playing" ping](#the-im-playing-ping) behind the launcher's "N playing now": it holds nothing about the player, and the launcher says so next to the switches. It is sent only when `HORIZON_TELEMETRY_URL` names a server (see below).
 - The cosmetics service's *Show me as Horizon* (Extras › Cosmetics, on by default): a signed-in account tells the cosmetics service, at start and then every hour, that it plays Horizon, so other Horizon players see the Horizon mark beside its name. The service reports it for 3 hours, and anyone can ask it whether an account played Horizon in that window. Turning the setting off makes the service forget the account at once. It is not part of telemetry and the switches above don't cover it: see [cosmetics.md](cosmetics.md).
 
 ## Consent
@@ -67,15 +67,15 @@ Never sent: account names or UUIDs, world names, server or LAN addresses, chat, 
 - `telemetry/outbox/` holds one JSON file per item, `<day>-<kind>-<random>.json`. It never holds more than 200 items or 2 MiB, and the oldest go first. `kept.json` counts today's items per kind against the caps above.
 - The launcher sends the outbox when it starts and when it closes. Items go as one JSON batch (`{"schema":1,"install_id":…,"items":[…]}`, up to 64 items and 1 MiB), compressed with zstd: `POST /v1/batch` with `Content-Encoding: zstd`. A day's perf summaries are under 2 KB on the wire.
 - After a failure the launcher waits a minute, doubling up to a day, and sends at most 8 batches a day. A batch the server refuses with a 4xx (not 429) is dropped.
-- The server is `https://telemetry.playhorizon.dev` (`DEFAULT_ENDPOINT`), on Railway in the EU (`europe-west4`, Amsterdam). `HORIZON_TELEMETRY_URL` names another one (a local server); `HORIZON_TELEMETRY_URL=off` sends nothing at all, no ping either. Tests, CI and the benchmark and test harnesses set `off`.
-- What is sent still depends on the switches: with every switch off nothing but the ping leaves, and the outbox stays empty.
+- No server is named by default: `endpoint()` (`crates/horizon-telemetry/src/lib.rs`) returns nothing unless `HORIZON_TELEMETRY_URL` names one, so nothing is sent and no connection is opened. `HORIZON_TELEMETRY_URL=off` (or `none`, `0`) sends nothing either, no ping included. A URL names the server to use, such as a local one. Horizon's own server, `https://telemetry.playhorizon.dev` (`DEFAULT_ENDPOINT`, on Railway in the EU, `europe-west4`, Amsterdam), is not used by default: Event Horizon's builds are not Horizon's, so they are not counted as Horizon's players. Tests, CI and the benchmark and test harnesses set `off`.
+- What is sent still depends on the switches: with every switch off, only the ping leaves (and only when a server is named), and the outbox stays empty.
 - `SCHEMA` versions the format. New optional fields keep it. A field that changes meaning or goes bumps it, and the server keeps reading the older ones.
 
 ## The "I'm playing" ping
 
-Ludovic decided on 2026-10-22 to count every player, with or without consent, and to tell them. The launcher's first-run question and Settings → Data collection show it as an "Always on" row next to the switches. Players who answered the question before the ping existed see the same text once on the Play page. The privacy page on playhorizon.dev says the same.
+The ping is off by default in Event Horizon: it is sent only when a server is named (see above). The launcher's first-run question and Settings → Data collection still show it beside the switches under an "Always on" label (`launcher/src/collection.rs`). That label is the ping's own policy, not whether this build sends it.
 
-While the game runs (not a dedicated server, a benchmark or a run that quits by itself), a thread of its own (`crates/horizon-client/src/heartbeat.rs`) sends `POST /v1/live` once a minute. It also sends one at once when a world is opened to or closed from LAN or friends:
+While the game runs (not a dedicated server, a benchmark or a run that quits by itself, and only when a server is named: `horizon_telemetry::endpoint()`), a thread of its own (`crates/horizon-client/src/heartbeat.rs`) sends `POST /v1/live` once a minute. It also sends one at once when a world is opened to or closed from LAN or friends:
 
 ```json
 { "session": "9b1c…", "version": "v2026.10.22", "platform": "macos", "lan": false }
@@ -105,7 +105,7 @@ Once a minute the server writes down only those totals (playing, LAN, per platfo
 
 The server also asks the official server (`horizon_telemetry::server_status::OFFICIAL_STATUS_ADDRESS`, its address with the port its SRV record gives, or `HORIZON_TELEMETRY_OFFICIAL_SERVER`) for its player count every minute, with the server-list status ping every client sends to show a server in its Multiplayer list, and keeps it the same way (`series=official`, playing only; a minute it didn't answer stays empty). Its TPS and MSPT come later, once its admin API is reachable from outside the machine.
 
-The launcher reads the count when it opens and every minute after, and shows "N playing now" on the Play page, exact, with thousands separators; clicking it opens playhorizon.dev/stats. Beside it, "M on the official SMP" is the official server's own count, from the same status ping the launcher sends once a minute (3-second timeout, nothing shown when it doesn't answer); clicking it opens the Servers page. It shows nothing when the server can't be reached. `HORIZON_TELEMETRY_URL=off` turns both off; `HORIZON_NO_HEARTBEAT=1` keeps a single automated run out of the count.
+The launcher reads the count when it opens and every minute after, and shows "N playing now" on the Play page, exact, with thousands separators; clicking it opens playhorizon.dev/stats. Beside it, "M on the official SMP" is the official server's own count, from the same status ping the launcher sends once a minute (3-second timeout, nothing shown when it doesn't answer); clicking it opens the Servers page. It shows nothing when the server can't be reached. With no server named, or `HORIZON_TELEMETRY_URL=off`, both are off; `HORIZON_NO_HEARTBEAT=1` keeps a single automated run out of the count.
 
 ## Server
 
