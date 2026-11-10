@@ -4,25 +4,14 @@
 
 Every native hook lands in exactly one class: `generated` (a zero-hand-work event table under the native name), `adapter` (a hand-written converter would unblock it), `handle` or `protocol` (a live handle or raw packets, each needing its own design), `tick` (the level-tick host the Lua runtime does not implement), or `cannot` (no event-table mapping exists, with the reason). `HOOK_CLASSIFICATION` in `crates/event-horizon-lua/src/generated_hooks/mod.rs` is the machine-readable record; this page is its human-readable form, so a hook is never silently missing from Lua: it is either generated or listed here with its reason. The two declaration-served hooks (`block_entity` and `block_entity_ticks`) are generated and omitted from the event-table list below: they are served from the `horizon.block_entity` declarations, build no event table, and take no `horizon.on` registration.
 
-437 hooks are generated and omitted below. The rest:
+448 hooks are generated and omitted below. The rest:
 
-## Deferred to #44 (name kept by a hand-written hook; would be exposable) (11)
+## Deferred to #44 (name kept by a hand-written hook; would be exposable) (0)
 
 These names stay with the hand-written hooks for now; removing the old hook is #44. The model says an event table could carry each of them, so the deferral is the only reason they are missing from Lua.
 
 | Hook | Reason |
 | --- | --- |
-| `player_bed_enter` | the hand-written hook keeps this name (removing it is #44) |
-| `player_changed_dimension` | the hand-written hook keeps this name (removing it is #44) |
-| `player_chat` | the hand-written hook keeps this name (removing it is #44) |
-| `player_command` | the hand-written hook keeps this name (removing it is #44) |
-| `player_container_open` | the hand-written hook keeps this name (removing it is #44) |
-| `player_died` | the hand-written hook keeps this name (removing it is #44) |
-| `player_exp_change` | the hand-written hook keeps this name (removing it is #44) |
-| `player_logged_in` | the hand-written hook keeps this name (removing it is #44) |
-| `player_logged_out` | the hand-written hook keeps this name (removing it is #44) |
-| `player_respawned` | the hand-written hook keeps this name (removing it is #44) |
-| `player_tick` | the hand-written hook keeps this name (removing it is #44) |
 
 ## Deferred to #44 AND not exposable (0)
 

@@ -410,8 +410,8 @@ Some actions work only in the block hooks:
 
 ## Hooks
 
-A handler receives the hook's arguments. Some hooks let it change the event, with calls such as
-`horizon.cancel()` or `horizon.set_amount(n)`; the table says which. A hook "by kind" takes a `kind` in
+A handler receives the hook's event table. Some hooks let it change the event, with calls such as
+`horizon.cancel()` or an `event.field = ...` write; the table says which. A hook "by kind" takes a `kind` in
 `horizon.on`, a block id, an item id or a mob kind.
 
 ### The game and the world
@@ -478,35 +478,37 @@ that is the same when done twice, such as lighting a lamp rather than toggling i
 
 | Hook | Called when |
 |---|---|
-| `player_joined(player)`, `player_left(player)` | a player joins the game, or leaves it by any path |
-| `player_respawned(player)` | a player respawns after a death |
-| `player_died(player, cause)` | a player dies. *cause* is the death message's key, such as `death.attack.lava`, or nil |
-| `player_tick(player)` | a living player's server tick has ended. Every player, every tick, with the host actions and the reads. Keep it light. It takes no `kind` |
+| `player_logged_in(event)`, `player_logged_out(event)` | a player joins the game, or leaves it by any path. The event holds `player`: the full table while they are on, else `uuid` and the told `name` |
+| `player_respawned(event)` | a player respawns after a death. The event holds `player`, as above |
+| `player_died(event)` | a player dies. The event holds `player` (uuid text) and `cause`, the death message's key such as `death.attack.lava`, or nil. It only hears |
+| `player_tick(event)` | a living player's server tick has ended. The event is empty. Every player, every tick, with the host actions and the reads: the player comes from `horizon.players()`. Keep it light. It takes no `kind` |
 | `living_incoming_damage(event)` with kind `minecraft:player` | a player is about to take damage. The event holds `entity`, `kind`, `damage_type`, `causing`, `direct` and `amount`. No host and no name: set `event.amount`, or `horizon.cancel()` |
 | `living_fall(event)` with kind `minecraft:player` | a player is about to handle a fall. The event holds `entity`, `kind`, `distance` and `multiplier`. No host: set the fields, or `horizon.cancel()` for no fall damage |
 | `living_knockback(event)` with kind `minecraft:player` | a player is about to be knocked back. The event holds `entity`, `kind`, `damage_type`, `causing`, `direct`, `strength`, `x` and `z`. No host: set `event.strength` (and `x`/`z` to steer), or `horizon.cancel()` |
-| `player_command(player, line)` | a player types any command, before it runs. *line* has no slash. `cancel()` and nothing runs. `reply(text)` answers them; no player's state is in place here, so `tell` and the item functions reach nobody |
-| `player_chat(player, line)` | a player's chat line is about to go to everyone, after the chat filter. *player* is `{uuid, name}`; there is no host, because the hub is in the middle of a packet. `reply(text)` sends a line back to the sender. `cancel()` and nobody sees it, the sender included. The line itself can't change, because a signed message would no longer verify; the hook point is upstream's `native_player_chat`. Commands go to `player_command` |
-| `player_changed_dimension(player, from, to)` | a player's move to another level has ended: a portal, `/execute in ... run tp`, or a respawn elsewhere. The engine reports it on a dedicated server only |
-| `player_bed_enter(player, x, y, z)` | a player is about to enter the bed at that position. `cancel()` keeps them out |
-| `player_exp_change(player, amount)` | a player's experience is about to grow by *amount* from an orb, after Mending's share. `set_amount(n)` |
-| `player_container_open(player, menu, pos)` | a player opens a menu. *menu* is its type, such as `minecraft:generic_9x3`, `minecraft:furnace` or `minecraft:crafting`, and *pos* the position of its block, or nil |
+| `player_command(event)` | a player types any command, before it runs. The event holds `player`, `command` (no slash) and `replies`. Set `event.replies` (a sequence of strings or `{text, component?}` tables) to answer them; `horizon.cancel()` and nothing runs. No player's state is in place here, so `tell` and the item functions reach nobody |
+| `player_chat(event)` | a player's chat line is about to go to everyone, after the chat filter. The event holds `player` (uuid text), `name`, `message` and `replies`. There is no host, because the hub is in the middle of a packet: set `event.replies` to send a line back to the sender. `horizon.cancel()` and nobody sees it, the sender included. The line itself can't change, because a signed message would no longer verify; the hook point is upstream's `native_player_chat`. Commands go to `player_command` |
+| `player_changed_dimension(event)` | a player's move to another level has ended: a portal, `/execute in ... run tp`, or a respawn elsewhere. The event holds `player`, `from` and `to` (dimension ids). The engine reports it on a dedicated server only |
+| `player_bed_enter(event)` | a player is about to enter the bed at that position. The event holds `player` and `pos` (`{x, y, z}` of the bed head, always present). `horizon.cancel()` keeps them out |
+| `player_exp_change(event)` | a player's experience is about to grow by *amount* from an orb, after Mending's share. The event holds `player` and `amount`; set `event.amount` to change the points added |
+| `player_container_open(event)` | a player opens a menu. The event holds `player`, `dimension`, `menu` (its type, such as `minecraft:generic_9x3`, `minecraft:furnace` or `minecraft:crafting`), and `pos` (the position of its block, or nil) |
 
 ## Shared tables
 
 ### `player`
 
-The `player` table in the hooks has these fields:
+The `player` table an event carries, and the one the `horizon.players()` and `horizon.command` reads hand out,
+has these fields:
 
 - `uuid` and `name`
 - `dimension`, and `position` as `{x, y, z}`
+- `yaw` and `pitch`
 - `game_mode`: 0 survival, 1 creative, 2 adventure, 3 spectator
 - `health`
-- `held`, on the `player_tick` player's table only: the main hand's `{item, count, plain}`, or nil when it is
-  empty. No other hook's player table carries it
+- `held`, on a command's `player` table only: the acting player's main hand as `{item, count, plain}`, or nil when
+  it is empty. No other hook's player table carries it
 
 A player that the world has no record of at that moment, such as one who is dying, has `uuid`, and the `name` that
-an earlier player hook reported.
+an earlier player hook reported. `player_died` names no player table at all: its `player` is the uuid text.
 
 ### Saved tables
 

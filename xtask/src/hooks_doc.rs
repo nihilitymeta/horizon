@@ -111,13 +111,28 @@ const LUA_HOOKS: &[(&str, &str)] = &[
         "item_picked_up",
         "an event table with `player` (uuid text), `item` and `count`; `horizon.cancel()` leaves them there",
     ),
-    ("player_logged_in", "`player_joined(player)`"),
-    ("player_logged_out", "`player_left(player)`"),
-    ("player_respawned", "`player_respawned(player)`"),
-    ("player_died", "`player_died(player, cause)`"),
+    (
+        "player_logged_in",
+        "an event table with `player` (the full table while they are on; `uuid` and the told `name` otherwise)",
+    ),
+    (
+        "player_logged_out",
+        "an event table with `player` (the full table while they are on; `uuid` and the told `name` otherwise)",
+    ),
+    (
+        "player_respawned",
+        "an event table with `player` (the full table while they are on; `uuid` and the told `name` otherwise)",
+    ),
+    (
+        "player_died",
+        "an event table with `player` (uuid text) and `cause` (the death message's key, or nil); it only hears",
+    ),
     ("register_commands", "`horizon.command(usage, level, fn)`"),
     ("perform_command", "`fn(player, args)` of `horizon.command`"),
-    ("player_tick", "`player_tick(player)`"),
+    (
+        "player_tick",
+        "an empty event table, every player every tick; the host actions and the reads work",
+    ),
     (
         "living_fall",
         "an event table with `entity`, `kind`, `distance` and `multiplier`, by kind",
@@ -127,8 +142,14 @@ const LUA_HOOKS: &[(&str, &str)] = &[
         "living_knockback",
         "an event table with `entity`, `kind`, `damage_type`, `causing`, `direct`, `strength`, `x` and `z`, by kind",
     ),
-    ("player_chat", "`player_chat(player, line)`"),
-    ("player_command", "`player_command(player, line)`"),
+    (
+        "player_chat",
+        "an event table with `player` (uuid text), `name`, `message` and `replies`; no host: set `event.replies` to answer, `horizon.cancel()` drops it for everybody",
+    ),
+    (
+        "player_command",
+        "an event table with `player`, `command` (no slash) and `replies`; set `event.replies` to answer, `horizon.cancel()` stops it",
+    ),
     // The generated native `command` hook (any typed command, before the
     // server sees it): named like the other generated hooks, with no
     // `name(` handler spelling (that spelling feeds the registerable-names
@@ -167,13 +188,19 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "player_changed_dimension",
-        "`player_changed_dimension(player, from, to)`",
+        "an event table with `player`, `from` and `to` (dimension ids)",
     ),
-    ("player_bed_enter", "`player_bed_enter(player, x, y, z)`"),
-    ("player_exp_change", "`player_exp_change(player, amount)`"),
+    (
+        "player_bed_enter",
+        "an event table with `player` and `pos` (`{x, y, z}` of the bed head, always present); `horizon.cancel()` keeps them out",
+    ),
+    (
+        "player_exp_change",
+        "an event table with `player` and `amount`; set `event.amount` to change the points added",
+    ),
     (
         "player_container_open",
-        "`player_container_open(player, menu, pos)`",
+        "an event table with `player`, `dimension`, `menu` and `pos` (the block's `{x, y, z}`, nil for no block)",
     ),
     (
         "living_equipment_listened",

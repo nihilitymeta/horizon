@@ -21,17 +21,11 @@
 use horizon_client::dev_input::mods::{
     ModStatus, reload_asked, reload_generation, set_error, set_status,
 };
+use horizon_client::mod_api::ItemStack;
 use horizon_client::mod_api::NativeCommand;
 use horizon_client::mod_api::{
     AttachmentCodec, AttachmentType, BlockStateId, Compound, Flow, Holder, Hooks, Host,
     LevelDimension, LevelHost, LevelWriteHost, MobView,
-};
-use horizon_client::mod_api::{
-    ItemStack, PlayerDiedEvent, PlayerLoggedInEvent, PlayerLoggedOutEvent, PlayerRespawnedEvent,
-};
-use horizon_client::mod_api::{
-    PlayerBedEnterEvent, PlayerChangedDimensionEvent, PlayerChatEvent, PlayerCommandEvent,
-    PlayerContainerOpenEvent, PlayerExpChangeEvent, PlayerTickEvent,
 };
 use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
@@ -122,19 +116,7 @@ pub const ENTRY: &str = horizon_mods::content::SCRIPT_ENTRY;
 /// load error with its line, not a handler that never runs. Generated hooks
 /// (`generated_hooks::GENERATED_HOOK_NAMES`) register too; the script
 /// commands' own hook is `perform_command` (`horizon.command` declares).
-pub const LUA_HOOK_NAMES: &[&str] = &[
-    "player_joined",
-    "player_left",
-    "player_respawned",
-    "player_died",
-    "player_tick",
-    "player_chat",
-    "player_command",
-    "player_changed_dimension",
-    "player_bed_enter",
-    "player_exp_change",
-    "player_container_open",
-];
+pub const LUA_HOOK_NAMES: &[&str] = &[];
 
 /// The content mod's manifest, which names the mod.
 const MANIFEST: &str = "horizon-mod.toml";
@@ -957,7 +939,8 @@ pub struct LuaMod {
     player_attachment: AttachmentType<Compound>,
     /// The names the player hooks told, by uuid: the name of a player the
     /// host has no record of at the moment (one dying, whose state is out of
-    /// reach then).
+    /// reach then). The generated `player` seeds keep it through
+    /// `player_by_uuid`.
     names: Mutex<HashMap<u128, String>>,
     /// The mod's settings file (`horizon.config`): `config/<id>.json` of
     /// the game folder; none when the folder is not known (a test).
@@ -1809,7 +1792,6 @@ impl LuaMod {
             "set_mob_health",
             "push_mob",
             "teleport_mob",
-            "set_amount",
             "take_items",
             "give_items",
             "feedback",
@@ -1838,7 +1820,6 @@ impl LuaMod {
             "drop_item",
             "set_nickname",
             "effect",
-            "reply",
         ] {
             let slot = slot.clone();
             api.set(
@@ -1891,6 +1872,14 @@ impl LuaMod {
             (
                 "set_strength",
                 "horizon.set_strength does nothing: set event.strength = n in living_knockback.",
+            ),
+            (
+                "set_amount",
+                "horizon.set_amount does nothing: set event.amount = n in player_exp_change.",
+            ),
+            (
+                "reply",
+                "horizon.reply does nothing: set event.replies in player_chat or player_command.",
             ),
         ] {
             let message = message.to_owned();
@@ -2085,20 +2074,6 @@ impl LuaMod {
         Ok(t)
     }
 
-    /// The acting player as a table (`uuid`, `name`, `dimension`, `position`,
-    /// `game_mode`, `health`), or nil when no player acts.
-    fn player_table(&self, host: &dyn Host) -> mlua::Result<Value> {
-        let lua = &self.lua;
-        Ok(match host.acting_player() {
-            Some(p) => {
-                let t = player_table_of(lua, &p)?;
-                t.set("held", self.held_table(host)?)?;
-                Value::Table(t)
-            }
-            None => Value::Nil,
-        })
-    }
-
     /// The acting player's held item as a table (`item`, `count`, `plain`),
     /// or nil for an empty hand.
     fn held_table(&self, host: &dyn Host) -> mlua::Result<Value> {
@@ -2117,7 +2092,7 @@ impl LuaMod {
 
     /// The player `uuid` as a table: the world's record when they are on,
     /// else just `uuid` and `name` (the one given, else the one a player
-    /// hook told before).
+    /// hook told before). The generated `player` seeds call this.
     fn player_by_uuid(
         &self,
         host: &dyn Host,
@@ -2145,38 +2120,6 @@ impl LuaMod {
                 }
                 Ok(t)
             }
-        }
-    }
-
-    /// A hook about a player, told by uuid (`player_joined`...): `hook(player[,
-    /// cause])`, with the host actions.
-    fn player_hook(
-        &self,
-        host: &mut dyn Host,
-        hook: &str,
-        uuid: u128,
-        name: &str,
-        cause: Option<Option<&str>>,
-    ) {
-        if !self.has_handlers(hook) {
-            return;
-        }
-        let r = (|| -> mlua::Result<()> {
-            let player = self.player_by_uuid(host, uuid, Some(name))?;
-            let cause = match cause {
-                Some(Some(c)) => Value::String(self.lua.create_string(c)?),
-                _ => Value::Nil,
-            };
-            self.call_kind(
-                hook,
-                None,
-                host,
-                (player, cause),
-                &mut |host, action, args| self.run_action(host, action, args),
-            )
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
         }
     }
 
@@ -2754,239 +2697,6 @@ pub(crate) fn dimension_id(dimension: LevelDimension) -> &'static str {
 }
 
 impl Hooks for LuaMod {
-    /// A player joined the game: `player_joined(player)`.
-    fn player_logged_in(&self, host: &mut dyn Host, event: &mut PlayerLoggedInEvent<'_>) {
-        self.player_hook(host, "player_joined", event.player, event.name, None);
-    }
-    /// A player left the game, by any path: `player_left(player)`.
-    fn player_logged_out(&self, host: &mut dyn Host, event: &mut PlayerLoggedOutEvent<'_>) {
-        self.player_hook(host, "player_left", event.player, event.name, None);
-    }
-    /// A player respawned after a death: `player_respawned(player)`.
-    fn player_respawned(&self, host: &mut dyn Host, event: &mut PlayerRespawnedEvent<'_>) {
-        self.player_hook(host, "player_respawned", event.player, event.name, None);
-    }
-    /// A player died: `player_died(player, cause)`, `cause` the death
-    /// message's key (`death.attack.lava`) when the game knows it, else nil.
-    fn player_died(&self, host: &mut dyn Host, event: &mut PlayerDiedEvent<'_>) {
-        self.player_hook(host, "player_died", event.player, "", Some(event.cause));
-    }
-    /// A living player's server tick ends: `player_tick(player)`, the
-    /// acting player's table; the host actions and the reads work. Every
-    /// player, every tick: keep it light.
-    fn player_tick(&self, host: &mut dyn Host, _event: &mut PlayerTickEvent) {
-        let hook = "player_tick";
-        if !self.has_handlers(hook) {
-            return;
-        }
-        let r = (|| -> mlua::Result<()> {
-            let player = self.player_table(host)?;
-            self.call_kind(hook, None, host, player, &mut |host, action, args| {
-                self.run_action(host, action, args)
-            })
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
-    }
-
-    /// A player's chat line is about to go to everyone:
-    /// `player_chat(player, line)`, `player` their `{uuid, name}` (the hub
-    /// is mid-packet: no host). Handlers may queue `cancel()` (nobody sees
-    /// it) and `reply(text)` (a line back to the sender). The line itself
-    /// cannot change: a signed message would no longer verify.
-    fn player_chat(&self, event: &mut PlayerChatEvent<'_>) -> Flow {
-        let hook = "player_chat";
-        if !self.has_handlers(hook) {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let mut replies: Vec<String> = Vec::new();
-        let player = match self.lua.create_table().and_then(|t| {
-            t.set("uuid", uuid_text(event.player))?;
-            t.set("name", event.name)?;
-            Ok(t)
-        }) {
-            Ok(t) => t,
-            Err(e) => return self.hook_error(hook, e),
-        };
-        if let Ok(mut names) = self.names.lock() {
-            names.insert(event.player, event.name.to_owned());
-        }
-        let r = self.call_bare(hook, None, (player, event.message), &mut |action, args| {
-            match action {
-                "cancel" => cancel = true,
-                "reply" => replies.push(args.get::<String>(1)?),
-                other => log::warn!("[lua:{}] {hook}: {other} needs a host; dropped", self.id),
-            }
-            Ok(())
-        });
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        for line in replies {
-            event
-                .replies
-                .push(horizon_client::mod_api::Text::literal(line));
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-    /// A player typed a command: `player_command(player, line)`, the line
-    /// without its slash, before it runs. Handlers may queue `cancel()`
-    /// (nothing runs) and `reply(text)` (a line back to the player, the only
-    /// way to answer here: no player's state is in place).
-    fn player_command(&self, host: &mut dyn Host, event: &mut PlayerCommandEvent<'_>) -> Flow {
-        let hook = "player_command";
-        if !self.has_handlers(hook) {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let mut replies: Vec<String> = Vec::new();
-        let r = (|| -> mlua::Result<()> {
-            let player = self.player_by_uuid(host, event.player, Some(event.name))?;
-            self.call_kind(
-                hook,
-                None,
-                host,
-                (player, event.command),
-                &mut |host, action, args| {
-                    match action {
-                        "cancel" => cancel = true,
-                        "reply" => replies.push(args.get::<String>(1)?),
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )
-        })();
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        for line in replies {
-            event
-                .replies
-                .push(horizon_client::mod_api::Text::literal(line));
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-    /// A player's move to another level has ended:
-    /// `player_changed_dimension(player, from, to)`.
-    fn player_changed_dimension(
-        &self,
-        host: &mut dyn Host,
-        event: &mut PlayerChangedDimensionEvent<'_>,
-    ) {
-        let hook = "player_changed_dimension";
-        if !self.has_handlers(hook) {
-            return;
-        }
-        let r = (|| -> mlua::Result<()> {
-            let player = self.player_by_uuid(host, event.player, Some(event.name))?;
-            self.call_kind(
-                hook,
-                None,
-                host,
-                (player, event.from, event.to),
-                &mut |host, action, args| self.run_action(host, action, args),
-            )
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
-    }
-    /// A player is about to enter a bed: `player_bed_enter(player, x, y, z)`;
-    /// `horizon.cancel()` keeps them out.
-    fn player_bed_enter(&self, host: &mut dyn Host, event: &mut PlayerBedEnterEvent<'_>) -> Flow {
-        let hook = "player_bed_enter";
-        if !self.has_handlers(hook) {
-            return Flow::Continue;
-        }
-        let mut cancel = false;
-        let r = (|| -> mlua::Result<()> {
-            let player = self.player_by_uuid(host, event.player, Some(event.name))?;
-            self.call_kind(
-                hook,
-                None,
-                host,
-                (player, event.pos[0], event.pos[1], event.pos[2]),
-                &mut |host, action, args| {
-                    match action {
-                        "cancel" => cancel = true,
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )
-        })();
-        if let Err(e) = r {
-            return self.hook_error(hook, e);
-        }
-        if cancel { Flow::Cancel } else { Flow::Continue }
-    }
-    /// A player's experience is about to grow from an orb:
-    /// `player_exp_change(player, amount)`; `horizon.set_amount(n)` changes
-    /// the points added.
-    fn player_exp_change(&self, host: &mut dyn Host, event: &mut PlayerExpChangeEvent<'_>) {
-        let hook = "player_exp_change";
-        if !self.has_handlers(hook) {
-            return;
-        }
-        let mut amount = event.amount;
-        let r = (|| -> mlua::Result<()> {
-            let player = self.player_by_uuid(host, event.player, Some(event.name))?;
-            self.call_kind(
-                hook,
-                None,
-                host,
-                (player, event.amount),
-                &mut |host, action, args| {
-                    match action {
-                        "set_amount" => amount = args.get::<i32>(1)?,
-                        other => self.run_action(host, other, args)?,
-                    }
-                    Ok(())
-                },
-            )
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-            return;
-        }
-        event.amount = amount.max(0);
-    }
-    /// A player opened a menu: `player_container_open(player, menu, pos)`,
-    /// `menu` the menu type (`minecraft:generic_9x3`), `pos` the block it is
-    /// of (`{x, y, z}`) or nil.
-    fn player_container_open(&self, host: &mut dyn Host, event: &mut PlayerContainerOpenEvent<'_>) {
-        let hook = "player_container_open";
-        if !self.has_handlers(hook) {
-            return;
-        }
-        let r = (|| -> mlua::Result<()> {
-            let lua = &self.lua;
-            let player = self.player_by_uuid(host, event.player, Some(event.name))?;
-            let pos = match event.pos {
-                Some(p) => {
-                    let t = lua.create_table()?;
-                    t.set("x", p[0])?;
-                    t.set("y", p[1])?;
-                    t.set("z", p[2])?;
-                    Value::Table(t)
-                }
-                None => Value::Nil,
-            };
-            self.call_kind(
-                hook,
-                None,
-                host,
-                (player, event.menu, pos),
-                &mut |host, action, args| self.run_action(host, action, args),
-            )
-        })();
-        if let Err(e) = r {
-            self.hook_error(hook, e);
-        }
-    }
     // `register_commands` and `perform_command` are generated
     // (`generated_hooks`, `gen_register_commands` and
     // `gen_perform_command`): the collect appends the declared commands,
@@ -3460,6 +3170,97 @@ experimental = ["scripts"]
                 assert_eq!(hit.strength, 0.25);
             }
         }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn dead_player_actions_error_and_leave_their_hooks_working() {
+        let (m, mut host, dir) = dead_mod(
+            "dead_player_actions",
+            br#"
+            horizon.on("player_exp_change", function(event)
+              __witness = (__witness or 0) + 1
+              if CALL_DEAD then horizon.set_amount(10) end
+              event.amount = event.amount * 2
+            end)
+            horizon.on("player_chat", function(event)
+              __witness = (__witness or 0) + 1
+              if CALL_DEAD then horizon.reply("sneaky") end
+              event.replies = { "heard " .. event.message }
+            end)
+            horizon.on("player_command", function(event)
+              __witness = (__witness or 0) + 1
+              if CALL_DEAD then horizon.reply("sneaky") end
+              if event.command == "shh" then horizon.cancel() end
+              horizon.broadcast("ran " .. event.command)
+            end)
+            "#,
+        );
+        let steve = 0x123e4567_e89b_12d3_a456_426614174000;
+        // The live paths first: the write lands, the line reaches the
+        // sender, the cancel stops the command.
+        m.lua.globals().set("CALL_DEAD", false).unwrap();
+        let mut exp = test_events::player_exp_change_event(steve, "steve", 3);
+        m.player_exp_change(&mut host, &mut exp);
+        assert_eq!(exp.amount, 6);
+        let mut replies = Vec::new();
+        assert_eq!(
+            m.player_chat(&mut test_events::player_chat_event(
+                steve,
+                "steve",
+                "hello",
+                &mut replies
+            )),
+            Flow::Continue
+        );
+        assert_eq!(
+            replies,
+            [horizon_client::mod_api::Text::literal("heard hello")]
+        );
+        let mut replies = Vec::new();
+        let mut cmd = test_events::player_command_event(steve, "steve", "shh", &mut replies);
+        assert_eq!(m.player_command(&mut host, &mut cmd), Flow::Cancel);
+        assert!(replies.is_empty());
+        // Each dead call fails its handler through the hook's error path,
+        // naming the event field; the write, the reply and the cancel are
+        // dropped with it.
+        m.lua.globals().set("CALL_DEAD", true).unwrap();
+        let mut exp = test_events::player_exp_change_event(steve, "steve", 3);
+        m.player_exp_change(&mut host, &mut exp);
+        let e = hook_error_of(&m);
+        assert!(e.contains("horizon.set_amount does nothing"), "{e}");
+        assert!(e.contains("event.amount"), "{e}");
+        assert!(e.contains("player_exp_change"), "{e}");
+        assert_eq!(exp.amount, 3);
+        let mut replies = Vec::new();
+        assert_eq!(
+            m.player_chat(&mut test_events::player_chat_event(
+                steve,
+                "steve",
+                "hello",
+                &mut replies
+            )),
+            Flow::Continue
+        );
+        let e = hook_error_of(&m);
+        assert!(e.contains("horizon.reply does nothing"), "{e}");
+        assert!(e.contains("event.replies"), "{e}");
+        assert!(e.contains("player_chat"), "{e}");
+        assert!(replies.is_empty());
+        let mut replies = Vec::new();
+        let mut cmd = test_events::player_command_event(steve, "steve", "shh", &mut replies);
+        assert_eq!(m.player_command(&mut host, &mut cmd), Flow::Continue);
+        let e = hook_error_of(&m);
+        assert!(e.contains("horizon.reply does nothing"), "{e}");
+        assert!(e.contains("event.replies"), "{e}");
+        assert!(e.contains("player_command"), "{e}");
+        assert_eq!(*host.lines.lock().unwrap(), ["ran shh"]);
+        // After the errors the hooks still run: the write lands again.
+        m.lua.globals().set("CALL_DEAD", false).unwrap();
+        let mut exp = test_events::player_exp_change_event(steve, "steve", 4);
+        m.player_exp_change(&mut host, &mut exp);
+        assert_eq!(exp.amount, 8);
+        assert_eq!(m.lua.globals().get::<f64>("__witness").unwrap(), 7.0);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -4276,10 +4077,22 @@ experimental = ["scripts"]
                 br#"
                 LOG = {}
                 local function log(s) LOG[#LOG + 1] = s end
-                horizon.on("player_joined", function(player) log("joined " .. player.name .. " hp " .. player.health) end)
-                horizon.on("player_left", function(player) log("left " .. player.name) end)
-                horizon.on("player_respawned", function(player) log("respawned " .. player.name) end)
-                horizon.on("player_died", function(player, cause) log("player died " .. player.name .. " " .. tostring(cause)) end)
+                horizon.on("player_logged_in", function(event)
+                  __witness = (__witness or 0) + 1
+                  log("joined " .. event.player.name .. " hp " .. event.player.health .. " " .. event.player.uuid)
+                end)
+                horizon.on("player_logged_out", function(event)
+                  __witness = (__witness or 0) + 1
+                  log("left " .. event.player.name)
+                end)
+                horizon.on("player_respawned", function(event)
+                  __witness = (__witness or 0) + 1
+                  log("respawned " .. event.player.name)
+                end)
+                horizon.on("player_died", function(event)
+                  __witness = (__witness or 0) + 1
+                  log("player died " .. event.player .. " " .. tostring(event.cause))
+                end)
                 "#,
             )],
         );
@@ -4311,8 +4124,10 @@ experimental = ["scripts"]
             &mut test_events::player_died_event(steve, Some("death.attack.lava")),
         );
         // A death names no one and the host has no record of alex any more:
-        // the name the logout told is kept.
+        // the native event carries only the uuid, so no name is told.
         m.player_died(&mut host, &mut test_events::player_died_event(5, None));
+        // A logout with no name keeps the name the earlier logout told.
+        m.player_logged_out(&mut host, &mut test_events::player_logged_out_event(5, ""));
         let log: Vec<String> = m
             .lua
             .globals()
@@ -4324,13 +4139,15 @@ experimental = ["scripts"]
         assert_eq!(
             log,
             [
-                "joined steve hp 20",
+                "joined steve hp 20 123e4567-e89b-12d3-a456-426614174000",
                 "left alex",
                 "respawned steve",
-                "player died steve death.attack.lava",
-                "player died alex nil",
+                "player died 123e4567-e89b-12d3-a456-426614174000 death.attack.lava",
+                "player died 00000000-0000-0000-0000-000000000005 nil",
+                "left alex",
             ]
         );
+        assert_eq!(m.lua.globals().get::<f64>("__witness").unwrap(), 6.0);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -5210,14 +5027,20 @@ experimental = ["scripts"]
                 -- The hooks without a host (mid-hit) have no broadcast: they note.
                 NOTES = {}
                 local function note(line) NOTES[#NOTES + 1] = line end
-                horizon.on("player_tick", function(player) say("tick " .. player.name .. " " .. tostring(player.held.item)) end)
-                horizon.on("player_chat", function(player, line)
-                  note("chat " .. player.name .. " " .. line)
-                  if line == "shh" then horizon.cancel() else horizon.reply("heard " .. line) end
+                horizon.on("player_tick", function(event)
+                  __witness = (__witness or 0) + 1
+                  local player = horizon.players()[1]
+                  say("tick " .. player.name .. " hp " .. player.health)
                 end)
-                horizon.on("player_command", function(player, line)
-                  say("command " .. player.name .. " " .. line)
-                  if line == "secret" then horizon.reply("not here"); horizon.cancel() end
+                horizon.on("player_chat", function(event)
+                  __witness = (__witness or 0) + 1
+                  note("chat " .. event.name .. " " .. event.message)
+                  if event.message == "shh" then horizon.cancel() else event.replies = { "heard " .. event.message } end
+                end)
+                horizon.on("player_command", function(event)
+                  __witness = (__witness or 0) + 1
+                  say("command " .. event.player.name .. " " .. event.command)
+                  if event.command == "secret" then event.replies = { "not here" }; horizon.cancel() end
                 end)
                 horizon.on("loot_drops", function(event)
                   say(("loot %s %s at %d,%d,%d by %s tool %s"):format(event.table, event.block.id, event.block.x, event.block.y, event.block.z, event.player and event.player.name or "nobody", event.tool and event.tool.id or "hand"))
@@ -5228,10 +5051,22 @@ experimental = ["scripts"]
                   say(("loot %s mob %d %s"):format(event.table, event.entity.id, event.entity.kind))
                   event.drops[1] = nil
                 end, "minecraft:cow")
-                horizon.on("player_changed_dimension", function(player, from, to) say("moved " .. player.name .. " " .. from .. " > " .. to) end)
-                horizon.on("player_bed_enter", function(player, x, y, z) say(("bed %s %d,%d,%d"):format(player.name, x, y, z)); horizon.cancel() end)
-                horizon.on("player_exp_change", function(player, amount) say("exp " .. amount); horizon.set_amount(amount * 2) end)
-                horizon.on("player_container_open", function(player, menu, pos) say("menu " .. menu .. " " .. (pos and pos.x or "nowhere")) end)
+                horizon.on("player_changed_dimension", function(event)
+                  __witness = (__witness or 0) + 1
+                  say("moved " .. event.player.name .. " " .. event.from .. " > " .. event.to)
+                end)
+                horizon.on("player_bed_enter", function(event)
+                  __witness = (__witness or 0) + 1
+                  say(("bed %s %d,%d,%d"):format(event.player.name, event.pos.x, event.pos.y, event.pos.z)); horizon.cancel()
+                end)
+                horizon.on("player_exp_change", function(event)
+                  __witness = (__witness or 0) + 1
+                  say("exp " .. event.amount); event.amount = event.amount * 2
+                end)
+                horizon.on("player_container_open", function(event)
+                  __witness = (__witness or 0) + 1
+                  say("menu " .. event.menu .. " " .. (event.pos and event.pos.x or "nowhere") .. " in " .. event.dimension)
+                end)
                 "#,
             )],
         );
@@ -5371,10 +5206,21 @@ experimental = ["scripts"]
                 Some([7, 8, 9]),
             ),
         );
+        // A menu with no block: `pos` is nil, and the dimension is told.
+        m.player_container_open(
+            &mut host,
+            &mut test_events::player_container_open_event(
+                steve.uuid,
+                "steve",
+                "minecraft:overworld",
+                "minecraft:crafting",
+                None,
+            ),
+        );
         assert_eq!(
             *host.lines.lock().unwrap(),
             [
-                "tick steve ruby:wand",
+                "tick steve hp 20",
                 "command steve secret",
                 "command steve time set day",
                 "loot minecraft:blocks/stone minecraft:stone at 1,2,3 by steve tool ruby:wand",
@@ -5382,9 +5228,11 @@ experimental = ["scripts"]
                 "moved steve minecraft:overworld > minecraft:the_nether",
                 "bed steve 4,5,6",
                 "exp 3",
-                "menu minecraft:generic_9x3 7",
+                "menu minecraft:generic_9x3 7 in minecraft:overworld",
+                "menu minecraft:crafting nowhere in minecraft:overworld",
             ]
         );
+        assert_eq!(m.lua.globals().get::<f64>("__witness").unwrap(), 10.0);
         assert_eq!(
             m.lua.globals().get::<Vec<String>>("NOTES").unwrap(),
             ["chat steve hello all", "chat steve shh"]
@@ -6737,14 +6585,14 @@ experimental = ["scripts"]
             "unknown-hook",
             &[(
                 "scripts/init.lua",
-                b"horizon.on(\"player_joined\", function() end)\nhorizon.on(\"player_jioned\", function() end)\n",
+                b"horizon.on(\"player_logged_in\", function() end)\nhorizon.on(\"player_jioned\", function() end)\n",
             )],
         );
         let e = LuaMod::load(&path, &[]).unwrap_err();
         assert!(
             e.contains("scripts/init.lua\"]:2:")
                 && e.contains("no such hook")
-                && e.contains("player_joined"),
+                && e.contains("player_jioned"),
             "{e}"
         );
         let e = check_mod(&path, &[], None).unwrap_err();
@@ -6755,7 +6603,7 @@ experimental = ["scripts"]
             &[
                 (
                     "scripts/init.lua",
-                    b"local m = require(\"helper\")\nhorizon.on(\"player_joined\", m.hello)\n",
+                    b"local m = require(\"helper\")\nhorizon.on(\"player_logged_in\", m.hello)\n",
                 ),
                 ("scripts/helper.lua", b"return { hello = function() end }\n"),
             ],

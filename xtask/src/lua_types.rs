@@ -24,10 +24,9 @@ const TYPES: &[(&str, &str)] = &[
         "Player",
         "{ uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number, held: Held? }",
     ),
-    ("Named", "{ uuid: string, name: string }"),
     // A player named by uuid in a hook: the world's record while they are
-    // on, else just the uuid and the name a hook told before, if any
-    // (`player_left` always; a player whose state is out of reach otherwise).
+    // on, else just the uuid and the name a hook told before, if any (a
+    // player whose state is out of reach otherwise).
     ("PlayerRef", "Player | { uuid: string, name: string? }"),
     ("IdKind", "{ id: number, kind: string }"),
     ("Block", "{ x: number, y: number, z: number, id: string }"),
@@ -113,32 +112,13 @@ const HOOKS: &[(&str, &str)] = &[
     // `inventory_tick`, `hurt_enemy`, `item_crafted`, `item_picked_up`,
     // `item_dropped`, `destroy_block`, `place_block`, `projectile_impact`,
     // `hears_projectile_impacts`, `projectile_launch`,
-    // `explosion_detonate`). The declaration-served `block_entity` and
+    // `explosion_detonate`). The player hooks went the same way in K3
+    // (`player_logged_in`, `player_logged_out`, `player_respawned`,
+    // `player_died`, `player_tick`, `player_chat`, `player_command`,
+    // `player_changed_dimension`, `player_bed_enter`, `player_exp_change`,
+    // `player_container_open`). The declaration-served `block_entity` and
     // `block_entity_ticks` take no `horizon.on` registration, so they have
     // no overload.
-    ("player_joined", "(player: PlayerRef) -> ()"),
-    ("player_left", "(player: PlayerRef) -> ()"),
-    ("player_respawned", "(player: PlayerRef) -> ()"),
-    ("player_died", "(player: PlayerRef, cause: string?) -> ()"),
-    ("player_tick", "(player: Player) -> ()"),
-    ("player_chat", "(player: Named, line: string) -> ()"),
-    ("player_command", "(player: PlayerRef, line: string) -> ()"),
-    (
-        "player_changed_dimension",
-        "(player: PlayerRef, from: string, to: string) -> ()",
-    ),
-    (
-        "player_bed_enter",
-        "(player: PlayerRef, x: number, y: number, z: number) -> ()",
-    ),
-    (
-        "player_exp_change",
-        "(player: PlayerRef, amount: number) -> ()",
-    ),
-    (
-        "player_container_open",
-        "(player: PlayerRef, menu: string, pos: Vec3?) -> ()",
-    ),
 ];
 
 /// One generated hook's types, derived from the same model as the runtime
@@ -308,7 +288,6 @@ const FUNCTIONS: &[(&str, &str)] = &[
         "teleport_mob",
         "(dimension: string, id: number, x: number, y: number, z: number) -> ()",
     ),
-    ("set_amount", "(n: number) -> ()"),
     (
         "take_items",
         "((id: string, count: number) -> ()) & ((who: string | Player, id: string, count: number) -> ())",
@@ -382,7 +361,6 @@ const FUNCTIONS: &[(&str, &str)] = &[
         "effect",
         "(target: number | string | Player, name: string, ticks: number, amplifier: number?) -> ()",
     ),
-    ("reply", "(text: string) -> ()"),
 ];
 
 /// The `registry` global of `scripts/registry.lua`.
