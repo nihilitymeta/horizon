@@ -4,6 +4,7 @@
       "name": "log_line",
       "target": "horizon_client_lib::native_client_hooks::native_log_line",
       "neoforge": "none (a log4j appender)",
+      "side": "both",
       "mod_api": {
         "contract": "listen"
       }

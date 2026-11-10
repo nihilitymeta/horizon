@@ -783,6 +783,7 @@
       "name": "tick",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_tick",
+      "side": "both",
       "mod_api": {
         "contract": "listen"
       }
@@ -791,6 +792,7 @@
       "name": "visuals",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_visuals",
+      "side": "client",
       "mod_api": {
         "contract": "listen"
       }
@@ -799,6 +801,7 @@
       "name": "emissive",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_emissive",
+      "side": "client",
       "mod_api": {
         "contract": "collect",
         "out": "layers"
@@ -874,6 +877,7 @@
       "name": "block_changed",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_block_changed",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -882,6 +886,7 @@
       "name": "neighbor_changed",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_neighbor_changed",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -890,6 +895,7 @@
       "name": "random_tick",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_random_tick",
+      "side": "server",
       "mod_api": {
         "contract": "cancel",
         "out": "handled"
@@ -899,6 +905,7 @@
       "name": "tick_block",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_tick_block",
+      "side": "server",
       "mod_api": {
         "contract": "cancel",
         "out": "handled"
@@ -908,6 +915,7 @@
       "name": "update_shape",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_update_shape",
+      "side": "server",
       "mod_api": {
         "contract": "replace",
         "out": "new"
@@ -917,6 +925,7 @@
       "name": "hud",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_hud",
+      "side": "client",
       "mod_api": {
         "contract": "listen"
       }
@@ -925,6 +934,7 @@
       "name": "key",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_key",
+      "side": "client",
       "mod_api": {
         "contract": "listen"
       }
@@ -933,6 +943,7 @@
       "name": "wheel",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_wheel",
+      "side": "client",
       "mod_api": {
         "contract": "cancel",
         "out": "claimed"
@@ -942,6 +953,7 @@
       "name": "command",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_command",
+      "side": "client",
       "mod_api": {
         "contract": "cancel",
         "out": "ran"
@@ -951,6 +963,7 @@
       "name": "commands",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_commands",
+      "side": "client",
       "mod_api": {
         "contract": "collect",
         "out": "commands"
@@ -960,6 +973,7 @@
       "name": "zoom",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_zoom",
+      "side": "client",
       "mod_api": {
         "contract": "replace",
         "out": "zoom"
@@ -969,6 +983,7 @@
       "name": "minimap",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_minimap",
+      "side": "client",
       "mod_api": {
         "contract": "replace",
         "out": "minimap"
@@ -978,6 +993,7 @@
       "name": "mods",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_mods",
+      "side": "client",
       "mod_api": {
         "contract": "collect",
         "out": "mods"
@@ -987,6 +1003,7 @@
       "name": "settings",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_settings",
+      "side": "client",
       "mod_api": {
         "contract": "collect",
         "out": "buttons"
@@ -996,6 +1013,7 @@
       "name": "settings_click",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_settings_click",
+      "side": "client",
       "mod_api": {
         "contract": "listen"
       }
@@ -1004,6 +1022,7 @@
       "name": "panel_event",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_panel_event",
+      "side": "client",
       "mod_api": {
         "contract": "listen"
       }
@@ -1012,6 +1031,7 @@
       "name": "block_entity",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_block_entity",
+      "side": "both",
       "mod_api": {
         "contract": "replace",
         "out": "entity"
@@ -1021,6 +1041,7 @@
       "name": "block_entity_ticks",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_block_entity_ticks",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1029,6 +1050,7 @@
       "name": "block_entity_tick",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_block_entity_tick",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1037,6 +1059,7 @@
       "name": "block_entity_update_tag",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_block_entity_update_tag",
+      "side": "server",
       "mod_api": {
         "contract": "replace",
         "out": "tag"
@@ -1057,6 +1080,7 @@
       "name": "screen",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_screen",
+      "side": "both",
       "mod_api": {
         "contract": "replace",
         "out": "screen"
@@ -1066,6 +1090,7 @@
       "name": "screen_draw",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_screen_draw",
+      "side": "client",
       "mod_api": {
         "contract": "listen"
       }
@@ -1074,6 +1099,7 @@
       "name": "screen_click",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_screen_click",
+      "side": "client",
       "mod_api": {
         "contract": "replace",
         "out": "button"
@@ -1083,6 +1109,7 @@
       "name": "screen_tooltip",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_screen_tooltip",
+      "side": "client",
       "mod_api": {
         "contract": "collect",
         "out": "lines"
@@ -1092,6 +1119,7 @@
       "name": "menu_button",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_menu_button",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1112,6 +1140,7 @@
       "name": "perform_command",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_perform_command",
+      "side": "server",
       "mod_api": {
         "contract": "cancel",
         "out": "ran"
@@ -1121,6 +1150,7 @@
       "name": "menu_clicked",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_menu_clicked",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1129,6 +1159,7 @@
       "name": "menu_closed",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_menu_closed",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1138,6 +1169,7 @@
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_tooltip",
       "neoforge": "ItemTooltipEvent",
+      "side": "client",
       "cancellable": false,
       "mod_api": {
         "contract": "collect",
@@ -1148,6 +1180,7 @@
       "name": "use_item_on",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_use_item_on",
+      "side": "server",
       "mod_api": {
         "contract": "cancel",
         "out": "claimed"
@@ -1204,6 +1237,7 @@
       "name": "block_spread",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_block_spread",
+      "side": "server",
       "mod_api": {
         "contract": "cancel",
         "out": "canceled"
@@ -1213,6 +1247,7 @@
       "name": "piston_move",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_piston_move",
+      "side": "server",
       "mod_api": {
         "contract": "cancel",
         "out": "canceled"
@@ -1234,6 +1269,7 @@
       "name": "fill_bucket",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_fill_bucket",
+      "side": "server",
       "mod_api": {
         "contract": "cancel",
         "out": "canceled"
@@ -1255,6 +1291,7 @@
       "name": "net_from_client",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_net_from_client",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1263,6 +1300,7 @@
       "name": "net_from_server",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_net_from_server",
+      "side": "client",
       "mod_api": {
         "contract": "listen"
       }
@@ -1271,6 +1309,7 @@
       "name": "player_died",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_player_died",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1279,6 +1318,7 @@
       "name": "mob_spawned",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_mob_spawned",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1287,6 +1327,7 @@
       "name": "mob_killed",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_mob_killed",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1318,6 +1359,7 @@
       "name": "hurt_enemy",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_hurt_enemy",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1326,6 +1368,7 @@
       "name": "inventory_tick",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_inventory_tick",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1334,6 +1377,7 @@
       "name": "on_equip",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_on_equip",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1342,6 +1386,7 @@
       "name": "block_signal",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_block_signal",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1350,6 +1395,7 @@
       "name": "is_signal_source",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_is_signal_source",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1358,6 +1404,7 @@
       "name": "health_hud",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_health_hud",
+      "side": "client",
       "mod_api": {
         "contract": "replace",
         "out": "draws"
@@ -1426,6 +1473,7 @@
       "name": "menu_button_v2",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_menu_button_v2",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1456,6 +1504,7 @@
       "name": "should_apply_effect_tick_this_tick",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_should_apply_effect_tick_this_tick",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1464,6 +1513,7 @@
       "name": "apply_effect_tick",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_apply_effect_tick",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1472,6 +1522,7 @@
       "name": "on_effect_added",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_on_effect_added",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1546,6 +1597,7 @@
       "name": "render_needs",
       "version": 1,
       "target": "horizon_client_render::gfx::native_render::native_render_needs",
+      "side": "client",
       "mod_api": {
         "contract": "collect",
         "out": "needs"
@@ -1555,6 +1607,7 @@
       "name": "item_bar",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_item_bar",
+      "side": "client",
       "mod_api": {
         "contract": "listen"
       }
@@ -1563,6 +1616,7 @@
       "name": "has_analog_output",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_has_analog_output",
+      "side": "server",
       "mod_api": {
         "contract": "collect",
         "out": "output"
@@ -1572,6 +1626,7 @@
       "name": "analog_output",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_analog_output",
+      "side": "server",
       "mod_api": {
         "contract": "collect",
         "out": "output"
@@ -1581,6 +1636,7 @@
       "name": "component_types",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_component_types",
+      "side": "both",
       "mod_api": {
         "contract": "collect",
         "out": "types"
@@ -1621,6 +1677,7 @@
       "name": "can_survive",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_can_survive",
+      "side": "server",
       "mod_api": {
         "contract": "replace",
         "out": "survives"
@@ -1630,6 +1687,7 @@
       "name": "may_place_on",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_may_place_on",
+      "side": "server",
       "mod_api": {
         "contract": "replace",
         "out": "may"
@@ -1639,6 +1697,7 @@
       "name": "block_entity_submit",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_block_entity_submit",
+      "side": "client",
       "mod_api": {
         "contract": "listen"
       }
@@ -1647,6 +1706,7 @@
       "name": "block_entity_render_bounding_box",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_block_entity_render_bounding_box",
+      "side": "client",
       "mod_api": {
         "contract": "collect",
         "out": "bounds"
@@ -1656,6 +1716,7 @@
       "name": "is_valid_bonemeal_target",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_is_valid_bonemeal_target",
+      "side": "both",
       "mod_api": {
         "contract": "replace",
         "out": "valid"
@@ -1665,6 +1726,7 @@
       "name": "is_bonemeal_success",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_is_bonemeal_success",
+      "side": "server",
       "mod_api": {
         "contract": "collect",
         "out": "success"
@@ -1674,6 +1736,7 @@
       "name": "perform_bonemeal",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_perform_bonemeal",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1719,6 +1782,7 @@
       "version": 1,
       "target": "horizon_world::loot::native_loot_table_load",
       "neoforge": "LootTableLoadEvent",
+      "side": "both",
       "cancellable": false,
       "mod_api": {
         "contract": "collect",
@@ -1741,6 +1805,7 @@
       "name": "state_for_placement",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_state_for_placement",
+      "side": "server",
       "mod_api": {
         "contract": "replace",
         "out": "answer"
@@ -1750,6 +1815,7 @@
       "name": "enchant_effect",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_enchant_effect",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }
@@ -1805,6 +1871,7 @@
       "name": "camera_shake",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_camera_shake",
+      "side": "client",
       "mod_api": {
         "contract": "listen"
       }
@@ -1813,6 +1880,7 @@
       "name": "shader_params",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_shader_params",
+      "side": "client",
       "mod_api": {
         "contract": "listen"
       }
@@ -1864,6 +1932,7 @@
       "name": "use_duration",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_use_duration",
+      "side": "both",
       "mod_api": {
         "contract": "listen"
       }
@@ -1881,6 +1950,7 @@
       "name": "can_eat",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_can_eat",
+      "side": "both",
       "mod_api": {
         "contract": "listen"
       }
@@ -1890,6 +1960,7 @@
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_living_entity_use_item_start",
       "neoforge": "LivingEntityUseItemEvent.Start",
+      "side": "both",
       "cancellable": true,
       "mod_api": {
         "contract": "cancel",
@@ -1934,6 +2005,7 @@
       "name": "perform_console_command",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_perform_console_command",
+      "side": "server",
       "mod_api": {
         "contract": "cancel",
         "out": "ran"
@@ -1967,6 +2039,7 @@
       "name": "data_pack_files",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_data_pack_files",
+      "side": "server",
       "mod_api": {
         "contract": "collect",
         "out": "files"
@@ -2219,6 +2292,7 @@
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_living_entity_use_item_tick",
       "neoforge": "LivingEntityUseItemEvent.Tick",
+      "side": "both",
       "cancellable": true,
       "mod_api": {
         "contract": "cancel",
@@ -2229,6 +2303,7 @@
       "name": "on_use_tick",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_on_use_tick",
+      "side": "both",
       "mod_api": {
         "contract": "listen"
       }
@@ -2238,6 +2313,7 @@
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_living_entity_use_item_stop",
       "neoforge": "LivingEntityUseItemEvent.Stop",
+      "side": "both",
       "cancellable": true,
       "mod_api": {
         "contract": "cancel",
@@ -2248,6 +2324,7 @@
       "name": "release_using",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_release_using",
+      "side": "both",
       "mod_api": {
         "contract": "listen"
       }
@@ -2455,6 +2532,7 @@
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_blocks",
       "neoforge": "RegisterEvent",
+      "side": "both",
       "mod_api": {
         "contract": "collect",
         "out": "blocks"
@@ -2465,6 +2543,7 @@
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_items",
       "neoforge": "RegisterEvent",
+      "side": "both",
       "mod_api": {
         "contract": "collect",
         "out": "items"
@@ -2509,6 +2588,7 @@
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_item_fluid_tank",
       "neoforge": "Capabilities.FluidHandler.ITEM",
+      "side": "both",
       "mod_api": {
         "contract": "replace",
         "out": "capacity"
@@ -3198,6 +3278,7 @@
       "name": "fire_odds",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_fire_odds",
+      "side": "server",
       "mod_api": {
         "contract": "replace",
         "out": "odds"
@@ -3207,6 +3288,7 @@
       "name": "smoke_source",
       "version": 1,
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_smoke_source",
+      "side": "server",
       "mod_api": {
         "contract": "replace",
         "out": "smoke"
@@ -3321,6 +3403,7 @@
       "name": "ingredient",
       "version": 1,
       "target": "horizon_client_lib::crafting::native_ingredient",
+      "side": "both",
       "mod_api": {
         "contract": "collect",
         "out": "items"
@@ -3375,6 +3458,7 @@
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_item_energy_buffer",
       "neoforge": "Capabilities.Energy.ITEM",
+      "side": "both",
       "mod_api": {
         "contract": "replace",
         "out": "buffer"
@@ -4806,6 +4890,7 @@
       "name": "ingredient_test",
       "version": 1,
       "target": "horizon_client_lib::crafting::native_ingredient_test",
+      "side": "both",
       "mod_api": {
         "contract": "listen"
       }
@@ -4815,6 +4900,7 @@
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_item_container",
       "neoforge": "Capabilities.Item.ITEM",
+      "side": "both",
       "mod_api": {
         "contract": "replace",
         "out": "slots"
@@ -5030,6 +5116,7 @@
       "name": "recipe_book_categories",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_recipe_book_categories",
+      "side": "client",
       "mod_api": {
         "contract": "listen"
       }

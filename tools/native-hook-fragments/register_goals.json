@@ -4,6 +4,7 @@
       "name": "register_goals",
       "target": "horizon_client_lib::mobs::ai::native_register_goals",
       "neoforge": "Mob.registerGoals",
+      "side": "both",
       "mod_api": {
         "contract": "listen"
       }
