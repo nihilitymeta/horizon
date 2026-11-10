@@ -540,7 +540,16 @@ impl Game<'_> {
         motion.health.food.saturation = g.saturation;
         let mut player = Some(*motion);
         std::mem::swap(&mut self.player, &mut player);
-        let eye = (g.eye_height() as f32, self.eye);
+        // The guest's own eye height from its swapped-in body: the hub
+        // record's motion was just taken, so its `eye_height()` falls back
+        // to scale 1 with no swim or crawl.
+        let eye = (
+            self.player
+                .as_ref()
+                .map(|p| p.dimensions.eye_height)
+                .unwrap_or(1.62),
+            self.eye,
+        );
         self.eye = eye.0;
         let (yaw, pitch) = (self.yaw, self.pitch);
         self.yaw = g.yaw;

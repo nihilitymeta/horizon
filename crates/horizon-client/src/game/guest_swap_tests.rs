@@ -231,6 +231,87 @@ fn sneaking_and_eye_height_answer_only_the_uuid_asked() {
     game.lan = Some(host);
 }
 
+/// While a guest's command runs the hub is back in place, but its motion
+/// was taken for the swapped-in body: `native_player_eye_height` for the
+/// acting guest must read that live body (swimming 0.4 here), not the hub
+/// record's standing fallback (no swim, scale 1) — and `native_level_players`
+/// must publish the same live eye. Anyone else's answer is unchanged.
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn acting_guest_reports_live_eye_height_while_the_hub_is_back() {
+    let mut game = game();
+    let owner = owner_uuid(&game);
+    // A second, non-acting guest: its hub record stays the source.
+    const OTHER_CONN: u32 = 3;
+    const OTHER_UUID: u128 = 3;
+    let (tx, _rx) = mpsc::channel();
+    game.lan.as_mut().unwrap().hub.guests.push(Guest::new(
+        Joined {
+            conn: OTHER_CONN,
+            uuid: OTHER_UUID,
+            name: "OtherGuest".into(),
+            properties: Vec::new(),
+            info: ClientInformation::new(2),
+            brand: "test".into(),
+            sender: PlayerSender::new(tx, Arc::default()),
+            latency: Arc::new(AtomicI32::new(0)),
+            address: "127.0.0.1:25566".parse().unwrap(),
+            expected: false,
+            configured: Default::default(),
+        },
+        1002,
+        [9.5, 100.0, 9.5],
+        2,
+    ));
+    // The acting guest's body, swimming before its turn.
+    let res = game.motion;
+    let mut body =
+        PlayerMotion::new(res, Vec3::new(GUEST_POS[0], GUEST_POS[1], GUEST_POS[2])).unwrap();
+    body.set_pose(Pose::Swimming).unwrap();
+    game.lan
+        .as_mut()
+        .unwrap()
+        .hub
+        .guests
+        .iter_mut()
+        .find(|g| g.uuid == GUEST_UUID)
+        .unwrap()
+        .motion = Some(Box::new(body));
+    let mut host = game.lan.take().unwrap();
+    let swap = game
+        .enter_guest(&mut host, GUEST_CONN, game.dim)
+        .expect("enter");
+    // What a guest command restores first (`run_guest_command`).
+    game.lan = Some(host);
+    let eye = game.native_player_eye_height(GUEST_UUID);
+    assert!(
+        (eye - 0.4).abs() < 1e-6,
+        "the acting guest's live body swims, got {eye}"
+    );
+    let other = game.native_player_eye_height(OTHER_UUID);
+    assert!(
+        (other - 1.62).abs() < 1e-4,
+        "a guest who is not acting still reads its hub record, got {other}"
+    );
+    assert_eq!(
+        game.native_player_eye_height(owner),
+        1.62,
+        "unknown players read standing height"
+    );
+    let players = game.native_level_players();
+    let acting = players
+        .iter()
+        .find(|p| p.uuid == GUEST_UUID)
+        .expect("the acting guest is listed");
+    assert!(
+        (f64::from(acting.eye_height) - 0.4).abs() < 1e-6,
+        "players publish the live eye: {acting:?}"
+    );
+    let mut host = game.lan.take().expect("the command puts the hub back");
+    game.leave_guest(&mut host, swap);
+    game.lan = Some(host);
+}
+
 /// With the hub back during the guest's turn, `horizon:attachments` for the
 /// acting guest is their own: `enter_guest` swapped it into
 /// `player_attachments`, leaving the host's under their uuid in the map.

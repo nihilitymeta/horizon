@@ -429,6 +429,15 @@ impl Game<'_> {
     /// swapped in for their action) from their box, a standing player's for
     /// one not known.
     pub(super) fn native_player_eye_height(&self, uuid: u128) -> f64 {
+        // The acting guest's hub record lost its motion to the swapped-in
+        // body (`enter_guest`): its `eye_height()` falls back to scale 1 and
+        // skips swimming, so answer from the live body instead.
+        if self.lan_acting_uuid == Some(uuid) {
+            return self
+                .player
+                .as_ref()
+                .map_or(1.62, |p| f64::from(p.dimensions.eye_height));
+        }
         if let Some(g) = self
             .lan
             .as_ref()
