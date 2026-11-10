@@ -245,7 +245,7 @@ const LUA_HELPERS: &[(&str, &str)] = &[
     ),
     (
         "attachments",
-        "`horizon.world_data()`, `horizon.player_data(player)`, `horizon.entity_data(id)`",
+        "`horizon.world_data()`, `horizon.player_data(player)`, `horizon.entity_data(id)` (an entity id the client copy never saw still reads as an empty table: a table is no proof the entity exists on a client)",
     ),
     ("block", "`horizon.block(x, y, z)`"),
     ("block_property", "`horizon.block_property(x, y, z, key)`"),

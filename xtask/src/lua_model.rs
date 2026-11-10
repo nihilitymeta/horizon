@@ -839,7 +839,7 @@ fn field_of(hook: &str, param: &str, ty: &syn::Type, host: Host, is_out: bool) -
         Some("WorldPhase") if !borrowed => FieldOutcome::Conv(Conv::WorldPhaseName, "any".into()),
         Some("NativeLootDrops") if borrowed => FieldOutcome::Conv(Conv::LootCtx, "any".into()),
         Some("NativeServerPlayer") if borrowed => {
-            FieldOutcome::Conv(Conv::ServerPlayer, "Player".into())
+            FieldOutcome::Conv(Conv::ServerPlayer, "CommandPlayer".into())
         }
         Some("ModBlockEntity" | "Mob") => FieldOutcome::Adapter(format!(
             "{}: handle: a {} handle needs its own design",

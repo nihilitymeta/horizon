@@ -514,10 +514,12 @@ impl LuaMod {
             }
             "acting_player" => {
                 // Nil where no acting player is in place: a hook with a
-                // host but no player swapped in (a death, a command from
-                // the console), a draw hook on a client window, or a level
-                // hook. A hostless hook never reaches this arm: its read
-                // answers nil up front.
+                // host but no player swapped in (a death, the
+                // dedicated-server console hook, a player command before
+                // it runs), a draw hook on a client window, or a level
+                // hook. A single-player owner's console command runs as
+                // that owner, through `perform_command`. A hostless hook
+                // never reaches this arm: its read answers nil up front.
                 let Some(h) = reader.host() else {
                     return Ok(Value::Nil);
                 };
@@ -4607,22 +4609,6 @@ experimental = ["scripts"]
         }
         fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
             self.players.clone()
-        }
-        fn mob_view(&self, dimension: &str, id: u32) -> Option<MobView> {
-            use horizon_core::geometry::Vec3;
-            (dimension == "minecraft:overworld").then(|| {
-                let kind = horizon_client::mobs::MobType::cow_for_tests();
-                MobView::of(
-                    &horizon_client::mobs::Mob::new(id, kind, Vec3::new(2.0, 64.0, 3.0), 0.0),
-                    None,
-                )
-            })
-        }
-        fn day_time(&self) -> i64 {
-            30000
-        }
-        fn weather(&self) -> (f32, f32) {
-            (0.5, 0.0)
         }
     }
 

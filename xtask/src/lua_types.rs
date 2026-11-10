@@ -20,18 +20,23 @@ const TYPES: &[(&str, &str)] = &[
         "{ id: string, count: number, damage: number, extra: Data?, plain: boolean }",
     ),
     ("Held", "{ item: string, count: number, plain: boolean }"),
-    // `held` is the main-hand stack as an `Item` table, nil for an empty
-    // hand or a player the host has no stack for (as on a client window).
-    // Only the `horizon.player(s)` reads and `horizon.acting_player()` set
-    // it; the generated `player` seeds stay bare.
+    // A player of the world, as the generated `player` seeds carry it:
+    // the shared fields, with no `held`. A seed never sets a hand, so a
+    // type built on this one never picks one up by accident.
     (
         "Player",
-        "{ uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number, held: Item? }",
+        "{ uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number }",
     ),
-    // The command handler's player: what `horizon.players()` and
-    // `horizon.player()` hand out, plus the acting player's main hand in
-    // the `{item, count, plain}` hand shape (`Held`), nil when empty. The
-    // read helpers' `held` is the full `Item` table instead.
+    // What the `horizon.player()`, `horizon.players()` and
+    // `horizon.acting_player()` reads hand out: the bare player plus
+    // `held`, the selected hotbar (main-hand) stack as an `Item` table,
+    // nil for an empty hand or a player the host has no stack for (as on
+    // a client window).
+    ("ReadPlayer", "Player & { held: Item? }"),
+    // The command handler's player: the bare player plus the acting
+    // player's main hand in the `{item, count, plain}` hand shape
+    // (`Held`), nil when empty. Never the read helpers' full `Item`
+    // table: the two `held` shapes live on different types now.
     ("CommandPlayer", "Player & { held: Held? }"),
     // A player named by uuid in a hook: the world's record while they are
     // on, else just the uuid and the name a hook told before, if any (a
@@ -239,29 +244,29 @@ const FUNCTIONS: &[(&str, &str)] = &[
     ),
     ("mob", "(id: number) -> MobView?"),
     ("mobs", "() -> { MobView }"),
-    ("players", "() -> { Player }"),
-    ("player", "(who: string) -> Player?"),
+    ("players", "() -> { ReadPlayer }"),
+    ("player", "(who: string) -> ReadPlayer?"),
     ("time", "() -> Time"),
     ("raycast", "(player: string, distance: number?) -> Raycast?"),
     ("world_data", "() -> Data"),
     ("player_data", "(who: string) -> Data?"),
     ("entity_data", "(id: number) -> Data?"),
-    ("acting_player", "() -> Player?"),
+    ("acting_player", "() -> ReadPlayer?"),
     ("light", "(x: number, y: number, z: number) -> Light"),
     (
         "surface_height",
         "(x: number, z: number, heightmap: string?) -> number?",
     ),
-    ("inventory", "(who: string | Player) -> Inventory?"),
+    ("inventory", "(who: string | ReadPlayer) -> Inventory?"),
     (
         "count_items",
-        "(who: string | Player, id: string) -> number?",
+        "(who: string | ReadPlayer, id: string) -> number?",
     ),
-    ("carried_items", "(who: string | Player) -> Carried?"),
+    ("carried_items", "(who: string | ReadPlayer) -> Carried?"),
     ("data", "(path: string) -> any"),
     (
         "dev",
-        "{ inspect: (who: Player | string, what: number | { x: number, y: number, z: number, face: Vec3?, dimension: string? }) -> boolean }",
+        "{ inspect: (who: ReadPlayer | string, what: number | { x: number, y: number, z: number, face: Vec3?, dimension: string? }) -> boolean }",
     ),
     (
         "summon",
@@ -289,20 +294,23 @@ const FUNCTIONS: &[(&str, &str)] = &[
     ),
     (
         "take_items",
-        "((id: string, count: number) -> ()) & ((who: string | Player, id: string, count: number) -> ())",
+        "((id: string, count: number) -> ()) & ((who: string | ReadPlayer, id: string, count: number) -> ())",
     ),
     (
         "give_items",
-        "((id: string, count: number) -> ()) & ((who: string | Player, id: string, count: number) -> ())",
+        "((id: string, count: number) -> ()) & ((who: string | ReadPlayer, id: string, count: number) -> ())",
     ),
     ("feedback", "(text: string) -> ()"),
-    ("tell", "(who: string | Player, text: string) -> ()"),
-    ("action_bar", "(who: string | Player, text: string) -> ()"),
-    ("title", "(who: string | Player, text: string) -> ()"),
-    ("subtitle", "(who: string | Player, text: string) -> ()"),
+    ("tell", "(who: string | ReadPlayer, text: string) -> ()"),
+    (
+        "action_bar",
+        "(who: string | ReadPlayer, text: string) -> ()",
+    ),
+    ("title", "(who: string | ReadPlayer, text: string) -> ()"),
+    ("subtitle", "(who: string | ReadPlayer, text: string) -> ()"),
     (
         "title_times",
-        "(who: string | Player, fade_in: number, stay: number, fade_out: number) -> ()",
+        "(who: string | ReadPlayer, fade_in: number, stay: number, fade_out: number) -> ()",
     ),
     (
         "sound",
@@ -338,11 +346,11 @@ const FUNCTIONS: &[(&str, &str)] = &[
     ("run_command", "(line: string) -> ()"),
     (
         "give_experience",
-        "(who: string | Player, points: number) -> ()",
+        "(who: string | ReadPlayer, points: number) -> ()",
     ),
     (
         "give_levels",
-        "(who: string | Player, levels: number) -> ()",
+        "(who: string | ReadPlayer, levels: number) -> ()",
     ),
     (
         "falling_block",
@@ -354,11 +362,11 @@ const FUNCTIONS: &[(&str, &str)] = &[
     ),
     (
         "set_nickname",
-        "(who: string | Player, name: string?) -> ()",
+        "(who: string | ReadPlayer, name: string?) -> ()",
     ),
     (
         "effect",
-        "(target: number | string | Player, name: string, ticks: number, amplifier: number?) -> ()",
+        "(target: number | string | ReadPlayer, name: string, ticks: number, amplifier: number?) -> ()",
     ),
 ];
 
@@ -627,6 +635,35 @@ mod tests {
         let declared: BTreeSet<String> =
             super::REGISTRY.iter().map(|(n, _)| n.to_string()).collect();
         assert_eq!(installed, declared);
+    }
+
+    /// No player type carries both `held` shapes: the bare `Player` sets
+    /// no hand (a `held` re-added there would intersect both shapes
+    /// again on `CommandPlayer`, and leak an `Item` hand into
+    /// `PlayerRef`), `ReadPlayer` the full `Item` table, `CommandPlayer`
+    /// the `{item, count, plain}` hand.
+    #[test]
+    fn no_player_type_carries_both_held_shapes() {
+        fn def(name: &str) -> &'static str {
+            super::TYPES
+                .iter()
+                .find(|(n, _)| *n == name)
+                .unwrap_or_else(|| panic!("no {name} type"))
+                .1
+        }
+        assert!(
+            !def("Player").contains("held"),
+            "bare Player must not set held: {}",
+            def("Player")
+        );
+        assert_eq!(def("ReadPlayer"), "Player & { held: Item? }");
+        assert_eq!(def("CommandPlayer"), "Player & { held: Held? }");
+        for (name, d) in super::TYPES {
+            assert!(
+                !(d.contains("held: Item?") && d.contains("held: Held?")),
+                "{name} carries both held shapes: {d}",
+            );
+        }
     }
 
     #[test]

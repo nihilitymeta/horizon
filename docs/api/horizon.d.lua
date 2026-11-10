@@ -5,7 +5,8 @@
 export type Vec3 = { x: number, y: number, z: number }
 export type Item = { id: string, count: number, damage: number, extra: Data?, plain: boolean }
 export type Held = { item: string, count: number, plain: boolean }
-export type Player = { uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number, held: Item? }
+export type Player = { uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number }
+export type ReadPlayer = Player & { held: Item? }
 export type CommandPlayer = Player & { held: Held? }
 export type PlayerRef = Player | { uuid: string, name: string? }
 export type IdKind = { id: number, kind: string }
@@ -305,7 +306,7 @@ export type NotePlayEvent = { dimension: string, player: string?, pos: Vec3, ins
 export type OnEffectAddedEvent = { effect: string, entity: number?, amplifier: number }
 export type OnEquipEvent = { slot: string, new: Item? }
 export type OnUseTickEvent = { stack: Item, entity: number?, remaining: number }
-export type PerformCommandEvent = { player: Player, command: string }
+export type PerformCommandEvent = { player: CommandPlayer, command: string }
 export type PerformConsoleCommandEvent = { command: string }
 export type PermissionCheckEvent = { player: string, node: string, default_level: number, result: boolean? }
 export type PistonMoveEvent = { dimension: string, piston: Vec3, direction: Vec3, push: { Vec3 }, destroy: { Vec3 } }
@@ -964,21 +965,21 @@ declare horizon: {
     block_property: (x: number, y: number, z: number, key: string) -> string?,
     mob: (id: number) -> MobView?,
     mobs: () -> { MobView },
-    players: () -> { Player },
-    player: (who: string) -> Player?,
+    players: () -> { ReadPlayer },
+    player: (who: string) -> ReadPlayer?,
     time: () -> Time,
     raycast: (player: string, distance: number?) -> Raycast?,
     world_data: () -> Data,
     player_data: (who: string) -> Data?,
     entity_data: (id: number) -> Data?,
-    acting_player: () -> Player?,
+    acting_player: () -> ReadPlayer?,
     light: (x: number, y: number, z: number) -> Light,
     surface_height: (x: number, z: number, heightmap: string?) -> number?,
-    inventory: (who: string | Player) -> Inventory?,
-    count_items: (who: string | Player, id: string) -> number?,
-    carried_items: (who: string | Player) -> Carried?,
+    inventory: (who: string | ReadPlayer) -> Inventory?,
+    count_items: (who: string | ReadPlayer, id: string) -> number?,
+    carried_items: (who: string | ReadPlayer) -> Carried?,
     data: (path: string) -> any,
-    dev: { inspect: (who: Player | string, what: number | { x: number, y: number, z: number, face: Vec3?, dimension: string? }) -> boolean },
+    dev: { inspect: (who: ReadPlayer | string, what: number | { x: number, y: number, z: number, face: Vec3?, dimension: string? }) -> boolean },
     summon: (dimension: string, kind: string, x: number, y: number, z: number) -> number?,
     after: (ticks: number, fn: () -> ()) -> (),
     every: (ticks: number, fn: () -> ()) -> (),
@@ -989,14 +990,14 @@ declare horizon: {
     set_mob_health: (dimension: string, id: number, health: number) -> (),
     push_mob: (dimension: string, id: number, x: number, y: number, z: number) -> (),
     teleport_mob: (dimension: string, id: number, x: number, y: number, z: number) -> (),
-    take_items: ((id: string, count: number) -> ()) & ((who: string | Player, id: string, count: number) -> ()),
-    give_items: ((id: string, count: number) -> ()) & ((who: string | Player, id: string, count: number) -> ()),
+    take_items: ((id: string, count: number) -> ()) & ((who: string | ReadPlayer, id: string, count: number) -> ()),
+    give_items: ((id: string, count: number) -> ()) & ((who: string | ReadPlayer, id: string, count: number) -> ()),
     feedback: (text: string) -> (),
-    tell: (who: string | Player, text: string) -> (),
-    action_bar: (who: string | Player, text: string) -> (),
-    title: (who: string | Player, text: string) -> (),
-    subtitle: (who: string | Player, text: string) -> (),
-    title_times: (who: string | Player, fade_in: number, stay: number, fade_out: number) -> (),
+    tell: (who: string | ReadPlayer, text: string) -> (),
+    action_bar: (who: string | ReadPlayer, text: string) -> (),
+    title: (who: string | ReadPlayer, text: string) -> (),
+    subtitle: (who: string | ReadPlayer, text: string) -> (),
+    title_times: (who: string | ReadPlayer, fade_in: number, stay: number, fade_out: number) -> (),
     sound: (name: string, x: number, y: number, z: number, volume: number?, pitch: number?) -> (),
     particles: (name: string, x: number, y: number, z: number, count: number?, spread: number?, speed: number?) -> (),
     add_goal: (priority: number, name: string) -> (),
@@ -1011,12 +1012,12 @@ declare horizon: {
     set_block: (x: number, y: number, z: number, id: string, props: Props?, flags: number?) -> (),
     fill: (x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, id: string, props: Props?) -> (),
     run_command: (line: string) -> (),
-    give_experience: (who: string | Player, points: number) -> (),
-    give_levels: (who: string | Player, levels: number) -> (),
+    give_experience: (who: string | ReadPlayer, points: number) -> (),
+    give_levels: (who: string | ReadPlayer, levels: number) -> (),
     falling_block: (x: number, y: number, z: number, id: string, vx: number?, vy: number?, vz: number?) -> (),
     drop_item: (x: number, y: number, z: number, id: string, count: number?) -> (),
-    set_nickname: (who: string | Player, name: string?) -> (),
-    effect: (target: number | string | Player, name: string, ticks: number, amplifier: number?) -> (),
+    set_nickname: (who: string | ReadPlayer, name: string?) -> (),
+    effect: (target: number | string | ReadPlayer, name: string, ticks: number, amplifier: number?) -> (),
 }
 
 -- `scripts/registry.lua` and its modules (`scripts/registry/`) run with this instead of `horizon`.
