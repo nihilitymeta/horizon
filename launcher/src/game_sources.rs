@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The source a launcher starts with: Event Horizon's releases.
 pub const DEFAULT: &str = "whos-carmen/horizon";
@@ -120,6 +120,11 @@ pub fn repo_of(text: &str) -> Result<String, String> {
         ));
     }
     Ok(format!("{}/{}", link.owner, link.repo))
+}
+
+/// Whether two `owner/repo` names are the same repository: GitHub's names do not depend on case.
+pub fn same_repo(a: &str, b: &str) -> bool {
+    a.eq_ignore_ascii_case(b)
 }
 
 fn edit(change: impl FnOnce(&mut Vec<Source>) -> Result<(), String>) -> Result<(), String> {
@@ -274,19 +279,37 @@ pub(crate) fn fetch(release: &Release, max: u64) -> Result<PathBuf, String> {
             ));
         }
     }
-    let dir = private_scratch_dir()?;
-    // The file keeps its name: the import reads a .tar.gz or a .zip by it.
-    let file = dir.join(&release.asset);
+    stage_in(&std::env::temp_dir(), &release.asset, &body)
+}
+
+/// Writes `body` as `asset` into a new private folder under `base`; the file keeps its name (the
+/// import reads a .tar.gz or a .zip by it). The folder is removed again when the write fails.
+fn stage_in(base: &Path, asset: &str, body: &[u8]) -> Result<PathBuf, String> {
+    let dir = private_scratch_dir_in(base)?;
+    // Removes the folder on every error below; disarmed once the file is in place.
+    let mut scratch = RemoveOnDrop(Some(dir.clone()));
+    let file = dir.join(asset);
     fs::write(&file, body).map_err(|e| e.to_string())?;
+    scratch.0 = None;
     Ok(file)
 }
 
-/// A new, empty folder in the system's temporary directory that only this user can open. Its
-/// name is random, so nobody can guess it and make it first; `create_dir` fails rather than use a
-/// folder that is already there, and on unix it is created 0700.
-fn private_scratch_dir() -> Result<PathBuf, String> {
+/// A folder removed when this is dropped, unless it was set to `None` first.
+struct RemoveOnDrop(Option<PathBuf>);
+
+impl Drop for RemoveOnDrop {
+    fn drop(&mut self) {
+        if let Some(dir) = self.0.take() {
+            let _ = fs::remove_dir_all(dir);
+        }
+    }
+}
+
+/// A new, empty folder in `base` that only this user can open. Its name is random, so nobody can
+/// guess it and make it first; `create_dir` fails rather than use a folder that is already there,
+/// and on unix it is created 0700.
+fn private_scratch_dir_in(base: &Path) -> Result<PathBuf, String> {
     use std::hash::{BuildHasher, Hasher};
-    let base = std::env::temp_dir();
     for _ in 0..64 {
         // A `RandomState` is seeded from the operating system's randomness on every call.
         let nonce = std::collections::hash_map::RandomState::new()
@@ -758,6 +781,14 @@ mod tests {
     }
 
     #[test]
+    fn repository_names_compare_without_case() {
+        assert!(same_repo("Owner/Repo", "owner/repo"));
+        assert!(same_repo("whos-carmen/horizon", "WHOS-CARMEN/HORIZON"));
+        assert!(!same_repo("owner/repo", "owner/repo2"));
+        assert!(!same_repo("owner/repo", "other/repo"));
+    }
+
+    #[test]
     fn the_same_repository_in_two_cases_is_one_source() {
         let _lock = HOME_LOCK.lock().unwrap();
         let home = scratch_home("two-cases");
@@ -774,9 +805,22 @@ mod tests {
     }
 
     #[test]
+    fn a_download_that_cannot_be_written_leaves_no_folder_behind() {
+        let base = std::env::temp_dir().join(format!("gs-stage-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        // A name with a folder in it that does not exist: the write fails after the folder is made.
+        let error = stage_in(&base, "missing/archive.tar.gz", b"bytes").unwrap_err();
+        assert!(!error.is_empty());
+        let left: Vec<_> = fs::read_dir(&base).unwrap().flatten().collect();
+        assert!(left.is_empty(), "left behind: {left:?}");
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
     fn a_download_gets_a_new_folder_only_its_owner_can_open() {
-        let a = private_scratch_dir().unwrap();
-        let b = private_scratch_dir().unwrap();
+        let a = private_scratch_dir_in(&std::env::temp_dir()).unwrap();
+        let b = private_scratch_dir_in(&std::env::temp_dir()).unwrap();
         assert_ne!(a, b);
         assert!(a.is_dir() && b.is_dir());
         assert!(a.starts_with(std::env::temp_dir()));

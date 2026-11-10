@@ -91,7 +91,7 @@ impl Launcher {
             .sources
             .list
             .iter()
-            .find(|s| s.repo.eq_ignore_ascii_case(&repo))
+            .find(|s| game_sources::same_repo(&s.repo, &repo))
             .cloned();
         let tx = self.sources.tx.clone();
         std::thread::spawn(move || {
@@ -176,7 +176,7 @@ impl Launcher {
                         .sources
                         .list
                         .iter()
-                        .find(|s| s.repo.eq_ignore_ascii_case(&repo))
+                        .find(|s| game_sources::same_repo(&s.repo, &repo))
                         .is_some_and(|s| !s.auto_update);
                     if let Err(e) = game_sources::set_auto_update(&repo, on) {
                         this.sources.message = Some(Err(e));
