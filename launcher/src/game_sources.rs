@@ -274,16 +274,38 @@ pub(crate) fn fetch(release: &Release, max: u64) -> Result<PathBuf, String> {
             ));
         }
     }
-    let dir = std::env::temp_dir().join(format!(
-        "horizon-source-{}-{}",
-        std::process::id(),
-        sha256(release.url.as_bytes()).get(..8).unwrap_or_default()
-    ));
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dir = private_scratch_dir()?;
     // The file keeps its name: the import reads a .tar.gz or a .zip by it.
     let file = dir.join(&release.asset);
     fs::write(&file, body).map_err(|e| e.to_string())?;
     Ok(file)
+}
+
+/// A new, empty folder in the system's temporary directory that only this user can open. Its
+/// name is random, so nobody can guess it and make it first; `create_dir` fails rather than use a
+/// folder that is already there, and on unix it is created 0700.
+fn private_scratch_dir() -> Result<PathBuf, String> {
+    use std::hash::{BuildHasher, Hasher};
+    let base = std::env::temp_dir();
+    for _ in 0..64 {
+        // A `RandomState` is seeded from the operating system's randomness on every call.
+        let nonce = std::collections::hash_map::RandomState::new()
+            .build_hasher()
+            .finish();
+        let dir = base.join(format!("horizon-source-{nonce:016x}"));
+        let mut builder = fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        match builder.create(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("{}: {e}", dir.display())),
+        }
+    }
+    Err(format!("no free folder under {}", base.display()))
 }
 
 fn download(release: &Release) -> Result<PathBuf, String> {
@@ -733,6 +755,23 @@ mod tests {
         assert!(took_over);
         assert_eq!(backend::Settings::load().install_new_versions, Some(false));
         fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn a_download_gets_a_new_folder_only_its_owner_can_open() {
+        let a = private_scratch_dir().unwrap();
+        let b = private_scratch_dir().unwrap();
+        assert_ne!(a, b);
+        assert!(a.is_dir() && b.is_dir());
+        assert!(a.starts_with(std::env::temp_dir()));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&a).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o700);
+        }
+        fs::remove_dir_all(a).unwrap();
+        fs::remove_dir_all(b).unwrap();
     }
 
     #[test]
