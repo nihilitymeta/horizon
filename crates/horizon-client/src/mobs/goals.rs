@@ -134,6 +134,12 @@ impl GoalSelector {
     /// GoalSelector.tick
     pub fn tick(&mut self, m: &mut Mob, cx: &mut Cx) {
         for i in 0..self.goals.len() {
+            // A despawn or convert in an earlier callback ends the pass at
+            // this goal boundary: stop what runs and run nothing after it.
+            if m.removed {
+                self.stop_all(m, cx);
+                return;
+            }
             if self.goals[i].running
                 && (self.goals[i].goal.flags() & self.disabled != 0
                     || !self.goals[i].goal.can_continue(m, cx))
@@ -147,6 +153,10 @@ impl GoalSelector {
             }
         }
         for i in 0..self.goals.len() {
+            if m.removed {
+                self.stop_all(m, cx);
+                return;
+            }
             let flags = self.goals[i].goal.flags();
             if self.goals[i].running || flags & self.disabled != 0 {
                 continue;
@@ -177,16 +187,26 @@ impl GoalSelector {
                 self.goals[i].goal.start(m, cx);
             }
         }
+        if m.removed {
+            self.stop_all(m, cx);
+            return;
+        }
         self.tick_running(m, cx, true);
     }
     pub fn tick_running(&mut self, m: &mut Mob, cx: &mut Cx, force: bool) {
-        for g in &mut self.goals {
-            if g.running && (force || g.goal.every_tick()) {
-                g.goal.tick(m, cx);
+        for i in 0..self.goals.len() {
+            if m.removed {
+                self.stop_all(m, cx);
+                return;
+            }
+            if self.goals[i].running && (force || self.goals[i].goal.every_tick()) {
+                self.goals[i].goal.tick(m, cx);
                 // A convert or a despawn mid-pass: the mob is gone, so the
-                // goals after it must not run on it (no Hurt, no Summon).
+                // goals after it must not run on it (no Hurt, no Summon),
+                // and whatever still runs is stopped once.
                 if m.removed {
-                    break;
+                    self.stop_all(m, cx);
+                    return;
                 }
             }
         }

@@ -2027,10 +2027,21 @@ fn server_ai_step(
         };
         if id_based % 2 != 0 && tick_count > 1 {
             targets.tick_running(m, &mut cx, false);
-            goals.tick_running(m, &mut cx, false);
+            if !m.removed {
+                goals.tick_running(m, &mut cx, false);
+            }
         } else {
             targets.tick(m, &mut cx);
-            goals.tick(m, &mut cx);
+            if !m.removed {
+                goals.tick(m, &mut cx);
+            }
+        }
+        // A despawn or convert in either selector ends the pass at that
+        // boundary: the other selector is skipped above, and whatever still
+        // runs in either is stopped once here (`stop` only runs when running).
+        if m.removed {
+            targets.stop_all(m, &mut cx);
+            goals.stop_all(m, &mut cx);
         }
     }
     m.ai.targets = targets;
@@ -5988,6 +5999,256 @@ mod hidden_speed_causal_tests {
             tick_effects(&mut m, Some(&cancel));
             assert_eq!(cancel.0.get(), 1);
             assert!(m.extra.effects.is_empty() && m.extra.effect_fallbacks.is_empty());
+        }
+    }
+}
+
+#[cfg(test)]
+mod removed_mob_tests {
+    use super::*;
+    use crate::mobs::goals::Goal;
+    use crate::mobs::world::with_test_world;
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+
+    /// A scripted goal logging each callback, removing the mob in `remove_in`
+    /// once armed — a convert or despawn action in that callback.
+    #[derive(Debug, Clone)]
+    struct Rec {
+        log: Rc<RefCell<Vec<String>>>,
+        name: &'static str,
+        remove_in: &'static str,
+        armed: Rc<Cell<bool>>,
+        stops: Rc<Cell<u32>>,
+    }
+    impl Goal for Rec {
+        fn box_clone(&self) -> Box<dyn Goal> {
+            Box::new(self.clone())
+        }
+        fn name(&self) -> &'static str {
+            self.name
+        }
+        fn flags(&self) -> u8 {
+            0
+        }
+        fn can_use(&mut self, m: &mut Mob, _cx: &mut Cx) -> bool {
+            self.log.borrow_mut().push(format!("{} can_use", self.name));
+            // A remover stays dormant until armed, so the run before it can
+            // prime the running goal; the rest always start.
+            if !self.remove_in.is_empty() && !self.armed.get() {
+                return false;
+            }
+            if self.remove_in == "can_use" && self.armed.get() {
+                m.removed = true;
+            }
+            true
+        }
+        fn can_continue(&mut self, _m: &mut Mob, _cx: &mut Cx) -> bool {
+            true
+        }
+        fn start(&mut self, m: &mut Mob, _cx: &mut Cx) {
+            self.log.borrow_mut().push(format!("{} start", self.name));
+            if self.remove_in == "start" {
+                m.removed = true;
+            }
+        }
+        fn tick(&mut self, m: &mut Mob, _cx: &mut Cx) {
+            self.log.borrow_mut().push(format!("{} tick", self.name));
+            if self.remove_in == "tick" {
+                m.removed = true;
+            }
+        }
+        fn stop(&mut self, _m: &mut Mob, _cx: &mut Cx) {
+            self.log.borrow_mut().push(format!("{} stop", self.name));
+            self.stops.set(self.stops.get() + 1);
+        }
+    }
+
+    fn cow(types: &crate::mobs::MobTypes) -> Mob {
+        Mob::new(
+            7,
+            std::sync::Arc::new(types.types["minecraft:cow"].clone()),
+            Vec3::new(0.5, 64.0, 0.5),
+            0.0,
+        )
+    }
+
+    fn rec(
+        log: &Rc<RefCell<Vec<String>>>,
+        name: &'static str,
+        remove_in: &'static str,
+        armed: &Rc<Cell<bool>>,
+    ) -> (Rec, Rc<Cell<u32>>) {
+        let stops = Rc::new(Cell::new(0));
+        (
+            Rec {
+                log: log.clone(),
+                name,
+                remove_in,
+                armed: armed.clone(),
+                stops: stops.clone(),
+            },
+            stops,
+        )
+    }
+
+    fn tick_goals(m: &mut Mob, cx: &mut Cx) {
+        let mut goals = std::mem::take(&mut m.ai.goals);
+        goals.tick(m, cx);
+        m.ai.goals = goals;
+    }
+
+    /// Removal in `can_use` or `start` (a convert or despawn there, as
+    /// `SilverfishMergeWithStone::start` removes its mob): the goals after
+    /// that boundary never run, and the running goal is stopped exactly once.
+    /// With no removal the same goals all run in order.
+    fn check_selector_removal(remove_in: &'static str) {
+        let ran = with_test_world(&[], |w, types| {
+            let mut lr = LegacyRandom::new(1);
+            let mut events = Vec::new();
+            let mut cx = Cx {
+                w,
+                lr: &mut lr,
+                events: &mut events,
+            };
+            // The control: nothing removes, everything runs in order.
+            let log = Rc::new(RefCell::new(Vec::new()));
+            let armed = Rc::new(Cell::new(true));
+            let mut m = cow(types);
+            let (run, _) = rec(&log, "Run", "", &armed);
+            let (vanish, _) = rec(&log, "Vanish", "", &armed);
+            let (late, _) = rec(&log, "Late", "", &armed);
+            m.ai.goals.clear();
+            m.ai.goals.add(0, run);
+            m.ai.goals.add(1, vanish);
+            m.ai.goals.add(2, late);
+            tick_goals(&mut m, &mut cx);
+            assert_eq!(
+                log.borrow().as_slice(),
+                [
+                    "Run can_use",
+                    "Run start",
+                    "Vanish can_use",
+                    "Vanish start",
+                    "Late can_use",
+                    "Late start",
+                    "Run tick",
+                    "Vanish tick",
+                    "Late tick",
+                ],
+                "a mob that is not removed runs all its goals"
+            );
+            // The removal: only Run runs first, then Vanish removes the mob.
+            let log = Rc::new(RefCell::new(Vec::new()));
+            let armed = Rc::new(Cell::new(false));
+            let mut m = cow(types);
+            let (run, run_stops) = rec(&log, "Run", "", &armed);
+            let (vanish, _) = rec(&log, "Vanish", remove_in, &armed);
+            m.ai.goals.clear();
+            m.ai.goals.add(0, run);
+            m.ai.goals.add(1, vanish);
+            tick_goals(&mut m, &mut cx);
+            assert!(m.ai.goals.running_names().contains(&"Run"));
+            let (late, _) = rec(&log, "Late", "", &armed);
+            m.ai.goals.add(2, late);
+            armed.set(true);
+            log.borrow_mut().clear();
+            tick_goals(&mut m, &mut cx);
+            assert!(m.removed, "the mob was removed in {remove_in}");
+            assert!(
+                !log.borrow().iter().any(|e| e.starts_with("Late")),
+                "goals after the removal never run: {:?}",
+                log.borrow()
+            );
+            assert_eq!(run_stops.get(), 1, "the running goal stops once");
+            assert!(
+                m.ai.goals.running_names().is_empty(),
+                "nothing stays running: {:?}",
+                m.ai.goals.running_names()
+            );
+        });
+        if !ran {
+            eprintln!("skipped: no vanilla data");
+        }
+    }
+
+    #[test]
+    fn removal_in_can_use_stops_the_pass() {
+        check_selector_removal("can_use");
+    }
+
+    #[test]
+    fn removal_in_start_stops_the_pass_like_a_merging_silverfish() {
+        check_selector_removal("start");
+    }
+
+    /// Removal in the target selector ends the pass between selectors: the
+    /// goals selector never runs, and its running goals stop exactly once.
+    #[test]
+    fn removal_in_targets_skips_the_goals_pass() {
+        let ran = with_test_world(&[], |w, types| {
+            let mut lr = LegacyRandom::new(1);
+            let mut events = Vec::new();
+            // The control: nothing removes, both selectors run in order.
+            let log = Rc::new(RefCell::new(Vec::new()));
+            let armed = Rc::new(Cell::new(true));
+            let mut m = cow(types);
+            m.ai.targets.clear();
+            m.ai.goals.clear();
+            let (vanish, _) = rec(&log, "VanishT", "", &armed);
+            let (run, _) = rec(&log, "RunG", "", &armed);
+            let (late, _) = rec(&log, "LateG", "", &armed);
+            m.ai.targets.add(0, vanish);
+            m.ai.goals.add(0, run);
+            m.ai.goals.add(1, late);
+            server_ai_step(&mut m, w, &mut lr, &mut events);
+            assert_eq!(
+                log.borrow().as_slice(),
+                [
+                    "VanishT can_use",
+                    "VanishT start",
+                    "VanishT tick",
+                    "RunG can_use",
+                    "RunG start",
+                    "LateG can_use",
+                    "LateG start",
+                    "RunG tick",
+                    "LateG tick",
+                ],
+                "a mob that is not removed runs both selectors"
+            );
+            // The removal: the target removes the mob, the goals never run.
+            let log = Rc::new(RefCell::new(Vec::new()));
+            let armed = Rc::new(Cell::new(false));
+            let mut m = cow(types);
+            m.ai.targets.clear();
+            m.ai.goals.clear();
+            let (vanish, _) = rec(&log, "VanishT", "tick", &armed);
+            let (run, run_stops) = rec(&log, "RunG", "", &armed);
+            m.ai.targets.add(0, vanish);
+            m.ai.goals.add(0, run);
+            server_ai_step(&mut m, w, &mut lr, &mut events);
+            assert!(m.ai.goals.running_names().contains(&"RunG"));
+            let (late, _) = rec(&log, "LateG", "", &armed);
+            m.ai.goals.add(1, late);
+            armed.set(true);
+            log.borrow_mut().clear();
+            events.clear();
+            server_ai_step(&mut m, w, &mut lr, &mut events);
+            assert!(m.removed, "the target removed the mob");
+            assert!(
+                !log.borrow().iter().any(|e| e.starts_with("LateG")),
+                "the goals pass never runs: {:?}",
+                log.borrow()
+            );
+            assert_eq!(run_stops.get(), 1, "the running goal stops once");
+            assert!(
+                m.ai.goals.running_names().is_empty() && m.ai.targets.running_names().is_empty(),
+                "nothing stays running"
+            );
+        });
+        if !ran {
+            eprintln!("skipped: no vanilla data");
         }
     }
 }
