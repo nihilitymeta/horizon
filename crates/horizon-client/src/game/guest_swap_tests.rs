@@ -8,6 +8,7 @@ use super::{
 use horizon_client::{
     lan::{Joined, NetConfig, PlayerSender, guest::Guest, hub::HubConfig, playerdata::ints_uuid},
     motion::PlayerMotion,
+    pose::Pose,
 };
 use horizon_core::geometry::Vec3;
 use horizon_protocol::{crypto::offline_uuid, packets::configuration::ClientInformation};
@@ -192,6 +193,40 @@ fn level_players_lists_the_acting_guest_once_when_the_hub_is_back() {
         "no owner-labelled copy of the guest's body: {players:?}"
     );
     let mut host = game.lan.take().expect("the command puts the hub back");
+    game.leave_guest(&mut host, swap);
+    game.lan = Some(host);
+}
+
+/// The acting guest crouches: asking for the `level.dat` owner (or the
+/// offline uuid of "Player") on a server with the guest swapped in must not
+/// answer with the guest's pose.
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn sneaking_and_eye_height_answer_only_the_uuid_asked() {
+    let mut game = game();
+    let owner = owner_uuid(&game);
+    let mut host = game.lan.take().unwrap();
+    let swap = game
+        .enter_guest(&mut host, GUEST_CONN, game.dim)
+        .expect("enter");
+    let body = game.player.as_mut().expect("the guest's body");
+    body.pose = Pose::Crouching;
+    body.dimensions.eye_height = 1.27;
+    assert_eq!(
+        game.native_player_sneaking(owner),
+        None,
+        "the owner is not on this server turn"
+    );
+    assert_eq!(
+        game.native_player_eye_height(owner),
+        1.62,
+        "unknown players read standing height"
+    );
+    assert_eq!(
+        game.native_player_sneaking(GUEST_UUID),
+        Some(true),
+        "the acting guest's own pose still reads"
+    );
     game.leave_guest(&mut host, swap);
     game.lan = Some(host);
 }

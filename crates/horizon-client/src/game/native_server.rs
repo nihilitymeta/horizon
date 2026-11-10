@@ -411,7 +411,12 @@ impl Game<'_> {
             return Some(g.sneaking);
         }
         let own = self.native_acting_player().is_some_and(|p| p.uuid == uuid)
-            || (self.remote.is_none() && self.serving.is_none() && uuid == self.owner_uuid());
+            // While a guest acts, the body in place is theirs: the owner's
+            // uuid must not read it.
+            || (self.lan_acting_uuid.is_none()
+                && self.remote.is_none()
+                && self.serving.is_none()
+                && uuid == self.owner_uuid());
         match &self.player {
             Some(p) if own => Some(p.pose == horizon_client::pose::Pose::Crouching),
             _ => None,
@@ -432,7 +437,12 @@ impl Game<'_> {
             return g.eye_height();
         }
         let own = self.native_acting_player().is_some_and(|p| p.uuid == uuid)
-            || (self.remote.is_none() && self.serving.is_none() && uuid == self.owner_uuid());
+            // While a guest acts, the body in place is theirs: the owner's
+            // uuid must not read it.
+            || (self.lan_acting_uuid.is_none()
+                && self.remote.is_none()
+                && self.serving.is_none()
+                && uuid == self.owner_uuid());
         match &self.player {
             Some(p) if own => f64::from(p.dimensions.eye_height),
             _ => 1.62,
