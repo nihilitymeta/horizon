@@ -171,6 +171,9 @@ pub struct Extras {
     pub three_d_skin_layers: bool,
     /// The PvP & HUD page's options (`pvp`).
     pub pvp: crate::pvp::Pvp,
+    /// Lines this build does not read (the built-in extras mod's old lines, a key from
+    /// another build), kept verbatim and written back, so saving never drops them.
+    pub unread: Vec<String>,
 }
 impl Default for Extras {
     fn default() -> Self {
@@ -212,6 +215,7 @@ impl Default for Extras {
             horizon_listed: true,
             three_d_skin_layers: false,
             pvp: Default::default(),
+            unread: Vec::new(),
         }
     }
 }
@@ -262,8 +266,16 @@ impl Extras {
                 "mouseTweaks" => e.mouse_tweaks = flag(e.mouse_tweaks),
                 "mouseTweaksWheel" => e.mouse_tweaks_wheel = flag(e.mouse_tweaks_wheel),
                 "sort" => e.sort = flag(e.sort),
-                "sortKey" if value.starts_with("key.") => e.sort_key = value.to_owned(),
-                EMOTE_KEY if value.starts_with("key.") => e.emote_key = value.to_owned(),
+                "sortKey" => {
+                    if value.starts_with("key.") {
+                        e.sort_key = value.to_owned();
+                    }
+                }
+                EMOTE_KEY => {
+                    if value.starts_with("key.") {
+                        e.emote_key = value.to_owned();
+                    }
+                }
                 "chatAnimation" => e.chat_animation = flag(e.chat_animation),
                 "chatIndicator" => e.chat_indicator = flag(e.chat_indicator),
                 horizon_core::no_ai::KEY => e.no_ai = flag(e.no_ai),
@@ -299,7 +311,9 @@ impl Extras {
                 horizon_cosmetics::prefs::LISTED => e.horizon_listed = flag(e.horizon_listed),
                 SKIN_LAYERS_KEY => e.three_d_skin_layers = flag(e.three_d_skin_layers),
                 key => {
-                    e.pvp.parse_line(key, value);
+                    if !e.pvp.parse_line(key, value) {
+                        e.unread.push(line.to_owned());
+                    }
                 }
             }
         }
@@ -351,6 +365,10 @@ impl Extras {
         );
         text.push_str(&format!("{EMOTE_KEY}:{}\n", self.emote_key));
         self.pvp.serialize(&mut text);
+        for line in &self.unread {
+            text.push_str(line);
+            text.push('\n');
+        }
         text
     }
     /// Adopts the settings `options.txt` held before they moved here, while
@@ -980,7 +998,14 @@ mod tests {
         // The extras that became the built-in native mod leave their old lines
         // unread, in whatever shape they are.
         let e = Extras::parse("zoom:maybe\nzoomLevel:99\nfpsCorner:middle\nminimap:true\n");
-        assert_eq!(e, Extras::default());
+        assert_eq!(e.unread.len(), 4);
+        assert_eq!(
+            Extras {
+                unread: Vec::new(),
+                ..e
+            },
+            Extras::default()
+        );
     }
 
     #[test]
@@ -1006,6 +1031,65 @@ mod tests {
         }
         let floor = camera.calculate_fov(1.0, 70, 1.0, None, Default::default(), false);
         assert!((floor - 7.0).abs() < 1e-3, "{floor}");
+    }
+
+    #[test]
+    fn lines_this_build_does_not_read_survive_a_save() {
+        let dir =
+            std::env::temp_dir().join(format!("horizon-extras-unread-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // The built-in extras mod's old lines (its settings moved to the mod), a line this
+        // build never wrote, and known lines in a form the parser does not take.
+        let old = "zoomLevel:6\nzoomSmooth:false\nminimapCorner:bottom_left\nminimapSize:128\n\
+                   minimapShape:round\nminimapZoom:0.5\nminimapRotate:true\nfpsCorner:bottom_right\n\
+                   fpsLows:true\nkeystrokesCorner:top_right\nkeystrokesCps:false\nfutureThing:7\n\
+                   fullbright:true\nemoteKey:key.keyboard.unknown\nsortKey:nonsense\n";
+        std::fs::write(dir.join(FILE), old).unwrap();
+        let e = Extras::load(&dir);
+        assert!(e.fullbright);
+        e.save(&dir);
+        let saved = std::fs::read_to_string(dir.join(FILE)).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        for line in [
+            "zoomLevel:6",
+            "zoomSmooth:false",
+            "minimapCorner:bottom_left",
+            "minimapSize:128",
+            "minimapShape:round",
+            "minimapZoom:0.5",
+            "minimapRotate:true",
+            "fpsCorner:bottom_right",
+            "fpsLows:true",
+            "keystrokesCorner:top_right",
+            "keystrokesCps:false",
+            "futureThing:7",
+        ] {
+            assert!(saved.lines().any(|l| l == line), "{line} lost:\n{saved}");
+        }
+        // Known keys are written once, with their current values.
+        assert_eq!(
+            saved
+                .lines()
+                .filter(|l| l.starts_with("fullbright:"))
+                .count(),
+            1
+        );
+        assert!(saved.lines().any(|l| l == "fullbright:true"));
+        assert_eq!(
+            saved
+                .lines()
+                .filter(|l| l.starts_with("sort:") || l.starts_with("sortKey:"))
+                .count(),
+            2
+        );
+        assert!(saved.lines().any(|l| l == "sortKey:key.keyboard.unknown"));
+        assert_eq!(
+            saved.lines().filter(|l| l.starts_with("emoteKey:")).count(),
+            1
+        );
+        // And a save of what was saved changes nothing.
+        assert_eq!(Extras::parse(&saved), e);
+        assert_eq!(Extras::parse(&saved).serialize(), saved);
     }
 
     #[test]
