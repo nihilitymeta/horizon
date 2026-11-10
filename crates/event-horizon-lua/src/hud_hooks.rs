@@ -244,9 +244,10 @@ mod tests {
     /// A game host that records what the handler drew instead of drawing
     /// it: every draw helper appends a line, `broadcast` counts, `text`
     /// is 6 pixels a character, and only `top_left` is shown. The reads a
-    /// draw hook may serve come from `players` (the first one acts),
-    /// `stacks` (a non-acting player's slots, by uuid), `day_time`,
-    /// `weather` and one cow (mob 7); `tell` appends a line.
+    /// draw hook may serve come from `players` (the first one acts, with
+    /// their main hand from `held`), `stacks` (a non-acting player's slots,
+    /// by uuid), `day_time`, `weather` and one cow (mob 7); `tell` appends
+    /// a line.
     #[derive(Default)]
     struct RecordingHost {
         draws: Mutex<Vec<String>>,
@@ -254,6 +255,7 @@ mod tests {
         tells: Mutex<Vec<String>>,
         players: Vec<NativeServerPlayer>,
         stacks: HashMap<u128, Vec<Option<ItemStack>>>,
+        held: HashMap<u128, ItemStack>,
         day_time: i64,
         weather: (f32, f32),
     }
@@ -306,6 +308,10 @@ mod tests {
 
         fn player_stacks(&self, uuid: u128) -> Option<Vec<Option<ItemStack>>> {
             self.stacks.get(&uuid).cloned()
+        }
+
+        fn held_stack(&self, uuid: u128) -> Option<ItemStack> {
+            self.held.get(&uuid).cloned()
         }
 
         fn tell(&mut self, uuid: u128, line: Text) -> bool {
@@ -1104,6 +1110,38 @@ mod tests {
     }
 
     #[test]
+    fn saved_entity_data_is_refused_in_a_draw_hook() {
+        // `horizon.entity_data` writes back through `&mut`, which a draw
+        // hook cannot lend: like `world_data` it names the helper and
+        // fails, instead of queueing a write for later.
+        let (m, id, dir) = hmod(
+            "drawentitydata",
+            "ruby_hud_drawentitydata",
+            r#"
+            horizon.on("hud", function(event)
+              __witness = (__witness or 0) + 1
+              local ok, err = pcall(horizon.entity_data, 7)
+              REFUSED = (not ok) and tostring(err) or "ran"
+            end)
+            "#,
+        );
+        let state = m.lua.clone();
+        let mods = boxed(m);
+        let mut host = RecordingHost::default();
+        let mut batch = HudBatch::new([800, 600]);
+        let mut corners = Corners::new(800.0, 600.0, 0.0);
+        dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+        no_error(&id);
+        assert_eq!(state.globals().get::<i64>("__witness").unwrap(), 1);
+        let refused: String = state.globals().get("REFUSED").unwrap();
+        assert!(
+            refused.contains("not available in draw hooks"),
+            "refuses like world_data: {refused}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn on_a_client_window_player_and_mob_reads_are_empty() {
         // Characterization of today's client behaviour (see
         // `ClientWindowHost`): player and mob reads need a server and come
@@ -1147,6 +1185,83 @@ mod tests {
             *host.draws.lock().unwrap(),
             ["fill [0.0, 0.0, 1.0, 1.0] 0xff000000"]
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn on_a_client_window_the_acting_player_is_nil() {
+        // A client window has no acting player (`ClientWindowHost` answers
+        // none), no listed players and no stacks: `acting_player` and the
+        // `player(s)` tables read nil, like the other server reads there.
+        let (m, id, dir) = hmod(
+            "clientacting",
+            "ruby_hud_clientacting",
+            r#"
+            horizon.on("hud", function(event)
+              __witness = (__witness or 0) + 1
+              GOT = horizon.acting_player()
+              assert(horizon.player("draw_steve") == nil, "player")
+            end)
+            "#,
+        );
+        let state = m.lua.clone();
+        let mods = boxed(m);
+        let mut host = ClientWindowHost {
+            day_time: 30001,
+            weather: (0.25, 0.0),
+            ..Default::default()
+        };
+        let mut batch = HudBatch::new([800, 600]);
+        let mut corners = Corners::new(800.0, 600.0, 0.0);
+        dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+        no_error(&id);
+        assert_eq!(state.globals().get::<i64>("__witness").unwrap(), 1);
+        assert!(state.globals().get::<mlua::Value>("GOT").unwrap().is_nil());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_draw_hook_reads_held_through_the_shared_host() {
+        // `held` comes from `held_stack`, which takes `&self`: it works in
+        // a draw hook, for the acting player and the others alike. The
+        // first listed player acts here.
+        let (m, id, dir) = hmod(
+            "drawheld",
+            "ruby_hud_drawheld",
+            r#"
+            horizon.on("hud", function(event)
+              __witness = (__witness or 0) + 1
+              local all = horizon.players()
+              assert(all[1].held.id == "ruby:wand" and all[1].held.count == 3, "draw held")
+              assert(all[1].held.damage == 0 and all[1].held.plain, "draw held shape")
+              local a = horizon.acting_player()
+              assert(a.name == "draw_steve" and a.held.id == "ruby:wand", "draw acting")
+            end)
+            "#,
+        );
+        let state = m.lua.clone();
+        let mods = boxed(m);
+        let steve = draw_player();
+        let mut held = HashMap::new();
+        held.insert(
+            steve.uuid,
+            ItemStack {
+                item: "ruby:wand".into(),
+                count: 3,
+                damage: 0,
+                extra: None,
+            },
+        );
+        let mut host = RecordingHost {
+            players: vec![steve],
+            held,
+            ..Default::default()
+        };
+        let mut batch = HudBatch::new([800, 600]);
+        let mut corners = Corners::new(800.0, 600.0, 0.0);
+        dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+        no_error(&id);
+        assert_eq!(state.globals().get::<i64>("__witness").unwrap(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

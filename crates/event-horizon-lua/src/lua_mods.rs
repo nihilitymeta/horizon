@@ -170,6 +170,9 @@ return function(slot, horizon)
   local function read(what, ...)
     local f = slot[1]
     if f == nil then
+      -- With no host there is no acting player either: `acting_player`
+      -- answers nil where every other read is an error.
+      if what == "acting_player" then return nil end
       error("horizon." .. what .. ": reads work inside a hook with a host (not in a hostless hook or a goal)", 3)
     end
     return f(what, ...)
@@ -184,6 +187,8 @@ return function(slot, horizon)
   horizon.raycast = function(who, distance) return read("raycast", who, distance) end
   horizon.world_data = function() return read("world_data") end
   horizon.player_data = function(who) return read("player_data", who) end
+  horizon.entity_data = function(id) return read("entity_data", id) end
+  horizon.acting_player = function() return read("acting_player") end
   horizon.light = function(x, y, z) return read("light", x, y, z) end
   horizon.surface_height = function(x, z, heightmap) return read("surface_height", x, z, heightmap) end
   horizon.inventory = function(who) return read("inventory", who) end
@@ -275,7 +280,8 @@ impl Reader<'_> {
 }
 
 /// A saved table a call handed out (`horizon.world_data`,
-/// `horizon.player_data`): written back when the call ends.
+/// `horizon.player_data`, `horizon.entity_data`): written back when the call
+/// ends.
 struct Fetched {
     holder: Holder,
     before: Compound,
@@ -305,6 +311,28 @@ fn player_table_of(
     t.set("pitch", p.pitch)?;
     t.set("game_mode", p.game_mode)?;
     t.set("health", p.health)?;
+    Ok(t)
+}
+
+/// A server player as a table with their held stack: `player_table_of` plus
+/// `held`, the main-hand stack as an `Item` table (nil for an empty hand or
+/// a player the host has no stack for, as on a client window). Only the
+/// `horizon.player(s)` reads and `horizon.acting_player()` set it: the
+/// generated `player` seeds stay bare, so unheard player hooks cost no
+/// stack read. `held_stack` takes `&self`, so this works in draw hooks too.
+fn player_table_with_held(
+    lua: &Lua,
+    h: &dyn Host,
+    p: &horizon_client::mod_api::NativeServerPlayer,
+) -> mlua::Result<Table> {
+    let t = player_table_of(lua, p)?;
+    t.set(
+        "held",
+        match h.held_stack(p.uuid) {
+            Some(stack) => Value::Table(item_table_of(lua, &stack)?),
+            None => Value::Nil,
+        },
+    )?;
     Ok(t)
 }
 
@@ -440,7 +468,7 @@ impl LuaMod {
                     None => Value::Nil,
                 }
             }
-            "world_data" | "player_data" => {
+            "world_data" | "player_data" | "entity_data" => {
                 // Saved tables are written back through `&mut`: a draw hook
                 // cannot lend it.
                 if reader.is_draw() {
@@ -451,7 +479,7 @@ impl LuaMod {
                 };
                 let (holder, attachment) = if what == "world_data" {
                     (Holder::Level, &self.world_attachment)
-                } else {
+                } else if what == "player_data" {
                     let who: String = FromLuaMulti::from_lua_multi(rest, lua)?;
                     let uuid = uuid_parse(&who).or_else(|| {
                         h.level_players()
@@ -463,6 +491,9 @@ impl LuaMod {
                         return Ok(Value::Nil);
                     };
                     (Holder::Player(uuid), &self.player_attachment)
+                } else {
+                    let id: u32 = FromLuaMulti::from_lua_multi(rest, lua)?;
+                    (Holder::Entity(id), &self.entity_attachment)
                 };
                 // The same table twice in one call, so changes are not lost.
                 if let Some(f) = fetched.borrow().iter().find(|f| f.holder == holder) {
@@ -480,6 +511,20 @@ impl LuaMod {
                     table: table.clone(),
                 });
                 Value::Table(table)
+            }
+            "acting_player" => {
+                // Nil where no acting player is in place: a hook with a
+                // host but no player swapped in (a death, a command from
+                // the console), a draw hook on a client window, or a level
+                // hook. A hostless hook never reaches this arm: its read
+                // answers nil up front.
+                let Some(h) = reader.host() else {
+                    return Ok(Value::Nil);
+                };
+                match h.acting_player() {
+                    Some(p) => Value::Table(player_table_with_held(lua, h, &p)?),
+                    None => Value::Nil,
+                }
             }
             _ => {
                 // A draw hook reads through the shared host: every `&self`
@@ -564,7 +609,7 @@ impl LuaMod {
                     "players" => {
                         let out = lua.create_table()?;
                         for p in h.level_players() {
-                            out.push(player_table_of(lua, &p)?)?;
+                            out.push(player_table_with_held(lua, h, &p)?)?;
                         }
                         Value::Table(out)
                     }
@@ -576,7 +621,7 @@ impl LuaMod {
                             .into_iter()
                             .find(|p| p.name == who || Some(p.uuid) == uuid)
                         {
-                            Some(p) => Value::Table(player_table_of(lua, &p)?),
+                            Some(p) => Value::Table(player_table_with_held(lua, h, &p)?),
                             None => Value::Nil,
                         }
                     }
@@ -758,6 +803,7 @@ impl LuaMod {
     fn store_fetched(&self, host: &mut dyn Host, hook: &str, f: &Fetched) {
         let attachment = match f.holder {
             Holder::Level => &self.world_attachment,
+            Holder::Entity(_) => &self.entity_attachment,
             _ => &self.player_attachment,
         };
         match nbt::table_to_compound(&f.table, Some(&f.before)) {
@@ -930,6 +976,9 @@ pub struct LuaMod {
     /// the player, under the mod's id.
     world_attachment: AttachmentType<Compound>,
     player_attachment: AttachmentType<Compound>,
+    /// The mod's saved data on an entity (`horizon.entity_data(id)`): the
+    /// attachment under the mod's id, saved with the entity.
+    entity_attachment: AttachmentType<Compound>,
     /// The names the player hooks told, by uuid: the name of a player the
     /// host has no record of at the moment (one dying, whose state is out of
     /// reach then). The generated `player` seeds keep it through
@@ -1346,6 +1395,7 @@ impl LuaMod {
         budget.install(&lua);
         let world_attachment = mod_attachment_named(&id, "world");
         let player_attachment = mod_attachment_named(&id, "player");
+        let entity_attachment = mod_attachment_named(&id, "data");
         let config_path = config_dir.map(|d| d.join(format!("{id}.json")));
         let m = LuaMod {
             id,
@@ -1366,6 +1416,7 @@ impl LuaMod {
             frame_overruns: Mutex::default(),
             world_attachment,
             player_attachment,
+            entity_attachment,
             config_path,
             reloads: AtomicU32::new(0),
             reload_seen: AtomicU32::new(reload_generation()),
@@ -3607,6 +3658,9 @@ experimental = ["scripts"]
         fn held(&self) -> Option<(String, u32, bool)> {
             Some(("ruby:wand".into(), 1, true))
         }
+        fn held_stack(&self, uuid: u128) -> Option<ItemStack> {
+            (uuid == 0x123e4567_e89b_12d3_a456_426614174000).then(|| self.carried.clone())
+        }
         fn take_items(&mut self, item: &str, count: u32) -> u32 {
             self.lines
                 .lock()
@@ -3919,6 +3973,12 @@ experimental = ["scripts"]
             damage: 0,
             extra: None,
         }
+    }
+
+    /// Handler firings since load: the helper-read tests bump `__witness`
+    /// first, so 0 means the handler never ran.
+    fn witness(lua: &mlua::Lua) -> i64 {
+        lua.globals().get("__witness").unwrap_or(0)
     }
 
     #[test]
@@ -4452,6 +4512,344 @@ experimental = ["scripts"]
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A host with two entities that keep attachments, three players and a
+    /// swappable acting player, for the helper-read tests: steve acts and
+    /// holds a wand, alex holds a damaged bone with components, cam holds
+    /// nothing.
+    struct DataHost {
+        world: horizon_client::mod_api::Attachments,
+        players_data: HashMap<u128, horizon_client::mod_api::Attachments>,
+        entities: HashMap<u32, horizon_client::mod_api::Attachments>,
+        players: Vec<horizon_client::mod_api::NativeServerPlayer>,
+        acting: Option<u128>,
+        held: HashMap<u128, ItemStack>,
+    }
+    const STEVE_UUID: u128 = 0x123e4567_e89b_12d3_a456_426614174000;
+    const ALEX_UUID: u128 = 0x123e4567_e89b_12d3_a456_426614174001;
+    const CAM_UUID: u128 = 0x123e4567_e89b_12d3_a456_426614174002;
+    fn data_player(uuid: u128, name: &str) -> horizon_client::mod_api::NativeServerPlayer {
+        test_events::native_server_player(
+            uuid,
+            name.into(),
+            0,
+            "minecraft:overworld".into(),
+            [1.0, 64.0, 1.0],
+            0,
+            20.0,
+            0.0,
+            0.0,
+            0,
+            String::new(),
+        )
+    }
+    fn data_host() -> DataHost {
+        let mut held = HashMap::new();
+        held.insert(STEVE_UUID, wand());
+        held.insert(
+            ALEX_UUID,
+            ItemStack {
+                item: "minecraft:bone".into(),
+                count: 5,
+                damage: 2,
+                extra: Some(Box::new(horizon_client::item_data::StackData {
+                    repair_cost: 7,
+                    ..Default::default()
+                })),
+            },
+        );
+        DataHost {
+            world: Default::default(),
+            players_data: Default::default(),
+            entities: [(7, Default::default()), (9, Default::default())]
+                .into_iter()
+                .collect(),
+            // The acting player is not first: a test that takes
+            // `players()[1]` by mistake names alex, not steve.
+            players: [
+                data_player(ALEX_UUID, "alex"),
+                data_player(STEVE_UUID, "steve"),
+                data_player(CAM_UUID, "cam"),
+            ]
+            .into_iter()
+            .collect(),
+            acting: Some(STEVE_UUID),
+            held,
+        }
+    }
+    impl Host for DataHost {
+        fn dimension(&self) -> &'static str {
+            "minecraft:overworld"
+        }
+        fn attachments(
+            &mut self,
+            holder: Holder,
+        ) -> horizon_client::mod_api::AttachmentResult<&mut horizon_client::mod_api::Attachments>
+        {
+            match holder {
+                Holder::Level => Ok(&mut self.world),
+                Holder::Player(uuid) => self
+                    .players_data
+                    .get_mut(&uuid)
+                    .ok_or(horizon_client::mod_api::AttachmentError::MissingHolder),
+                Holder::Entity(id) => self
+                    .entities
+                    .get_mut(&id)
+                    .ok_or(horizon_client::mod_api::AttachmentError::MissingHolder),
+                _ => Err(horizon_client::mod_api::AttachmentError::MissingHolder),
+            }
+        }
+        fn acting_player(&self) -> Option<horizon_client::mod_api::NativeServerPlayer> {
+            self.acting
+                .and_then(|uuid| self.players.iter().find(|p| p.uuid == uuid).cloned())
+        }
+        fn held_stack(&self, uuid: u128) -> Option<ItemStack> {
+            self.held.get(&uuid).cloned()
+        }
+        fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
+            self.players.clone()
+        }
+        fn mob_view(&self, dimension: &str, id: u32) -> Option<MobView> {
+            use horizon_core::geometry::Vec3;
+            (dimension == "minecraft:overworld").then(|| {
+                let kind = horizon_client::mobs::MobType::cow_for_tests();
+                MobView::of(
+                    &horizon_client::mobs::Mob::new(id, kind, Vec3::new(2.0, 64.0, 3.0), 0.0),
+                    None,
+                )
+            })
+        }
+        fn day_time(&self) -> i64 {
+            30000
+        }
+        fn weather(&self) -> (f32, f32) {
+            (0.5, 0.0)
+        }
+    }
+
+    #[test]
+    fn entity_data_persists_per_entity_with_world_data_rules() {
+        use horizon_world::nbt::{JavaString, Tag};
+        let (dir, path) = hmod(
+            "entity-data",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.on("interact_entity", function(event)
+                  __witness = (__witness or 0) + 1
+                  -- The same table twice in one call, so no edit is lost.
+                  assert(horizon.entity_data(event.entity) == horizon.entity_data(event.entity), "same table")
+                  local d = horizon.entity_data(event.entity)
+                  if ROUND == 2 then
+                    READBACK = d.count .. "/" .. d.who .. "/" .. d.nest.deep.x .. "/" .. d.big
+                  elseif event.entity == 7 then
+                    d.count = (d.count or 0) + 1
+                    d.who = "steve"
+                    d.nest = { deep = { x = 1 } }
+                  else
+                    d.other = 2
+                  end
+                  -- The other entity's table is its own, and an unknown id
+                  -- reads nil.
+                  assert(horizon.entity_data(9).count == nil or event.entity == 9 or ROUND == 2, "mixing")
+                  UNKNOWN = horizon.entity_data(4242)
+                end, "minecraft:cow")
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = data_host();
+        let key = |k: &str| JavaString::from(k);
+        // Entity 7 starts with a long: leaving it alone must keep the type.
+        m.entity_attachment
+            .set(
+                &mut host as &mut dyn Host,
+                Holder::Entity(7),
+                [(key("big"), Tag::Long(42))].into_iter().collect(),
+            )
+            .unwrap();
+        m.interact_entity(
+            &mut host,
+            &mut test_events::interact_entity_event(7, "minecraft:cow", None),
+        );
+        m.interact_entity(
+            &mut host,
+            &mut test_events::interact_entity_event(9, "minecraft:cow", None),
+        );
+        assert_eq!(witness(&m.lua), 2);
+        let seven = m
+            .entity_attachment
+            .get_existing(&mut host as &mut dyn Host, Holder::Entity(7))
+            .unwrap()
+            .unwrap();
+        // An int, a string and a nested table, written fresh; the long left
+        // alone is still a long.
+        assert_eq!(seven.get(&key("count")), Some(&Tag::Int(1)));
+        assert_eq!(
+            seven.get(&key("who")),
+            Some(&Tag::String(JavaString::from("steve")))
+        );
+        assert_eq!(
+            seven.get(&key("big")),
+            Some(&Tag::Long(42)),
+            "a long left alone keeps its NBT type"
+        );
+        let Tag::Compound(nest) = &seven[&key("nest")] else {
+            panic!("a nested table is a compound");
+        };
+        let Tag::Compound(deep) = &nest[&key("deep")] else {
+            panic!("tables nest");
+        };
+        assert_eq!(deep.get(&key("x")), Some(&Tag::Int(1)));
+        // Entity 9's own write landed on 9 only.
+        let nine = m
+            .entity_attachment
+            .get_existing(&mut host as &mut dyn Host, Holder::Entity(9))
+            .unwrap()
+            .unwrap();
+        assert_eq!(nine.get(&key("other")), Some(&Tag::Int(2)));
+        assert_eq!(nine.get(&key("count")), None, "entities do not mix");
+        assert_eq!(seven.get(&key("other")), None, "entities do not mix");
+        assert!(m.lua.globals().get::<Value>("UNKNOWN").unwrap().is_nil());
+        // A later call reads it all back, with the types intact.
+        m.lua.globals().set("ROUND", 2).unwrap();
+        m.interact_entity(
+            &mut host,
+            &mut test_events::interact_entity_event(7, "minecraft:cow", None),
+        );
+        assert_eq!(
+            m.lua.globals().get::<String>("READBACK").unwrap(),
+            "1/steve/1/42"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn entity_data_error_drops_the_writes() {
+        let (dir, path) = hmod(
+            "entity-data-error",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.on("interact_entity", function(event)
+                  __witness = (__witness or 0) + 1
+                  local d = horizon.entity_data(event.entity)
+                  d.boom = 1
+                  error("nope")
+                end, "minecraft:cow")
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = data_host();
+        m.interact_entity(
+            &mut host,
+            &mut test_events::interact_entity_event(7, "minecraft:cow", None),
+        );
+        assert_eq!(witness(&m.lua), 1);
+        // The handler ran, then failed: nothing it wrote is kept, like the
+        // queued actions.
+        let seven = m
+            .entity_attachment
+            .get_existing(&mut host as &mut dyn Host, Holder::Entity(7))
+            .unwrap();
+        assert_eq!(seven, None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn player_tables_carry_their_own_held_but_seeds_do_not() {
+        let (dir, path) = hmod(
+            "held",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.on("player_tick", function(event)
+                  __witness = (__witness or 0) + 1
+                  SEEN = {}
+                  for _, p in ipairs(horizon.players()) do
+                    SEEN[p.name] = p.held and (p.held.id .. "|" .. p.held.count .. "|" .. p.held.damage .. "|" .. tostring(p.held.plain) .. "|" .. (p.held.extra and "extra" or "noextra")) or "nil"
+                  end
+                  local alex = horizon.player("alex")
+                  ALEX = alex.held.id .. "|" .. alex.held.count
+                  NOPE = horizon.player("nobody")
+                end)
+                horizon.on("player_logged_in", function(event)
+                  assert(event.player.held == nil, "a generated player seed carries no held")
+                  JOINED = event.player.name
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = data_host();
+        m.player_tick(&mut host, &mut test_events::player_tick_event());
+        assert_eq!(witness(&m.lua), 1);
+        let seen: Table = m.lua.globals().get("SEEN").unwrap();
+        assert_eq!(
+            seen.get::<String>("steve").unwrap(),
+            "ruby:wand|3|0|true|noextra"
+        );
+        assert_eq!(
+            seen.get::<String>("alex").unwrap(),
+            "minecraft:bone|5|2|false|extra"
+        );
+        assert_eq!(seen.get::<String>("cam").unwrap(), "nil");
+        assert_eq!(
+            m.lua.globals().get::<String>("ALEX").unwrap(),
+            "minecraft:bone|5"
+        );
+        assert!(m.lua.globals().get::<Value>("NOPE").unwrap().is_nil());
+        m.player_logged_in(
+            &mut host,
+            &mut test_events::player_logged_in_event(ALEX_UUID, "alex"),
+        );
+        assert_eq!(m.lua.globals().get::<String>("JOINED").unwrap(), "alex");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn acting_player_is_the_ticking_player_or_nil() {
+        let (dir, path) = hmod(
+            "acting",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.on("player_tick", function(event)
+                  __witness = (__witness or 0) + 1
+                  local a = horizon.acting_player()
+                  ACT = a and (a.name .. "|" .. a.uuid .. "|" .. (a.held and a.held.id or "nil")) or "nil"
+                end)
+                horizon.on("living_heal", function(event)
+                  __witness = (__witness or 0) + 1
+                  -- Hostless means nil, not an error: `pcall` must succeed.
+                  local ok, v = pcall(horizon.acting_player)
+                  OK4 = ok
+                  GOT = v
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = data_host();
+        m.player_tick(&mut host, &mut test_events::player_tick_event());
+        // Steve acts, though alex is `players()[1]`: the acting player is
+        // returned, not the first of the list.
+        assert_eq!(
+            m.lua.globals().get::<String>("ACT").unwrap(),
+            "steve|123e4567-e89b-12d3-a456-426614174000|ruby:wand"
+        );
+        // A hostless hook has no acting player: nil, not an error.
+        m.living_heal(&mut test_events::living_heal_event(7, 3.0));
+        assert_eq!(witness(&m.lua), 2);
+        assert!(m.lua.globals().get::<bool>("OK4").unwrap());
+        assert!(m.lua.globals().get::<Value>("GOT").unwrap().is_nil());
+        // No player swapped in, though the host is there: nil too.
+        host.acting = None;
+        m.player_tick(&mut host, &mut test_events::player_tick_event());
+        assert_eq!(m.lua.globals().get::<String>("ACT").unwrap(), "nil");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn timers_fire_only_on_the_end_phase_of_a_running_world() {
         let (dir, path) = hmod(
@@ -4881,6 +5279,9 @@ experimental = ["scripts"]
             ))
         }
         fn held(&self) -> Option<(String, u32, bool)> {
+            None
+        }
+        fn held_stack(&self, _: u128) -> Option<ItemStack> {
             None
         }
         fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {

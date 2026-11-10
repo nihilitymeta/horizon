@@ -5,7 +5,7 @@
 export type Vec3 = { x: number, y: number, z: number }
 export type Item = { id: string, count: number, damage: number, extra: Data?, plain: boolean }
 export type Held = { item: string, count: number, plain: boolean }
-export type Player = { uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number }
+export type Player = { uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number, held: Item? }
 export type CommandPlayer = Player & { held: Held? }
 export type PlayerRef = Player | { uuid: string, name: string? }
 export type IdKind = { id: number, kind: string }
@@ -54,8 +54,9 @@ export type HudCorners = { place: (corner: string, w: number, h: number) -> (num
 -- In hud and gui_layer_post, `horizon.time`, `block`, `block_property`,
 -- `light` read the client's world; `player`, `players`, `mob`, `mobs`,
 -- `raycast`, `surface_height` need a server and read empty on a client
--- window; `world_data`, `player_data`, the acting player's inventory reads
--- and `summon` raise an error.
+-- window; `world_data`, `player_data`, `entity_data`, the acting player's
+-- inventory reads and `summon` raise an error. `held` on the player tables
+-- reads nil there, and `acting_player` answers nil with no acting player.
 export type AddServerReloadListenersEvent = { listeners: { { id: string, folder: string } } }
 export type AnalogOutputEvent = { dimension: string, pos: Vec3, state: string, face: "down" | "up" | "north" | "south" | "west" | "east", output: number, state_props: Props }
 export type AnvilCraftPostEvent = { player: PlayerRef, pos: Vec3, craft: { left: Item?, right: Item?, output: Item } }
@@ -969,6 +970,8 @@ declare horizon: {
     raycast: (player: string, distance: number?) -> Raycast?,
     world_data: () -> Data,
     player_data: (who: string) -> Data?,
+    entity_data: (id: number) -> Data?,
+    acting_player: () -> Player?,
     light: (x: number, y: number, z: number) -> Light,
     surface_height: (x: number, z: number, heightmap: string?) -> number?,
     inventory: (who: string | Player) -> Inventory?,

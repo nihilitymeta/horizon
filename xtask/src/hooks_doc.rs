@@ -129,7 +129,7 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ("perform_command", "`fn(player, args)` of `horizon.command`"),
     (
         "player_tick",
-        "an empty event table, every player every tick; `horizon.players()` is the whole list and no read returns the ticking player",
+        "an empty event table, every player every tick; `horizon.players()` is the whole list and `horizon.acting_player()` is the ticking player",
     ),
     (
         "living_fall",
@@ -241,11 +241,11 @@ const LUA_HOOKS: &[(&str, &str)] = &[
 const LUA_HELPERS: &[(&str, &str)] = &[
     (
         "acting_player",
-        "`player` in the hooks of a player's action",
+        "`horizon.acting_player()`, and `player` in the hooks of a player's action",
     ),
     (
         "attachments",
-        "`horizon.world_data()`, `horizon.player_data(player)`",
+        "`horizon.world_data()`, `horizon.player_data(player)`, `horizon.entity_data(id)`",
     ),
     ("block", "`horizon.block(x, y, z)`"),
     ("block_property", "`horizon.block_property(x, y, z, key)`"),
@@ -278,7 +278,11 @@ const LUA_HELPERS: &[(&str, &str)] = &[
     ("give_stack", "`horizon.give_items(player, id, count)`"),
     (
         "held",
-        "`player.held` in the command handler's player table (`perform_command`), and nowhere else",
+        "`player.held` in the command handler's player table (`perform_command`), in the `{item, count, plain}` hand shape",
+    ),
+    (
+        "held_stack",
+        "`held` on the `horizon.player(s)` tables and `horizon.acting_player()`, as a full `Item` table",
     ),
     ("kill_mob", "`horizon.kill_mob(dimension, id)`"),
     (

@@ -20,13 +20,18 @@ const TYPES: &[(&str, &str)] = &[
         "{ id: string, count: number, damage: number, extra: Data?, plain: boolean }",
     ),
     ("Held", "{ item: string, count: number, plain: boolean }"),
+    // `held` is the main-hand stack as an `Item` table, nil for an empty
+    // hand or a player the host has no stack for (as on a client window).
+    // Only the `horizon.player(s)` reads and `horizon.acting_player()` set
+    // it; the generated `player` seeds stay bare.
     (
         "Player",
-        "{ uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number }",
+        "{ uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number, held: Item? }",
     ),
     // The command handler's player: what `horizon.players()` and
-    // `horizon.player()` hand out, plus `held_table` (the acting player's
-    // main hand, nil when empty). No other player table carries `held`.
+    // `horizon.player()` hand out, plus the acting player's main hand in
+    // the `{item, count, plain}` hand shape (`Held`), nil when empty. The
+    // read helpers' `held` is the full `Item` table instead.
     ("CommandPlayer", "Player & { held: Held? }"),
     // A player named by uuid in a hook: the world's record while they are
     // on, else just the uuid and the name a hook told before, if any (a
@@ -240,6 +245,8 @@ const FUNCTIONS: &[(&str, &str)] = &[
     ("raycast", "(player: string, distance: number?) -> Raycast?"),
     ("world_data", "() -> Data"),
     ("player_data", "(who: string) -> Data?"),
+    ("entity_data", "(id: number) -> Data?"),
+    ("acting_player", "() -> Player?"),
     ("light", "(x: number, y: number, z: number) -> Light"),
     (
         "surface_height",
@@ -384,7 +391,7 @@ fn render() -> Result<String, String> {
         out.push_str(&format!("export type {name} = {def}\n"));
     }
     out.push_str("\n-- The event tables of the generated hooks: one table per hook,\n-- holding the struct's fields by name.\n");
-    out.push_str("--\n-- A text field reads as its plain string plus a `<field>_component`\n-- table (vanilla JSON). A write is a string, a component table, or both:\n-- the changed side wins; both changed, the component wins; a cleared\n-- component falls back to the string. Setting the plain side to nil leaves\n-- a required text alone and clears an optional one (nil on both sides\n-- clears it too). In-place edits of the seeded component table count.\n--\n-- A sequence field reads its holes as nil. Edits in place keep positions:\n-- a cleared trailing slot shrinks the list (`false` pins an explicit hole\n-- instead), an append past the seeded length grows it (up to 65536 extra\n-- entries; replace the table to grow it further), while a table the script\n-- replaces wholesale reads its own length (use `false` for holes there).\n-- An item's `extra` keeps its NBT types when edited in place; a fresh\n-- table reads with default types.\n--\n-- In hud and gui_layer_post, `horizon.time`, `block`, `block_property`,\n-- `light` read the client's world; `player`, `players`, `mob`, `mobs`,\n-- `raycast`, `surface_height` need a server and read empty on a client\n-- window; `world_data`, `player_data`, the acting player's inventory reads\n-- and `summon` raise an error.\n");
+    out.push_str("--\n-- A text field reads as its plain string plus a `<field>_component`\n-- table (vanilla JSON). A write is a string, a component table, or both:\n-- the changed side wins; both changed, the component wins; a cleared\n-- component falls back to the string. Setting the plain side to nil leaves\n-- a required text alone and clears an optional one (nil on both sides\n-- clears it too). In-place edits of the seeded component table count.\n--\n-- A sequence field reads its holes as nil. Edits in place keep positions:\n-- a cleared trailing slot shrinks the list (`false` pins an explicit hole\n-- instead), an append past the seeded length grows it (up to 65536 extra\n-- entries; replace the table to grow it further), while a table the script\n-- replaces wholesale reads its own length (use `false` for holes there).\n-- An item's `extra` keeps its NBT types when edited in place; a fresh\n-- table reads with default types.\n--\n-- In hud and gui_layer_post, `horizon.time`, `block`, `block_property`,\n-- `light` read the client's world; `player`, `players`, `mob`, `mobs`,\n-- `raycast`, `surface_height` need a server and read empty on a client\n-- window; `world_data`, `player_data`, `entity_data`, the acting player's\n-- inventory reads and `summon` raise an error. `held` on the player tables\n-- reads nil there, and `acting_player` answers nil with no acting player.\n");
     for g in &generated {
         out.push_str(&format!("export type {} = {}\n", g.event_ty, g.event_def));
     }
