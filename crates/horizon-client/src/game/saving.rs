@@ -15,6 +15,9 @@ pub(super) struct ClosingSave {
     /// How far the server-stage wait had got the last time it warned: its
     /// warnings stay at most `SERVER_STOP_WARN` apart.
     warned: Option<Duration>,
+    /// Whether the wait passed `SERVER_STOP_TIMEOUT`: its slowness is an
+    /// error in the log once, while the close keeps waiting for the save.
+    server_timed_out: bool,
     stage: Stage,
 }
 enum Stage {
@@ -31,9 +34,22 @@ enum Stage {
 const SNAPSHOTS_PER_FRAME: usize = 16;
 const SNAPSHOT_BUDGET: Duration = Duration::from_millis(2);
 // How long the closing save waits for the integrated server to stop before
-// giving up on it: long enough for a genuinely slow final save on a big
-// world, so a stuck server cannot hold the "Saving world..." screen forever.
+// calling the wait slow: long enough for a genuinely slow final save on a
+// big world. Past this point the lateness is an error in the log, but the
+// wait goes on, so a slow save still finishes instead of being detached
+// mid-write.
 const SERVER_STOP_TIMEOUT: Duration = Duration::from_secs(60);
+// How long the closing save waits before it gives up on the server: past
+// this point a stuck server must not hold the "Saving world..." screen
+// forever, so its thread is detached and the close fails loudly.
+const SERVER_STOP_ABANDON: Duration = Duration::from_secs(600);
+
+/// Whether the closing save gives up on an integrated server that has not
+/// stopped after `waiting`: only past the abandon point, so a slow final
+/// save still finishes. A stuck server never holds the screen past it.
+fn server_stop_give_up(waiting: Duration) -> bool {
+    waiting >= SERVER_STOP_ABANDON
+}
 // How often the wait warns while the server is still stopping.
 const SERVER_STOP_WARN: Duration = Duration::from_secs(10);
 
@@ -51,6 +67,7 @@ impl Game<'_> {
                 reply: None,
                 started: Instant::now(),
                 warned: None,
+                server_timed_out: false,
                 stage: Stage::Quit,
             });
             return Ok(());
@@ -67,6 +84,7 @@ impl Game<'_> {
                 reply: None,
                 started: Instant::now(),
                 warned: None,
+                server_timed_out: false,
                 stage: Stage::Server,
             });
         } else if self.remote.is_some() {
@@ -83,6 +101,7 @@ impl Game<'_> {
                 reply: None,
                 started: Instant::now(),
                 warned: None,
+                server_timed_out: false,
                 stage: Stage::Quit,
             });
         } else {
@@ -96,6 +115,7 @@ impl Game<'_> {
                 reply: None,
                 started: Instant::now(),
                 warned: None,
+                server_timed_out: false,
                 stage: Stage::Generation,
             });
         }
@@ -128,6 +148,7 @@ impl Game<'_> {
             reply: Some(reply),
             started: Instant::now(),
             warned: None,
+            server_timed_out: false,
             stage: Stage::Generation,
         });
         Ok(())
@@ -151,7 +172,7 @@ impl Game<'_> {
                         let waiting = save.started.elapsed();
                         // A stuck server must not hold the closing save
                         // forever: the window detaches its thread instead.
-                        if waiting >= SERVER_STOP_TIMEOUT {
+                        if server_stop_give_up(waiting) {
                             log::error!(
                                 "Horizon: the integrated server did not stop in time \
                                  (running: {}, autosaving: {}, smoothed tick {:.1} ms); \
@@ -164,6 +185,21 @@ impl Game<'_> {
                             return Err("the integrated server did not stop in time; \
                                  its world may not be fully saved"
                                 .into());
+                        }
+                        // Past the first timeout the wait is officially slow:
+                        // say so once, loudly, and keep waiting for the save
+                        // instead of detaching its thread mid-write.
+                        if !save.server_timed_out && waiting >= SERVER_STOP_TIMEOUT {
+                            save.server_timed_out = true;
+                            log::error!(
+                                "Horizon: the integrated server did not stop within {} s \
+                                 (running: {}, autosaving: {}, smoothed tick {:.1} ms); \
+                                 the close keeps waiting for its world to save",
+                                SERVER_STOP_TIMEOUT.as_secs(),
+                                !server.stopped(),
+                                server.is_saving(),
+                                server.smoothed_tick_ms()
+                            );
                         }
                         if save
                             .warned
@@ -321,5 +357,27 @@ impl Game<'_> {
         );
         renderer.render(&loading_frame(&hud))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A slow final save still finishes past the first timeout; only a
+    /// stuck server is detached, never silently and never after just a
+    /// minute of writing.
+    #[test]
+    fn a_slow_server_keeps_its_wait_past_the_first_timeout() {
+        assert!(SERVER_STOP_ABANDON > SERVER_STOP_TIMEOUT);
+        assert!(!server_stop_give_up(Duration::from_secs(59)));
+        assert!(
+            !server_stop_give_up(Duration::from_secs(61)),
+            "a slow final save still finishes after the first timeout"
+        );
+        assert!(
+            server_stop_give_up(SERVER_STOP_ABANDON),
+            "a stuck server never holds the saving screen"
+        );
     }
 }
