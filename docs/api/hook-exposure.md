@@ -6,20 +6,6 @@ Every native hook lands in exactly one class: `generated` (a zero-hand-work even
 
 448 hooks are generated and omitted below. The rest:
 
-## Deferred to #44 (name kept by a hand-written hook; would be exposable) (0)
-
-These names stay with the hand-written hooks for now; removing the old hook is #44. The model says an event table could carry each of them, so the deferral is the only reason they are missing from Lua.
-
-| Hook | Reason |
-| --- | --- |
-
-## Deferred to #44 AND not exposable (0)
-
-These names stay with the hand-written hooks for now (removing the old hook is #44), and the model says no event-table mapping exists for them either. Each row carries the model's own reason, copied from the classifier, not rewritten.
-
-| Hook | Reason |
-| --- | --- |
-
 ## Borrows render state (render thread) (38)
 
 No event-table mapping exists: the argument is a render-thread borrow, and Lua runs on the game thread with no drawing API.

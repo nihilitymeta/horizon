@@ -17,8 +17,8 @@
 
 use crate::lua_model::{
     Class, Conv, Field, HookClass, Host, Kind, Model, ReplaceRead, assert_lines, canonical_elem,
-    classify, declaration_served, deferred_outcomes, dup_leaf, listened_flag, listened_flag_field,
-    lua_read, mutate_line, replace_sample, sample, table_leaves,
+    classify, declaration_served, dup_leaf, listened_flag, listened_flag_field, lua_read,
+    mutate_line, replace_sample, sample, table_leaves,
 };
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -3365,40 +3365,10 @@ fn exposure_reason(name: &str, kind: &str, reason: &str) -> String {
     reason.strip_prefix(&prefix).unwrap_or(reason).to_owned()
 }
 
-/// The model's own reason a deferred hook is not exposable either: copied
-/// from `model_of`'s classes, never rewritten (the fixed strings match the
-/// rows the classifier emits for the same class elsewhere in this page).
-fn deferred_model_reason(name: &str, class: &Class) -> String {
-    match class {
-        Class::Cannot(why) => why
-            .split("; ")
-            .map(|w| exposure_reason(name, "unsupported", w))
-            .collect::<Vec<_>>()
-            .join("; "),
-        Class::Adapter(whys) => {
-            let mut reasons: Vec<String> = whys
-                .iter()
-                .map(|w| exposure_reason(name, "adapter", w))
-                .collect();
-            reasons.sort();
-            reasons.dedup();
-            reasons.join("; ")
-        }
-        Class::Tick => "a `ticks` parameter (level-tick host)".to_owned(),
-        Class::Handle(ty) => format!("a {ty} handle needs its own design"),
-        Class::Protocol => "raw packets need their own design".to_owned(),
-        Class::Generated(_) => {
-            unreachable!("a deferred hook assessed as generated is exposable, not rejected")
-        }
-    }
-}
-
-/// The exposure-doc group of a cannot detail: deferred names kept by a
-/// hand-written hook first, then the borrow kinds, then anything else.
+/// The exposure-doc group of a cannot detail: the borrow kinds first, then
+/// anything else.
 fn cannot_group(detail: &str) -> &'static str {
-    if detail.contains("hand-written hook keeps this name") {
-        "deferred"
-    } else if detail.contains("borrowed loot state") {
+    if detail.contains("borrowed loot state") {
         "loot"
     } else if detail.contains("generating chunk") {
         "worldgen"
@@ -3437,17 +3407,9 @@ fn class_line(name: &str, class: &Class) -> String {
 }
 
 /// The generated `docs/api/hook-exposure.md`: every non-generated native
-/// hook with its name, class and reason, grouped so a reader can tell a
-/// deferral (#44) from a real exposure reason. Generated hooks are omitted:
+/// hook with its name, class and reason. Generated hooks are omitted:
 /// they are the zero-hand-work event tables, one per native name.
-fn exposure_doc(classes: &[HookClass], deferred: &[(String, Result<Model, Class>)]) -> String {
-    let mut deferred_ok = Vec::new();
-    let mut deferred_no = Vec::new();
-    let mut deferred_unknown = Vec::new();
-    let outcomes: BTreeMap<&str, &Result<Model, Class>> = deferred
-        .iter()
-        .map(|(name, outcome)| (name.as_str(), outcome))
-        .collect();
+fn exposure_doc(classes: &[HookClass]) -> String {
     let mut render = Vec::new();
     let mut worldgen = Vec::new();
     let mut loot = Vec::new();
@@ -3480,15 +3442,6 @@ fn exposure_doc(classes: &[HookClass], deferred: &[(String, Result<Model, Class>
                     .collect();
                 let row = (hc.name.clone(), reasons.join("; "));
                 match cannot_group(why) {
-                    // Deferred names split by what the model says: exposable
-                    // (the deferral is the only reason) or rejected anyway
-                    // (the row carries the model's own reason).
-                    "deferred" => match outcomes.get(hc.name.as_str()) {
-                        Some(Ok(_)) => deferred_ok.push(row),
-                        Some(Err(class)) => deferred_no
-                            .push((hc.name.clone(), deferred_model_reason(&hc.name, class))),
-                        None => deferred_unknown.push(row),
-                    },
                     "loot" => loot.push(row),
                     "worldgen" => worldgen.push(row),
                     "render" => render.push(row),
@@ -3511,26 +3464,6 @@ fn exposure_doc(classes: &[HookClass], deferred: &[(String, Result<Model, Class>
     out.push_str(&format!(
         "{generated} hooks are generated and omitted below. The rest:\n\n"
     ));
-    exposure_section(
-        &mut out,
-        "Deferred to #44 (name kept by a hand-written hook; would be exposable)",
-        "These names stay with the hand-written hooks for now; removing the old hook is #44. The model says an event table could carry each of them, so the deferral is the only reason they are missing from Lua.",
-        &mut deferred_ok,
-    );
-    exposure_section(
-        &mut out,
-        "Deferred to #44 AND not exposable",
-        "These names stay with the hand-written hooks for now (removing the old hook is #44), and the model says no event-table mapping exists for them either. Each row carries the model's own reason, copied from the classifier, not rewritten.",
-        &mut deferred_no,
-    );
-    if !deferred_unknown.is_empty() {
-        exposure_section(
-            &mut out,
-            "Deferred to #44 (not assessed)",
-            "These names stay with the hand-written hooks for now; the model could not assess them, so their exposability is unknown.",
-            &mut deferred_unknown,
-        );
-    }
     exposure_section(
         &mut out,
         "Borrows render state (render thread)",
@@ -3928,8 +3861,7 @@ pub fn run(check: bool) -> Result<(), String> {
 
     let path = root.join("crates/event-horizon-lua/src/generated_hooks/mod.rs");
     let doc_path = root.join("docs/api/hook-exposure.md");
-    let deferred = deferred_outcomes(&root)?;
-    let doc = exposure_doc(&classes, &deferred);
+    let doc = exposure_doc(&classes);
     if check {
         let current = fs::read_to_string(&path).map_err(|e| e.to_string())?;
         // Write mode formats after writing, so the check formats too:

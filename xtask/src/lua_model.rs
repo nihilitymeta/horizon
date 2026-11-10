@@ -4594,55 +4594,6 @@ pub fn replace_sample(read: ReplaceRead, ret: &str, n: usize) -> (String, String
     }
 }
 
-/// The hooks the hand-written runtime already serves (`LUA_HOOK_NAMES` in
-/// `lua_mods.rs` plus every method its `impl Hooks for LuaMod` defines):
-/// the native hooks of those names are not generated (the old hooks stay
-/// as they are for now; removing them is #44). Generating them would define
-/// the trait method twice.
-fn handwritten_names(root: &Path) -> Result<Vec<String>, String> {
-    let src = fs::read_to_string(root.join("crates/event-horizon-lua/src/lua_mods.rs"))
-        .map_err(|e| e.to_string())?;
-    let mut names = Vec::new();
-    let list = "pub const LUA_HOOK_NAMES";
-    let start = src.find(list).ok_or("LUA_HOOK_NAMES missing")?;
-    let end = start
-        + src[start..]
-            .find("];")
-            .ok_or("LUA_HOOK_NAMES unterminated")?;
-    names.extend(
-        src[start..end]
-            .split('"')
-            .skip(1)
-            .step_by(2)
-            .map(str::to_owned),
-    );
-    let file: syn::File = syn::parse_str(&src).map_err(|e| e.to_string())?;
-    for item in &file.items {
-        if let syn::Item::Impl(item) = item
-            && let Some((_, trait_, _)) = &item.trait_
-            && quote_trait_path(trait_) == "Hooks"
-        {
-            for inner in &item.items {
-                if let syn::ImplItem::Fn(m) = inner {
-                    names.push(m.sig.ident.to_string());
-                }
-            }
-        }
-    }
-    names.sort();
-    names.dedup();
-    Ok(names)
-}
-
-/// The trait path of an `impl Trait for Type`, canonically rendered.
-fn quote_trait_path(trait_: &syn::Path) -> String {
-    trait_
-        .segments
-        .last()
-        .map(|s| s.ident.to_string())
-        .unwrap_or_default()
-}
-
 /// Every hook in exactly one class, in catalog order.
 pub fn classify(root: &Path) -> Result<Vec<HookClass>, String> {
     let catalog: serde_json::Value = serde_json::from_str(
@@ -4651,54 +4602,16 @@ pub fn classify(root: &Path) -> Result<Vec<HookClass>, String> {
     .map_err(|e| e.to_string())?;
     let hooks = catalog_hooks(root, &catalog)?;
     let game = game_methods(root)?;
-    let handwritten = handwritten_names(root)?;
     let mut frees: BTreeMap<String, Vec<syn::ItemFn>> = BTreeMap::new();
     let mut out = Vec::new();
     for hook in &hooks {
         let name = hook["name"].as_str().ok_or("hook name missing")?.to_owned();
-        if handwritten.contains(&name) {
-            out.push(HookClass {
-                class: Class::Cannot(format!(
-                    "{name}: unsupported: the hand-written hook keeps this name (removing it is #44)"
-                )),
-                name,
-            });
-            continue;
-        }
         match model_of(root, hook, &game, &mut frees) {
             Ok(model) => out.push(HookClass {
                 name,
                 class: Class::Generated(model),
             }),
             Err(class) => out.push(HookClass { name, class }),
-        }
-    }
-    Ok(out)
-}
-
-/// What `model_of` says about one hook the hand-written set keeps: whether
-/// an event table could carry it (so the deferral is its only reason), or
-/// the class that would reject it anyway. `classify` short-circuits these
-/// hooks before `model_of`, so the exposure doc asks here instead of
-/// guessing the reason.
-pub fn deferred_outcomes(root: &Path) -> Result<Vec<(String, Result<Model, Class>)>, String> {
-    let catalog: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(root.join("native-hooks.json")).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
-    let hooks = catalog_hooks(root, &catalog)?;
-    let game = game_methods(root)?;
-    let handwritten = handwritten_names(root)?;
-    let mut frees: BTreeMap<String, Vec<syn::ItemFn>> = BTreeMap::new();
-    let mut out = Vec::new();
-    for hook in &hooks {
-        let name = hook["name"].as_str().ok_or("hook name missing")?.to_owned();
-        if !handwritten.contains(&name) {
-            continue;
-        }
-        match model_of(root, hook, &game, &mut frees) {
-            Ok(model) => out.push((name, Ok(model))),
-            Err(class) => out.push((name, Err(class))),
         }
     }
     Ok(out)

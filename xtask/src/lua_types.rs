@@ -103,27 +103,12 @@ const TYPES: &[(&str, &str)] = &[
     ),
 ];
 
-/// Every hook a script registers for (`horizon.on(name, fn[, kind])`) and
-/// its handler's type; the runtime's `LUA_HOOK_NAMES` names the same hooks.
-const HOOKS: &[(&str, &str)] = &[
-    // `server_tick`, `world_lifecycle`, `loot_drops`, `random_tick`,
-    // `tick_block`, `block_entity_tick`, `mob_ai_register`,
-    // `register_goals`, `hud` and `gui_layer_post` are generated now (an
-    // event table each): their overloads come from the model below. The
-    // item, block and projectile hooks went the same way in K2
-    // (`right_click_block`, `use_item`, `use_item_on`, `attack_entity`,
-    // `living_entity_use_item_finish`, `living_entity_use_item_start`,
-    // `inventory_tick`, `hurt_enemy`, `item_crafted`, `item_picked_up`,
-    // `item_dropped`, `destroy_block`, `place_block`, `projectile_impact`,
-    // `hears_projectile_impacts`, `projectile_launch`,
-    // `explosion_detonate`). The player hooks went the same way in K3
-    // (`player_logged_in`, `player_logged_out`, `player_respawned`,
-    // `player_died`, `player_tick`, `player_chat`, `player_command`,
-    // `player_changed_dimension`, `player_bed_enter`, `player_exp_change`,
-    // `player_container_open`). The declaration-served `block_entity` and
-    // `block_entity_ticks` take no `horizon.on` registration, so they have
-    // no overload.
-];
+/// Extra `horizon.on(name, fn[, kind])` overloads beyond the generated
+/// hooks' own: empty now that every hook is generated (the generated
+/// overloads come from the model below). The declaration-served
+/// `block_entity` and `block_entity_ticks` take no `horizon.on`
+/// registration, so they have no overload.
+const HOOKS: &[(&str, &str)] = &[];
 
 /// One generated hook's types, derived from the same model as the runtime
 /// table and its smoke test, so the three cannot drift: the event-table
@@ -458,9 +443,10 @@ mod tests {
         std::fs::read_to_string(root.join("crates/event-horizon-lua/src/lua_mods.rs")).unwrap()
     }
 
-    /// Every hook `horizon.on` takes (the runtime's `LUA_HOOK_NAMES`, less
-    /// `command`, which is `horizon.command`'s, plus the generated hooks'
-    /// `GENERATED_HOOK_NAMES`) has a handler type, and no other hook has one.
+    /// Every generated hook the runtime takes (`GENERATED_HOOK_NAMES` in the
+    /// generated hooks) has a handler type, and no other hook has one: the
+    /// generated overloads of `generated_hooks()` plus the hand-written
+    /// `HOOKS` entries name exactly the generated set.
     #[test]
     fn every_hook_the_runtime_takes_has_a_handler_type() {
         fn names(src: &str, list: &str) -> BTreeSet<String> {
@@ -474,13 +460,11 @@ mod tests {
                 .collect()
         }
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let mut runtime = names(&runtime_source(), "pub const LUA_HOOK_NAMES");
-        runtime.remove("command");
         let generated = std::fs::read_to_string(
             root.join("crates/event-horizon-lua/src/generated_hooks/mod.rs"),
         )
         .unwrap();
-        runtime.extend(names(&generated, "pub const GENERATED_HOOK_NAMES"));
+        let runtime = names(&generated, "pub const GENERATED_HOOK_NAMES");
         let mut typed: BTreeSet<String> = super::HOOKS.iter().map(|(h, _)| h.to_string()).collect();
         typed.extend(
             super::generated_hooks()
@@ -489,6 +473,68 @@ mod tests {
                 .map(|g| g.hook.clone()),
         );
         assert_eq!(runtime, typed);
+    }
+
+    /// Every new hook name in the migration table (`docs/lua-hook-migration.md`,
+    /// the per-hook rows' new-hook column) is a generated hook the runtime
+    /// takes: a renamed row must name the hook that actually fires.
+    #[test]
+    fn migration_table_new_names_are_generated_hooks() {
+        fn names(src: &str, list: &str) -> BTreeSet<String> {
+            let start = src.find(list).unwrap();
+            let end = start + src[start..].find("];").unwrap();
+            src[start..end]
+                .split('"')
+                .skip(1)
+                .step_by(2)
+                .map(str::to_owned)
+                .collect()
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let generated = std::fs::read_to_string(
+            root.join("crates/event-horizon-lua/src/generated_hooks/mod.rs"),
+        )
+        .unwrap();
+        let runtime = names(&generated, "pub const GENERATED_HOOK_NAMES");
+        let table = std::fs::read_to_string(root.join("docs/lua-hook-migration.md")).unwrap();
+        let rows: Vec<&str> = table
+            .lines()
+            .skip_while(|l| !l.starts_with("## Per-hook rows"))
+            .skip(1)
+            .take_while(|l| !l.starts_with("## Cross-cutting"))
+            .filter(|l| l.starts_with('|'))
+            .collect();
+        // rows[0] is the `|---|---|...` separator: it names no hook, so the
+        // per-hook rows start at rows[1].
+        let rows = &rows[1..];
+        assert!(
+            !rows.is_empty(),
+            "no per-hook rows parsed; the migration-table check is vacuous"
+        );
+        let mut missing = Vec::new();
+        for row in rows {
+            let cells: Vec<&str> = row.split('|').collect();
+            // `| old | new | shape | old args | lost | gained | filter |`.
+            let new = cells[2];
+            let mut hooks = Vec::new();
+            for part in new.split('`').skip(1).step_by(2) {
+                hooks.push(part.to_owned());
+            }
+            assert!(
+                !hooks.is_empty(),
+                "row names no new hook: {row}; the migration-table check is vacuous"
+            );
+            for hook in hooks {
+                if !runtime.contains(&hook) {
+                    missing.push(hook);
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "migration table names hooks the runtime does not take: {}",
+            missing.join(", ")
+        );
     }
 
     /// Every function and field the runtime installs on `horizon` (the

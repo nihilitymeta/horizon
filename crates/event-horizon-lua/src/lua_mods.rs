@@ -111,20 +111,13 @@ impl Budget {
 /// The file a scripted mod starts from, inside its folder.
 pub const ENTRY: &str = horizon_mods::content::SCRIPT_ENTRY;
 
-/// The hooks a script may register for with `horizon.on` (`docs/lua-bindings.md`):
-/// a name not here is refused when the script loads, so a misspelling is a
-/// load error with its line, not a handler that never runs. Generated hooks
-/// (`generated_hooks::GENERATED_HOOK_NAMES`) register too; the script
-/// commands' own hook is `perform_command` (`horizon.command` declares).
-pub const LUA_HOOK_NAMES: &[&str] = &[];
-
 /// The content mod's manifest, which names the mod.
 const MANIFEST: &str = "horizon-mod.toml";
 /// The Lua global the game provides.
 const GLOBAL: &str = "horizon";
 /// The registry key of the handlers table: `name -> { fn, fn, ... }`.
 const HANDLERS: &str = "horizon_handlers";
-/// The registry key of the handlers that watch one kind of mob
+/// The registry key of the handlers that watch one kind of event
 /// (`horizon.on(name, fn, kind)`): `name -> kind -> { fn, fn, ... }`.
 const KIND_HANDLERS: &str = "horizon_kind_handlers";
 /// The registry key of the queue of actions a handler asked for.
@@ -1639,27 +1632,22 @@ impl LuaMod {
                 Ok(())
             })?,
         )?;
-        // `horizon.on(name, fn[, kind])`: a handler of the hook `name`; with
-        // `kind`, only for mobs of that kind (the mob hooks), which keeps a
-        // hook that fires for every mob free for the others.
+        // `horizon.on(name, fn[, kind])`: a handler of the hook `name`, one
+        // of the generated hooks; with `kind`, only for events of that
+        // kind (a kind-filtered hook), which keeps a hook that fires for
+        // every kind free for the others.
         let kinds = self.kinds.clone();
         api.set(
             "on",
             lua.create_function(
                 move |lua, (name, f, kind): (String, Function, Option<String>)| {
-                    if !LUA_HOOK_NAMES.contains(&name.as_str())
-                        && !crate::generated_hooks::GENERATED_HOOK_NAMES.contains(&name.as_str())
-                    {
+                    if !crate::generated_hooks::GENERATED_HOOK_NAMES.contains(&name.as_str()) {
                         return Err(mlua::Error::runtime(format!(
                             "horizon.on({name:?}): no such hook; the hooks are {}",
                             {
-                                let mut names: Vec<&str> = LUA_HOOK_NAMES
-                                    .iter()
-                                    .chain(crate::generated_hooks::GENERATED_HOOK_NAMES.iter())
-                                    .copied()
-                                    .collect();
+                                let mut names: Vec<&str> =
+                                    crate::generated_hooks::GENERATED_HOOK_NAMES.to_vec();
                                 names.sort_unstable();
-                                names.dedup();
                                 names.join(", ")
                             }
                         )));
@@ -2706,13 +2694,8 @@ pub(crate) fn dimension_id(dimension: LevelDimension) -> &'static str {
 }
 
 impl Hooks for LuaMod {
-    // `register_commands` and `perform_command` are generated
-    // (`generated_hooks`, `gen_register_commands` and
-    // `gen_perform_command`): the collect appends the declared commands,
-    // and the command arm longest-match dispatches to `fn(player, args)`.
-
-    // The generated hooks (`generated_hooks.rs`): one method per hook above,
-    // wired the same way, with one event table each.
+    // Every hook is generated (`generated_hooks`, one method per native
+    // hook), each with one event table.
     impl_generated_hooks!();
 }
 

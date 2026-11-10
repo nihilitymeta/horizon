@@ -11,8 +11,6 @@ use syn::Item;
 
 /// The engine hooks a scripted mod hears, and as what (`docs/lua-bindings.md`).
 const LUA_HOOKS: &[(&str, &str)] = &[
-    // Generated hooks name no `name(` handler here: that spelling feeds the
-    // registerable-names test, which covers the hand-written registry only.
     (
         "server_tick",
         "an event table with `phase`, `world_running` and the context",
@@ -151,9 +149,7 @@ const LUA_HOOKS: &[(&str, &str)] = &[
         "an event table with `player`, `command` (no slash) and `replies`; set `event.replies` to answer, `horizon.cancel()` stops it",
     ),
     // The generated native `command` hook (any typed command, before the
-    // server sees it): named like the other generated hooks, with no
-    // `name(` handler spelling (that spelling feeds the registerable-names
-    // test, which covers the hand-written registry only).
+    // server sees it).
     (
         "command",
         "an event table with `command`; `horizon.cancel()` drops the line",
@@ -730,37 +726,42 @@ mod tests {
         assert_eq!(called, named);
     }
 
-    /// The hook names a script registers for (`LUA_HOOK_NAMES` in the
-    /// runtime, which `horizon.on` checks) are the ones the reference's Lua
-    /// column names, no more and no fewer.
+    /// The hook names a script registers for are the generated hooks:
+    /// every reference row that takes a `horizon.on` registration names a
+    /// hook in the generated hooks' `GENERATED_HOOK_NAMES`. The
+    /// declaration-served rows (`block_entity`, `block_entity_ticks`) and
+    /// the listened-query rows (answered from their siblings' registries,
+    /// never registered for) take none.
     #[test]
     fn the_hook_names_a_script_may_register_are_the_reference_s() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let src =
-            std::fs::read_to_string(root.join("crates/event-horizon-lua/src/lua_mods.rs")).unwrap();
-        let start = src.find("pub const LUA_HOOK_NAMES").unwrap();
+        let src = std::fs::read_to_string(
+            root.join("crates/event-horizon-lua/src/generated_hooks/mod.rs"),
+        )
+        .unwrap();
+        let start = src.find("pub const GENERATED_HOOK_NAMES").unwrap();
         let end = start + src[start..].find("];").unwrap();
-        let runtime: std::collections::BTreeSet<String> = src[start..end]
+        let generated: std::collections::BTreeSet<String> = src[start..end]
             .split('"')
             .skip(1)
             .step_by(2)
             .map(str::to_owned)
             .collect();
-        // Every `name(` in backticks in the Lua column is a handler a script writes.
-        let mut named = std::collections::BTreeSet::new();
-        for (_, lua) in super::LUA_HOOKS {
-            for part in lua.split('`').skip(1).step_by(2) {
-                if let Some(name) = part.split('(').next()
-                    && part.contains('(')
-                    && !name.contains('.')
-                    && !name.contains(' ')
-                    && name != "fn"
-                {
-                    named.insert(name.to_owned());
-                }
+        assert!(
+            !generated.is_empty(),
+            "GENERATED_HOOK_NAMES parsed empty; the registerable-names check is vacuous"
+        );
+        for (name, _) in super::LUA_HOOKS {
+            if crate::lua_model::declaration_served(name)
+                || crate::lua_model::listened_flag(name).is_some()
+            {
+                continue;
             }
+            assert!(
+                generated.contains(*name),
+                "{name} is in the reference but not in GENERATED_HOOK_NAMES"
+            );
         }
-        assert_eq!(runtime, named);
     }
 
     #[test]

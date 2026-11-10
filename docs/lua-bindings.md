@@ -219,7 +219,7 @@ Some functions take a *player*. A player is a `player` table that a hook handed 
 
 | Function | Description |
 |---|---|
-| `horizon.on(name, fn[, kind])` | Registers a handler for a hook. The game refuses a *name* that it does not know when the script loads, with the line; the names are `LUA_HOOK_NAMES` in `lua_mods.rs`, the hooks under [Hooks](#hooks). With *kind* (`"minecraft:zombie"`, `"zombie"`, or a mod's own id), the handler runs only for that kind, after the handlers for every kind. A kind that no handler watches costs nothing |
+| `horizon.on(name, fn[, kind])` | Registers a handler for a hook. The game refuses a *name* that it does not know when the script loads, with the line; the names are the generated hooks (`GENERATED_HOOK_NAMES`), the hooks under [Hooks](#hooks). With *kind* (`"minecraft:zombie"`, `"zombie"`, or a mod's own id), the handler runs only for that kind, after the handlers for every kind. A kind that no handler watches costs nothing |
 | `horizon.log(msg)` | Writes a line to the game log, tagged `[lua:<id>]` |
 | `horizon.mod_id`, `horizon.mod_version` | the mod's id and version, from its manifest |
 | `horizon.libraries` | the versions of the mods it depends on, by id, such as `horizon.libraries.horizon_modkit` |
@@ -410,9 +410,53 @@ Some actions work only in the block hooks:
 
 ## Hooks
 
-A handler receives the hook's event table. Some hooks let it change the event, with calls such as
-`horizon.cancel()` or an `event.field = ...` write; the table says which. A hook "by kind" takes a `kind` in
-`horizon.on`, a block id, an item id or a mob kind.
+Lua hears the engine's native hooks under the native names: `horizon.on("mob_spawned", fn)` hears the native
+`mob_spawned` hook, and so on for every generated hook. Every row below names the native hook it hears.
+[hook-points.md](api/hook-points.md) lists every hook point of the engine with its API level; the generated
+`HorizonOn` overloads in [horizon.d.lua](api/horizon.d.lua) are the authoritative handler signatures, and
+[hook-exposure.md](api/hook-exposure.md) lists the hooks Lua does not hear and why. A mod written against the old
+hand-written hooks migrates with [lua-hook-migration.md](lua-hook-migration.md).
+
+A handler takes one event table, the hook's fields by name:
+
+```lua
+horizon.on("mob_spawned", function(event)
+  horizon.log(("spawned %s at %.0f %.0f %.0f"):format(event.kind, event.pos.x, event.pos.y, event.pos.z))
+end)
+```
+
+A handler that changes the event changes what the engine does next: assign to a mutable field
+(`event.amount = 10`), edit a sequence in place (`table.remove(event.blocks, i)`), or call
+`horizon.cancel()` where the row says so. A field the hook only reports reads back what the engine holds, and a
+write to it does nothing. The exact field list of each hook is its event type in `horizon.d.lua`; the shapes are
+the same in every hook:
+
+- an optional native value reads as the value, or nil when there is none
+- a list reads as a sequence (`{ Item }`); a hole reads as nil
+- a position or motion vector reads as `{ x, y, z }`
+- a uuid reads as its lowercase text (`"6ba7b811-9dad-11d1-80b4-00c04fd430c8"`), never a number
+- an id reads as the qualified string (`"minecraft:zombie"`)
+- an enum reads as its lowercase name (`"main"`, `"down"`)
+- rich text reads as its plain string, with a `<field>_component` table of the vanilla JSON beside it
+- saved NBT reads as a `Data` table, written back after the call
+- an item stack reads as `{ id, count, damage, extra, plain }`
+- a block state reads as its id string, with its properties by name in the `<field>_props` table (`state_props`)
+- raw bytes read as a Lua string
+- a duration reads as seconds
+
+A hook "by kind" takes a *kind* in `horizon.on(name, fn, kind)`: a block id, a mob or entity kind, a projectile
+kind, or command words for `perform_command`. Only handlers of that kind run for a matching event; a handler with
+no kind hears every event of the hook. The `HorizonOn` overload is authoritative: a hook whose overload names
+`kind` filters by it, and a hook whose overload does not refuses it as a load error. Each row below says what its
+kind is. The draw hooks take no kind.
+
+Calls that act on the world are queued and run after the handler with the hook's host ([The `horizon`
+table](#the-horizon-table) says which hooks have a host). A hook with no host runs no queued actions: set the
+event's fields, or cancel, and nothing else. Reads answer at once from the hook's host, for the length of the
+call.
+
+A handler that runs longer than 250 ms is stopped ([Limits and errors](#limits-and-errors)). The draw hooks get
+8 ms instead: a draw hook that keeps missing its frame budget is disabled after 3 misses, until `/reload`.
 
 ### The game and the world
 
@@ -491,6 +535,28 @@ that is the same when done twice, such as lighting a lamp rather than toggling i
 | `player_bed_enter(event)` | a player is about to enter the bed at that position. The event holds `player` and `pos` (`{x, y, z}` of the bed head, always present). `horizon.cancel()` keeps them out |
 | `player_exp_change(event)` | a player's experience is about to grow by *amount* from an orb, after Mending's share. The event holds `player` and `amount`; set `event.amount` to change the points added |
 | `player_container_open(event)` | a player opens a menu. The event holds `player`, `dimension`, `menu` (its type, such as `minecraft:generic_9x3`, `minecraft:furnace` or `minecraft:crafting`), and `pos` (the position of its block, or nil) |
+
+### Draw hooks
+
+| Hook | Called when |
+|---|---|
+| `hud(event)` | every frame, to draw over the game. The event holds `batch` (the draw calls: `fill`, `text`, `sprite`, `item`, `item_stack`, `item_model`, `quad`, `text_width`, each drawn at once) and `corners` (`place`, `shown`). The calls are dot-called (`batch.fill(...)`), draw at once, and expire with the call: keeping `event.batch` and calling it later is an error |
+| `gui_layer_post(event)` | every frame, after a screen layer draws. The event holds `layer` (its id) and `batch`, as in `hud` |
+
+The draw hooks run on the frame's 8 ms budget and take no kind. Their reads are the client's: `horizon.time`,
+`block`, `block_property` and `light` read the client's world; `player`, `players`, `mob`, `mobs`, `raycast` and
+`surface_height` need a server and read empty on a client window; `world_data`, `player_data`, the acting
+player's inventory reads and `summon` raise an error there.
+
+### Hooks Lua does not hear
+
+Lua hears the generated hooks above. The rest of the engine's hooks are not event tables, for one reason each, in
+[hook-exposure.md](api/hook-exposure.md): borrows of render state (38 hooks, among them the screens and the draw
+calls outside `hud`), of the generating chunk (2), of loot state (2), of client input (1); hooks that need a
+hand-written converter (14 adapters), a live handle of their own design (6), or raw packets (3); and the
+level-tick host the runtime does not implement (2). The two declaration-served hooks, `block_entity` and
+`block_entity_ticks`, are generated but take no `horizon.on` registration: they are served from the
+`horizon.block_entity` declarations.
 
 ## Shared tables
 
@@ -626,7 +692,7 @@ table when its step lands, with the tests and the game check that show it.
 | A mob's attributes, equipment and name at runtime | Host helpers over a mob by id (`set_attribute(dimension, id, name, value)`, `equip(dimension, id, slot, stack)`, `set_name(dimension, id, text)`), then `horizon.set_attribute(id, "max_health", 40)`, `horizon.equip(id, "mainhand", "minecraft:iron_sword")` and `horizon.set_name(id, "Old One")` from any hook with a host, and `mob:set_attribute`, `mob:equip` and `mob:set_name` in the modkit. Until then, a mod declares attributes and equipment in its entity type (`registry.entity_type`), and names mobs through `run_command` |
 | Custom projectiles and other entities that are not mobs | A thrown mod item already flies as its template does (a snowball's `template` in `registry.item`). The planned shape is an entity type of the mod's own over a projectile template (`registry.entity_type("spore", { template = "minecraft:snowball", ... })`), with `projectile_impact` by that kind, and `horizon.shoot(dimension, kind, x, y, z, vx, vy, vz)` to launch one. Vehicles, displays and markers stay the engine's own |
 | Screens | Content mods have menu types (`data/<id>/horizon/menu/`), but a screen that draws them is native only (`native_screen`). Scripts get no screens: titles, subtitles, the action bar, chat lines and commands are their user interface. A later `horizon.open_menu(player, menu, pos)` would show a content mod's menu |
-| Client-side scripts | Every script runs on the server side of the game: the window's own server in single player, the host's in LAN. `side` in the manifest is the content's. There is no HUD, key binding, rendering or sound of the client's own; a server script reaches the client through the engine's packets, such as titles, sounds and particles. A client script would be a second state, with its own hooks (`hud`, `key`, `render_*`), kept apart |
+| Client-side scripts | Every script runs on the server side of the game: the window's own server in single player, the host's in LAN. `side` in the manifest is the content's. There is no key binding or sound of the client's own; a server script reaches the client through the engine's packets, such as titles, sounds and particles. Drawing runs through the `hud` and `gui_layer_post` hooks, which hear the client's frames. A fuller client script would be a second state, with its own hooks (`key`, `render_*`), kept apart |
 | Configuration | `horizon.config()` and `horizon.save_config(t)` are all of it: one JSON file that a person edits. There is no options screen and no setting per world; a mod that wants values per world keeps them in `horizon.world_data()`, and sets them with a command of its own |
 
 ## Working on a script
