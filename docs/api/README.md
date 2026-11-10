@@ -46,6 +46,7 @@ A reference page is written by code from the source it describes, and a test fai
 | [launch-reference.md](launch-reference.md) | `crates/horizon-client/src/game/launch_api.rs` | `HORIZON_WRITE_DOCS=1 cargo test -p horizon-client --lib launch_api` |
 | [hook-points.md](hook-points.md), every hook point and host helper, and the Lua handler each reaches | `native-hooks.json` and the hook functions' own docs (`xtask/src/hooks_doc.rs`) | `cargo run -p xtask -- hooks-doc` |
 | [horizon.d.lua](horizon.d.lua), the Luau types for scripted mods ([lua-bindings.md](../lua-bindings.md)) | the tables in `xtask/src/lua_types.rs`, which tests keep equal to the Lua runtime | `cargo run -p xtask -- lua-types` |
+| [hook-exposure.md](hook-exposure.md), which hooks reach Lua and why the rest do not | the classifier in `xtask/src/lua_model.rs` (`xtask/src/lua_hooks.rs`) | `cargo run -p xtask -- lua-hooks` |
 
 So a pull request that changes an API also changes its reference, and the reviewer sees the API's diff in the
 reference's diff. The guides (overview, how-to, examples) are written by hand.

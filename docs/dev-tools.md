@@ -4,8 +4,7 @@ The developer tools are windows drawn with egui over the game: views of an entit
 path, charts of a value over time, and a Lua console that also shows and reloads scripted mods. They are for people
 who work on mods and engine features, and are never on in a player's game.
 
-The tools live on the `egui-tools` branch of whos-carmen/horizon. It is stacked on `lua-bindings`, which sits on
-`mob-ai-hooks`, because the console shows and reloads the scripted mods ([lua-bindings.md](lua-bindings.md)).
+The tools are part of `engine-work`, like the scripted mods they show and reload ([lua-bindings.md](lua-bindings.md)).
 
 | Part | Status |
 |---|---|

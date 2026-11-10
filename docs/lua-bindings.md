@@ -2,7 +2,7 @@
 
 This page describes how content mods carry Lua scripts that the game runs on its hook points. It covers the
 runtime, the `registry` and `horizon` tables, every hook a script can listen to, and the limits a script runs
-under. It lives on the `lua-bindings` branch of whos-carmen/horizon, which builds on `mob-ai-hooks`.
+under.
 
 Most mods are easier to write with [Horizon Modkit](https://github.com/whos-carmen/horizon-modkit), a library over
 this API with classes and callbacks. This page is the layer under it.
@@ -32,8 +32,8 @@ the way to add a hook point or to write something fast; Lua is the way to use th
 
 Everything that is not a mixin shares one event surface: the hook points of `native-hooks.json`, dispatched to a list
 of `Hooks` trait objects (`horizon_client::mod_api`). The Lua runtime adds one more `Hooks` implementation for each
-scripted mod, in the same list and order as trait mods. Every hook point reaches Lua through one adapter method, so a
-hook added for Rust becomes available to scripts for the price of that method.
+scripted mod, in the same list and order as trait mods. A hook the generator covers reaches Lua under its native
+name; a hook it cannot cover is listed with its reason in [hook-exposure.md](api/hook-exposure.md).
 
 - The language is Luau, through `mlua` with the `luau` feature. It is built from source: no system library and no
   dynamic loading, the same on Metal and Vulkan. Each mod has its own Lua state. `Lua` is `Send`, so it lives in the
@@ -206,7 +206,7 @@ docs, and a test keeps it current. It is the place to look for what the hooks be
 Calls that act on the world are *actions*: they are queued, and run after the handler returns. Calls that read the
 world are *reads*: they answer at once, from the hook's host, for the length of the call. Both need a hook with a
 host. `living_incoming_damage`, `living_fall`, `living_heal`, `living_knockback`, `mob_ai_register` and goal
-functions have no host; a goal reads its `mob` view instead. A level hook (`random_tick`, `tick_block`) reads blocks
+functions have no host, among others; a goal reads its `mob` view instead. A level hook (`random_tick`, `tick_block`) reads blocks
 only.
 
 An action called where no hook's handlers run is an error at the call. This covers a goal function, which acts
@@ -219,7 +219,7 @@ Some functions take a *player*. A player is a `player` table that a hook handed 
 
 | Function | Description |
 |---|---|
-| `horizon.on(name, fn[, kind])` | Registers a handler for a hook. The game refuses a *name* that it does not know when the script loads, with the line; the names are the generated hooks (`GENERATED_HOOK_NAMES`), the hooks under [Hooks](#hooks). With *kind* (`"minecraft:zombie"`, `"zombie"`, or a mod's own id), the handler runs only for that kind, after the handlers for every kind. A kind that no handler watches costs nothing |
+| `horizon.on(name, fn[, kind])` | Registers a handler for a hook. The game refuses a *name* that it does not know when the script loads, with the line; the names are the generated hooks (`GENERATED_HOOK_NAMES`). The [Hooks](#hooks) tables below describe the main ones. With *kind* (`"minecraft:zombie"`, `"zombie"`, or a mod's own id), the handler runs only for that kind, after the handlers for every kind. A kind that no handler watches costs nothing |
 | `horizon.log(msg)` | Writes a line to the game log, tagged `[lua:<id>]` |
 | `horizon.mod_id`, `horizon.mod_version` | the mod's id and version, from its manifest |
 | `horizon.libraries` | the versions of the mods it depends on, by id, such as `horizon.libraries.horizon_modkit` |
@@ -367,8 +367,7 @@ a line for such an inserted command is answered as an unknown command.
 
 `horizon.on("command", fn)` is the client hook: it fires for every slash line the player types, before the line
 reaches the server. `horizon.cancel()` there drops the line, so the server never sees it and no `perform_command`
-handler runs for it. Scripts written for the old server-side `"command"` hook now bind this client hook instead;
-that break is deliberate. Hearing and stopping every typed line is a client power, separate from performing mod
+handler runs for it. Hearing and stopping every typed line is a client power, separate from performing mod
 commands, which is what `horizon.command` declares and `perform_command` hears.
 
 ### Timers and saved data
@@ -535,8 +534,8 @@ that is the same when done twice, such as lighting a lamp rather than toggling i
 | `living_fall(event)` with kind `minecraft:player` | a player is about to handle a fall. The event holds `entity`, `kind`, `distance` and `multiplier`. No host: set the fields, or `horizon.cancel()` for no fall damage |
 | `living_knockback(event)` with kind `minecraft:player` | a player is about to be knocked back. The event holds `entity`, `kind`, `damage_type`, `causing`, `direct`, `strength`, `x` and `z`. No host: set `event.strength` (and `x`/`z` to steer), or `horizon.cancel()` |
 | `player_command(event)` | a player types any command, before it runs. The event holds `player`, `command` (no slash) and `replies`. Set `event.replies` (a sequence of strings or `{text, component?}` tables) to answer them; `horizon.cancel()` and nothing runs. No player's state is in place here, so `tell` and the item functions reach nobody |
-| `player_chat(event)` | a player's chat line is about to go to everyone, after the chat filter. The event holds `player` (uuid text), `name`, `message` and `replies`. There is no host, because the hub is in the middle of a packet: set `event.replies` to send a line back to the sender. `horizon.cancel()` and nobody sees it, the sender included. The line itself can't change, because a signed message would no longer verify; the hook point is upstream's `native_player_chat`. Commands go to `player_command` |
-| `player_changed_dimension(event)` | a player's move to another level has ended: a portal, `/execute in ... run tp`, or a respawn elsewhere. The event holds `player`, `from` and `to` (dimension ids). The engine reports it on a dedicated server only |
+| `player_chat(event)` | a player's chat line is about to go to everyone, after the chat filter. The event holds `player` (uuid text), `name`, `message` and `replies`. There is no host while the chat packet is being handled: set `event.replies` to send a line back to the sender. `horizon.cancel()` and nobody sees it, the sender included. The line itself can't change, because a signed message would no longer verify; the hook point is upstream's `native_player_chat`. Commands go to `player_command` |
+| `player_changed_dimension(event)` | a player's move to another level has ended: a portal, `/execute in ... run tp`, or a respawn elsewhere. The event holds `player`, `from` and `to` (dimension ids). Heard for a player of the server thread (single-player, LAN and dedicated) once a move into another level has ended; not heard for a move inside one level, a move that ends where it started, or a player who leaves before it ends |
 | `player_bed_enter(event)` | a player is about to enter the bed at that position. The event holds `player` and `pos` (`{x, y, z}` of the bed head, always present). `horizon.cancel()` keeps them out |
 | `player_exp_change(event)` | a player's experience is about to grow by *amount* from an orb, after Mending's share. The event holds `player` and `amount`; set `event.amount` to change the points added |
 | `player_container_open(event)` | a player opens a menu. The event holds `player`, `dimension`, `menu` (its type, such as `minecraft:generic_9x3`, `minecraft:furnace` or `minecraft:crafting`), and `pos` (the position of its block, or nil) |
@@ -557,12 +556,12 @@ player; on a client window, which has none, those reads are empty too, like `pla
 
 ### Hooks Lua does not hear
 
-Lua hears every generated hook as an event table. The tables above spell out the hooks this page describes;
+Lua hears every generated hook (448 of 516 hook points) as an event table. The tables above spell out the hooks this page describes;
 every other generated name is still an event table whose shape is its `HorizonOn` overload in
 [horizon.d.lua](api/horizon.d.lua). [hook-exposure.md](api/hook-exposure.md) lists only the hooks that are not
 generated, for one reason each: borrows of render state (38 hooks, among them the screens and the draw
 calls outside `hud`), of the generating chunk (2), of loot state (2), of client input (1); hooks that need a
-hand-written converter (14 adapters), a live handle of their own design (6), or raw packets (3); and the
+converter the generator does not have (14 adapters), a live handle of their own design (6), or raw packets (3); and the
 level-tick host the runtime does not implement (2). The two declaration-served hooks, `block_entity` and
 `block_entity_ticks`, are generated but take no `horizon.on` registration: they are served from the
 `horizon.block_entity` declarations.
@@ -608,8 +607,7 @@ these rules:
 ### Types for an editor
 
 `docs/api/horizon.d.lua` holds Luau definitions of `horizon` and `registry`: every function above, every hook's
-handler signature, and the tables they hand a script, such as `Player`, `MobView`, `Item`, `Block`, `Hit` and
-`LootSource`. It is generated by `cargo run -p xtask -- lua-types`; the tests run it with `--check`.
+handler signature, and the tables they hand a script, such as `Player`, `ReadPlayer`, `CommandPlayer`, `MobView`, `Item`, `Block` and `Data`. It is generated by `cargo run -p xtask -- lua-types`; the tests run it with `--check`.
 
 With [luau-lsp](https://github.com/JohnnyMorganz/luau-lsp), this command reports a misspelled function or hook, and
 an editor completes them:
@@ -705,13 +703,12 @@ table when its step lands, with the tests and the game check that show it.
 | A mob's attributes, equipment and name at runtime | Host helpers over a mob by id (`set_attribute(dimension, id, name, value)`, `equip(dimension, id, slot, stack)`, `set_name(dimension, id, text)`), then `horizon.set_attribute(id, "max_health", 40)`, `horizon.equip(id, "mainhand", "minecraft:iron_sword")` and `horizon.set_name(id, "Old One")` from any hook with a host, and `mob:set_attribute`, `mob:equip` and `mob:set_name` in the modkit. Until then, a mod declares attributes and equipment in its entity type (`registry.entity_type`), and names mobs through `run_command` |
 | Custom projectiles and other entities that are not mobs | A thrown mod item already flies as its template does (a snowball's `template` in `registry.item`). The planned shape is an entity type of the mod's own over a projectile template (`registry.entity_type("spore", { template = "minecraft:snowball", ... })`), with `projectile_impact` by that kind, and `horizon.shoot(dimension, kind, x, y, z, vx, vy, vz)` to launch one. Vehicles, displays and markers stay the engine's own |
 | Screens | Content mods have menu types (`data/<id>/horizon/menu/`), but a screen that draws them is native only (`native_screen`). Scripts get no screens: titles, subtitles, the action bar, chat lines and commands are their user interface. A later `horizon.open_menu(player, menu, pos)` would show a content mod's menu |
-| Client-side scripts | Every script runs on the server side of the game: the window's own server in single player, the host's in LAN. `side` in the manifest is the content's. There is no key binding or sound of the client's own; a server script reaches the client through the engine's packets, such as titles, sounds and particles. Drawing runs through the `hud` and `gui_layer_post` hooks, which hear the client's frames. A fuller client script would be a second state, with its own hooks (`key`, `render_*`), kept apart |
+| Client-side scripts | Scripts hear the server side of the game: the window's own server in single player, the host's in LAN. `side` in the manifest is the content's. There is no key binding or sound of the client's own; a server script reaches the client through the engine's packets, such as titles, sounds and particles. Drawing runs through the `hud` and `gui_layer_post` hooks, which hear the client's frames, and `key` hears its key and mouse presses. A fuller client script would be a second state, with its own hooks, kept apart |
 | Configuration | `horizon.config()` and `horizon.save_config(t)` are all of it: one JSON file that a person edits. There is no options screen and no setting per world; a mod that wants values per world keeps them in `horizon.world_data()`, and sets them with a command of its own |
 
 ## Working on a script
 
-The developer tools are made for this ([dev-tools.md](dev-tools.md), on the `egui-tools` branch, which is stacked on
-this one). Start the game with `--dev-tools --dev-mod /path/to/mod`, then:
+The developer tools are made for this ([dev-tools.md](dev-tools.md)). Start the game with `--dev-tools --dev-mod /path/to/mod`, then:
 
 - Type `/lua` to open the console. Its first section lists the scripted mods, with their scripts, handlers, goals
   and last error. Its **reload** button reads a mod's scripts again and runs `init.lua` from the start at the next
@@ -729,7 +726,7 @@ this one). Start the game with `--dev-tools --dev-mod /path/to/mod`, then:
 
 | Step | What | Why |
 |---|---|---|
-| 4 | Hooks covered by generation: `xtask mod-api` emits the Lua adapter for every `listen` hook from the catalogue, as it emits the trait | Every hook point reaches Lua without hand-written glue |
+| 4 | Hooks covered by generation: the `lua-hooks` generator emits the Lua event table for every hook the model covers, as `xtask mod-api` emits the trait | Every covered hook point reaches Lua without hand-written glue; the rest are listed with their reason in [hook-exposure.md](api/hook-exposure.md) |
 
 The block hooks needed one addition to the mod API: `LevelHost::state_block` and `state_properties`, so a hook that
 gets a state can name its block without a world lookup. Trait mods get them too. Everything stays off unless a mod

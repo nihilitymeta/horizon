@@ -1256,7 +1256,7 @@ API 153 adds a player starting or stopping flight: `native_player_toggle_flight(
 API 165 adds `native_physical_window_size()`, the window's width and height in physical pixels, independent of GUI scale. It returns no size on a server or when no window exists. Bundles that use it need `"hooks": 165`.
 
 
-API 154 adds a player changing dimension: `native_player_changed_dimension(player, name, from, to)` is heard once per move of a server's player into another level, when the move has ended (a portal's exit found and the player standing there, a command's teleport landed, a respawn in another level placed for good), with `from` and `to` as dimension ids (`minecraft:overworld`, `minecraft:the_nether`, `minecraft:the_end`) and the player's state swapped in so that `native_tell` and the other helpers reach them. A move within a level is not heard. Bundles that use it need `"hooks": 154`.
+API 154 adds a player changing dimension: `native_player_changed_dimension(player, name, from, to)` is heard once per move of a server-thread player (single-player, LAN and dedicated) into another level, when the move has ended (a portal's exit found and the player standing there, a command's teleport landed, a respawn in another level placed for good), with `from` and `to` as dimension ids (`minecraft:overworld`, `minecraft:the_nether`, `minecraft:the_end`) and the player's state swapped in so that `native_tell` and the other helpers reach them. Not heard: a move inside one level, a move that ends where it started, or a player who leaves before the move ends. Bundles that use it need `"hooks": 154`.
 
 API 155 adds A mod that hears `native_experience_orb_pickup` sets `listened` in `native_experience_orb_pickup_listened` (a HEAD injection); `native_experience_orb_pickup(player, dimension, orb, value, count, canceled)` then runs before a server player takes an orb. Canceling leaves the orb and the pickup delay unchanged; otherwise the value is clamped to 1..=2,147,483,647 and the count to at least one, then one count is taken. `native_mending_repair(player, stack, experience, repair)` sees the damaged Mending item picked at random and can change the durability repair proposed for it, which is capped at its current damage. Turning a positive proposal into zero leaves the experience unspent (a zero vanilla proposal keeps vanilla's behaviour); if the picked stack is removed, changed except for its damage, or no longer eligible, the repair is skipped and the experience remains. The repair also decides how much experience is left for further repairs. It runs for `native_give_experience` too. Both run on the integrated and the dedicated server, guests included. Bundles need "hooks": 155.
 
@@ -2251,8 +2251,9 @@ For mods that run where the world is simulated: a dedicated server, a LAN host, 
   level than the death's is placed for good. `to` is the level in place and the player's state is swapped in (as in
   `native_perform_command`), so `native_acting_player` and `native_tell` reach them. Heard for Nether and End portals
   (also riding, and leaving the End as its winner), `/execute in ... run tp` and any command teleporting into another
-  level, and the death respawn. Not heard: a move within a level (`/tp`, an End gateway), a player who leaves before
-  the move ends, a respawn in the dimension of the death, and anything outside a dedicated server.
+  level, and the death respawn: every player of the server thread (single-player, LAN and dedicated), once a move
+  into another level has ended. Not heard: a move inside one level (`/tp`, an End gateway), a move that ends where
+  it started (a respawn in the dimension of the death), or a player who leaves before the move ends.
 - **`native_player_toggle_flight(player, name, flying, cancel)`**: a player's client started (`flying`) or stopped
   flying, once per change, for a player who may fly (creative or spectator), on a server. The player's state is swapped
   in, so `native_tell` and the other helpers reach them. Set `cancel` to refuse it: the player keeps the state they

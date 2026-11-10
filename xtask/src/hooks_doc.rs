@@ -3,68 +3,22 @@
 //! handler each hook reaches, from the catalog and the `native_*` functions'
 //! own docs, so the list never trails the code. `--check` fails when the file
 //! is not what the sources say.
+use super::lua_model::{
+    Class, Conv, Field, Host, Kind, Model, classify, declaration_served, flat_ts, listened_flag,
+};
 use horizon_mod_api_gen::{
     catalog_hooks, doc_comments, free_function_source, impl_functions, one_function,
 };
 use std::{collections::BTreeMap, fs, path::Path};
 use syn::Item;
 
-/// The engine hooks a scripted mod hears, and as what (`docs/lua-bindings.md`).
-const LUA_HOOKS: &[(&str, &str)] = &[
-    (
-        "server_tick",
-        "an event table with `phase`, `world_running` and the context",
-    ),
-    (
-        "world_lifecycle",
-        "an event table with `phase`, `error_text` and the context",
-    ),
-    (
-        "data_pack_files",
-        "`event.files`, appended in load order; reloads the scripts on `/reload`",
-    ),
-    (
-        "mob_spawned",
-        "an event table with `dimension`, `kind`, `pos` and `natural`, by kind",
-    ),
-    ("mob_ai_register", "an event table with `mob`, by kind"),
-    ("register_goals", "an event table with `mob`, by kind"),
-    (
-        "living_incoming_damage",
-        "an event table with `entity`, `kind`, `damage_type`, `causing`, `direct` and `amount`, by kind",
-    ),
-    (
-        "mob_killed",
-        "an event table with `player`, `entity` and `kind`, by kind",
-    ),
-    (
-        "mob_died",
-        "an event table with `dimension`, `entity`, `kind`, `damage_type`, `causing` and `player`, by kind",
-    ),
-    (
-        "interact_entity",
-        "an event table with `entity`, `kind` and `stack`, by kind",
-    ),
-    (
-        "entity_tick_post",
-        "an event table with `dimension`, `entity` and `kind`, by kind",
-    ),
-    (
-        "entity_tick_listened",
-        "answered while an `entity_tick_pre` or `entity_tick_post` handler exists",
-    ),
-    (
-        "random_tick",
-        "an event table with `dimension`, `state` (the id), `pos`, `state_props` and `data` (not a native field; written back), by block",
-    ),
-    (
-        "tick_block",
-        "an event table with `dimension`, `state` (the id), `pos`, `state_props` and `data` (not a native field; written back), by block",
-    ),
-    (
-        "right_click_block",
-        "an event table with `pos` and `face`; `horizon.cancel()` takes the click for that hand",
-    ),
+/// Hooks whose Lua cell stays exactly this curated text: the two
+/// declaration-served hooks (served from the `horizon.block_entity`
+/// declarations: they build no event table and take no `horizon.on`
+/// registration) and the three listened game queries (no event table of
+/// their own: the game answers them from their siblings' registries, so a
+/// script never registers for them).
+const LUA_VERBATIM: &[(&str, &str)] = &[
     (
         "block_entity",
         "`horizon.block_entity(block, { ticks, data })`: declaration-served, no `horizon.on` registration",
@@ -74,133 +28,56 @@ const LUA_HOOKS: &[(&str, &str)] = &[
         "`horizon.block_entity(block, { ticks = true })`: declaration-served, no `horizon.on` registration",
     ),
     (
-        "block_entity_tick",
-        "an event table with `dimension`, `pos` and `entity` (`id`, and `data` written back), by block id",
+        "entity_tick_listened",
+        "answered while an `entity_tick_pre` or `entity_tick_post` handler exists",
     ),
     (
-        "destroy_block",
-        "an event table with `pos`, `state` (the id) and `state_props`; `horizon.cancel()` keeps the block",
-    ),
-    (
-        "place_block",
-        "an event table with `stack`, `pos`, `state` (the id) and `state_props`; it only hears",
-    ),
-    (
-        "use_item",
-        "an event table with `stack`; `horizon.cancel()` takes the use",
-    ),
-    (
-        "use_item_on",
-        "an event table with `stack`, `pos` and `face`; `horizon.cancel()` takes the use",
-    ),
-    (
-        "attack_entity",
-        "an event table with `entity`, `kind` and `pos`, by kind; `horizon.cancel()` voids the blow",
-    ),
-    (
-        "living_entity_use_item_finish",
-        "an event table with `stack`, `entity`, `hand`, `duration` and `result`, by kind; set `event.result` for what stays in the hand",
-    ),
-    (
-        "inventory_tick",
-        "an event table with `slot` and `selected`",
-    ),
-    (
-        "item_picked_up",
-        "an event table with `player` (uuid text), `item` and `count`; `horizon.cancel()` leaves them there",
-    ),
-    (
-        "player_logged_in",
-        "an event table with `player` (the full table while they are on; `uuid` and the told `name` otherwise)",
-    ),
-    (
-        "player_logged_out",
-        "an event table with `player` (the full table while they are on; `uuid` and the told `name` otherwise)",
-    ),
-    (
-        "player_respawned",
-        "an event table with `player` (the full table while they are on; `uuid` and the told `name` otherwise)",
-    ),
-    (
-        "player_died",
-        "an event table with `player` (uuid text) and `cause` (the death message's key, or nil); it only hears",
-    ),
-    ("register_commands", "`horizon.command(usage, level, fn)`"),
-    ("perform_command", "`fn(player, args)` of `horizon.command`"),
-    (
-        "player_tick",
-        "an empty event table, every player every tick; `horizon.players()` is the whole list and `horizon.acting_player()` is the ticking player",
-    ),
-    (
-        "living_fall",
-        "an event table with `entity`, `kind`, `distance` and `multiplier`, by kind",
-    ),
-    ("living_heal", "an event table with `entity` and `amount`"),
-    (
-        "living_knockback",
-        "an event table with `entity`, `kind`, `damage_type`, `causing`, `direct`, `strength`, `x` and `z`, by kind",
-    ),
-    (
-        "player_chat",
-        "an event table with `player` (uuid text), `name`, `message` and `replies`; no host: set `event.replies` to answer, `horizon.cancel()` drops it for everybody",
-    ),
-    (
-        "player_command",
-        "an event table with `player`, `command` (no slash) and `replies`; set `event.replies` to answer, `horizon.cancel()` stops it",
-    ),
-    // The generated native `command` hook (any typed command, before the
-    // server sees it).
-    (
-        "command",
-        "an event table with `command`; `horizon.cancel()` drops the line",
-    ),
-    (
-        "item_crafted",
-        "an event table with `player` (uuid text), `recipe` and `stack`",
-    ),
-    (
-        "item_dropped",
-        "an event table with `player` (uuid text), `item` and `count`",
-    ),
-    (
-        "loot_drops",
-        "an event table with the loot context flat and `drops`, by block or by kind",
+        "living_equipment_listened",
+        "true while a `living_equipment_change` handler exists",
     ),
     (
         "hears_projectile_impacts",
         "true while a script watches `projectile_impact`",
     ),
+];
+
+/// Extra sentences appended after a generated Lua cell, where the curated
+/// table knew something the model does not spell out: the queued actions a
+/// hostless hook runs, the reads beside a hook, and the
+/// always-present-field notes. Everything else the curated row said now
+/// comes from the model itself.
+const LUA_NOTES: &[(&str, &str)] = &[
+    ("data_pack_files", "reloads the scripts on `/reload`"),
+    ("random_tick", "`data` is not a native field"),
+    ("tick_block", "`data` is not a native field"),
     (
-        "projectile_impact",
-        "an event table with `dimension`, `projectile`, `kind`, `owner`, `entity`, `entity_kind`, `block`, `face` and `at`, by kind; branch on `event.entity`: on an entity hit `block` and `face` are still `{0, 0, 0}`, and on a block hit `entity` is nil and `entity_kind` is `\"\"`; `horizon.cancel()` and it flies on",
+        "player_logged_in",
+        "the full table while they are on; `uuid` and the told `name` otherwise",
     ),
     (
-        "projectile_launch",
-        "an event table with `player` (the table, or nil), `entity` and `kind`, by kind",
+        "player_logged_out",
+        "the full table while they are on; `uuid` and the told `name` otherwise",
     ),
     (
-        "explosion_detonate",
-        "an event table with `dimension`, `center` and `blocks`; change `blocks` to spare",
+        "player_respawned",
+        "the full table while they are on; `uuid` and the told `name` otherwise",
     ),
     (
-        "player_changed_dimension",
-        "an event table with `player`, `from` and `to` (dimension ids)",
+        "player_died",
+        "`player` is uuid text; `cause` is the death message's key, or nil",
     ),
     (
-        "player_bed_enter",
-        "an event table with `player` and `pos` (`{x, y, z}` of the bed head, always present); `horizon.cancel()` keeps them out",
+        "register_commands",
+        "declare commands with `horizon.command(usage, level, fn)`",
     ),
     (
-        "player_exp_change",
-        "an event table with `player` and `amount`; set `event.amount` to change the points added",
+        "player_tick",
+        "every player every tick; `horizon.players()` is the whole list and `horizon.acting_player()` is the ticking player",
     ),
+    ("player_bed_enter", "`pos` is the bed head, always present"),
     (
         "player_container_open",
-        "an event table with `player`, `dimension`, `menu` and `pos` (the block's `{x, y, z}`, nil for no block)",
-    ),
-    (
-        "living_equipment_listened",
-        "true while a `living_equipment_change` handler exists",
+        "`pos` is the block's `{x, y, z}`, nil for no block",
     ),
     (
         "player_render_listened",
@@ -212,29 +89,316 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "living_equipment_change",
-        "an event table with `entity`, `kind`, `slot`, `from` and `to`, by kind (also fires for players, kind `minecraft:player`; `native_on_equip` is the other hook)",
-    ),
-    (
-        "entity_join_level",
-        "an event table with `dimension`, `entity`, `kind`, `pos` and `loaded_from_disk`, by kind",
-    ),
-    (
-        "hurt_enemy",
-        "an event table with `stack`, `entity` and `kind`, by kind",
+        "also fires for players, kind `minecraft:player`; `native_on_equip` is the other hook",
     ),
     (
         "living_entity_use_item_start",
-        "an event table with `stack`, `entity`, `hand` and `duration`, by kind; set `event.duration`, or `horizon.cancel()`",
+        "mob uses filter by kind; the player's own use reaches bare handlers",
     ),
     (
-        "hud",
-        "an event table with `batch` and `corners`, under the frame budget",
+        "projectile_impact",
+        "branch on `event.entity`: on an entity hit `block` and `face` are still `{0, 0, 0}`, and on a block hit `entity` is nil and `entity_kind` is `\"\"`",
     ),
-    (
-        "gui_layer_post",
-        "an event table with `layer` and `batch`, under the frame budget",
-    ),
+    ("projectile_launch", "`player` is the table, or nil"),
 ];
+
+/// Join backticked names the curated cells' way: `a`, `b` and `c`.
+fn ticked(names: &[String]) -> String {
+    let names: Vec<String> = names.iter().map(|n| format!("`{n}`")).collect();
+    match names.len() {
+        0 => String::new(),
+        1 => names[0].clone(),
+        2 => format!("{} and {}", names[0], names[1]),
+        _ => format!(
+            "{} and {}",
+            names[..names.len() - 1].join(", "),
+            names[names.len() - 1]
+        ),
+    }
+}
+
+/// Whether the script can change an event-table field: the `write_tag` rule
+/// of `lua_hooks.rs` (which `=>` markers the emitted arms carry), restated
+/// over the model's converter, the parameter's canonical type and the
+/// struct key, so the reference and the runtime cannot drift.
+fn writable(conv: &Conv, ty: &str, key: Option<&str>) -> bool {
+    match conv {
+        Conv::MutScalar
+        | Conv::MutString
+        | Conv::MutOptString
+        | Conv::MutPos
+        | Conv::MutVec3
+        | Conv::MutPair
+        | Conv::MutStrVec
+        | Conv::TextVal
+        | Conv::TextOpt
+        | Conv::LootDrops
+        | Conv::PreLogin => true,
+        // The level-tick `data` and the block-entity tick's entity table are
+        // written back by their bespoke arms; the mob view is not set, it
+        // queues the goal/body actions instead, and the draw handles are
+        // dot-called rather than set.
+        Conv::LevelData | Conv::BlockEntity => true,
+        Conv::Mob | Conv::HudBatch | Conv::Corners => false,
+        // Flat seeds and hand notes only read.
+        Conv::LifecycleCtx
+        | Conv::TickPhase
+        | Conv::WorldPhaseName
+        | Conv::LootCtx
+        | Conv::StateProps
+        | Conv::LevelProps
+        | Conv::HostDimension
+        | Conv::BlockAtPos
+        | Conv::BlockFromState => false,
+        Conv::Struct => {
+            let key = key.unwrap_or("?");
+            let norm: String = ty.chars().filter(|c| !c.is_whitespace()).collect();
+            if key.starts_with("Vec<") {
+                return true;
+            }
+            if key.starts_with("&[") {
+                return false;
+            }
+            if key.starts_with("Option<") {
+                return norm.starts_with("&mut");
+            }
+            if matches!(
+                key,
+                "NativeMapInfo" | "NativeNoteBlockChange" | "SoundPlayback"
+            ) {
+                return false;
+            }
+            norm.starts_with("&mut")
+        }
+        _ => false,
+    }
+}
+
+/// The event-table keys of one model field: the flat seeds write their table
+/// keys, not the native parameter name (which has no table key of its own).
+fn field_keys(f: &Field) -> Vec<String> {
+    let flat = flat_ts(&f.conv);
+    if flat.is_empty() {
+        vec![f.name.clone()]
+    } else {
+        flat.into_iter().map(|(name, _)| name).collect()
+    }
+}
+
+/// The Lua cell of one generated hook from the model: `an event table with
+/// <fields>; kind: <domain>|none; <how a script cancels or changes it>`.
+/// `perform_command` answers `(player, args)` instead of an event table, so
+/// it names that shape; the frame hooks draw rather than hear.
+fn lua_cell(model: &Model) -> String {
+    if model.name == "perform_command" {
+        return "calls `fn(player, args)` of `horizon.command`; kind: command words, the longest usage first; the matched usage runs".to_owned();
+    }
+    let mut keys: Vec<String> = model.fields.iter().flat_map(field_keys).collect();
+    for extra in &model.extras {
+        keys.push(extra.name.clone());
+    }
+    if let Some(out) = &model.out {
+        keys.push(out.name.clone());
+    }
+    let mut cell = if keys.is_empty() {
+        "an empty event table".to_owned()
+    } else {
+        format!("an event table with {}", ticked(&keys))
+    };
+    cell.push_str(&match &model.kind {
+        Kind::None => "; kind: none".to_owned(),
+        Kind::Field => "; kind: entity kind (`kind`)".to_owned(),
+        Kind::Entity { field, .. } => format!("; kind: kind of `{field}`"),
+        Kind::Loot => "; kind: loot block or entity kind".to_owned(),
+        Kind::Block { field } => format!("; kind: block (`{field}`)"),
+        Kind::BlockEntity { field } => format!("; kind: block-entity id (`{field}`)"),
+        Kind::Mob { field } => format!("; kind: mob kind (`{field}`)"),
+    });
+    // What the handler may set, in the model's own terms.
+    let mut powers: Vec<String> = Vec::new();
+    if let Some(out) = &model.out {
+        powers.push(format!(
+            "set `event.{}` to answer (nil leaves it to the next handler or vanilla)",
+            out.name
+        ));
+    }
+    if model.contract == "collect" {
+        let edits = edits_of(model);
+        if !edits.is_empty() {
+            powers.push(format!(
+                "edit {} in turn; every handler runs",
+                ticked(&edits)
+            ));
+        }
+    } else if !matches!(model.kind, Kind::Mob { .. }) {
+        let sets = sets_of(model);
+        if !sets.is_empty() {
+            powers.push(format!("set {}", ticked(&sets)));
+        }
+    }
+    if matches!(model.kind, Kind::Mob { .. }) {
+        powers.push(
+            "queue the goal/body actions (`add_goal`, `add_target_goal`, `clear_goals`, `clear_target_goals`, `set_body_rotation`); no host, so other actions are dropped"
+                .to_owned(),
+        );
+    }
+    if model.contract == "cancel" {
+        // The level-tick arms answer `handled()`, not `cancel()`: `cancel()`
+        // is not the level-tick cancel and the tick keeps running.
+        if model.host == Host::LevelWrite {
+            powers.push("`horizon.handled()` skips the block's own tick".to_owned());
+        } else {
+            powers.push("`horizon.cancel()` stops it".to_owned());
+        }
+    }
+    if model.frame {
+        let mut calls: Vec<String> = Vec::new();
+        for f in &model.fields {
+            if matches!(f.conv, Conv::HudBatch | Conv::Corners) {
+                calls.push(format!("`{}`", f.name));
+            }
+        }
+        let calls = match calls.len() {
+            0 => String::new(),
+            1 => calls[0].clone(),
+            _ => format!(
+                "{} and {}",
+                calls[..calls.len() - 1].join(", "),
+                calls[calls.len() - 1]
+            ),
+        };
+        powers.push(format!(
+            "draws under the frame budget; dot-call {calls}, the tables expire with the call"
+        ));
+    }
+    if powers.is_empty() {
+        powers.push("it only hears".to_owned());
+    }
+    cell.push_str("; ");
+    cell.push_str(&powers.join("; "));
+    // What the host does with the queued calls.
+    match model.host {
+        Host::GameMut | Host::LevelWrite => {}
+        Host::None if matches!(model.kind, Kind::Mob { .. }) => {}
+        Host::None => cell.push_str("; no host: queued actions are dropped"),
+        Host::GameRef | Host::Level | Host::LevelMut | Host::LevelTicks => {
+            cell.push_str("; reads only: queued actions are dropped")
+        }
+    }
+    if model.host == Host::LevelWrite {
+        cell.push_str(
+            "; the queued level writes run (`set_block_property`, `schedule_tick`, `summon`)",
+        );
+    }
+    cell
+}
+
+/// The `event.<field>` paths the handler may set, for the change clause: the
+/// pre-login gate answers through `<field>.refuse`, and the block-entity
+/// tick's entity table through `entity.data`.
+fn sets_of(model: &Model) -> Vec<String> {
+    let mut sets = Vec::new();
+    for f in &model.fields {
+        let ty = model
+            .dispatch_params
+            .iter()
+            .find(|p| p.name == f.name)
+            .map(|p| p.ty.as_str())
+            .unwrap_or("");
+        if !writable(&f.conv, ty, f.key.as_deref()) {
+            continue;
+        }
+        if matches!(f.conv, Conv::PreLogin) {
+            sets.push(format!("event.{}.refuse", f.name));
+        } else if matches!(f.conv, Conv::BlockEntity) {
+            sets.push("event.entity.data".to_owned());
+        } else {
+            sets.push(format!("event.{}", f.name));
+        }
+    }
+    for extra in &model.extras {
+        // The level-tick `data` is written back with the before-template
+        // rule; the other extras are seeded notes.
+        if matches!(extra.conv, Conv::LevelData) {
+            sets.push(format!("event.{}", extra.name));
+        }
+    }
+    sets
+}
+
+/// The `event.<field>` paths a collect hook's handlers edit in turn.
+fn edits_of(model: &Model) -> Vec<String> {
+    sets_of(model)
+}
+
+/// One hook's Lua cell and What text: the generated cell (plus its note,
+/// if any) for an event table, the curated text for a declaration or a
+/// listened query, and an empty cell with the exposure reason beside the
+/// native doc for a hook that does not reach Lua.
+fn lua_row(
+    name: &str,
+    class: &Class,
+    verbatim: &BTreeMap<&str, &str>,
+    notes: &BTreeMap<&str, &str>,
+    text: String,
+) -> Result<(String, String), String> {
+    match class {
+        Class::Generated(model) => {
+            if declaration_served(name) || listened_flag(name).is_some() {
+                let cell = verbatim.get(name).copied().ok_or_else(|| {
+                    format!("{name} takes no script handlers but LUA_VERBATIM names no text for it")
+                })?;
+                Ok((cell.to_owned(), text))
+            } else {
+                if verbatim.contains_key(name) {
+                    return Err(format!(
+                        "{name} is a generated event table but LUA_VERBATIM covers it"
+                    ));
+                }
+                let mut cell = lua_cell(model);
+                if let Some(note) = notes.get(name) {
+                    cell.push_str("; ");
+                    cell.push_str(note);
+                }
+                Ok((cell, text))
+            }
+        }
+        other => {
+            let text = format!("{} Not in Lua: {}.", text, exposure_of(name, other));
+            Ok((String::new(), text))
+        }
+    }
+}
+
+/// The exposure reason of a hook that does not reach Lua, in the short
+/// phrase of `docs/api/hook-exposure.md` (which the `lua-hooks` generator
+/// owns): the borrow, the missing converter, the live handle, the raw
+/// packets, or the level-tick host.
+fn exposure_of(name: &str, class: &Class) -> String {
+    let strip = |reason: &str, kind: &str| {
+        reason
+            .strip_prefix(&format!("{name}: {kind}: "))
+            .unwrap_or(reason)
+            .to_owned()
+    };
+    match class {
+        Class::Generated(_) => String::new(),
+        Class::Adapter(whys) => {
+            let mut reasons: Vec<String> = whys.iter().map(|w| strip(w, "adapter")).collect();
+            reasons.sort();
+            reasons.dedup();
+            reasons.join("; ")
+        }
+        Class::Tick => "a `ticks` parameter (level-tick host)".to_owned(),
+        Class::Cannot(why) => why
+            .split("; ")
+            .map(|w| strip(w, "unsupported"))
+            .collect::<Vec<_>>()
+            .join("; "),
+        Class::Handle(ty) => format!("a {ty} handle needs its own design"),
+        Class::Protocol => "raw packets need their own design".to_owned(),
+    }
+}
 
 /// The host helpers the Lua runtime calls, and the `horizon.*` function or
 /// hook argument each stands behind (`docs/lua-bindings.md`).
@@ -534,29 +698,46 @@ fn generate(root: &Path, check: bool) -> Result<(), String> {
         )?;
         prose(&f.attrs, native)
     };
-    let lua: BTreeMap<&str, &str> = LUA_HOOKS.iter().copied().collect();
+    let verbatim: BTreeMap<&str, &str> = LUA_VERBATIM.iter().copied().collect();
+    let notes: BTreeMap<&str, &str> = LUA_NOTES.iter().copied().collect();
     let lua_helpers: BTreeMap<&str, &str> = LUA_HELPERS.iter().copied().collect();
+    // Every hook in exactly one class, from the same model that emits the
+    // runtime and `horizon.d.lua`: the Lua cell of a generated hook comes
+    // from its model, and a hook of any other class keeps an empty cell
+    // with its exposure reason beside the native doc.
+    let classes = classify(root)?;
+    let class_of = |name: &str| {
+        classes.iter().find(|row| row.name == name).ok_or_else(|| {
+            format!("{name} is a hook point but the classifier names no class for it")
+        })
+    };
     let mut out = String::new();
     out.push_str("<!-- Generated by `cargo run -p xtask -- hooks-doc` from native-hooks.json and the native_* functions' docs: edit those, then regenerate. -->\n");
     out.push_str("# Hook points and host helpers\n\n");
     out.push_str("Every hook point a native mod (`docs/native-mods.md`) or a trait mod (`crates/horizon-client/src/mod_api.rs`) may listen to, \
-with the API level it arrived in, how it is taken (`listen`: it only hears; `claim`, `cancel`: a mod may stop it; `edit`: every mod changes a value in turn), \
+with the API level it arrived in, how it is taken (`listen`: it only hears; `cancel`: a mod may stop it; `collect`: every mod edits a value in turn; `replace`: the first answer wins), \
 and the handler a scripted mod (`docs/lua-bindings.md`) registers for it, where one exists. Then every helper the host offers them. \
+A hook with an empty Lua cell does not reach Lua: its row says why (`docs/api/hook-exposure.md` lists every such hook with its reason). \
 The full doc of each is on its `native_<name>` function.\n\n");
     out.push_str("## Hook points\n\n| Hook | API | Taken | Lua | What |\n|---|---|---|---|---|\n");
     let mut hooks = catalog_hooks(root, &catalog)?;
     hooks.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
     let mut count = 0;
+    let mut lua_cells = 0;
     for hook in &hooks {
         let name = hook["name"].as_str().ok_or("hook name missing")?;
         let target = hook["target"].as_str().ok_or("target missing")?;
         let contract = hook["mod_api"]["contract"].as_str().unwrap_or("listen");
         let text = docs_of(target, target_fn(target), &mut parsed)?;
         let api = api_of(&text).map_or("—".to_owned(), |n| n.to_string());
-        let lua = lua.get(name).copied().unwrap_or("");
+        let class = class_of(name)?;
+        let (lua, text) = lua_row(name, &class.class, &verbatim, &notes, text)?;
+        if !lua.is_empty() {
+            lua_cells += 1;
+        }
         out.push_str(&format!(
             "| `{name}` | {api} | {contract} | {} | {} |\n",
-            cell(lua),
+            cell(&lua),
             cell(&text)
         ));
         count += 1;
@@ -579,12 +760,8 @@ The full doc of each is on its `native_<name>` function.\n\n");
         out.push_str(&format!("| `{name}` | {api} | {lua} | {} |\n", cell(&text)));
     }
     out.push_str(&format!(
-        "\n{count} hook points, {} helpers; {} of the hooks and {} of the helpers reaching Lua.\n",
+        "\n{count} hook points, {} helpers; {lua_cells} of the hooks and {} of the helpers reaching Lua.\n",
         helpers.len(),
-        hooks
-            .iter()
-            .filter(|h| h["name"].as_str().is_some_and(|n| lua.contains_key(n)))
-            .count(),
         helpers
             .iter()
             .filter(|h| h["name"]
@@ -592,9 +769,11 @@ The full doc of each is on its `native_<name>` function.\n\n");
                 .is_some_and(|n| lua_helpers.contains_key(n)))
             .count()
     ));
-    for (name, _) in LUA_HOOKS {
+    for (name, _) in LUA_VERBATIM.iter().chain(LUA_NOTES.iter()) {
         if !hooks.iter().any(|h| h["name"].as_str() == Some(name)) {
-            return Err(format!("LUA_HOOKS names {name}, which is not a hook point"));
+            return Err(format!(
+                "the Lua cell table names {name}, which is not a hook point"
+            ));
         }
     }
     for (name, _) in LUA_HELPERS {
@@ -619,59 +798,94 @@ The full doc of each is on its `native_<name>` function.\n\n");
 
 #[cfg(test)]
 mod tests {
-    /// The hooks the Lua runtime answers (`impl Hooks for LuaMod`) are the
-    /// ones the reference says reach Lua, no more and no fewer.
+    /// Every generated hook has a non-empty Lua cell, and every hook of
+    /// another class has none: the reference never forgets a hook the
+    /// runtime reaches, and never invents one it does not.
     #[test]
-    fn the_hooks_the_runtime_answers_are_the_ones_the_reference_names() {
+    fn every_generated_hook_has_a_lua_cell_and_no_other_hook_does() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let src =
-            std::fs::read_to_string(root.join("crates/event-horizon-lua/src/lua_mods.rs")).unwrap();
-        let file = syn::parse_file(&src).unwrap();
-        let mut answered = std::collections::BTreeSet::new();
-        for item in file.items {
-            if let syn::Item::Impl(i) = item
-                && let Some((_, path, _)) = &i.trait_
-                && path.segments.last().is_some_and(|s| s.ident == "Hooks")
-            {
-                for it in i.items {
-                    if let syn::ImplItem::Fn(f) = it {
-                        answered.insert(f.sig.ident.to_string());
-                    }
+        let classes = super::classify(&root).unwrap();
+        let verbatim: std::collections::BTreeMap<&str, &str> =
+            super::LUA_VERBATIM.iter().copied().collect();
+        let notes: std::collections::BTreeMap<&str, &str> =
+            super::LUA_NOTES.iter().copied().collect();
+        let mut generated = 0;
+        let mut other = 0;
+        for row in &classes {
+            let (lua, _) = super::lua_row(
+                row.name.as_str(),
+                &row.class,
+                &verbatim,
+                &notes,
+                String::new(),
+            )
+            .unwrap();
+            match &row.class {
+                super::Class::Generated(_) => {
+                    assert!(
+                        !lua.is_empty(),
+                        "{} reaches Lua but its cell is empty",
+                        row.name
+                    );
+                    generated += 1;
+                }
+                _ => {
+                    assert!(
+                        lua.is_empty(),
+                        "{} does not reach Lua but has a cell",
+                        row.name
+                    );
+                    other += 1;
                 }
             }
         }
-        // The generated arms expand inside that same `impl` block, from the
-        // `gen_*` invocations, so they are not `fn` items above: their
-        // native names (each invocation's first token) are gathered here
-        // and counted as answered below where the reference covers them.
-        // Generated hooks the reference does not cover stay out, as before.
-        let gen_src = std::fs::read_to_string(
-            root.join("crates/event-horizon-lua/src/generated_hooks/mod.rs"),
-        )
-        .unwrap();
-        let mut generated = std::collections::BTreeSet::new();
-        for line in gen_src.lines() {
-            let line = line.trim_start();
-            if !line.starts_with("gen_") {
+        assert!(
+            generated > 400,
+            "only {generated} generated hooks; the coverage check is vacuous"
+        );
+        assert!(
+            other > 50,
+            "only {other} non-generated hooks; the coverage check is vacuous"
+        );
+    }
+
+    /// Every hook that does not reach Lua carries its exposure reason: the
+    /// reader can tell "not exposed" from "forgot to document".
+    #[test]
+    fn non_generated_hooks_carry_their_exposure_reason() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let classes = super::classify(&root).unwrap();
+        for row in &classes {
+            if matches!(&row.class, super::Class::Generated(_)) {
                 continue;
             }
-            let Some(paren) = line.find("!(") else {
-                continue;
-            };
-            let after = &line[paren + 2..];
-            let Some(name) = after.split([',', ' ']).next() else {
-                continue;
-            };
-            generated.insert(name.to_owned());
+            let reason = super::exposure_of(row.name.as_str(), &row.class);
+            assert!(!reason.is_empty(), "{} has no exposure reason", row.name);
         }
-        let named: std::collections::BTreeSet<String> = super::LUA_HOOKS
-            .iter()
-            .map(|(n, _)| n.to_string())
-            .collect();
-        // A reference hook with a generated arm counts as answered through
-        // it.
-        answered.extend(generated.intersection(&named).cloned());
-        assert_eq!(answered, named);
+        let reason_of = |name: &str| {
+            let row = classes.iter().find(|row| row.name == name).unwrap();
+            super::exposure_of(name, &row.class)
+        };
+        assert!(
+            reason_of("screen_draw").contains("render state"),
+            "draw refusal names render state"
+        );
+        assert!(
+            reason_of("server_packet").contains("raw packets"),
+            "packet refusal names raw packets"
+        );
+        assert!(
+            reason_of("update_shape").contains("level-tick host"),
+            "tick refusal names the level-tick host"
+        );
+        assert!(
+            reason_of("menu_button").contains("handle"),
+            "handle refusal names the handle"
+        );
+        assert!(
+            !reason_of("neighbor_changed").is_empty(),
+            "adapter refusal is non-empty"
+        );
     }
 
     /// The host helpers the Lua runtime calls (`host.name(...)` or
@@ -730,40 +944,148 @@ mod tests {
         assert_eq!(called, named);
     }
 
-    /// The hook names a script registers for are the generated hooks:
-    /// every reference row that takes a `horizon.on` registration names a
-    /// hook in the generated hooks' `GENERATED_HOOK_NAMES`. The
-    /// declaration-served rows (`block_entity`, `block_entity_ticks`) and
-    /// the listened-query rows (answered from their siblings' registries,
-    /// never registered for) take none.
+    /// A hook with a kind says so in its cell: three pins across the kind
+    /// shapes, then the global rule that every kind but none names its
+    /// domain and every kind-less hook says none.
     #[test]
-    fn the_hook_names_a_script_may_register_are_the_reference_s() {
+    fn a_hook_with_a_kind_says_so() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let src = std::fs::read_to_string(
-            root.join("crates/event-horizon-lua/src/generated_hooks/mod.rs"),
-        )
-        .unwrap();
-        let start = src.find("pub const GENERATED_HOOK_NAMES").unwrap();
-        let end = start + src[start..].find("];").unwrap();
-        let generated: std::collections::BTreeSet<String> = src[start..end]
-            .split('"')
-            .skip(1)
-            .step_by(2)
-            .map(str::to_owned)
-            .collect();
+        let classes = super::classify(&root).unwrap();
+        let cell_of = |name: &str| {
+            let row = classes.iter().find(|row| row.name == name).unwrap();
+            let super::Class::Generated(model) = &row.class else {
+                panic!("{name} should generate");
+            };
+            super::lua_cell(model)
+        };
         assert!(
-            !generated.is_empty(),
-            "GENERATED_HOOK_NAMES parsed empty; the registerable-names check is vacuous"
+            cell_of("attack_entity").contains("kind: entity kind (`kind`)"),
+            "attack_entity names its entity kind"
         );
-        for (name, _) in super::LUA_HOOKS {
-            if crate::lua_model::declaration_served(name)
-                || crate::lua_model::listened_flag(name).is_some()
+        assert!(
+            cell_of("random_tick").contains("kind: block (`state`)"),
+            "random_tick names its block"
+        );
+        assert!(
+            cell_of("loot_drops").contains("kind: loot block or entity kind"),
+            "loot_drops names its loot kind"
+        );
+        for row in &classes {
+            let super::Class::Generated(model) = &row.class else {
+                continue;
+            };
+            if super::declaration_served(row.name.as_str())
+                || super::listened_flag(row.name.as_str()).is_some()
             {
                 continue;
             }
+            let cell = super::lua_cell(model);
+            if row.name == "perform_command" {
+                assert!(
+                    cell.contains("kind: command words"),
+                    "perform_command names its command words"
+                );
+            } else if matches!(model.kind, super::Kind::None) {
+                assert!(
+                    cell.contains("kind: none"),
+                    "{} says it takes no kind",
+                    row.name
+                );
+            } else {
+                assert!(!cell.contains("kind: none"), "{} hides its kind", row.name);
+            }
+        }
+    }
+
+    /// Every hook says how a script cancels or changes it: the cancel hooks
+    /// name `horizon.cancel()` (the level ticks `horizon.handled()`), every
+    /// replace hook names the answer field it seeds nil, and every collect
+    /// hook names the field its handlers edit in turn.
+    #[test]
+    fn every_hook_says_how_a_script_cancels_or_changes_it() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let classes = super::classify(&root).unwrap();
+        for row in &classes {
+            let super::Class::Generated(model) = &row.class else {
+                continue;
+            };
+            if super::declaration_served(row.name.as_str())
+                || super::listened_flag(row.name.as_str()).is_some()
+                || row.name == "perform_command"
+            {
+                continue;
+            }
+            let cell = super::lua_cell(model);
+            if model.contract == "cancel" {
+                if model.host == super::Host::LevelWrite {
+                    assert!(
+                        cell.contains("horizon.handled()"),
+                        "{} names handled(), not cancel()",
+                        row.name
+                    );
+                    assert!(
+                        !cell.contains("horizon.cancel()"),
+                        "{} must not offer cancel()",
+                        row.name
+                    );
+                } else {
+                    assert!(
+                        cell.contains("horizon.cancel()"),
+                        "{} names horizon.cancel()",
+                        row.name
+                    );
+                }
+            }
+            if let Some(out) = &model.out {
+                assert!(
+                    cell.contains(&format!("event.{}", out.name)),
+                    "{} names its answer field",
+                    row.name
+                );
+            }
+            if model.contract == "collect" {
+                assert!(
+                    cell.contains("in turn"),
+                    "{} says its handlers edit in turn",
+                    row.name
+                );
+            }
+        }
+    }
+
+    /// The curated tables stay exact: every verbatim hook is a declaration
+    /// or a listened query (and every one of those has its text), and every
+    /// note hangs off a real event-table hook.
+    #[test]
+    fn the_curated_tables_stay_exact() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let classes = super::classify(&root).unwrap();
+        let mut special: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut tables: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for row in &classes {
+            if !matches!(&row.class, super::Class::Generated(_)) {
+                continue;
+            }
+            if super::declaration_served(row.name.as_str())
+                || super::listened_flag(row.name.as_str()).is_some()
+            {
+                special.insert(row.name.clone());
+            } else {
+                tables.insert(row.name.clone());
+            }
+        }
+        let verbatim: std::collections::BTreeSet<String> = super::LUA_VERBATIM
+            .iter()
+            .map(|(n, _)| n.to_string())
+            .collect();
+        assert_eq!(
+            verbatim, special,
+            "verbatim rows are exactly the declarations and listened queries"
+        );
+        for (name, _) in super::LUA_NOTES {
             assert!(
-                generated.contains(*name),
-                "{name} is in the reference but not in GENERATED_HOOK_NAMES"
+                tables.contains(*name),
+                "note {name} hangs off no event-table hook"
             );
         }
     }

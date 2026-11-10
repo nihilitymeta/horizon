@@ -72,10 +72,10 @@ Old name | New hook | New event shape | Old positional arguments become | Fields
 
 ### Every handler takes one event table
 
-There are no positional handler arguments anymore, with one exception: `perform_command` keeps its declaring
-call's `fn(player, args)` handler. Every other handler is `function(event)`, and the old argument positions map
+There are no positional `horizon.on` handler arguments anymore, with one exception: `perform_command` keeps its declaring
+call's `fn(player, args)` handler. Every other `horizon.on` handler is `function(event)`, and the old argument positions map
 to the event fields in the table above. A parameter the handler names past `event` reads nil (past `args` for
-`perform_command`).
+`perform_command`). (Goal functions keep their own shape, `function(mob, state, out)`.)
 
 ### Bare uuid fields are uuid text
 
