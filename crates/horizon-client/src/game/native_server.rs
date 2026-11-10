@@ -341,6 +341,19 @@ impl Game<'_> {
         if self.remote.is_some() {
             return players;
         }
+        // Inside a player's hook the hub may be out of reach (a guest's
+        // use/break) or back in place (their command): either way the body
+        // in `self.player` is the acting player's, never the owner's. Name
+        // that record for who it is, once: replace their hub row with the
+        // live one, or list them alone while the hub is out.
+        if let Some(acting) = self.native_acting_player() {
+            if let Some(slot) = players.iter_mut().find(|g| g.uuid == acting.uuid) {
+                *slot = acting;
+            } else {
+                players.insert(0, acting);
+            }
+            return players;
+        }
         let Some(p) = self.player.as_ref() else {
             return players;
         };

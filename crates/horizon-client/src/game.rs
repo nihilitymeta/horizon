@@ -18678,6 +18678,8 @@ fn write_level_for_role(
 }
 
 #[cfg(test)]
+mod guest_swap_tests;
+#[cfg(test)]
 mod inline_feature_parse_tests;
 #[cfg(test)]
 mod mannequin_save_tests;
