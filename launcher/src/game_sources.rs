@@ -758,6 +758,22 @@ mod tests {
     }
 
     #[test]
+    fn the_same_repository_in_two_cases_is_one_source() {
+        let _lock = HOME_LOCK.lock().unwrap();
+        let home = scratch_home("two-cases");
+        save(&[]).unwrap();
+        let (repo, _) = add("https://github.com/Owner/Repo", false).unwrap();
+        assert_eq!(repo, "Owner/Repo");
+        assert!(add("owner/repo", false).is_err());
+        assert_eq!(load().len(), 1);
+        set_auto_update("OWNER/REPO", true).unwrap();
+        assert!(load()[0].auto_update);
+        remove("owner/REPO").unwrap();
+        assert!(load().is_empty());
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
     fn a_download_gets_a_new_folder_only_its_owner_can_open() {
         let a = private_scratch_dir().unwrap();
         let b = private_scratch_dir().unwrap();
