@@ -522,7 +522,9 @@ fn download(url: &str) -> Result<Vec<u8>, String> {
         .read_to_end(&mut body)
         .map_err(|e| format!("Download interrupted: {e}"))?;
     if body.len() as u64 > MAX_ASSET {
-        return Err("The file is bigger than 64 MiB: not a native mod bundle.".into());
+        return Err(
+            crate::i18n::tr("The file is bigger than 64 MiB: not a native mod bundle.").into(),
+        );
     }
     Ok(body)
 }

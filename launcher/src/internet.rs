@@ -210,7 +210,7 @@ impl Launcher {
         }
         let email = self.servers.value(Field::Email).trim().to_string();
         if !email.is_empty() && !email.contains('@') {
-            i.message = Some(Err("That isn't an email address.".into()));
+            i.message = Some(Err(crate::i18n::tr("That isn't an email address.").into()));
             return;
         }
         i.busy = true;

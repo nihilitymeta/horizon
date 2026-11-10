@@ -196,7 +196,7 @@ pub fn device_code(ep: &Endpoints, client_id: &str) -> Result<DeviceCode, String
 fn oauth_error(v: &Value) -> String {
     match v.get("error").and_then(Value::as_str) {
         Some("authorization_declined") => "Sign-in was declined in the browser.".into(),
-        Some("expired_token") => "The sign-in code expired. Start again.".into(),
+        Some("expired_token") => crate::i18n::tr("The sign-in code expired. Start again.").into(),
         Some("bad_verification_code") => "The sign-in code was not recognised. Start again.".into(),
         Some("invalid_grant") => SIGN_IN_AGAIN.into(),
         Some("invalid_client" | "unauthorized_client") => {
@@ -250,12 +250,12 @@ pub fn wait_for_sign_in(
         let until = std::time::Instant::now() + Duration::from_secs(interval);
         while std::time::Instant::now() < until {
             if cancelled() {
-                return Err("Sign-in cancelled.".into());
+                return Err(crate::i18n::tr("Sign-in cancelled.").into());
             }
             std::thread::sleep(Duration::from_millis(100));
         }
         if now() > code.expires_at {
-            return Err("The sign-in code expired. Start again.".into());
+            return Err(crate::i18n::tr("The sign-in code expired. Start again.").into());
         }
         match poll(ep, client_id, code)? {
             Poll::Pending => {}
@@ -2230,7 +2230,7 @@ fn accept_sign_in(
     progress: &dyn Fn(session::Phase),
 ) -> Result<(), String> {
     if cancelled() {
-        return Err("Sign-in cancelled.".into());
+        return Err(crate::i18n::tr("Sign-in cancelled.").into());
     }
     if let Some(expected) = expected {
         if expected.uuid != account.uuid {

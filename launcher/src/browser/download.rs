@@ -161,7 +161,9 @@ pub(super) fn save_from_anywhere(
             }
             done += n as u64;
             if done > MAX || (file.size > 0 && done > file.size) {
-                return Err("The download is larger than its source says.".to_string());
+                return Err(
+                    crate::i18n::tr("The download is larger than its source says.").to_string(),
+                );
             }
             hasher.update(&buf[..n]);
             out.write_all(&buf[..n]).map_err(|e| e.to_string())?;

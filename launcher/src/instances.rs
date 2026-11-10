@@ -513,7 +513,7 @@ fn create_in(
 ) -> Result<Instance, String> {
     let name = name.trim();
     if name.is_empty() {
-        return Err("An instance needs a name.".into());
+        return Err(crate::i18n::tr("An instance needs a name.").into());
     }
     let all = list_in(game_home, data);
     if all.iter().any(|i| i.name.eq_ignore_ascii_case(name)) {
@@ -626,7 +626,7 @@ fn edit_in(
         .filter(|g| !g.is_empty());
     if let Some(name) = &meta.name {
         if name.is_empty() {
-            return Err("An instance needs a name.".into());
+            return Err(crate::i18n::tr("An instance needs a name.").into());
         }
         // Only a new name is checked: an import can share a name, and changing anything
         // else about it must still work.

@@ -3239,7 +3239,7 @@ pub fn server(tag: &str, folder: &Path, accept_eula: bool) -> Result<Command, St
         agree_eula(folder)?;
     }
     if !eula_agreed(folder) {
-        return Err("Running a server needs your agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA). Accept it to continue.".into());
+        return Err(crate::i18n::tr("Running a server needs your agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA). Accept it to continue.").into());
     }
     fs::create_dir_all(folder).map_err(|e| e.to_string())?;
     Ok(server_command(tag, folder))

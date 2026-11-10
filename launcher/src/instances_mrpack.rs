@@ -32,7 +32,7 @@ pub fn game_of(index: &Value) -> Result<(String, Option<Loader>), String> {
             }
         };
         if loader.is_some() {
-            return Err("The pack names more than one mod loader.".into());
+            return Err(crate::i18n::tr("The pack names more than one mod loader.").into());
         }
         let version = version
             .as_str()

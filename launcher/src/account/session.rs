@@ -408,7 +408,12 @@ pub(super) fn join_server_with(
         "Mojang's session server",
     )? {
         (200..=299, _) => Ok(()),
-        (403, _) => Err("Mojang could not confirm your account. Sign in again and retry.".into()),
-        _ => Err("Mojang's session server is not answering. Try again later.".into()),
+        (403, _) => Err(crate::i18n::tr(
+            "Mojang could not confirm your account. Sign in again and retry.",
+        )
+        .into()),
+        _ => Err(
+            crate::i18n::tr("Mojang's session server is not answering. Try again later.").into(),
+        ),
     }
 }

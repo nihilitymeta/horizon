@@ -308,7 +308,9 @@ pub fn ensure_allowed(kind: Kind) -> Result<(), String> {
 pub fn submit(item: &Item) -> Result<String, String> {
     ensure_allowed(item.kind())?;
     if !outbox::push(&home(), item).map_err(|e| e.to_string())? {
-        return Err("Today's limit for these is reached; try again tomorrow.".into());
+        return Err(
+            crate::i18n::tr("Today's limit for these is reached; try again tomorrow.").into(),
+        );
     }
     Ok(match send() {
         Flush::Sent { .. } => "Sent. Thank you.".into(),

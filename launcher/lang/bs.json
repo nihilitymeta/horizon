@@ -1272,5 +1272,18 @@
   "Your system keyring didn't answer within {seconds} seconds. Make sure it is running and unlocked, then restart the launcher.": "Sistemski privjesak za ključeve nije odgovorio u roku od {seconds} sekundi. Provjerite da li radi i da je otključan, a zatim ponovo pokrenite pokretač.",
   "Can't read {name}'s sign-in: {why}": "Nije moguće pročitati prijavu za {name}: {why}",
   "Horizon runs a data pack's functions, function tags, predicates, item modifiers, recipes, loot tables, advancements, villager trades, damage types, most tags and most worldgen (biomes, features, structures, dimensions). Other files, such as world presets, are not read yet.": "Horizon runs a data pack's functions, function tags, predicates, item modifiers, recipes, loot tables, advancements, villager trades, damage types, most tags and most worldgen (biomes, features, structures, dimensions). Other files, such as world presets, are not read yet.",
-  "{title} would change nothing in Horizon yet: Horizon doesn't read its {files}.": "{title} would change nothing in Horizon yet: Horizon doesn't read its {files}."
+  "{title} would change nothing in Horizon yet: Horizon doesn't read its {files}.": "{title} would change nothing in Horizon yet: Horizon doesn't read its {files}.",
+  "An instance needs a name.": "An instance needs a name.",
+  "That isn't an email address.": "That isn't an email address.",
+  "Today's limit for these is reached; try again tomorrow.": "Today's limit for these is reached; try again tomorrow.",
+  "The pack names more than one mod loader.": "The pack names more than one mod loader.",
+  "The download is larger than its source says.": "The download is larger than its source says.",
+  "This server is no longer in the launcher’s list.": "This server is no longer in the launcher’s list.",
+  "Turn off running in the background before deleting this server.": "Turn off running in the background before deleting this server.",
+  "This is not a server folder.": "This is not a server folder.",
+  "Could not check running games and builds; no files were moved.": "Could not check running games and builds; no files were moved.",
+  "Running a server needs your agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA). Accept it to continue.": "Running a server needs your agreement to the Minecraft EULA (https://aka.ms/MinecraftEULA). Accept it to continue.",
+  "The file is bigger than 64 MiB: not a native mod bundle.": "The file is bigger than 64 MiB: not a native mod bundle.",
+  "Sign-in cancelled.": "Sign-in cancelled.",
+  "The sign-in code expired. Start again.": "The sign-in code expired. Start again."
 }

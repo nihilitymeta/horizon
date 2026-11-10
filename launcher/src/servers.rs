@@ -121,10 +121,13 @@ pub fn forget_remote(host: &str, dir: &Path) -> Result<(), String> {
 /// Removes a registered, stopped server, retaining its files in the system trash.
 pub fn delete(dir: &Path) -> Result<(), String> {
     if !list().iter().any(|entry| entry.dir == dir) {
-        return Err("This server is no longer in the launcher’s list.".into());
+        return Err(crate::i18n::tr("This server is no longer in the launcher’s list.").into());
     }
     if service_installed(dir) {
-        return Err("Turn off running in the background before deleting this server.".into());
+        return Err(crate::i18n::tr(
+            "Turn off running in the background before deleting this server.",
+        )
+        .into());
     }
     trash_stopped_server(dir, crate::desktop_seams::to_trash)?;
     forget(dir).map_err(|e| {
@@ -143,7 +146,7 @@ fn trash_stopped_server(
         .is_symlink()
         || !dir.join("server.toml").is_file()
     {
-        return Err("This is not a server folder.".into());
+        return Err(crate::i18n::tr("This is not a server folder.").into());
     }
     let state = dir.join(".horizon");
     fs::create_dir_all(&state).map_err(|e| e.to_string())?;
