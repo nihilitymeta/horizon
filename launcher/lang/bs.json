@@ -1215,6 +1215,7 @@
   "Update the launcher automatically": "Automatski ažuriraj pokretač",
   "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Instalira noviju verziju pokretača kada je pronađe. Isključeno zadržava lokalnu verziju kakva jeste.",
   "Added {repo}.": "Added {repo}.",
+  "Added {repo}. It updates itself, and Horizon's own updates are off.": "Added {repo}. It updates itself, and Horizon's own updates are off.",
   "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
   "GitHub sources": "GitHub sources",
   "Installed {tag}": "Installed {tag}",

@@ -59,10 +59,17 @@ impl Launcher {
         if text.is_empty() {
             return;
         }
-        self.sources.message = Some(
-            game_sources::add(&text, true)
-                .map(|repo| trf("Added {repo}.", &[("repo", &repo)]).to_string()),
-        );
+        self.sources.message = Some(game_sources::add(&text, true).map(|(repo, took_over)| {
+            if took_over {
+                trf(
+                    "Added {repo}. It updates itself, and Horizon's own updates are off.",
+                    &[("repo", &repo)],
+                )
+                .to_string()
+            } else {
+                trf("Added {repo}.", &[("repo", &repo)]).to_string()
+            }
+        }));
         if matches!(self.sources.message, Some(Ok(_))) {
             self.sources.text = LineEdit::new(String::new(), 200, 40);
         }

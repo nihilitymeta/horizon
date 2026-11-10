@@ -1215,6 +1215,7 @@
   "Update the launcher automatically": "Launcher automatisch bijwerken",
   "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Installeert een nieuwere launcherversie zodra die gevonden wordt. Uit laat een lokale build zoals hij is.",
   "Added {repo}.": "{repo} toegevoegd.",
+  "Added {repo}. It updates itself, and Horizon's own updates are off.": "Added {repo}. It updates itself, and Horizon's own updates are off.",
   "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Spelbuilds die een repository als GitHub-releases publiceert, zoals die van Event Horizon. Elke build wordt geïnstalleerd op de spelbestanden van een geïnstalleerde versie.",
   "GitHub sources": "GitHub-bronnen",
   "Installed {tag}": "{tag} geïnstalleerd",

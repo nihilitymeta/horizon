@@ -1215,6 +1215,7 @@
   "Update the launcher automatically": "லாஞ்சரைத் தானாகப் புதுப்பி",
   "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "புதிய லாஞ்சர் வெளியீடு கிடைக்கும்போது அதை நிறுவும். அணைத்தால் உள்ளூர் பில்ட் அப்படியே இருக்கும்.",
   "Added {repo}.": "Added {repo}.",
+  "Added {repo}. It updates itself, and Horizon's own updates are off.": "Added {repo}. It updates itself, and Horizon's own updates are off.",
   "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
   "GitHub sources": "GitHub sources",
   "Installed {tag}": "Installed {tag}",

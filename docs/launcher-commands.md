@@ -851,6 +851,11 @@ Add a repository (https://github.com/<owner>/<repo>, or <owner>/<repo>).
 - `REPO`
 - `--no-auto-update`: Don't install its new releases when the launcher checks for updates
 
+Unless `--no-auto-update` is given (and the repository is not the default source), the source
+updates itself and Horizon's own automatic updates turn off: the launcher no longer updates
+itself, and new Horizon game versions are no longer installed automatically. Turn them back on
+by hand in the settings if you want them.
+
 MCP: `sources_add`.
 
 ## `horizon-launcher sources remove`

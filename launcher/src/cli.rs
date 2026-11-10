@@ -3799,7 +3799,10 @@ fn sources(action: SourcesCmd, as_json: bool) -> Result<(), String> {
             repo,
             no_auto_update,
         } => {
-            let repo = game_sources::add(&repo, !no_auto_update)?;
+            let (repo, took_over) = game_sources::add(&repo, !no_auto_update)?;
+            if took_over {
+                println!("Horizon's own updates are off (the launcher's and new game versions'); this source updates itself. Turn them back on in settings if you want them.");
+            }
             println!(
                 "Added {repo}. Install its newest release: horizon-launcher sources update {repo}"
             );

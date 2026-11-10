@@ -128,8 +128,10 @@ fn edit(change: impl FnOnce(&mut Vec<Source>) -> Result<(), String>) -> Result<(
     save(&sources)
 }
 
-/// Adds the repository `text` names, updating itself when `auto_update`.
-pub fn add(text: &str, auto_update: bool) -> Result<String, String> {
+/// Adds the repository `text` names, updating itself when `auto_update`. A source that updates
+/// itself takes over the updates: Horizon's own automatic ones turn off
+/// ([`step_aside_for_horizon_updates`]). Returns the repository, and whether it took over.
+pub fn add(text: &str, auto_update: bool) -> Result<(String, bool), String> {
     let repo = repo_of(text)?;
     edit(|sources| {
         if sources.iter().any(|s| s.repo.eq_ignore_ascii_case(&repo)) {
@@ -142,7 +144,33 @@ pub fn add(text: &str, auto_update: bool) -> Result<String, String> {
         });
         Ok(())
     })?;
-    Ok(repo)
+    // The fork's own default source is not "Horizon's own": following it changes nothing.
+    let took_over = auto_update && !repo.eq_ignore_ascii_case(DEFAULT);
+    if took_over {
+        step_aside_for_horizon_updates()?;
+    }
+    Ok((repo, took_over))
+}
+
+/// Turns Horizon's own automatic updates off: the launcher updating itself
+/// (`Settings::auto_update_launcher`) and new Horizon versions installing themselves
+/// (`Settings::auto_install`). The player can turn either back on by hand. Nothing happens when
+/// they are already off, so a settings file that never said stays as it was.
+fn step_aside_for_horizon_updates() -> Result<(), String> {
+    let mut settings = backend::Settings::load();
+    let mut changed = false;
+    if settings.launcher_updates() {
+        settings.auto_update_launcher = Some(false);
+        changed = true;
+    }
+    if settings.auto_install() {
+        settings.install_new_versions = Some(false);
+        changed = true;
+    }
+    if changed {
+        settings.save()?;
+    }
+    Ok(())
 }
 
 /// Forgets a source. The versions it installed stay: remove them on the Versions page.
@@ -635,6 +663,73 @@ mod tests {
         // Something picked by hand (a local build, another import) stays.
         assert!(!selects(Some("local-2026-11-04-d164a4523"), Some(&before)));
         assert!(!selects(Some("imported-2026-11-01-1234567"), Some(&before)));
+    }
+
+    /// The env var both `add` tests share: one scratch launcher home at a time (`data_dir`).
+    static HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn scratch_home(name: &str) -> std::path::PathBuf {
+        let home =
+            std::env::temp_dir().join(format!("horizon-sources-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&home);
+        fs::create_dir_all(&home).unwrap();
+        std::env::set_var("HORIZON_LAUNCHER_HOME", &home);
+        home
+    }
+
+    #[test]
+    fn a_source_that_updates_itself_takes_over_from_horizons_own_updates() {
+        let _lock = HOME_LOCK.lock().unwrap();
+        let home = scratch_home("take-over");
+        // Both of Horizon's own automatic updates on, as a saved settings file has them.
+        backend::Settings {
+            auto_update_launcher: Some(true),
+            install_new_versions: Some(true),
+            ..backend::Settings::default()
+        }
+        .save()
+        .unwrap();
+        let (repo, took_over) = add("https://github.com/a/b", true).unwrap();
+        assert_eq!(repo, "a/b");
+        assert!(took_over);
+        // The source itself updates; Horizon's own updates are off in the saved settings.
+        assert!(load().iter().any(|s| s.repo == "a/b" && s.auto_update));
+        let saved = backend::Settings::load();
+        assert_eq!(saved.auto_update_launcher, Some(false));
+        assert_eq!(saved.install_new_versions, Some(false));
+        // A source added without its own updates takes nothing over.
+        backend::Settings {
+            auto_update_launcher: Some(true),
+            ..backend::Settings::default()
+        }
+        .save()
+        .unwrap();
+        let (_, took_over) = add("c/d", false).unwrap();
+        assert!(!took_over);
+        assert_eq!(backend::Settings::load().auto_update_launcher, Some(true));
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn adding_the_default_source_changes_nothing_else() {
+        let _lock = HOME_LOCK.lock().unwrap();
+        let home = scratch_home("default");
+        save(&[]).unwrap();
+        backend::Settings {
+            auto_update_launcher: Some(true),
+            install_new_versions: Some(true),
+            ..backend::Settings::default()
+        }
+        .save()
+        .unwrap();
+        let (repo, took_over) = add(DEFAULT, true).unwrap();
+        assert_eq!(repo, DEFAULT);
+        assert!(!took_over);
+        assert!(load().iter().any(|s| s.repo == DEFAULT && s.auto_update));
+        let saved = backend::Settings::load();
+        assert_eq!(saved.auto_update_launcher, Some(true));
+        assert_eq!(saved.install_new_versions, Some(true));
+        fs::remove_dir_all(home).unwrap();
     }
 
     #[test]

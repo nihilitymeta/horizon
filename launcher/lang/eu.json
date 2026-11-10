@@ -1215,6 +1215,7 @@
   "Update the launcher automatically": "Eguneratu abiarazlea automatikoki",
   "Installs a newer launcher release when one is found. Off keeps a local build as it is.": "Abiarazlearen bertsio berriago bat instalatzen du aurkitzen duenean. Desaktibatuta, bertsio lokala dagoen bezala uzten du.",
   "Added {repo}.": "Added {repo}.",
+  "Added {repo}. It updates itself, and Horizon's own updates are off.": "Added {repo}. It updates itself, and Horizon's own updates are off.",
   "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.": "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
   "GitHub sources": "GitHub sources",
   "Installed {tag}": "Installed {tag}",
