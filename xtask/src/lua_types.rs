@@ -29,10 +29,7 @@ const TYPES: &[(&str, &str)] = &[
     // on, else just the uuid and the name a hook told before, if any
     // (`player_left` always; a player whose state is out of reach otherwise).
     ("PlayerRef", "Player | { uuid: string, name: string? }"),
-    // `item_hit`'s item: the held stack as the host tells it, without `damage`.
-    ("HitItem", "{ id: string, count: number, plain: boolean }"),
     ("IdKind", "{ id: number, kind: string }"),
-    ("Target", "{ id: number, kind: string, position: Vec3 }"),
     ("Block", "{ x: number, y: number, z: number, id: string }"),
     (
         "LootBlock",
@@ -76,10 +73,6 @@ const TYPES: &[(&str, &str)] = &[
     // by uuid, `Vec2` for pairs, `Chunk` for chunk columns).
     ("Vec2", "{ x: number, y: number }"),
     ("Chunk", "{ x: number, z: number }"),
-    (
-        "Hit",
-        "{ x: number, y: number, z: number, entity: number?, entity_kind: string?, block: Block?, face: Vec3? }",
-    ),
     (
         "Time",
         "{ dimension: string, day_time: number, day: number, time_of_day: number, rain: number, thunder: number }",
@@ -324,8 +317,6 @@ const FUNCTIONS: &[(&str, &str)] = &[
         "give_items",
         "((id: string, count: number) -> ()) & ((who: string | Player, id: string, count: number) -> ())",
     ),
-    ("set_result", "(id: string?, count: number?) -> ()"),
-    ("set_count", "(n: number) -> ()"),
     ("feedback", "(text: string) -> ()"),
     ("tell", "(who: string | Player, text: string) -> ()"),
     ("action_bar", "(who: string | Player, text: string) -> ()"),
@@ -391,10 +382,6 @@ const FUNCTIONS: &[(&str, &str)] = &[
         "effect",
         "(target: number | string | Player, name: string, ticks: number, amplifier: number?) -> ()",
     ),
-    ("set_distance", "(n: number) -> ()"),
-    ("set_multiplier", "(n: number) -> ()"),
-    ("set_strength", "(n: number) -> ()"),
-    ("set_duration", "(ticks: number) -> ()"),
     ("reply", "(text: string) -> ()"),
 ];
 

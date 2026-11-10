@@ -8,9 +8,7 @@ export type Held = { item: string, count: number, plain: boolean }
 export type Player = { uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number, held: Held? }
 export type Named = { uuid: string, name: string }
 export type PlayerRef = Player | { uuid: string, name: string? }
-export type HitItem = { id: string, count: number, plain: boolean }
 export type IdKind = { id: number, kind: string }
-export type Target = { id: number, kind: string, position: Vec3 }
 export type Block = { x: number, y: number, z: number, id: string }
 export type LootBlock = { x: number, y: number, z: number, id: string, state: string }
 export type Nearby = { id: number, kind: string, position: Vec3, distance: number, health: number, alive: boolean, hostile: boolean, baby: boolean, target: any }
@@ -26,7 +24,6 @@ export type BlockEntity = { id: string, data: Data }
 export type Component = { text: string?, translate: string?, color: string?, bold: boolean?, italic: boolean?, underlined: boolean?, strikethrough: boolean?, obfuscated: boolean?, extra: { Component }? }
 export type Vec2 = { x: number, y: number }
 export type Chunk = { x: number, z: number }
-export type Hit = { x: number, y: number, z: number, entity: number?, entity_kind: string?, block: Block?, face: Vec3? }
 export type Time = { dimension: string, day_time: number, day: number, time_of_day: number, rain: number, thunder: number }
 export type Raycast = { id: string, x: number, y: number, z: number, block: Vec3 }
 export type Light = { block: number, sky: number }
@@ -981,8 +978,6 @@ declare horizon: {
     set_amount: (n: number) -> (),
     take_items: ((id: string, count: number) -> ()) & ((who: string | Player, id: string, count: number) -> ()),
     give_items: ((id: string, count: number) -> ()) & ((who: string | Player, id: string, count: number) -> ()),
-    set_result: (id: string?, count: number?) -> (),
-    set_count: (n: number) -> (),
     feedback: (text: string) -> (),
     tell: (who: string | Player, text: string) -> (),
     action_bar: (who: string | Player, text: string) -> (),
@@ -1009,10 +1004,6 @@ declare horizon: {
     drop_item: (x: number, y: number, z: number, id: string, count: number?) -> (),
     set_nickname: (who: string | Player, name: string?) -> (),
     effect: (target: number | string | Player, name: string, ticks: number, amplifier: number?) -> (),
-    set_distance: (n: number) -> (),
-    set_multiplier: (n: number) -> (),
-    set_strength: (n: number) -> (),
-    set_duration: (ticks: number) -> (),
     reply: (text: string) -> (),
 }
 

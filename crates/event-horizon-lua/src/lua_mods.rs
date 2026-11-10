@@ -1812,8 +1812,6 @@ impl LuaMod {
             "set_amount",
             "take_items",
             "give_items",
-            "set_result",
-            "set_count",
             "feedback",
             "tell",
             "action_bar",
@@ -1840,10 +1838,6 @@ impl LuaMod {
             "drop_item",
             "set_nickname",
             "effect",
-            "set_distance",
-            "set_multiplier",
-            "set_strength",
-            "set_duration",
             "reply",
         ] {
             let slot = slot.clone();
@@ -1865,6 +1859,45 @@ impl LuaMod {
                     entry.set("args", lua.create_sequence_from(args)?)?;
                     queue.push(entry)?;
                     Ok(())
+                })?,
+            )?;
+        }
+        // Calls the deleted hooks used to queue, with no consumer left:
+        // installing them above would take the call and drop it in
+        // `run_action`'s `unknown action` warn, reporting success. Each
+        // fails at the call instead, naming the event field that replaces
+        // it, so the handler fails through the hook's error path.
+        for (action, message) in [
+            (
+                "set_count",
+                "horizon.set_count does nothing: inventory_tick has no stack.",
+            ),
+            (
+                "set_result",
+                "horizon.set_result does nothing: set event.result = { id = ..., count = ... } or nil in living_entity_use_item_finish.",
+            ),
+            (
+                "set_duration",
+                "horizon.set_duration does nothing: set event.duration = n in living_entity_use_item_start.",
+            ),
+            (
+                "set_distance",
+                "horizon.set_distance does nothing: set event.distance = n in living_fall.",
+            ),
+            (
+                "set_multiplier",
+                "horizon.set_multiplier does nothing: set event.multiplier = n in living_fall.",
+            ),
+            (
+                "set_strength",
+                "horizon.set_strength does nothing: set event.strength = n in living_knockback.",
+            ),
+        ] {
+            let message = message.to_owned();
+            api.set(
+                action,
+                lua.create_function(move |_, _: MultiValue| -> mlua::Result<()> {
+                    Err(mlua::Error::runtime(message.clone()))
                 })?,
             )?;
         }
@@ -3215,6 +3248,218 @@ experimental = ["scripts"]
             .expect("the failed set_body_rotation is recorded");
         assert!(e.contains("no such body rotation"), "{e}");
         assert!(e.contains("vanilla"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The hook's recorded error for a mod that just failed.
+    fn hook_error_of(m: &LuaMod) -> String {
+        horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == m.id())
+            .and_then(|s| s.error)
+            .expect("the dead action call is the hook's error")
+    }
+
+    /// An hmod with its own manifest id (the status store is keyed by mod
+    /// id, and every `hmod` is `ruby`): loads it, leaves a status row,
+    /// and hands back a host with the wand.
+    fn dead_mod(name: &str, script: &[u8]) -> (LuaMod, MobHost, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("horizon-lua-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{name}.hmod"));
+        let manifest = MANIFEST_TEXT.replacen("id = \"ruby\"", &format!("id = \"{name}\""), 1);
+        std::fs::write(
+            &path,
+            Package::write_files(&manifest, None, &[("scripts/init.lua", script)]).unwrap(),
+        )
+        .unwrap();
+        let m = LuaMod::load(&path, &[]).unwrap();
+        set_status(ModStatus {
+            id: m.id().into(),
+            ..Default::default()
+        });
+        let host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        (m, host, dir)
+    }
+
+    #[test]
+    fn dead_host_actions_error_and_leave_their_hooks_working() {
+        let (m, mut host, dir) = dead_mod(
+            "dead_host_actions",
+            br#"
+            horizon.on("inventory_tick", function(event)
+              __witness = (__witness or 0) + 1
+              horizon.broadcast("tick " .. event.slot)
+              if CALL_DEAD then horizon.set_count(3) end
+            end)
+            horizon.on("living_entity_use_item_finish", function(event)
+              if event.stack.id ~= "ruby:wand" then return end
+              if CALL_DEAD then horizon.set_result("minecraft:stick", 2) end
+              event.result = { id = "minecraft:stick", count = 2 }
+            end)
+            horizon.on("living_entity_use_item_start", function(event)
+              if event.stack.id ~= "ruby:wand" then return end
+              if CALL_DEAD then horizon.set_duration(10) end
+              event.duration = 10
+            end)
+            "#,
+        );
+        let wand = wand();
+        let start = || {
+            test_events::living_entity_use_item_start_event(
+                &wand,
+                None,
+                horizon_client::mod_api::Hand::Off,
+                32,
+            )
+        };
+        // The live paths first: the broadcast runs, the writes land.
+        m.lua.globals().set("CALL_DEAD", false).unwrap();
+        m.inventory_tick(&mut host, &mut test_events::inventory_tick_event(3, true));
+        assert_eq!(*host.lines.lock().unwrap(), ["tick 3"]);
+        let mut result = Some(wand.clone());
+        m.living_entity_use_item_finish(
+            &mut host,
+            &mut test_events::living_entity_use_item_finish_event(
+                &wand,
+                None,
+                horizon_client::mod_api::Hand::Main,
+                0,
+                &mut result,
+            ),
+        );
+        assert_eq!(
+            result.as_ref().map(|s| (&*s.item, s.count)),
+            Some(("minecraft:stick", 2))
+        );
+        let mut use_start = start();
+        assert_eq!(
+            m.living_entity_use_item_start(&mut host, &mut use_start),
+            Flow::Continue
+        );
+        assert_eq!(use_start.duration, 10);
+        // Each dead call fails its handler through the hook's error path,
+        // naming the replacement; the queued broadcast is dropped with it.
+        m.lua.globals().set("CALL_DEAD", true).unwrap();
+        m.inventory_tick(&mut host, &mut test_events::inventory_tick_event(4, false));
+        let e = hook_error_of(&m);
+        assert!(e.contains("horizon.set_count does nothing"), "{e}");
+        assert!(e.contains("inventory_tick has no stack"), "{e}");
+        let mut result = Some(wand.clone());
+        m.living_entity_use_item_finish(
+            &mut host,
+            &mut test_events::living_entity_use_item_finish_event(
+                &wand,
+                None,
+                horizon_client::mod_api::Hand::Main,
+                0,
+                &mut result,
+            ),
+        );
+        let e = hook_error_of(&m);
+        assert!(e.contains("horizon.set_result does nothing"), "{e}");
+        assert!(e.contains("event.result"), "{e}");
+        assert_eq!(
+            result.as_ref().map(|s| (&*s.item, s.count)),
+            Some(("ruby:wand", 3))
+        );
+        let mut use_start = start();
+        assert_eq!(
+            m.living_entity_use_item_start(&mut host, &mut use_start),
+            Flow::Continue
+        );
+        let e = hook_error_of(&m);
+        assert!(e.contains("horizon.set_duration does nothing"), "{e}");
+        assert!(e.contains("event.duration"), "{e}");
+        assert_eq!(use_start.duration, 32);
+        // After the errors the hooks still tick: the broadcast runs again.
+        m.lua.globals().set("CALL_DEAD", false).unwrap();
+        m.inventory_tick(&mut host, &mut test_events::inventory_tick_event(5, false));
+        assert_eq!(*host.lines.lock().unwrap(), ["tick 3", "tick 5"]);
+        assert_eq!(m.lua.globals().get::<f64>("__witness").unwrap(), 3.0);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn dead_hostless_actions_error_and_leave_their_hooks_working() {
+        let (m, _host, dir) = dead_mod(
+            "dead_hostless_actions",
+            br#"
+            horizon.on("living_fall", function(event)
+              if MODE == "distance" then horizon.set_distance(1) end
+              if MODE == "multiplier" then horizon.set_multiplier(1) end
+              event.distance = 1.5
+            end, "minecraft:cow")
+            horizon.on("living_knockback", function(event)
+              if MODE == "strength" then horizon.set_strength(1) end
+              event.strength = 0.25
+            end, "minecraft:cow")
+            "#,
+        );
+        let knock = || {
+            test_events::living_knockback_event(
+                7,
+                "minecraft:cow",
+                "minecraft:player_attack",
+                5,
+                5,
+                0.4,
+                1.0,
+                0.0,
+            )
+        };
+        // The live paths first: both writes land.
+        m.lua.globals().set("MODE", "live").unwrap();
+        let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+        assert_eq!(m.living_fall(&mut fall), Flow::Continue);
+        assert_eq!(fall.distance, 1.5);
+        let mut hit = knock();
+        assert_eq!(m.living_knockback(&mut hit), Flow::Continue);
+        assert_eq!(hit.strength, 0.25);
+        // Each dead call fails its handler before the write, naming its
+        // field, while the other hook still writes back.
+        for (mode, call, field) in [
+            (
+                "distance",
+                "horizon.set_distance does nothing",
+                "event.distance",
+            ),
+            (
+                "multiplier",
+                "horizon.set_multiplier does nothing",
+                "event.multiplier",
+            ),
+            (
+                "strength",
+                "horizon.set_strength does nothing",
+                "event.strength",
+            ),
+        ] {
+            m.lua.globals().set("MODE", mode).unwrap();
+            let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+            assert_eq!(m.living_fall(&mut fall), Flow::Continue);
+            let mut hit = knock();
+            assert_eq!(m.living_knockback(&mut hit), Flow::Continue);
+            let e = hook_error_of(&m);
+            assert!(e.contains(call), "{e}");
+            assert!(e.contains(field), "{e}");
+            if mode == "strength" {
+                assert_eq!(hit.strength, 0.4);
+                assert_eq!(fall.distance, 1.5);
+            } else {
+                assert_eq!(fall.distance, 4.0);
+                assert_eq!(hit.strength, 0.25);
+            }
+        }
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

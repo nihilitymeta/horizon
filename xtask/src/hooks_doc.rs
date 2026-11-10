@@ -155,7 +155,7 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     ),
     (
         "projectile_impact",
-        "an event table with `dimension`, `projectile`, `kind`, `owner`, `entity`, `entity_kind`, `block`, `face` and `at`, by kind; `horizon.cancel()` and it flies on",
+        "an event table with `dimension`, `projectile`, `kind`, `owner`, `entity`, `entity_kind`, `block`, `face` and `at`, by kind; branch on `event.entity`: on an entity hit `block` and `face` are still `{0, 0, 0}`, and on a block hit `entity` is nil and `entity_kind` is `\"\"`; `horizon.cancel()` and it flies on",
     ),
     (
         "projectile_launch",
@@ -178,6 +178,14 @@ const LUA_HOOKS: &[(&str, &str)] = &[
     (
         "living_equipment_listened",
         "true while a `living_equipment_change` handler exists",
+    ),
+    (
+        "player_render_listened",
+        "a query hook, not an answer: the game poses no player or mob for the render hooks unless a handler sets `event.listened`",
+    ),
+    (
+        "experience_orb_pickup_listened",
+        "a query hook, not an answer: the pickup never runs unless a handler sets `event.listened`",
     ),
     (
         "living_equipment_change",
