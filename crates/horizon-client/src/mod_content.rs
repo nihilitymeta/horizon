@@ -853,47 +853,9 @@ impl Plan<'_> {
             out.extend(serde_json::to_vec(&t.id).map_err(|e| e.to_string())?);
             out.push(b':');
             if t.is_mob() {
-                let mut v: serde_json::Value =
+                let row: serde_json::Value =
                     serde_json::from_str(row.get()).map_err(|e| e.to_string())?;
-                if let Some(size) = &t.size {
-                    // The template's eyes, at the same fraction of the
-                    // height: read before the overwrite below replaces the
-                    // template's height (reading after keeps the eyes).
-                    let (template_height, template_eyes) = (
-                        v["height"].as_f64().unwrap_or(1.8),
-                        v["eye_height"].as_f64().unwrap_or(1.6),
-                    );
-                    v["width"] = size.width.into();
-                    v["height"] = size.height.into();
-                    v["eye_height"] = match size.eye_height {
-                        Some(e) => e.into(),
-                        None => {
-                            (template_eyes / template_height.max(f64::EPSILON) * size.height).into()
-                        }
-                    };
-                }
-                if !t.attributes.is_empty() {
-                    let attrs = v["attributes"].as_object_mut().ok_or_else(|| {
-                        format!("{}: the template's row has no attributes", t.template)
-                    })?;
-                    // The check normalised every attribute to its
-                    // `minecraft:<name>` id, so the keys go in as they are.
-                    for (key, value) in &t.attributes {
-                        attrs.insert(key.clone(), (*value).into());
-                    }
-                }
-                v["horizon"] = serde_json::json!({
-                    "template": t.template,
-                    "texture": t.texture,
-                    "goals": match t.goals {
-                        horizon_mods::content::Goals::Template => "template",
-                        horizon_mods::content::Goals::None => "none",
-                    },
-                    "flags": t.flags,
-                    "model": t.model,
-                    "animation": t.animation,
-                    "sounds": t.sounds,
-                });
+                let v = mod_mob_row(&row, t)?;
                 out.extend(serde_json::to_vec(&v).map_err(|e| e.to_string())?);
             } else {
                 // A thrown type's row is the template's text with `template`
@@ -916,7 +878,67 @@ impl Plan<'_> {
         out.push(b'}');
         Ok(out)
     }
+}
 
+/// A mod mob type's row in `entity-types.json`: its template's `row`, with
+/// the type's size (the template's eyes at the same fraction of the height),
+/// its attribute bases in place of the template's, and a `horizon` object
+/// naming the template and carrying the mod's own texture, goals, flags,
+/// model, animation and sounds. An attribute the template's row lacks is
+/// refused: the mob only reads the attributes its template has.
+fn mod_mob_row(
+    row: &serde_json::Value,
+    t: &EntityType,
+) -> std::result::Result<serde_json::Value, String> {
+    let mut v = row.clone();
+    if let Some(size) = &t.size {
+        // The template's eyes, at the same fraction of the
+        // height: read before the overwrite below replaces the
+        // template's height (reading after keeps the eyes).
+        let (template_height, template_eyes) = (
+            v["height"].as_f64().unwrap_or(1.8),
+            v["eye_height"].as_f64().unwrap_or(1.6),
+        );
+        v["width"] = size.width.into();
+        v["height"] = size.height.into();
+        v["eye_height"] = match size.eye_height {
+            Some(e) => e.into(),
+            None => (template_eyes / template_height.max(f64::EPSILON) * size.height).into(),
+        };
+    }
+    if !t.attributes.is_empty() {
+        let attrs = v["attributes"]
+            .as_object_mut()
+            .ok_or_else(|| format!("{}: the template's row has no attributes", t.template))?;
+        // The check normalised every attribute to its
+        // `minecraft:<name>` id, so the keys go in as they are; one the
+        // template lacks would do nothing on the mob, so it is refused.
+        for (key, value) in &t.attributes {
+            if !attrs.contains_key(key) {
+                return Err(format!(
+                    "{}: attribute {key} is not one of {}'s",
+                    t.id, t.template
+                ));
+            }
+            attrs.insert(key.clone(), (*value).into());
+        }
+    }
+    v["horizon"] = serde_json::json!({
+        "template": t.template,
+        "texture": t.texture,
+        "goals": match t.goals {
+            horizon_mods::content::Goals::Template => "template",
+            horizon_mods::content::Goals::None => "none",
+        },
+        "flags": t.flags,
+        "model": t.model,
+        "animation": t.animation,
+        "sounds": t.sounds,
+    });
+    Ok(v)
+}
+
+impl Plan<'_> {
     /// The mob types' own textures as atlas sources, by namespace: vanilla's
     /// `atlases/` list no `entity/` folder, so a mod's entity texture joins
     /// the shared atlas through a `single` source of its own

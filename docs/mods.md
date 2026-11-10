@@ -363,7 +363,7 @@ A mob type is its template with the mod's own values. Each field falls back to t
 - `attributes`: the attributes that differ, by attribute id, such as `minecraft:max_health`,
   `minecraft:movement_speed`, `minecraft:attack_damage`, `minecraft:follow_range`, `minecraft:armor`,
   `minecraft:knockback_resistance` and `minecraft:scale`; a bare name is also read, as `minecraft:`'s
-  (`max_health` is `minecraft:max_health`)
+  (`max_health` is `minecraft:max_health`). An attribute must be one the template has.
 - `size`: `width`, `height`, and `eye_height`; without an eye height, the template's is used at the same fraction of
   the height
 - `texture`: `<id>:entity/<name>`, the mod's `assets/<id>/textures/entity/<name>.png`, laid out as the template's

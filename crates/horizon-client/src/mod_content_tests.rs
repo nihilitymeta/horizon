@@ -1783,6 +1783,93 @@ fn content_root_builds_a_mob_entity_type_from_its_template() {
     let _ = fs::remove_dir_all(&scratch);
 }
 
+/// A mod mob's row keeps its template's values, swaps its attribute bases
+/// under canonical `minecraft:` keys, and carries the `horizon` object: the
+/// fast pin of the content root's mob row shape (no game resources).
+#[test]
+fn mod_mob_row_keeps_its_template_with_its_attributes() {
+    let row: serde_json::Value = serde_json::json!({
+        "width": 0.6,
+        "height": 1.95,
+        "eye_height": 1.62,
+        "category": "monster",
+        "attributes": {
+            "minecraft:max_health": 20.0,
+            "minecraft:movement_speed": 0.23,
+            "minecraft:armor": 2.0,
+        },
+    });
+    let mut t: EntityType = serde_json::from_value(serde_json::json!({
+        "template": "minecraft:zombie",
+        "attributes": {
+            "minecraft:max_health": 30.0,
+            "minecraft:movement_speed": 0.35,
+        },
+        "texture": "example:entity/crawler",
+        "goals": "none",
+    }))
+    .unwrap();
+    t.id = "example:crawler".into();
+    let v = mod_mob_row(&row, &t).unwrap();
+    // The template's own values stay, bar the overridden bases.
+    assert_eq!(v["width"], serde_json::json!(0.6));
+    assert_eq!(v["height"], serde_json::json!(1.95));
+    assert_eq!(v["eye_height"], serde_json::json!(1.62));
+    assert_eq!(v["category"], serde_json::json!("monster"));
+    assert_eq!(
+        v["attributes"]["minecraft:max_health"],
+        serde_json::json!(30.0)
+    );
+    assert_eq!(
+        v["attributes"]["minecraft:movement_speed"],
+        serde_json::json!(0.35)
+    );
+    assert_eq!(v["attributes"]["minecraft:armor"], serde_json::json!(2.0));
+    // The fork's row shape: the `horizon` object names the template and
+    // carries the mod's own texture and goals.
+    assert_eq!(
+        v["horizon"]["template"],
+        serde_json::json!("minecraft:zombie")
+    );
+    assert_eq!(
+        v["horizon"]["texture"],
+        serde_json::json!("example:entity/crawler")
+    );
+    assert_eq!(v["horizon"]["goals"], serde_json::json!("none"));
+}
+
+/// An attribute the template lacks is refused, naming the mod type, the
+/// attribute and the template.
+#[test]
+fn mod_mob_row_refuses_an_attribute_its_template_lacks() {
+    let row: serde_json::Value = serde_json::json!({
+        "width": 0.6,
+        "height": 1.95,
+        "eye_height": 1.62,
+        "attributes": {
+            "minecraft:max_health": 20.0,
+        },
+    });
+    let mut t: EntityType = serde_json::from_value(serde_json::json!({
+        "template": "minecraft:zombie",
+        "attributes": {
+            "minecraft:max_health": 30.0,
+            "minecraft:luck": 1.0,
+        },
+    }))
+    .unwrap();
+    t.id = "example:crawler".into();
+    let e = mod_mob_row(&row, &t).unwrap_err();
+    for part in [
+        "example:crawler",
+        "minecraft:luck",
+        "minecraft:zombie",
+        "is not one of",
+    ] {
+        assert!(e.contains(part), "{e}");
+    }
+}
+
 #[test]
 fn content_root_registers_a_mod_entity_type() {
     let Some(base) = prepared() else {
