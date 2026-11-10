@@ -1093,6 +1093,25 @@ mod tests {
     }
 
     #[test]
+    fn a_known_key_with_a_bad_value_is_written_once_with_its_default() {
+        // A key the build reads, with a value that is not a key name: the line is consumed
+        // and ignored, so the default is written once and the bad line is not kept beside it.
+        for (name, default) in [
+            ("sortKey", "key.keyboard.unknown"),
+            ("emoteKey", "key.keyboard.b"),
+            ("hudEditorKey", "key.keyboard.unknown"),
+        ] {
+            let saved = Extras::parse(&format!("{name}:nonsense\n")).serialize();
+            let lines: Vec<&str> = saved
+                .lines()
+                .filter(|l| l.split_once(':').is_some_and(|(k, _)| k == name))
+                .collect();
+            let expected = format!("{name}:{default}");
+            assert_eq!(lines, [expected.as_str()], "{name}:\n{saved}");
+        }
+    }
+
+    #[test]
     fn items_cycle_through_their_values() {
         let mut e = Extras::default();
         Item::Sort.cycle(&mut e, true);
