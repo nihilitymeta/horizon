@@ -32,6 +32,7 @@ max_view_distance = 0        # past view_distance, saved chunks only, up to this
 admin_feedback_to_ops = true # operators see each other's commands ([name: ...], vanilla); false: only the log
 websocket = true             # also take players over a WebSocket on the game port, from a tunnel or proxy (docs/websocket.md)
 trusted_proxies = "127.0.0.1, ::1" # proxies whose WebSocket handshake may name the player's address (CF-Connecting-IP...)
+accept_older_clients = false # true: 26.2 clients join too, their packets translated (docs/hosting.md)
 
 [world]
 name = "world"               # the world folder
@@ -111,7 +112,7 @@ enabled = true               # false pauses it and keeps the webhook
 "##;
 
 /// Each typed setting: its section, its name, and the vanilla key it writes.
-pub(crate) const TYPED: [(&str, &str, &str); 18] = [
+pub(crate) const TYPED: [(&str, &str, &str); 19] = [
     ("server", "motd", "motd"),
     ("server", "port", "server-port"),
     ("server", "bind", "server-ip"),
@@ -129,6 +130,11 @@ pub(crate) const TYPED: [(&str, &str, &str); 18] = [
     ),
     ("server", "websocket", "horizon-websocket"),
     ("server", "trusted_proxies", "horizon-trusted-proxies"),
+    (
+        "server",
+        "accept_older_clients",
+        "horizon-accept-older-clients",
+    ),
     ("world", "name", "level-name"),
     ("world", "seed", "level-seed"),
     ("world", "game_mode", "gamemode"),
@@ -220,6 +226,9 @@ pub struct Server {
     /// The addresses and networks (`10.0.0.0/8`) whose WebSocket handshakes may name the player's address,
     /// comma-separated; the player's own word is never taken.
     pub trusted_proxies: String,
+    /// Whether 26.2 clients may join, their packets translated (horizon-protocol's `ClientSession`); off, they
+    /// are turned away as vanilla turns away any other release.
+    pub accept_older_clients: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -449,6 +458,7 @@ impl Default for Server {
             admin_feedback_to_ops: true,
             websocket: true,
             trusted_proxies: "127.0.0.1, ::1".to_owned(),
+            accept_older_clients: false,
         }
     }
 }
@@ -804,6 +814,24 @@ mod tests {
         assert_eq!(render(&Config::default()), TEMPLATE);
     }
 
+    /// `[server] accept_older_clients` parses and is written as the game's
+    /// `horizon-accept-older-clients` key (the game reads it from server.properties).
+    #[test]
+    fn older_clients_opt_in_writes_its_property() {
+        let text = TEMPLATE.replace(
+            "accept_older_clients = false",
+            "accept_older_clients = true ",
+        );
+        let config = Config::parse(&text).unwrap();
+        assert!(config.server.accept_older_clients);
+        assert!(
+            config
+                .vanilla()
+                .contains(&("horizon-accept-older-clients".to_owned(), "true".to_owned()))
+        );
+        assert_eq!(Config::parse(&render(&config)).unwrap(), config);
+    }
+
     /// `[transfer]` is off by default, passes nothing to the game then, and is checked when it is read.
     #[test]
     fn transfers_are_off_by_default_and_checked() {
@@ -896,11 +924,13 @@ mod tests {
             ServerProperties::new(Properties::default(), &mut SystemEntropy::default()).unwrap();
         for (key, value) in Config::default().vanilla() {
             // Horizon's own, which vanilla doesn't have: their defaults behave as vanilla does
-            // (the far ring off, operators told of each other's commands; the WebSocket door
-            // takes only connections that open with an HTTP upgrade, which vanilla refuses).
+            // (the far ring off, operators told of each other's commands, other releases turned away;
+            // the WebSocket door takes only connections that open with an HTTP upgrade, which vanilla
+            // refuses).
             if key.starts_with("horizon-") {
                 let vanilla_like = match key.as_str() {
                     "horizon-admin-feedback-to-ops" | "horizon-websocket" => "true",
+                    "horizon-accept-older-clients" => "false",
                     "horizon-trusted-proxies" => "127.0.0.1, ::1",
                     _ => "0",
                 };

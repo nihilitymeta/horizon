@@ -31,7 +31,9 @@
           "online_mode": true,
           "port": 25565,
           "simulation_distance": 10,
+          "trusted_proxies": "127.0.0.1, ::1",
           "view_distance": 10,
+          "websocket": true,
           "whitelist": true
         },
         "transfer": {
