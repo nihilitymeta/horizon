@@ -1080,6 +1080,9 @@ mod tests {
         let types = living_mod_types();
         let mut guard = (*types["ruby:ghoul"]).clone();
         guard.id = "ruby:guard".into();
+        // `goals: "none"` content: the selectors start empty, and the
+        // mod's own `register_goals` after that still wins.
+        guard.flags.scripted_goals = true;
         let at = Vec3::new(0.5, 64.0, 0.5);
         let guard = Mob::new(1, std::sync::Arc::new(guard), at, 0.0);
         let ghoul = Mob::new(2, types["ruby:ghoul"].clone(), at, 0.0);

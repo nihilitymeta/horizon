@@ -447,6 +447,14 @@ pub fn register(m: &mut Mob) {
         Family::Panda => super::panda::register(m),
         Family::PolarBear => super::polar_bear::register(m),
     }
+    // A mod's mob that leaves its goals to scripts (`"goals": "none"` in
+    // its entity type): the species' goals go, so the selectors start
+    // empty for the mod's own `register_goals` below. Its controls and the
+    // rest of its nature stay.
+    if m.kind.flags.scripted_goals {
+        m.ai.goals.clear();
+        m.ai.targets.clear();
+    }
     native_register_goals(m);
     // FloatGoal's constructor lets the navigation float, as do the
     // constructors of these brain-driven and flying mobs. A floater rises

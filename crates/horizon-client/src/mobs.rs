@@ -3596,12 +3596,6 @@ impl Mob {
         // it per mob afterwards (`horizon.set_body_rotation`).
         mob.ai.body.mode = mob.kind.body_rotation;
         ai::register(&mut mob);
-        // A mod's mob that leaves its goals to scripts: the species' goals
-        // go, its controls and the rest of its nature stay.
-        if mob.kind.flags.scripted_goals {
-            mob.ai.goals.clear();
-            mob.ai.targets.clear();
-        }
         mob
     }
     /// `Mob.canPickUpLoot`, with the overrides: an allay that holds
