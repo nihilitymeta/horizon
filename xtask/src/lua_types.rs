@@ -22,8 +22,12 @@ const TYPES: &[(&str, &str)] = &[
     ("Held", "{ item: string, count: number, plain: boolean }"),
     (
         "Player",
-        "{ uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number, held: Held? }",
+        "{ uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number }",
     ),
+    // The command handler's player: what `horizon.players()` and
+    // `horizon.player()` hand out, plus `held_table` (the acting player's
+    // main hand, nil when empty). No other player table carries `held`.
+    ("CommandPlayer", "Player & { held: Held? }"),
     // A player named by uuid in a hook: the world's record while they are
     // on, else just the uuid and the name a hook told before, if any (a
     // player whose state is out of reach otherwise).
@@ -194,7 +198,10 @@ fn generated_hooks() -> Result<Vec<GeneratedHook>, String> {
         // the handler keeps the `horizon.command` shape, kind-filtered by
         // the dispatched command words.
         let (handler, has_kind) = if model.name == "perform_command" {
-            ("(player: Player, args: CommandArgs) -> ()".to_owned(), true)
+            (
+                "(player: CommandPlayer, args: CommandArgs) -> ()".to_owned(),
+                true,
+            )
         } else {
             (
                 format!("(event: {event_ty}) -> ()"),
@@ -223,7 +230,7 @@ const FUNCTIONS: &[(&str, &str)] = &[
     ("log", "(msg: string) -> ()"),
     (
         "command",
-        "(usage: string, level: number?, fn: (player: Player, args: CommandArgs) -> ()) -> ()",
+        "(usage: string, level: number?, fn: (player: CommandPlayer, args: CommandArgs) -> ()) -> ()",
     ),
     ("goal", "(name: string, def: GoalDef) -> ()"),
     (

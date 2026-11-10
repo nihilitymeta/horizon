@@ -5,7 +5,8 @@
 export type Vec3 = { x: number, y: number, z: number }
 export type Item = { id: string, count: number, damage: number, extra: Data?, plain: boolean }
 export type Held = { item: string, count: number, plain: boolean }
-export type Player = { uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number, held: Held? }
+export type Player = { uuid: string, name: string, dimension: string, position: Vec3, yaw: number, pitch: number, game_mode: number, health: number }
+export type CommandPlayer = Player & { held: Held? }
 export type PlayerRef = Player | { uuid: string, name: string? }
 export type IdKind = { id: number, kind: string }
 export type Block = { x: number, y: number, z: number, id: string }
@@ -749,7 +750,7 @@ export type HorizonOn =
     ((name: "on_effect_added", fn: (event: OnEffectAddedEvent) -> (), kind: string?) -> ()) &
     ((name: "on_equip", fn: (event: OnEquipEvent) -> ()) -> ()) &
     ((name: "on_use_tick", fn: (event: OnUseTickEvent) -> (), kind: string?) -> ()) &
-    ((name: "perform_command", fn: (player: Player, args: CommandArgs) -> (), kind: string?) -> ()) &
+    ((name: "perform_command", fn: (player: CommandPlayer, args: CommandArgs) -> (), kind: string?) -> ()) &
     ((name: "perform_console_command", fn: (event: PerformConsoleCommandEvent) -> ()) -> ()) &
     ((name: "permission_check", fn: (event: PermissionCheckEvent) -> ()) -> ()) &
     ((name: "piston_move", fn: (event: PistonMoveEvent) -> ()) -> ()) &
@@ -951,7 +952,7 @@ declare horizon: {
     mod_version: string,
     libraries: { [string]: string },
     log: (msg: string) -> (),
-    command: (usage: string, level: number?, fn: (player: Player, args: CommandArgs) -> ()) -> (),
+    command: (usage: string, level: number?, fn: (player: CommandPlayer, args: CommandArgs) -> ()) -> (),
     goal: (name: string, def: GoalDef) -> (),
     block_entity: (block: string, def: { ticks: boolean?, data: Data? }?) -> (),
     config: () -> Data,

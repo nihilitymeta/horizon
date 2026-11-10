@@ -1652,7 +1652,16 @@ impl LuaMod {
                     {
                         return Err(mlua::Error::runtime(format!(
                             "horizon.on({name:?}): no such hook; the hooks are {}",
-                            LUA_HOOK_NAMES.join(", ")
+                            {
+                                let mut names: Vec<&str> = LUA_HOOK_NAMES
+                                    .iter()
+                                    .chain(crate::generated_hooks::GENERATED_HOOK_NAMES.iter())
+                                    .copied()
+                                    .collect();
+                                names.sort_unstable();
+                                names.dedup();
+                                names.join(", ")
+                            }
                         )));
                     }
                     // The generated hooks without a kind filter answer every
@@ -5029,6 +5038,8 @@ experimental = ["scripts"]
                 local function note(line) NOTES[#NOTES + 1] = line end
                 horizon.on("player_tick", function(event)
                   __witness = (__witness or 0) + 1
+                  -- A single-player host: `players()` holds only the owner,
+                  -- so this does not identify the ticking player.
                   local player = horizon.players()[1]
                   say("tick " .. player.name .. " hp " .. player.health)
                 end)
@@ -6592,11 +6603,19 @@ experimental = ["scripts"]
         assert!(
             e.contains("scripts/init.lua\"]:2:")
                 && e.contains("no such hook")
-                && e.contains("player_jioned"),
+                && e.contains("player_jioned")
+                && e.contains("player_logged_in")
+                && e.contains("server_tick"),
             "{e}"
         );
         let e = check_mod(&path, &[], None).unwrap_err();
-        assert!(e.contains(":2:") && e.contains("player_jioned"), "{e}");
+        assert!(
+            e.contains(":2:")
+                && e.contains("player_jioned")
+                && e.contains("player_logged_in")
+                && e.contains("server_tick"),
+            "{e}"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
         let (dir, path) = hmod(
             "fine",
