@@ -423,15 +423,10 @@ pub struct MobEffect {
     pub color: u32,
 }
 
-/// the vanilla entity types a mod's type may copy: thrown item
-/// projectiles (`ThrowableItemProjectile`), then living mobs
-/// ([`LIVING_TEMPLATES`]).
-pub const ENTITY_TEMPLATES: [&str; 4] = [
-    "minecraft:snowball",
-    "minecraft:villager",
-    "minecraft:wandering_trader",
-    "minecraft:zombie",
-];
+/// the vanilla entity types a mod's type may copy that are thrown item
+/// projectiles (`ThrowableItemProjectile`): only `minecraft:snowball` today.
+/// Living mobs come from [`MOB_TEMPLATES`] instead.
+pub const ENTITY_TEMPLATES: [&str; 1] = ["minecraft:snowball"];
 
 /// the vanilla mobs a mod entity type may copy (`template`): the game's
 /// species, each with its model, sounds, movement and goals.
@@ -547,9 +542,11 @@ pub struct EntityType {
     /// thrown: what a hit deals to an entity, as `thrown` damage.
     #[serde(default)]
     pub damage: f32,
-    /// mob: attribute values that differ from the template's, by their
-    /// name without `minecraft:` (`max_health`, `movement_speed`,
-    /// `attack_damage`, `follow_range`, `armor`, `knockback_resistance`...).
+    /// mob: attribute values that differ from the template's, by attribute
+    /// id (`minecraft:max_health`, `minecraft:movement_speed`,
+    /// `minecraft:attack_damage`...). A bare name is read as `minecraft:`'s
+    /// (`max_health` is `minecraft:max_health`); any other namespace is
+    /// refused.
     #[serde(default)]
     pub attributes: BTreeMap<String, f64>,
     /// mob: its hitbox, when it differs from the template's.
@@ -679,14 +676,35 @@ pub fn mob_model_file(model: &str) -> Result<(&str, String), String> {
 }
 
 impl EntityType {
-    /// Whether the type copies a mob rather than a thrown item.
+    /// Whether the type copies a mob ([`MOB_TEMPLATES`]) rather than a
+    /// thrown item ([`ENTITY_TEMPLATES`]).
     pub fn is_mob(&self) -> bool {
-        !ENTITY_TEMPLATES.contains(&self.template.as_str())
+        MOB_TEMPLATES.contains(&self.template.as_str())
     }
     /// [`EntityType::is_mob`] under the name the merged upstream calls use.
     pub fn is_living(&self) -> bool {
         self.is_mob()
     }
+}
+
+/// A mob attribute key in its one normalised form: the `minecraft:<name>`
+/// id, as the engine keys attributes (`mobs.rs` reads `minecraft:{k}`). A
+/// bare name is `minecraft:`'s; any other namespace, an empty name and a
+/// non-finite value are refused.
+fn canonical_attribute(name: &str, key: &str, value: f64) -> Result<String, String> {
+    let canonical = match key.split_once(':') {
+        None if !key.is_empty() => format!("minecraft:{key}"),
+        Some(("minecraft", path)) if !path.is_empty() => key.to_owned(),
+        _ => {
+            return Err(format!(
+                "{name}: attribute {key:?} is minecraft:<name> or <name> (max_health, movement_speed...)"
+            ));
+        }
+    };
+    if !value.is_finite() {
+        return Err(format!("{name}: attribute {key} is a finite number"));
+    }
+    Ok(canonical)
 }
 
 /// a mob entity type's hitbox.
@@ -1311,7 +1329,7 @@ impl Content {
             });
         }
         for (kind, name) in types {
-            let file: EntityType =
+            let mut file: EntityType =
                 serde_json::from_slice(&reader.read(&name)?).map_err(|e| format!("{name}: {e}"))?;
             let thrown = ENTITY_TEMPLATES.contains(&file.template.as_str());
             if !thrown && !MOB_TEMPLATES.contains(&file.template.as_str()) {
@@ -1358,13 +1376,13 @@ impl Content {
                 if file.item.is_some() || file.damage != 0.0 {
                     return Err(format!("{name}: item and damage are for a thrown template"));
                 }
+                // One normalised form downstream: every attribute is an
+                // `minecraft:<name>` id (see [`canonical_attribute`]).
+                let mut attributes = BTreeMap::new();
                 for (key, value) in &file.attributes {
-                    if key.is_empty() || key.contains(':') || !value.is_finite() {
-                        return Err(format!(
-                            "{name}: attribute {key:?} is a name without a namespace (max_health, movement_speed...) and a finite number"
-                        ));
-                    }
+                    attributes.insert(canonical_attribute(&name, key, *value)?, *value);
                 }
+                file.attributes = attributes;
                 if let Some(size) = &file.size
                     && !(size.width.is_finite()
                         && size.width > 0.0
@@ -2434,6 +2452,30 @@ experimental = ["scripts"]
     }
 
     #[test]
+    fn mob_attribute_keys_normalise_to_minecraft_ids() {
+        // JSON cannot spell a non-finite number, so the finite rule is pinned
+        // here rather than through a file: the files only carry the
+        // namespace rule (the `mob-attribute-namespace` case below).
+        let name = "data/ruby/horizon/entity_type/a.json";
+        assert_eq!(
+            canonical_attribute(name, "max_health", 20.0),
+            Ok("minecraft:max_health".to_owned())
+        );
+        assert_eq!(
+            canonical_attribute(name, "minecraft:max_health", 20.0),
+            Ok("minecraft:max_health".to_owned())
+        );
+        for key in ["", "minecraft:", ":max_health", "other_ns:max_health"] {
+            let e = canonical_attribute(name, key, 1.0).unwrap_err();
+            assert!(e.contains("minecraft:<name> or <name>"), "{key}: {e}");
+        }
+        for value in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+            let e = canonical_attribute(name, "minecraft:max_health", value).unwrap_err();
+            assert!(e.contains("a finite number"), "{value:?}: {e}");
+        }
+    }
+
+    #[test]
     fn a_mob_entity_type_copies_a_vanilla_mob_with_its_own_values() {
         let png: &[u8] = b"\x89PNG";
         let parasite = br#"{"template": "minecraft:zombie", "attributes": {"max_health": 30, "movement_speed": 0.3},
@@ -2457,7 +2499,9 @@ experimental = ["scripts"]
             (parasite.id.as_str(), parasite.template.as_str()),
             ("ruby:parasite", "minecraft:zombie")
         );
-        assert_eq!(parasite.attributes["max_health"], 30.0);
+        // Bare names are read as `minecraft:`'s: one normalised form.
+        assert_eq!(parasite.attributes["minecraft:max_health"], 30.0);
+        assert_eq!(parasite.attributes["minecraft:movement_speed"], 0.3);
         assert_eq!(
             parasite.size.map(|s| (s.width, s.height, s.eye_height)),
             Some((0.7, 2.1, None))
@@ -2477,8 +2521,8 @@ experimental = ["scripts"]
             ),
             (
                 "mob-attribute-namespace",
-                r#"{"template": "minecraft:zombie", "attributes": {"minecraft:max_health": 1}}"#,
-                "without a namespace",
+                r#"{"template": "minecraft:zombie", "attributes": {"other_ns:max_health": 1}}"#,
+                "minecraft:<name> or <name>",
             ),
             (
                 "mob-size",
@@ -2673,7 +2717,7 @@ experimental = ["scripts"]
             ),
             (
                 "data/ruby/horizon/entity_type/settler.json",
-                br#"{"template": "minecraft:villager"}"#,
+                br#"{"template": "minecraft:villager", "attributes": {"max_health": 25}}"#,
             ),
             (
                 "data/ruby/horizon/entity_type/merchant.json",
@@ -2708,7 +2752,12 @@ experimental = ["scripts"]
                     ]
                 ),
                 ("ruby:merchant", "minecraft:wandering_trader", true, vec![]),
-                ("ruby:settler", "minecraft:villager", true, vec![]),
+                (
+                    "ruby:settler",
+                    "minecraft:villager",
+                    true,
+                    vec![("minecraft:max_health", 25.0)],
+                ),
             ]
         );
         let zombie = |rest: &str| format!(r#"{{"template": "minecraft:zombie"{rest}}}"#);
@@ -2716,17 +2765,17 @@ experimental = ["scripts"]
             (
                 "living-item",
                 zombie(r#", "item": "ruby:gem""#),
-                "a living type has no item or damage",
+                "item and damage are for a thrown template",
             ),
             (
                 "living-damage",
                 zombie(r#", "damage": 2"#),
-                "a living type has no item or damage",
+                "item and damage are for a thrown template",
             ),
             (
                 "living-attribute-id",
-                zombie(r#", "attributes": {"max_health": 40}"#),
-                "is an attribute id",
+                zombie(r#", "attributes": {"other_ns:max_health": 40}"#),
+                "minecraft:<name> or <name>",
             ),
             (
                 "living-attribute-value",

@@ -360,8 +360,10 @@ server with it may be disconnected when one spawns.
 A mob type is its template with the mod's own values. Each field falls back to the template's when it is left out
 ([mob-ai-hooks.md](mob-ai-hooks.md)):
 
-- `attributes`: the attributes that differ, by name, such as `max_health`, `movement_speed`, `attack_damage`,
-  `follow_range`, `armor`, `knockback_resistance` and `scale`
+- `attributes`: the attributes that differ, by attribute id, such as `minecraft:max_health`,
+  `minecraft:movement_speed`, `minecraft:attack_damage`, `minecraft:follow_range`, `minecraft:armor`,
+  `minecraft:knockback_resistance` and `minecraft:scale`; a bare name is also read, as `minecraft:`'s
+  (`max_health` is `minecraft:max_health`)
 - `size`: `width`, `height`, and `eye_height`; without an eye height, the template's is used at the same fraction of
   the height
 - `texture`: `<id>:entity/<name>`, the mod's `assets/<id>/textures/entity/<name>.png`, laid out as the template's
@@ -377,7 +379,7 @@ A mob type is its template with the mod's own values. Each field falls back to t
 
 ```json
 { "template": "minecraft:zombie",
-  "attributes": { "max_health": 30, "movement_speed": 0.3, "attack_damage": 4 },
+  "attributes": { "minecraft:max_health": 30, "minecraft:movement_speed": 0.3, "minecraft:attack_damage": 4 },
   "size": { "width": 0.6, "height": 1.95 },
   "texture": "ruby:entity/crawler",
   "goals": "none",

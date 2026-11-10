@@ -856,17 +856,19 @@ impl Plan<'_> {
                 let mut v: serde_json::Value =
                     serde_json::from_str(row.get()).map_err(|e| e.to_string())?;
                 if let Some(size) = &t.size {
+                    // The template's eyes, at the same fraction of the
+                    // height: read before the overwrite below replaces the
+                    // template's height (reading after keeps the eyes).
+                    let (template_height, template_eyes) = (
+                        v["height"].as_f64().unwrap_or(1.8),
+                        v["eye_height"].as_f64().unwrap_or(1.6),
+                    );
                     v["width"] = size.width.into();
                     v["height"] = size.height.into();
                     v["eye_height"] = match size.eye_height {
                         Some(e) => e.into(),
-                        // The template's eyes, at the same fraction of the height.
                         None => {
-                            let (h, e) = (
-                                v["height"].as_f64().unwrap_or(1.8),
-                                v["eye_height"].as_f64().unwrap_or(1.6),
-                            );
-                            (e / h.max(f64::EPSILON) * size.height).into()
+                            (template_eyes / template_height.max(f64::EPSILON) * size.height).into()
                         }
                     };
                 }
@@ -874,8 +876,10 @@ impl Plan<'_> {
                     let attrs = v["attributes"].as_object_mut().ok_or_else(|| {
                         format!("{}: the template's row has no attributes", t.template)
                     })?;
+                    // The check normalised every attribute to its
+                    // `minecraft:<name>` id, so the keys go in as they are.
                     for (key, value) in &t.attributes {
-                        attrs.insert(format!("minecraft:{key}"), (*value).into());
+                        attrs.insert(key.clone(), (*value).into());
                     }
                 }
                 v["horizon"] = serde_json::json!({
