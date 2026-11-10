@@ -187,11 +187,15 @@ impl Game<'_> {
         match t {
             Target::Guest(conn) => {
                 let uuid = self.command_guest(conn)?.uuid;
-                let mods = self
-                    .guest_attachments
-                    .get(&uuid)
-                    .map(|a| a.to_nbt())
-                    .filter(|c| !c.is_empty());
+                // The acting guest's own: `enter_guest` swapped it into
+                // `player_attachments` for the turn, leaving the host's
+                // under their uuid in the map.
+                let mods = if self.lan_acting_uuid == Some(uuid) {
+                    Some(self.player_attachments.to_nbt())
+                } else {
+                    self.guest_attachments.get(&uuid).map(|a| a.to_nbt())
+                }
+                .filter(|c| !c.is_empty());
                 if let (Some(mods), Tag::Compound(c)) = (mods, &mut data) {
                     c.insert(ATTACHMENTS_KEY.into(), Tag::Compound(mods));
                 }

@@ -11,6 +11,10 @@ use horizon_client::{
 };
 use horizon_core::geometry::Vec3;
 use horizon_protocol::{crypto::offline_uuid, packets::configuration::ClientInformation};
+use horizon_world::{
+    attachments::{ATTACHMENTS_KEY, Attachments},
+    nbt::{Compound, JavaString, Tag},
+};
 use std::sync::{Arc, atomic::AtomicI32, mpsc};
 
 const GUEST_CONN: u32 = 2;
@@ -122,6 +126,12 @@ fn owner_uuid(game: &Game<'_>) -> u128 {
         .unwrap_or_else(|| offline_uuid("Player"))
 }
 
+fn attachments_with(key: &str) -> Attachments {
+    let mut raw = Compound::default();
+    raw.insert(JavaString::from(key), Tag::Double(1.0f64.to_bits()));
+    Attachments::from_nbt(raw)
+}
+
 /// A guest's use/break runs with the hub held out: `native_level_players`
 /// must name the one swapped-in body for who it is (the acting guest), not
 /// as the owner with permission 4.
@@ -180,6 +190,47 @@ fn level_players_lists_the_acting_guest_once_when_the_hub_is_back() {
     assert!(
         players.iter().all(|p| p.uuid != owner),
         "no owner-labelled copy of the guest's body: {players:?}"
+    );
+    let mut host = game.lan.take().expect("the command puts the hub back");
+    game.leave_guest(&mut host, swap);
+    game.lan = Some(host);
+}
+
+/// With the hub back during the guest's turn, `horizon:attachments` for the
+/// acting guest is their own: `enter_guest` swapped it into
+/// `player_attachments`, leaving the host's under their uuid in the map.
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn entity_data_with_attachments_reads_the_acting_guests_own() {
+    let mut game = game();
+    game.guest_attachments
+        .insert(GUEST_UUID, attachments_with("guest_load"));
+    game.player_attachments = attachments_with("host_load");
+    let mut host = game.lan.take().unwrap();
+    let swap = game
+        .enter_guest(&mut host, GUEST_CONN, game.dim)
+        .expect("enter");
+    // What a guest command restores first (`run_guest_command`).
+    game.lan = Some(host);
+    let shown = game
+        .native_entity_data_with_attachments(
+            super::Dim::Overworld.id(),
+            u32::try_from(GUEST_ENTITY).unwrap(),
+        )
+        .expect("the acting guest's data reads");
+    let held = shown
+        .get(&JavaString::from(ATTACHMENTS_KEY))
+        .expect("attachments are shown");
+    let Tag::Compound(map) = held else {
+        panic!("attachments read as a compound, got {held:?}");
+    };
+    assert!(
+        map.contains_key(&JavaString::from("guest_load")),
+        "the acting guest's own attachments, got {held:?}"
+    );
+    assert!(
+        !map.contains_key(&JavaString::from("host_load")),
+        "the host's attachments leaked into the guest's data: {held:?}"
     );
     let mut host = game.lan.take().expect("the command puts the hub back");
     game.leave_guest(&mut host, swap);
