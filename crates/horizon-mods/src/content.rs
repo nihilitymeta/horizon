@@ -1377,10 +1377,21 @@ impl Content {
                     return Err(format!("{name}: item and damage are for a thrown template"));
                 }
                 // One normalised form downstream: every attribute is an
-                // `minecraft:<name>` id (see [`canonical_attribute`]).
+                // `minecraft:<name>` id (see [`canonical_attribute`]). A bare
+                // name and its `minecraft:` spelling name the same
+                // attribute, so giving both is refused rather than letting
+                // `BTreeMap` order pick the winner.
                 let mut attributes = BTreeMap::new();
+                let mut spellings: BTreeMap<String, &str> = BTreeMap::new();
                 for (key, value) in &file.attributes {
-                    attributes.insert(canonical_attribute(&name, key, *value)?, *value);
+                    let canonical = canonical_attribute(&name, key, *value)?;
+                    if spellings.insert(canonical.clone(), key.as_str()).is_some() {
+                        let bare = canonical.strip_prefix("minecraft:").unwrap_or(&canonical);
+                        return Err(format!(
+                            "{name}: attribute {canonical} is given twice ({bare} and {canonical})"
+                        ));
+                    }
+                    attributes.insert(canonical, *value);
                 }
                 file.attributes = attributes;
                 if let Some(size) = &file.size
@@ -2472,6 +2483,30 @@ experimental = ["scripts"]
         for value in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
             let e = canonical_attribute(name, "minecraft:max_health", value).unwrap_err();
             assert!(e.contains("a finite number"), "{value:?}: {e}");
+        }
+    }
+
+    #[test]
+    fn a_mob_attribute_given_bare_and_namespaced_is_refused() {
+        // `BTreeMap` order decides which spelling would win (`max_health`
+        // sorts after its `minecraft:` spelling, `movement_speed` before),
+        // so both spellings together are refused either way.
+        let name = "data/ruby/horizon/entity_type/a.json";
+        for bare in ["max_health", "movement_speed"] {
+            let canonical = format!("minecraft:{bare}");
+            let attributes = format!(r#"{{"{bare}": 1, "{canonical}": 2}}"#);
+            let file = format!(r#"{{"template": "minecraft:zombie", "attributes": {attributes}}}"#);
+            let files: &[(&str, &[u8])] = &[(name, file.as_bytes())];
+            let e = hmod("mob-attribute-twice", MANIFEST_TEXT, files).unwrap_err();
+            assert!(e.contains(name), "{attributes}: {e}");
+            assert!(
+                e.contains(&format!("attribute {canonical} is given twice")),
+                "{attributes}: {e}"
+            );
+            assert!(
+                e.contains(&format!("({bare} and {canonical})")),
+                "{attributes}: {e}"
+            );
         }
     }
 
