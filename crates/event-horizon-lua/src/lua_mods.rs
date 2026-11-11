@@ -337,6 +337,8 @@ return function(slot, horizon, base)
   horizon.count_items = function(who, item) return read("count_items", who, item) end
   horizon.carried_items = function(who) return read("carried_items", who) end
   horizon.data = function(path) return read("data", path) end
+  horizon.menu_contents = function(who) return read("menu_contents", who) end
+  horizon.menu_cursor = function(who) return read("menu_cursor", who) end
   horizon.dev = { inspect = function(who, what) return read("dev_inspect", who, what) end }
   -- A refused registration (a hook name the runtime does not know) is
   -- raised from the script's own line, as any Lua error is.
@@ -956,6 +958,30 @@ impl LuaMod {
                                 t.set("block", block)?;
                                 Value::Table(t)
                             }
+                            None => Value::Nil,
+                        }
+                    }
+                    "menu_contents" => {
+                        let who: Value = FromLuaMulti::from_lua_multi(rest, lua)?;
+                        let Some(uuid) = uuid_of(h, &who) else {
+                            return Ok(Value::Nil);
+                        };
+                        match h.menu_contents(uuid) {
+                            Some(stacks) => {
+                                Value::Table(crate::generated_runtime::struct_vec_to_lua::<
+                                    Option<ItemStack>,
+                                >(lua, &stacks)?)
+                            }
+                            None => Value::Nil,
+                        }
+                    }
+                    "menu_cursor" => {
+                        let who: Value = FromLuaMulti::from_lua_multi(rest, lua)?;
+                        let Some(uuid) = uuid_of(h, &who) else {
+                            return Ok(Value::Nil);
+                        };
+                        match h.menu_cursor(uuid) {
+                            Some(stack) => Value::Table(item_table_of(lua, &stack)?),
                             None => Value::Nil,
                         }
                     }
@@ -2262,6 +2288,10 @@ impl LuaMod {
             "net_send_to_player",
             "send_custom_payload_to_player",
             "net_send_to_server",
+            "open_menu",
+            "open_menu_with_input",
+            "set_menu_items",
+            "close_menu",
         ] {
             let slot = slot.clone();
             api.set(
@@ -3269,6 +3299,83 @@ impl LuaMod {
                 // As above: a refusal is reported, not fatal to the queue.
                 if let Err(e) = host.net_send_to_server(&channel, &bytes) {
                     self.error(format!("{action}: {e}"));
+                }
+            }
+            "open_menu" => {
+                let (who, rows, title, items): (Value, i64, String, Table) =
+                    { (args.get(1)?, args.get(2)?, args.get(3)?, args.get(4)?) };
+                let Some(uuid) = uuid_of(host, &who) else {
+                    log::debug!("[lua:{}] {action}: no such player", self.id);
+                    return Ok(());
+                };
+                let items: Vec<Option<ItemStack>> =
+                    crate::generated_runtime::struct_vec_from_lua(&self.lua, &items, "items")?;
+                let _ = host.open_menu(
+                    uuid,
+                    u8::try_from(rows).unwrap_or(if rows < 0 { 0 } else { u8::MAX }),
+                    horizon_client::mod_api::Text::literal(title),
+                    items,
+                );
+            }
+            "open_menu_with_input" => {
+                let (who, rows, title, items, input): (Value, i64, String, Table, Table) = (
+                    args.get(1)?,
+                    args.get(2)?,
+                    args.get(3)?,
+                    args.get(4)?,
+                    args.get(5)?,
+                );
+                let Some(uuid) = uuid_of(host, &who) else {
+                    log::debug!("[lua:{}] {action}: no such player", self.id);
+                    return Ok(());
+                };
+                let start: usize = match input.get::<Value>("start")? {
+                    Value::Integer(i) => usize::try_from(i).map_err(|_| {
+                        mlua::Error::runtime(format!("{action}: input.start is a slot from 0"))
+                    })?,
+                    Value::Number(n) if n.fract() == 0.0 && n >= 0.0 => n as usize,
+                    other => {
+                        return Err(mlua::Error::runtime(format!(
+                            "{action}: input.start is a number, not {}",
+                            other.type_name()
+                        )));
+                    }
+                };
+                let end: usize = match input.get::<Value>("end")? {
+                    Value::Integer(i) => usize::try_from(i).map_err(|_| {
+                        mlua::Error::runtime(format!("{action}: input.end is a slot from 0"))
+                    })?,
+                    Value::Number(n) if n.fract() == 0.0 && n >= 0.0 => n as usize,
+                    other => {
+                        return Err(mlua::Error::runtime(format!(
+                            "{action}: input.end is a number, not {}",
+                            other.type_name()
+                        )));
+                    }
+                };
+                let items: Vec<Option<ItemStack>> =
+                    crate::generated_runtime::struct_vec_from_lua(&self.lua, &items, "items")?;
+                let _ = host.open_menu_with_input(
+                    uuid,
+                    u8::try_from(rows).unwrap_or(if rows < 0 { 0 } else { u8::MAX }),
+                    horizon_client::mod_api::Text::literal(title),
+                    items,
+                    start..end,
+                );
+            }
+            "set_menu_items" => {
+                let (who, items): (Value, Table) = (args.get(1)?, args.get(2)?);
+                let Some(uuid) = uuid_of(host, &who) else {
+                    return Ok(());
+                };
+                let items: Vec<Option<ItemStack>> =
+                    crate::generated_runtime::struct_vec_from_lua(&self.lua, &items, "items")?;
+                host.set_menu_items(uuid, items);
+            }
+            "close_menu" => {
+                let who: Value = args.get(1)?;
+                if let Some(uuid) = uuid_of(host, &who) {
+                    host.close_menu(uuid);
                 }
             }
             other => self.warn(format!("unknown action {other}")),
@@ -10198,6 +10305,716 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
         // A second nested has_handlers also re-enters.
         assert!(m.has_handlers("server_tick"));
         drop(_outer);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // ---- chest menus (issue 52) ----
+    #[test]
+    fn chest_menu_actions_reach_the_host() {
+        use std::sync::Mutex as M;
+        struct MenuHost {
+            lines: M<Vec<String>>,
+            opened: M<Vec<(u128, u8, String, Vec<Option<ItemStack>>)>>,
+            opened_in: M<
+                Vec<(
+                    u128,
+                    u8,
+                    String,
+                    Vec<Option<ItemStack>>,
+                    std::ops::Range<usize>,
+                )>,
+            >,
+            set: M<Vec<(u128, Vec<Option<ItemStack>>)>>,
+            closed: M<Vec<u128>>,
+            contents: Option<Vec<Option<ItemStack>>>,
+            cursor: Option<ItemStack>,
+        }
+        impl Host for MenuHost {
+            fn dimension(&self) -> &'static str {
+                "minecraft:overworld"
+            }
+            fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
+                vec![test_events::native_server_player(
+                    0x123e4567_e89b_12d3_a456_426614174000,
+                    "steve".into(),
+                    0,
+                    "minecraft:overworld".into(),
+                    [0.0, 64.0, 0.0],
+                    0,
+                    20.0,
+                    0.0,
+                    0.0,
+                    0,
+                    String::new(),
+                )]
+            }
+            fn broadcast(&self, t: horizon_client::mod_api::Text) {
+                self.lines
+                    .lock()
+                    .unwrap()
+                    .push(format!("broadcast {}", t.plain()));
+            }
+            fn open_menu(
+                &mut self,
+                uuid: u128,
+                rows: u8,
+                title: horizon_client::mod_api::Text,
+                items: Vec<Option<ItemStack>>,
+            ) -> Option<i32> {
+                self.opened
+                    .lock()
+                    .unwrap()
+                    .push((uuid, rows, title.plain(), items));
+                Some(7)
+            }
+            fn open_menu_with_input(
+                &mut self,
+                uuid: u128,
+                rows: u8,
+                title: horizon_client::mod_api::Text,
+                items: Vec<Option<ItemStack>>,
+                input: std::ops::Range<usize>,
+            ) -> Option<i32> {
+                self.opened_in
+                    .lock()
+                    .unwrap()
+                    .push((uuid, rows, title.plain(), items, input));
+                Some(8)
+            }
+            fn set_menu_items(&mut self, uuid: u128, items: Vec<Option<ItemStack>>) {
+                self.set.lock().unwrap().push((uuid, items));
+            }
+            fn close_menu(&mut self, uuid: u128) {
+                self.closed.lock().unwrap().push(uuid);
+            }
+            fn menu_contents(&self, _uuid: u128) -> Option<Vec<Option<ItemStack>>> {
+                self.contents.clone()
+            }
+            fn menu_cursor(&self, _uuid: u128) -> Option<ItemStack> {
+                self.cursor.clone()
+            }
+        }
+        let (dir, path) = hmod(
+            "menu_actions",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("net_from_client", function(event)
+                  horizon.open_menu(event.player, 2, "Shop", {
+                    { id = "minecraft:stick", count = 3 },
+                    nil,
+                    { id = "minecraft:apple", count = 2, extra = { note = "hi" } },
+                  })
+                  horizon.open_menu_with_input("steve", 3, "Input", {
+                    { id = "minecraft:stone", count = 1 },
+                  }, { start = 0, ["end"] = 9 })
+                  horizon.set_menu_items(event.player, {
+                    { id = "minecraft:dirt", count = 5 },
+                  })
+                  horizon.close_menu(event.player)
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MenuHost {
+            lines: M::new(Vec::new()),
+            opened: M::new(Vec::new()),
+            opened_in: M::new(Vec::new()),
+            set: M::new(Vec::new()),
+            closed: M::new(Vec::new()),
+            contents: None,
+            cursor: None,
+        };
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            0x123e4567_e89b_12d3_a456_426614174000,
+            "ruby:from",
+            b"hi",
+        );
+        let opened = host.opened.lock().unwrap();
+        assert_eq!(opened.len(), 1);
+        let (uuid, rows, title, items) = &opened[0];
+        assert_eq!(*uuid, 0x123e4567_e89b_12d3_a456_426614174000);
+        assert_eq!(*rows, 2);
+        assert_eq!(title, "Shop");
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].as_ref().unwrap().item.as_ref(), "minecraft:stick");
+        assert_eq!(items[0].as_ref().unwrap().count, 3);
+        assert!(items[1].is_none(), "hole stays None");
+        assert_eq!(items[2].as_ref().unwrap().item.as_ref(), "minecraft:apple");
+        assert_eq!(items[2].as_ref().unwrap().count, 2);
+        assert!(
+            items[2].as_ref().unwrap().extra.is_some(),
+            "extra preserved"
+        );
+        let opened_in = host.opened_in.lock().unwrap();
+        assert_eq!(opened_in.len(), 1);
+        let (uuid2, rows2, title2, items2, range) = &opened_in[0];
+        assert_eq!(*uuid2, 0x123e4567_e89b_12d3_a456_426614174000);
+        assert_eq!(*rows2, 3);
+        assert_eq!(title2, "Input");
+        assert_eq!(items2.len(), 1);
+        assert_eq!(range.clone(), 0..9);
+        let set = host.set.lock().unwrap();
+        assert_eq!(set.len(), 1);
+        assert_eq!(set[0].0, 0x123e4567_e89b_12d3_a456_426614174000);
+        assert_eq!(set[0].1.len(), 1);
+        assert_eq!(
+            set[0].1[0].as_ref().unwrap().item.as_ref(),
+            "minecraft:dirt"
+        );
+        let closed = host.closed.lock().unwrap();
+        assert_eq!(*closed, vec![0x123e4567_e89b_12d3_a456_426614174000]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn menu_rows_saturate_before_host() {
+        use std::sync::Mutex as M;
+        struct RowsHost {
+            opened: M<Vec<u8>>,
+            opened_in: M<Vec<(u8, std::ops::Range<usize>)>>,
+        }
+        impl Host for RowsHost {
+            fn dimension(&self) -> &'static str {
+                "minecraft:overworld"
+            }
+            fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
+                vec![test_events::native_server_player(
+                    0x123e4567_e89b_12d3_a456_426614174000,
+                    "steve".into(),
+                    0,
+                    "minecraft:overworld".into(),
+                    [0.0, 64.0, 0.0],
+                    0,
+                    20.0,
+                    0.0,
+                    0.0,
+                    0,
+                    String::new(),
+                )]
+            }
+            fn open_menu(
+                &mut self,
+                _uuid: u128,
+                rows: u8,
+                _title: horizon_client::mod_api::Text,
+                _items: Vec<Option<ItemStack>>,
+            ) -> Option<i32> {
+                self.opened.lock().unwrap().push(rows);
+                Some(7)
+            }
+            fn open_menu_with_input(
+                &mut self,
+                _uuid: u128,
+                rows: u8,
+                _title: horizon_client::mod_api::Text,
+                _items: Vec<Option<ItemStack>>,
+                input: std::ops::Range<usize>,
+            ) -> Option<i32> {
+                self.opened_in.lock().unwrap().push((rows, input));
+                Some(8)
+            }
+        }
+        let (dir, path) = hmod(
+            "menu_rows",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("net_from_client", function(event)
+                  horizon.open_menu(event.player, -1, "A", {})
+                  horizon.open_menu(event.player, 256, "B", {})
+                  horizon.open_menu_with_input(event.player, -1, "C", {}, { start = 0, ["end"] = 10 })
+                  horizon.open_menu_with_input(event.player, 256, "D", {}, { start = 0, ["end"] = 10 })
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = RowsHost {
+            opened: M::new(Vec::new()),
+            opened_in: M::new(Vec::new()),
+        };
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            0x123e4567_e89b_12d3_a456_426614174000,
+            "x",
+            b"",
+        );
+        assert_eq!(*host.opened.lock().unwrap(), vec![0, 255]);
+        assert_eq!(
+            host.opened_in
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(r, _)| *r)
+                .collect::<Vec<_>>(),
+            vec![0, 255]
+        );
+        assert_eq!(host.opened_in.lock().unwrap()[0].1.clone(), 0..10);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn menu_contents_and_cursor_read_back() {
+        struct ReadHost {
+            contents: Option<Vec<Option<ItemStack>>>,
+            cursor: Option<ItemStack>,
+        }
+        impl Host for ReadHost {
+            fn dimension(&self) -> &'static str {
+                "minecraft:overworld"
+            }
+            fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
+                vec![test_events::native_server_player(
+                    0x123e4567_e89b_12d3_a456_426614174000,
+                    "steve".into(),
+                    0,
+                    "minecraft:overworld".into(),
+                    [0.0, 64.0, 0.0],
+                    0,
+                    20.0,
+                    0.0,
+                    0.0,
+                    0,
+                    String::new(),
+                )]
+            }
+            fn menu_contents(&self, _u: u128) -> Option<Vec<Option<ItemStack>>> {
+                self.contents.clone()
+            }
+            fn menu_cursor(&self, _u: u128) -> Option<ItemStack> {
+                self.cursor.clone()
+            }
+            fn held_stack(&self, _u: u128) -> Option<ItemStack> {
+                None
+            }
+        }
+        let (dir, path) = hmod(
+            "menu_reads",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("net_from_client", function(event)
+                  local c = horizon.menu_contents(event.player)
+                  if c == nil then __C_NIL = true else
+                    __C_LEN = #c
+                    if c[1] then __C1_ID = c[1].id; __C1_COUNT = c[1].count; __C1_PLAIN = c[1].plain end
+                    __C2_NIL = c[2] == nil
+                    if c[3] then __C3_ID = c[3].id; __C3_EXTRA_NIL = c[3].extra == nil end
+                  end
+                  local cur = horizon.menu_cursor(event.player)
+                  if cur == nil then __CUR_NIL = true else __CUR_ID = cur.id; __CUR_COUNT = cur.count end
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let state = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = ReadHost {
+            contents: Some(vec![
+                Some(ItemStack {
+                    item: "minecraft:stick".into(),
+                    count: 2,
+                    damage: 0,
+                    extra: None,
+                }),
+                None,
+                Some(ItemStack {
+                    item: "minecraft:apple".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: Some(Box::new(horizon_client::mod_api::StackData {
+                        repair_cost: 5,
+                        ..Default::default()
+                    })),
+                }),
+            ]),
+            cursor: Some(ItemStack {
+                item: "minecraft:dirt".into(),
+                count: 4,
+                damage: 0,
+                extra: None,
+            }),
+        };
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            0x123e4567_e89b_12d3_a456_426614174000,
+            "x",
+            b"",
+        );
+        let g = state.globals();
+        assert_eq!(g.get::<String>("__C1_ID").unwrap(), "minecraft:stick");
+        assert_eq!(g.get::<i64>("__C1_COUNT").unwrap(), 2);
+        assert!(g.get::<bool>("__C1_PLAIN").unwrap());
+        assert!(g.get::<bool>("__C2_NIL").unwrap());
+        assert_eq!(g.get::<String>("__C3_ID").unwrap(), "minecraft:apple");
+        assert!(!g.get::<bool>("__C3_EXTRA_NIL").unwrap());
+        assert_eq!(g.get::<String>("__CUR_ID").unwrap(), "minecraft:dirt");
+        assert_eq!(g.get::<i64>("__CUR_COUNT").unwrap(), 4);
+        // Now None -> nil
+        let (dir2, path2) = hmod(
+            "menu_reads_nil",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("net_from_client", function(event)
+                  __C_NIL = horizon.menu_contents(event.player) == nil
+                  __CUR_NIL = horizon.menu_cursor(event.player) == nil
+                end)
+                "#,
+            )],
+        );
+        let m2 = LuaMod::load(&path2, LuaSide::Server, &[]).unwrap();
+        let state2 = m2.lua.clone();
+        let mods2: Vec<Box<dyn Hooks>> = vec![Box::new(m2)];
+        let mut host2 = ReadHost {
+            contents: None,
+            cursor: None,
+        };
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host2,
+            &mods2,
+            0x123e4567_e89b_12d3_a456_426614174000,
+            "x",
+            b"",
+        );
+        assert!(state2.globals().get::<bool>("__C_NIL").unwrap());
+        assert!(state2.globals().get::<bool>("__CUR_NIL").unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&dir2).unwrap();
+    }
+
+    #[test]
+    fn wrong_item_shape_raises_and_none_does_not() {
+        use std::sync::Mutex as M;
+        struct BadHost {
+            lines: M<Vec<String>>,
+        }
+        impl Host for BadHost {
+            fn dimension(&self) -> &'static str {
+                "minecraft:overworld"
+            }
+            fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
+                vec![test_events::native_server_player(
+                    0x123e4567_e89b_12d3_a456_426614174000,
+                    "steve".into(),
+                    0,
+                    "minecraft:overworld".into(),
+                    [0.0, 64.0, 0.0],
+                    0,
+                    20.0,
+                    0.0,
+                    0.0,
+                    0,
+                    String::new(),
+                )]
+            }
+            fn broadcast(&self, t: horizon_client::mod_api::Text) {
+                self.lines.lock().unwrap().push(t.plain());
+            }
+            fn open_menu(
+                &mut self,
+                _u: u128,
+                _r: u8,
+                _t: horizon_client::mod_api::Text,
+                _i: Vec<Option<ItemStack>>,
+            ) -> Option<i32> {
+                Some(1)
+            }
+            fn set_menu_items(&mut self, _u: u128, _i: Vec<Option<ItemStack>>) {}
+            fn close_menu(&mut self, _u: u128) {}
+            fn menu_contents(&self, _u: u128) -> Option<Vec<Option<ItemStack>>> {
+                None
+            }
+            fn menu_cursor(&self, _u: u128) -> Option<ItemStack> {
+                None
+            }
+        }
+        // bad shape: count = "x" -> script error naming field, status error mentions it
+        let (dir, path) = hmod(
+            "menu_bad",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("net_from_client", function(event)
+                  horizon.open_menu(event.player, 1, "T", { { id = "minecraft:stick", count = "x" } })
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        set_status(horizon_client::dev_input::mods::ModStatus {
+            id: m.id().into(),
+            side: m.side().as_str().to_owned(),
+            ..Default::default()
+        });
+        let id = m.id().to_owned();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = BadHost {
+            lines: M::new(Vec::new()),
+        };
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            0x123e4567_e89b_12d3_a456_426614174000,
+            "x",
+            b"",
+        );
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.error)
+            .expect("bad item reports");
+        assert!(
+            e.contains("items") && (e.contains("count") || e.contains("item")),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+        // None does not raise: unknown player -> silent no-op, status stays None
+        let (dir2, path2) = hmod(
+            "menu_none",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("net_from_client", function(event)
+                  horizon.open_menu("00000000-0000-0000-0000-000000000099", 1, "T", { { id = "minecraft:stick", count = 1 } })
+                  horizon.set_menu_items("00000000-0000-0000-0000-000000000099", {})
+                  horizon.close_menu("00000000-0000-0000-0000-000000000099")
+                  __NIL = horizon.menu_contents("00000000-0000-0000-0000-000000000099") == nil
+                  __NIL2 = horizon.menu_cursor("00000000-0000-0000-0000-000000000099") == nil
+                  horizon.broadcast("still")
+                end)
+                "#,
+            )],
+        );
+        let m2 = LuaMod::load(&path2, LuaSide::Server, &[]).unwrap();
+        set_status(horizon_client::dev_input::mods::ModStatus {
+            id: m2.id().into(),
+            side: m2.side().as_str().to_owned(),
+            ..Default::default()
+        });
+        let mods2: Vec<Box<dyn Hooks>> = vec![Box::new(m2)];
+        let mut host2 = BadHost {
+            lines: M::new(Vec::new()),
+        };
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host2,
+            &mods2,
+            0x123e4567_e89b_12d3_a456_426614174000,
+            "x",
+            b"",
+        );
+        // No error (or unrelated): the broadcast ran and reads were nil
+        assert_eq!(host2.lines.lock().unwrap().as_slice(), ["still"]);
+        // The nil reads are nil, not error
+        std::fs::remove_dir_all(&dir2).unwrap();
+        // continuation via real drain: open_menu None still lets broadcast run
+        struct NoneHost {
+            lines: M<Vec<String>>,
+        }
+        impl Host for NoneHost {
+            fn dimension(&self) -> &'static str {
+                "minecraft:overworld"
+            }
+            fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
+                vec![test_events::native_server_player(
+                    0x123e4567_e89b_12d3_a456_426614174000,
+                    "steve".into(),
+                    0,
+                    "minecraft:overworld".into(),
+                    [0.0, 64.0, 0.0],
+                    0,
+                    20.0,
+                    0.0,
+                    0.0,
+                    0,
+                    String::new(),
+                )]
+            }
+            fn broadcast(&self, t: horizon_client::mod_api::Text) {
+                self.lines.lock().unwrap().push(t.plain());
+            }
+            fn open_menu(
+                &mut self,
+                _u: u128,
+                _r: u8,
+                _t: horizon_client::mod_api::Text,
+                _i: Vec<Option<ItemStack>>,
+            ) -> Option<i32> {
+                None
+            }
+            fn set_menu_items(&mut self, _u: u128, _i: Vec<Option<ItemStack>>) {}
+            fn close_menu(&mut self, _u: u128) {}
+            fn menu_contents(&self, _u: u128) -> Option<Vec<Option<ItemStack>>> {
+                None
+            }
+            fn menu_cursor(&self, _u: u128) -> Option<ItemStack> {
+                None
+            }
+        }
+        let (dir3, path3) = hmod(
+            "menu_cont",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("net_from_client", function(event)
+                  horizon.open_menu(event.player, 1, "T", { { id = "minecraft:stick", count = 1 } })
+                  horizon.broadcast("after")
+                end)
+                "#,
+            )],
+        );
+        let m3 = LuaMod::load(&path3, LuaSide::Server, &[]).unwrap();
+        let mods3: Vec<Box<dyn Hooks>> = vec![Box::new(m3)];
+        let mut host3 = NoneHost {
+            lines: M::new(Vec::new()),
+        };
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host3,
+            &mods3,
+            0x123e4567_e89b_12d3_a456_426614174000,
+            "x",
+            b"",
+        );
+        assert_eq!(
+            host3.lines.lock().unwrap().as_slice(),
+            ["after"],
+            "broadcast still runs after None open_menu"
+        );
+        std::fs::remove_dir_all(&dir3).unwrap();
+    }
+
+    #[test]
+    fn menu_helpers_raise_in_client_and_draw() {
+        // client stubs at load
+        let (dir, path) = hmod(
+            "menu_client_stubs",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                local function expect(name, f)
+                  local ok, err = pcall(f)
+                  assert(not ok, name.." should fail")
+                  assert(string.find(tostring(err), "horizon."..name.." is only available in scripts/server/", 1, true), name..": "..tostring(err))
+                end
+                expect("open_menu", function() horizon.open_menu("steve", 1, "T", {}) end)
+                expect("open_menu_with_input", function() horizon.open_menu_with_input("steve", 1, "T", {}, {start=0, ["end"]=1}) end)
+                expect("set_menu_items", function() horizon.set_menu_items("steve", {}) end)
+                expect("close_menu", function() horizon.close_menu("steve") end)
+                expect("menu_contents", function() horizon.menu_contents("steve") end)
+                expect("menu_cursor", function() horizon.menu_cursor("steve") end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        assert_eq!(m.side(), LuaSide::Client);
+        std::fs::remove_dir_all(&dir).unwrap();
+        // draw hook on client
+        let (dir2, path2) = hmod(
+            "menu_draw",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("hud", function(event)
+                  __witness = (__witness or 0) + 1
+                  local function tryit(name, f)
+                    local ok, e = pcall(f)
+                    if not ok then _G[name] = tostring(e) else _G[name] = "ran" end
+                  end
+                  tryit("OPEN", function() horizon.open_menu("steve", 1, "T", {}) end)
+                  tryit("INPUT", function() horizon.open_menu_with_input("steve", 1, "T", {}, {start=0, ["end"]=1}) end)
+                  tryit("SET", function() horizon.set_menu_items("steve", {}) end)
+                  tryit("CLOSE", function() horizon.close_menu("steve") end)
+                  tryit("CONTENTS", function() horizon.menu_contents("steve") end)
+                  tryit("CURSOR", function() horizon.menu_cursor("steve") end)
+                end)
+                "#,
+            )],
+        );
+        let m2 = LuaMod::load(&path2, LuaSide::Client, &[]).unwrap();
+        let state = m2.lua.clone();
+        let mods2: Vec<Box<dyn Hooks>> = vec![Box::new(m2)];
+        struct DHost;
+        impl Host for DHost {
+            fn dimension(&self) -> &'static str {
+                "minecraft:overworld"
+            }
+            fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
+                vec![]
+            }
+        }
+        let mut host = DHost;
+        let mut batch = horizon_client::mod_api::HudBatch::new([800, 600]);
+        let mut corners = horizon_client::mod_api::Corners::new(800.0, 600.0, 0.0);
+        horizon_client::mod_api::dispatch_hud(&mut host, &mods2, &mut batch, &mut corners);
+        assert_eq!(state.globals().get::<i64>("__witness").unwrap(), 1);
+        for (k, name) in [
+            ("OPEN", "open_menu"),
+            ("INPUT", "open_menu_with_input"),
+            ("SET", "set_menu_items"),
+            ("CLOSE", "close_menu"),
+            ("CONTENTS", "menu_contents"),
+            ("CURSOR", "menu_cursor"),
+        ] {
+            let v: String = state.globals().get(k).unwrap();
+            assert!(
+                v.contains(&format!(
+                    "horizon.{name} is only available in scripts/server/"
+                )),
+                "{k}: {v}"
+            );
+        }
+        std::fs::remove_dir_all(&dir2).unwrap();
+    }
+
+    #[test]
+    fn menu_clicked_event_round_trip() {
+        let (dir, path) = hmod(
+            "menu_clicked",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("menu_clicked", function(event)
+                  __W = event.window
+                  __S = event.slot
+                  __UUID = event.uuid
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let state = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        struct EHost;
+        impl Host for EHost {
+            fn dimension(&self) -> &'static str {
+                "minecraft:overworld"
+            }
+        }
+        let mut host = EHost;
+        horizon_client::mod_api::dispatch_menu_clicked(
+            &mut host,
+            &mods,
+            0x123e4567_e89b_12d3_a456_426614174000,
+            42,
+            5,
+            0,
+            0,
+        );
+        assert_eq!(state.globals().get::<i64>("__W").unwrap(), 42);
+        assert_eq!(state.globals().get::<i64>("__S").unwrap(), 5);
+        assert_eq!(
+            state.globals().get::<String>("__UUID").unwrap(),
+            "123e4567-e89b-12d3-a456-426614174000"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

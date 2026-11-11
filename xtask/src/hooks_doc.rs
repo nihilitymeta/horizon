@@ -443,6 +443,18 @@ const LUA_HELPERS: &[(&str, &str)] = &[
     ),
     ("light", "`horizon.light(x, y, z)`"),
     (
+        "open_menu",
+        "`horizon.open_menu(player, rows, title, items)`",
+    ),
+    (
+        "open_menu_with_input",
+        "`horizon.open_menu_with_input(player, rows, title, items, input)`",
+    ),
+    ("set_menu_items", "`horizon.set_menu_items(player, items)`"),
+    ("close_menu", "`horizon.close_menu(player)`"),
+    ("menu_contents", "`horizon.menu_contents(player)`"),
+    ("menu_cursor", "`horizon.menu_cursor(player)`"),
+    (
         "mob_effect",
         "`horizon.effect(id, name, ticks[, amplifier])`",
     ),

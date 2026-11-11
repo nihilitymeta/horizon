@@ -769,6 +769,41 @@ first 20 frames with a `... N more` line. A thrown value that is not a string is
 hands the game a NaN or an infinity is refused the same way, naming the field. Setting an optional number (or string)
 field to `nil` clears it.
 
+## Chest menus
+
+A script can show a chest GUI and react to clicks. All six helpers are server state only: like `horizon.broadcast` they queue and run after the handler, and like `horizon.time` the two reads answer at once; they are not in `CLIENT_API` or `DRAW_API`.
+
+Actions (queued, run after the handler like `give_items`):
+
+* `horizon.open_menu(player, rows, title, items)` opens a chest menu of `rows` rows (1 to 6; the native clamps `rows` to 1..=6, no Lua error; values past 6 rows or below 1 clamp to 6 and 1) titled `title` (a Lua string, as `horizon.broadcast`). It closes the player's previous menu (native behaviour).
+* `horizon.open_menu_with_input(player, rows, title, items, input)` is the same, with player-filled slots `input = { start = 0, ["end"] = 9 }` (`start` inclusive, `end` exclusive; `end` is a Lua keyword and is quoted in the table). An empty range or `end > rows*9` is a silent no-op (native returns `None`), not an error.
+* `horizon.set_menu_items(player, items)` replaces what the player's open menu shows.
+* `horizon.close_menu(player)` closes the player's open menu.
+
+`player` is the uuid text a hook event gives, or a player table, exactly as the net-send helpers accept it (`string | ReadPlayer`). `items` is a sequence of item tables or holes, one entry per slot from slot 0 (slot numbers are the native ones, the same numbers `menu_clicked` reports in `event.slot`; they start at 0). An item is `{ id, count, damage, extra }` (`nil` or `false` is an empty slot, `extra` holds components). The native pads or truncates to `rows*9`; the Lua code does not duplicate that.
+
+Reads (answer now, like `horizon.time`):
+
+* `horizon.menu_contents(player)` is a sequence of items, or `nil` when the player has no native menu open. Holes are pinned like other generated sequences; items are the `{ id, count, damage, extra, plain }` tables.
+* `horizon.menu_cursor(player)` is the item on the player's cursor, or `nil`.
+
+The native `open_menu` returns the new window id (`Option<i32>`). Actions are queued and cannot return a value to the script, so the id is dropped: a script learns the window only from the events (`menu_clicked` and `menu_closed` carry `event.window`).
+
+A player who is not online: `open_menu`/`open_menu_with_input` return `None` (silent no-op), `set_menu_items`/`close_menu` are silent no-ops, and `menu_contents` returns `None` (Lua `nil`). None of that is a Lua error.
+
+```lua
+horizon.command("menu", 0, function(player, args)
+  horizon.open_menu(player.uuid, 3, "Pick", {
+    { id = "minecraft:stick", count = 1 },
+    nil, -- slot 1 empty
+    { id = "minecraft:apple", count = 2 },
+  })
+end)
+horizon.on("menu_clicked", function(event)
+  if event.slot == 0 then horizon.close_menu(event.uuid) end
+end)
+```
+
 ## Not built yet
 
 These are what a gameplay mod asks for next, with the API each is planned to get, so that a mod can be written
@@ -780,7 +815,7 @@ table when its step lands, with the tests and the game check that show it.
 |---|---|
 | A mob's attributes, equipment and name at runtime | Host helpers over a mob by id (`set_attribute(dimension, id, name, value)`, `equip(dimension, id, slot, stack)`, `set_name(dimension, id, text)`), then `horizon.set_attribute(id, "max_health", 40)`, `horizon.equip(id, "mainhand", "minecraft:iron_sword")` and `horizon.set_name(id, "Old One")` from any hook with a host, and `mob:set_attribute`, `mob:equip` and `mob:set_name` in the modkit. Until then, a mod declares attributes and equipment in its entity type (`registry.entity_type`), and names mobs through `run_command` |
 | Custom projectiles and other entities that are not mobs | A thrown mod item already flies as its template does (a snowball's `template` in `registry.item`). The planned shape is an entity type of the mod's own over a projectile template (`registry.entity_type("spore", { template = "minecraft:snowball", ... })`), with `projectile_impact` by that kind, and `horizon.shoot(dimension, kind, x, y, z, vx, vy, vz)` to launch one. Vehicles, displays and markers stay the engine's own |
-| Screens | Content mods have menu types (`data/<id>/horizon/menu/`), but a screen that draws them is native only (`native_screen`). Scripts get no screens: titles, subtitles, the action bar, chat lines and commands are their user interface. A later `horizon.open_menu(player, menu, pos)` would show a content mod's menu |
+| Screens | Content mods have menu types (`data/<id>/horizon/menu/`), but a screen that draws them is native only (`native_screen`). Scripts get no screens: titles, subtitles, the action bar, chat lines and commands are their user interface. A later content-menu helper would show a content mod's menu |
 | Client-side scripts | A client state exists when `scripts/client/` does and runs the client hooks (those tagged `client` or `both` in [docs/api/hook-points.md](api/hook-points.md)). A server state runs the server hooks. A mod that registers the other side's hook is refused at load with an error that names the folder to use. Saved data (`horizon.world_data()`, `horizon.player_data`) is server state; the client reads server data only through messages (client-to-server messages are planned, saved data on the client is planned) |
 | Configuration | `horizon.config()` and `horizon.save_config(t)` are all of it: one JSON file that a person edits. There is no options screen and no setting per world; a mod that wants values per world keeps them in `horizon.world_data()`, and sets them with a command of its own |
 

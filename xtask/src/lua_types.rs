@@ -398,6 +398,8 @@ const FUNCTIONS: &[(&str, &str)] = &[
     ),
     ("carried_items", "(who: string | ReadPlayer) -> Carried?"),
     ("data", "(path: string) -> any"),
+    ("menu_contents", "(who: string | ReadPlayer) -> { Item? }?"),
+    ("menu_cursor", "(who: string | ReadPlayer) -> Item?"),
     (
         "dev",
         "{ inspect: (who: ReadPlayer | string, what: number | { x: number, y: number, z: number, face: Vec3?, dimension: string? }) -> boolean }",
@@ -514,6 +516,19 @@ const FUNCTIONS: &[(&str, &str)] = &[
         "net_send_to_server",
         "(channel: string, data: string) -> ()",
     ),
+    (
+        "open_menu",
+        "(who: string | ReadPlayer, rows: number, title: string, items: { (Item | false)? }) -> ()",
+    ),
+    (
+        "open_menu_with_input",
+        "(who: string | ReadPlayer, rows: number, title: string, items: { (Item | false)? }, input: { start: number, [\"end\"]: number }) -> ()",
+    ),
+    (
+        "set_menu_items",
+        "(who: string | ReadPlayer, items: { (Item | false)? }) -> ()",
+    ),
+    ("close_menu", "(who: string | ReadPlayer) -> ()"),
 ];
 
 /// The `registry` global of `scripts/registry.lua`.
