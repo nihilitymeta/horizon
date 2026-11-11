@@ -352,3 +352,119 @@ fn entity_data_with_attachments_reads_the_acting_guests_own() {
     game.leave_guest(&mut host, swap);
     game.lan = Some(host);
 }
+
+/// While a guest's command runs the hub is back in place, but `sneaking`
+/// still holds the last input packet while the live body has the truth
+/// (crouching or swimming): `native_player_sneaking` for the acting guest
+/// must read the live body's pose, like `native_player_eye_height` reads its
+/// box. Any other guest's answer is unchanged.
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn acting_guest_sneaking_reads_the_live_body_while_the_hub_is_back() {
+    // Crouching body, hub says not sneaking.
+    {
+        let mut game = game();
+        let other = {
+            const OTHER_CONN: u32 = 3;
+            const OTHER_UUID: u128 = 3;
+            let (tx, _rx) = mpsc::channel();
+            game.lan.as_mut().unwrap().hub.guests.push(Guest::new(
+                Joined {
+                    conn: OTHER_CONN,
+                    uuid: OTHER_UUID,
+                    name: "OtherGuest".into(),
+                    properties: Vec::new(),
+                    info: ClientInformation::new(2),
+                    brand: "test".into(),
+                    sender: PlayerSender::new(tx, Arc::default()),
+                    latency: Arc::new(AtomicI32::new(0)),
+                    address: "127.0.0.1:25566".parse().unwrap(),
+                    expected: false,
+                    configured: Default::default(),
+                },
+                1002,
+                [9.5, 100.0, 9.5],
+                2,
+            ));
+            game.lan
+                .as_mut()
+                .unwrap()
+                .hub
+                .guests
+                .iter_mut()
+                .find(|g| g.uuid == OTHER_UUID)
+                .unwrap()
+                .placed = true;
+            game.lan
+                .as_mut()
+                .unwrap()
+                .hub
+                .guests
+                .iter_mut()
+                .find(|g| g.uuid == OTHER_UUID)
+                .unwrap()
+                .sneaking = true;
+            OTHER_UUID
+        };
+        game.lan
+            .as_mut()
+            .unwrap()
+            .hub
+            .guests
+            .iter_mut()
+            .find(|g| g.uuid == GUEST_UUID)
+            .unwrap()
+            .sneaking = false;
+        let mut host = game.lan.take().unwrap();
+        let swap = game
+            .enter_guest(&mut host, GUEST_CONN, game.dim)
+            .expect("enter");
+        game.player.as_mut().expect("body").pose = Pose::Crouching;
+        // What a guest command restores first (`run_guest_command`).
+        game.lan = Some(host);
+        assert_eq!(
+            game.native_player_sneaking(GUEST_UUID),
+            Some(true),
+            "crouching body, hub row says false"
+        );
+        assert_eq!(
+            game.native_player_sneaking(other),
+            Some(true),
+            "a guest who is not acting still reads its hub row"
+        );
+        let mut host = game.lan.take().expect("the command puts the hub back");
+        game.leave_guest(&mut host, swap);
+        game.lan = Some(host);
+    }
+    // Swimming body, hub says sneaking.
+    {
+        let mut game = game();
+        game.lan
+            .as_mut()
+            .unwrap()
+            .hub
+            .guests
+            .iter_mut()
+            .find(|g| g.uuid == GUEST_UUID)
+            .unwrap()
+            .sneaking = true;
+        let mut host = game.lan.take().unwrap();
+        let swap = game
+            .enter_guest(&mut host, GUEST_CONN, game.dim)
+            .expect("enter");
+        game.player
+            .as_mut()
+            .expect("body")
+            .set_pose(Pose::Swimming)
+            .unwrap();
+        game.lan = Some(host);
+        assert_eq!(
+            game.native_player_sneaking(GUEST_UUID),
+            Some(false),
+            "swimming body, hub row says true"
+        );
+        let mut host = game.lan.take().expect("the command puts the hub back");
+        game.leave_guest(&mut host, swap);
+        game.lan = Some(host);
+    }
+}

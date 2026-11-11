@@ -403,6 +403,16 @@ impl Game<'_> {
     /// state is swapped in for their action) from their pose. None for a
     /// player the game doesn't know. API @API:dev_helpers@.
     pub(super) fn native_player_sneaking(&self, uuid: u128) -> Option<bool> {
+        // The acting guest's hub record lost its pose to the swapped-in
+        // body (`enter_guest`): its `sneaking` holds the last input packet,
+        // while the live body has the truth. Answer from that body, like
+        // `native_player_eye_height` reads its box.
+        if self.lan_acting_uuid == Some(uuid) {
+            return self
+                .player
+                .as_ref()
+                .map(|p| p.pose == horizon_client::pose::Pose::Crouching);
+        }
         if let Some(g) = self
             .lan
             .as_ref()
