@@ -197,6 +197,58 @@ fn level_players_lists_the_acting_guest_once_when_the_hub_is_back() {
     game.lan = Some(host);
 }
 
+/// An acting guest who is not placed is not in the world, so
+/// `native_level_players` must not list them even when the hub is back
+/// (their command). A placed acting guest still is.
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn level_players_does_not_list_an_unplaced_acting_guest_when_the_hub_is_back() {
+    // Unplaced acting guest, hub back: not listed.
+    {
+        let mut game = game();
+        game.lan
+            .as_mut()
+            .unwrap()
+            .hub
+            .guests
+            .iter_mut()
+            .find(|g| g.uuid == GUEST_UUID)
+            .unwrap()
+            .placed = false;
+        let mut host = game.lan.take().unwrap();
+        let swap = game
+            .enter_guest(&mut host, GUEST_CONN, game.dim)
+            .expect("enter");
+        game.lan = Some(host);
+        let players = game.native_level_players();
+        assert!(
+            players.iter().all(|p| p.uuid != GUEST_UUID),
+            "unplaced acting guest is not in the world: {players:?}"
+        );
+        assert!(players.is_empty(), "no other players either: {players:?}");
+        let mut host = game.lan.take().expect("the command puts the hub back");
+        game.leave_guest(&mut host, swap);
+        game.lan = Some(host);
+    }
+    // Placed acting guest, hub back: still listed (replacement path).
+    {
+        let mut game = game();
+        let mut host = game.lan.take().unwrap();
+        let swap = game
+            .enter_guest(&mut host, GUEST_CONN, game.dim)
+            .expect("enter");
+        game.lan = Some(host);
+        let players = game.native_level_players();
+        assert!(
+            players.iter().any(|p| p.uuid == GUEST_UUID),
+            "placed acting guest is listed: {players:?}"
+        );
+        let mut host = game.lan.take().expect("the command puts the hub back");
+        game.leave_guest(&mut host, swap);
+        game.lan = Some(host);
+    }
+}
+
 /// The acting guest crouches: asking for the `level.dat` owner (or the
 /// offline uuid of "Player") on a server with the guest swapped in must not
 /// answer with the guest's pose.

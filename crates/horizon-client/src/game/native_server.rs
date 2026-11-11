@@ -349,7 +349,16 @@ impl Game<'_> {
         if let Some(acting) = self.native_acting_player() {
             if let Some(slot) = players.iter_mut().find(|g| g.uuid == acting.uuid) {
                 *slot = acting;
-            } else {
+            } else if !self.lan.as_ref().is_some_and(|host| {
+                host.hub
+                    .guests
+                    .iter()
+                    .find(|g| g.uuid == acting.uuid)
+                    .is_some_and(|g| !g.placed)
+            }) {
+                // Unplaced guests are not in the world yet: `native_server_
+                // players` filtered them for that reason, so do not add them
+                // back here.
                 players.insert(0, acting);
             }
             return players;
