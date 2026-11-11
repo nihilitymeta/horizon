@@ -11,6 +11,91 @@ where this page and that file disagree, that file wins. Field types follow the s
 a uuid as lowercase text, rich text as a string plus a `<field>_component` table, a stack as
 `{id, count, damage, extra, plain}`, a block state as its id string plus `<field>_props`.
 
+## How to migrate a mod
+
+Four passes: the mod loads, what it declares is accepted, it runs in a world, and its log is quiet. Each pass has one
+command that says where you are.
+
+1. **Update the engine and the modkit.** The generated hooks are on the engine's `engine-work` branch, and the modkit
+   that speaks them is on `main`. The checkouts sit side by side, as [dev-setup.md](dev-setup.md) lays them out.
+
+   ```sh
+   cd ~/src/horizon && git switch engine-work && git pull --ff-only
+   cargo build --profile fast -p event-horizon -p horizon-client-lib
+   cargo build -p cargo-horizon-mod
+   cd ~/src/horizon-modkit && git pull --ff-only
+   ```
+
+2. **Move the entry points.** A mod used to have one Lua state and `scripts/init.lua`. It has one state per side now:
+   `scripts/server/init.lua` on the server, `scripts/client/init.lua` in a player's game, and `scripts/shared/` for
+   the modules either side may `require`. A mod with only `scripts/init.lua` is not loaded
+   ([lua-bindings.md](lua-bindings.md#getting-started)). A hook the client fires — `hud`, `gui_layer_post`, `command` —
+   belongs in `scripts/client/`. `scripts/registry.lua` and `scripts/registry/` keep their paths.
+
+3. **Load it without a world.** `check` runs the game's own headless loader on both sides, then StyLua, selene and
+   luau-lsp, and names the file and line of every failure
+   ([lua-bindings.md](lua-bindings.md#checking-a-mod-without-a-world)):
+
+   ```sh
+   cd ~/src/horizon
+   target/debug/cargo-horizon-mod horizon-mod check ~/src/horizon-parasite-mod \
+     --game target/fast/horizon-client \
+     --dev-mod ~/src/horizon-modkit \
+     --resources ~/src/horizon-resources/26.3
+   ```
+
+   `cargo horizon-mod check` is the same command when the binary is on your `PATH`. If luau-lsp cannot find the
+   modkit's types, add `--modkit ~/src/horizon-modkit` (the mod's own `.luaurc` is never edited for it). Fix what it
+   names, in the order it names it. A load failure is one of:
+
+   - `horizon.on("mob_tick"): no such hook; the hooks are ...` — an old hook name. Take the new one from the table
+     below, or from the `HorizonOn` overloads in [horizon.d.lua](api/horizon.d.lua).
+   - `hook 'command' runs on the client: register it from scripts/client/` — the hook moved to the other side.
+   - `horizon.on("destroy_block"): this hook takes no kind` — the hook no longer filters by kind. Drop the third
+     argument and check `event.state` (or `event.stack.id`) in Lua.
+   - `horizon.on("block_entity"): no such hook` — `block_entity` and `block_entity_ticks` are declaration-served:
+     declare them with `horizon.block_entity(block, { ticks = true, data = {...} })` at load, and hear
+     `block_entity_tick`.
+   - a goal or a command that fails when it is declared.
+
+   The type step reports separately: an `event.<field>` that luau-lsp says is not on the type is not on that hook's
+   event, and the table below names the field that replaces it.
+
+4. **Run it in a world and read the log.** Errors that need a world do not show up in `check`: a handler still written
+   for the old arguments gets nil for its second parameter and fails at its first use of it. Start a scratch game and
+   drive the mod through the same socket ([horizon-ctl-commands.md](horizon-ctl-commands.md)):
+
+   ```sh
+   cd ~/src/horizon
+   GAME_DIR=$(mktemp -d)
+   CTL="target/fast/horizon-ctl --socket $PWD/migrate.sock"
+   $CTL launch --game target/fast/horizon-client --wait --offscreen \
+     --game-dir "$GAME_DIR" --resources ~/src/horizon-resources/26.3 \
+     --world Migrate --dev-mod ~/src/horizon-modkit --dev-mod ~/src/horizon-parasite-mod
+   $CTL wait-ready 180
+   ```
+
+   Play the mod's own scenarios with `command`, `summon`, `give`, `chat`, `attack`, `interact` and `break`, then read
+   the errors:
+
+   ```sh
+   $CTL logs --lines 200
+   ```
+
+   Each error is a line tagged `[lua:<id>]`, with the hook, the message naming the script and its line, and the
+   traceback under it ([lua-bindings.md](lua-bindings.md#limits-and-errors)). Fix the script, then run it again
+   without a restart:
+
+   ```sh
+   $CTL reload-mods            # every scripted mod, both sides; `reload-mods <mod id>` for one
+   ```
+
+   A change to `scripts/registry.lua` or to a declaration needs a restart: `$CTL quit`, then launch again.
+
+Repeat passes 3 and 4 until both are clean. With `--dev-tools`, the in-game `/lua` console lists each scripted mod's
+handlers, goals and last error, and its reload button does what `reload-mods` does
+([lua-bindings.md](lua-bindings.md#working-on-a-script)).
+
 ## Per-hook rows
 
 Old name | New hook | New event shape | Old positional arguments become | Fields lost | Fields gained | How to filter
@@ -77,6 +162,69 @@ call's `fn(player, args)` handler. Every other `horizon.on` handler is `function
 to the event fields in the table above. A parameter the handler names past `event` reads nil (past `args` for
 `perform_command`). (Goal functions keep their own shape, `function(mob, state, out)`.)
 
+The third column of each row is the new event shape, and the fourth maps the old arguments onto it. Three rows,
+worked:
+
+**`mob_spawned`: a position replaces three numbers.** The old handler took `(dimension, kind, x, y, z, natural)`:
+
+```lua
+-- old
+horizon.on("mob_spawned", function(dimension, kind, x, y, z, natural)
+  if kind == "minecraft:zombie" and natural then
+    horizon.log(("zombie at %.0f %.0f %.0f"):format(x, y, z))
+  end
+end, "minecraft:zombie")
+
+-- new: one event table, the same values by name
+horizon.on("mob_spawned", function(event)
+  if event.kind == "minecraft:zombie" and event.natural then
+    horizon.log(("zombie at %.0f %.0f %.0f"):format(event.pos.x, event.pos.y, event.pos.z))
+  end
+end, "minecraft:zombie")
+```
+
+**`block_broken` → `destroy_block`: a bare handler and a read replace the by-block-id registration and the player.**
+The old handler took `(x, y, z, block, player)` and was registered by block id:
+
+```lua
+-- old
+horizon.on("block_broken", function(x, y, z, block, player)
+  if block == "minecraft:diamond_ore" then
+    horizon.broadcast(player.name .. " found diamonds at " .. x .. " " .. y .. " " .. z)
+  end
+end, "minecraft:diamond_ore")
+
+-- new: bare; the block's id is event.state, the player is a read
+horizon.on("destroy_block", function(event)
+  if event.state == "minecraft:diamond_ore" then
+    local player = horizon.acting_player()
+    horizon.broadcast(player.name .. " found diamonds at " .. event.pos.x .. " " .. event.pos.y .. " " .. event.pos.z)
+  end
+end)
+```
+
+**`item_hit` → `attack_entity`: the hand is a read, not an argument.** The old handler took `(item, player, target)` and
+was registered by the held item's id:
+
+```lua
+-- old
+horizon.on("item_hit", function(item, player, target)
+  if target.kind == "minecraft:zombie" and item.id == "minecraft:iron_sword" then
+    horizon.cancel()
+  end
+end, "minecraft:iron_sword")
+```
+
+```lua
+-- new: register by the foe's kind and check the hand in Lua
+horizon.on("attack_entity", function(event)
+  local held = horizon.acting_player().held
+  if event.kind == "minecraft:zombie" and held and held.id == "minecraft:iron_sword" then
+    horizon.cancel()
+  end
+end, "minecraft:zombie")
+```
+
 ### Bare uuid fields are uuid text
 
 Where the native hook carries a bare uuid, the event field reads as its lowercase text form, never a number.
@@ -105,28 +253,21 @@ handler fails through the hook's error path instead of silently doing nothing:
 - `horizon.set_amount` ("horizon.set_amount does nothing: set event.amount = n in item_damaged, living_damage_pre, living_heal, living_incoming_damage, living_incoming_damage_v2, living_incoming_damage_v3, player_exp_change, player_hurt_by_player or player_xp_change"): assign `event.amount` in one of those hooks instead
 - `horizon.reply` → assign `event.replies` in `player_chat` or `player_command`
 
-### Removed capabilities and their Lua replacements
+### Capabilities that were lost on purpose
 
-Every loss below except `set_count` now has a Lua replacement; the rows above name the same
+The generated events carry less than the hand-written hooks did, on purpose: a value an event does not need is not
+copied on every firing. Every loss below except `set_count` has a Lua replacement; the rows above name the same
 replacements per hook.
 
-- Per-mob saved `data` in mob events (`mob_died`, `mob_killed`, `mob_tick`, `mob_interact`): the generated events
-  carry no `data` field and no writeback. Read and write it with `horizon.entity_data(event.entity)` instead,
-  keyed by the entity id, with the same writeback rules as `horizon.world_data()`.
-- The event `player` table in `player_chat`, `item_crafted`, `item_picked_up`, `item_dropped`,
-  and `mob_killed`: the event carries the uuid text instead. In a hook fired for that player,
-  `horizon.acting_player()` is their table; otherwise resolve it with `horizon.player(event.player)` where
-  the hook has a host. In `player_died` the event carries the uuid text and the hook has a host, so
-  `horizon.player(event.player)` reads the table while they are still on; the name is unrecoverable once
-  they are gone.
-- The held item: `player_tick`'s `player` argument (with `held`) is gone with the argument; `attack_entity`
-  and `inventory_tick` name no stack. Read the selected hotbar stack at `horizon.player(name).held` or
-  `horizon.acting_player().held` instead, as a full `Item` table — for `inventory_tick` that is the ticking
-  player's selected stack, not the stack in the ticking slot. Only a `perform_command` handler's
-  `player` table still carries `held` in the old `{item, count, plain}` hand shape.
-- The ticking player in `player_tick`: `horizon.acting_player()` returns the player whose tick fired.
-  Read the whole list with `horizon.players()` instead when no player acts.
-- `set_count` from `inventory_tick`: no replacement, since the hook has no stack to write to.
+| Lost | Replacement |
+|---|---|
+| per-mob saved `data` in the mob events (`mob_died`, `mob_killed`, `mob_tick`, `mob_interact`) | `horizon.entity_data(event.entity)`: read and write it keyed by the entity id, with the same writeback rules as `horizon.world_data()` |
+| the event `player` table in `player_chat`, `item_crafted`, `item_picked_up`, `item_dropped`, `mob_killed` and `mob_died` | the uuid text. `horizon.acting_player()` in a hook fired for that player (a craft, pickup or drop); `horizon.player(event.player)` where the hook has a host. `player_died` has a host, so that read works while they are still on, and the name is unrecoverable once they are gone. `player_chat` has no host and no acting player |
+| the held item in `player_tick`, `attack_entity` and `inventory_tick` | `horizon.acting_player().held`, a full `Item` table, or `horizon.player(name).held`. In `inventory_tick` that is the ticking player's selected stack, not the stack in the ticking slot. Only a `perform_command` handler's `player` table keeps the old `{item, count, plain}` hand shape |
+| the ticking player in `player_tick` | `horizon.acting_player()` returns the player whose tick fired; `horizon.players()` is the whole list when no player acts |
+| `set_count` from `inventory_tick` | none: the hook names no stack |
+| the by-item-id and by-block-id registration (`item_use`, `item_use_on`, `item_hit`, `item_hurt_enemy`, `item_crafted`, `item_picked_up`, `item_dropped`, `block_broken`, `block_placed`) | register bare and check `event.stack.id`, `event.item` or `event.state` in Lua, or register by kind where the hook takes one. Every firing wakes the handler, so keep it short |
+| the block entity's `data` in `right_click_block`, and `set_block_property` there | declare the block entity with `horizon.block_entity(block, { ticks = true, data = {...} })`, read its table in `block_entity_tick`, and replace a click's block with `horizon.set_block`. `set_block_property` runs in `random_tick`, `tick_block` and `block_entity_tick` only |
 
 ### Registrations that now mean something else
 
@@ -140,5 +281,212 @@ replacements per hook.
   not script hooks: the game answers them from the sibling hooks' registries, and registering for them fails the
   load. They exist so an unheard hook costs nothing.
 - `block_entity` and `block_entity_ticks` are declaration-served, not registerable: declare them with
-  `horizon.block_entity(block, {ticks, data})` instead of `horizon.on`. Registering for them fails the load with
-  "no such hook".
+  `horizon.block_entity(block, { ticks = true, data = {...} })` instead of `horizon.on`. Registering for them fails the
+  load with "no such hook".
+
+## Things the old API had that moved or changed
+
+What the parasite mod is known to use, item by item: where it is today, how it was called, how it is called now, and a
+before/after. Five of the six changed; `self:every` did not.
+
+### `self:every`
+
+**Where it is today**: the modkit's goal-state counter, `State:every(name, ticks)` in
+`horizon-modkit/scripts/server/modkit/goal.lua:21` (the sibling checkout that [dev-setup.md](dev-setup.md) puts beside
+this one), documented in the modkit's `docs/api.md` ("`self:every(name, ticks)`") and used in its
+`docs/guides/mobs.md`. It is not an engine helper: the engine hands a goal a plain `state` table, passed to
+`can_use(mob, state, out)` (`crates/event-horizon-lua/src/lua_mods/goals.rs:4-5`; `GoalState` at
+[horizon.d.lua:20](api/horizon.d.lua)).
+
+**Old usage**: `self:every("path", 20)` inside a goal's `tick`, where `self` is that goal's state for that mob.
+**New usage**: the same call, from the same place. The goal functions keep their shape, `function(mob, state, out)`
+in the engine and `function(self, mob)` in the modkit; only the hooks around them changed.
+
+```lua
+-- old and new: the goal body does not change
+local Approach = modkit.Goal({
+  flags = { "move", "look" },
+  can_use = function(self, mob) return mob:player_within(8) end,
+  tick = function(self, mob)
+    local p = mob.nearest_player
+    if p and (mob.navigation_done or self:every("path", 20)) then
+      mob:navigate_to(p.x, p.y, p.z, 1.0)
+    end
+  end,
+})
+```
+
+Only a goal's state table has `:every` and `:cooldown` in the modkit. A counter that sat on an entity, item or player
+class was the mod's own: keep it, or count with `horizon.ticks()`, or use a `horizon.every` timer.
+
+### `horizon.feedback`
+
+**Where it is today**: declared as `feedback: (text: string) -> ()` ([horizon.d.lua:996](api/horizon.d.lua)), installed
+as a queued action at `crates/event-horizon-lua/src/lua_mods.rs:2218`, and answered only by the command host
+(`apply_command_action`, `lua_mods.rs:3223`), which the `perform_command` hook calls
+(`crates/event-horizon-lua/src/generated_runtime.rs:1923`). Described at
+[lua-bindings.md:373](lua-bindings.md#commands).
+
+**Old usage**: inside a server-side `horizon.on("command", function(player, args) ... end)` handler, or the declaring
+`horizon.command(usage, level, fn)` call, which heard a mod command being performed.
+**New usage**: the same call, inside `horizon.command(usage, level, fn(player, args))` or a
+`horizon.on("perform_command", fn, words)` handler. The function itself is unchanged. From any other hook it is queued
+and dropped with `unknown action feedback` in the log (`lua_mods.rs:3213`), and in a client state the name raises the
+server-only error ([lua-bindings.md:226](lua-bindings.md#the-horizon-table)).
+
+```lua
+-- old: scripts/init.lua; the declaring call carried the answer
+horizon.command("parasite count [kind:word]", 0, function(player, args)
+  horizon.feedback(("%d parasites"):format(count_parasites(args.kind)))
+end)
+
+-- new: scripts/server/init.lua; the hook is perform_command, and its handler is the
+-- one hook that keeps positional arguments, fn(player, args)
+horizon.command("parasite count [kind:word]", 0, function(player, args)
+  horizon.feedback(("%d parasites"):format(count_parasites(args.kind)))
+end)
+horizon.on("perform_command", function(player, args)
+  horizon.log("a mod command ran: " .. args.raw)
+end)
+```
+
+### `horizon.ticks`
+
+**Where it is today**: `crates/event-horizon-lua/src/lua_mods.rs:385`, in the timer code the runtime installs
+(`lua_mods.rs:356`); declared as `ticks: () -> number` ([horizon.d.lua:987](api/horizon.d.lua)) and described at
+[lua-bindings.md:237](lua-bindings.md#the-mod).
+
+**Old usage**: the number of server ticks seen since the scripts loaded, because a mod had one state and it was the
+server's. `horizon.after` and `horizon.every` counted the same ticks.
+**New usage**: the same calls, but each state counts its own side: server ticks in `scripts/server/init.lua`, client
+ticks in `scripts/client/init.lua` ([lua-bindings.md:387-390](lua-bindings.md#timers-and-saved-data)). A server script
+needs no change. A module in `scripts/shared/` runs once in each state, so a timer there now runs twice in single
+player, once per side, each copy counting its own side's ticks.
+
+```lua
+-- old: scripts/init.lua, one state, server ticks
+horizon.every(20, function() horizon.log(("tick %d"):format(horizon.ticks())) end)
+
+-- new: scripts/server/init.lua, the same call and the same ticks
+horizon.every(20, function() horizon.log(("tick %d"):format(horizon.ticks())) end)
+
+-- new: the same code in scripts/shared/ runs in both states, so choose one
+if horizon.side == "server" then
+  horizon.every(20, function() horizon.log(("tick %d"):format(horizon.ticks())) end)
+end
+```
+
+### Goals: the five actions, `register_goals`, `mob_ai_register`
+
+**Where it is today**: the five actions are declared at [horizon.d.lua:1004-1008](api/horizon.d.lua) (`add_goal`,
+`add_target_goal`, `clear_goals`, `clear_target_goals`, `set_body_rotation`), installed as queued actions at
+`crates/event-horizon-lua/src/lua_mods.rs:2226-2230`, and applied to the registering mob after the handler returns
+(`crates/event-horizon-lua/src/generated_runtime.rs:1565-1578`). The hooks are `mob_ai_register` and
+`register_goals` (`crates/event-horizon-lua/src/generated_hooks/mod.rs:2251` and `:2269`), described at
+[lua-bindings.md:502-503](lua-bindings.md#mobs).
+
+**Old usage**: `horizon.on("mob_ai_register", function(mob) ... end, kind)`, the mob's view as the only argument, and
+the five calls on `horizon`. `horizon.goal(name, def)` defined the goal, with `can_use(mob, state, out)`.
+**New usage**: `horizon.on("mob_ai_register", function(event) ... end, kind)`, the view at `event.mob`. The five calls
+keep their names, may also be made from `register_goals`, and run on the mob after the call. The goal's own functions
+keep their shape. Three traps the rows above name: `register_goals` also fires for a client's copies, and before a
+`"goals": "none"` mob's selectors are wiped, so a goal added there on such a mob is gone by `mob_ai_register`; a goal
+added in both hooks is attached twice; and a handler that fails drops the goals queued before it.
+
+`"stalk"` and `"hunt_player"` are goal names defined with `horizon.goal` at load, as in
+[lua-bindings.md:249-263](lua-bindings.md#mob-goals).
+
+```lua
+-- old: scripts/init.lua
+horizon.on("mob_ai_register", function(mob)
+  if mob.kind == "minecraft:zombie" then
+    horizon.clear_goals()
+    horizon.clear_target_goals()
+    horizon.add_goal(2, "stalk")
+    horizon.add_target_goal(1, "hunt_player")
+    horizon.set_body_rotation("smooth", 5)
+  end
+end, "minecraft:zombie")
+
+-- new: scripts/server/init.lua; the same five calls, on event.mob
+horizon.on("mob_ai_register", function(event)
+  local mob = event.mob
+  if mob.kind == "minecraft:zombie" then
+    horizon.clear_goals()
+    horizon.clear_target_goals()
+    horizon.add_goal(2, "stalk")
+    horizon.add_target_goal(1, "hunt_player")
+    horizon.set_body_rotation("smooth", 5)
+  end
+end, "minecraft:zombie")
+```
+
+### Commands: `horizon.command` and `perform_command`
+
+**Where it is today**: `horizon.command(usage, level, fn)` is installed at
+`crates/event-horizon-lua/src/lua_mods.rs:2136-2137` and declared at [horizon.d.lua:958](api/horizon.d.lua).
+`perform_command` is the generated hook (`crates/event-horizon-lua/src/generated_hooks/mod.rs:1864`, its runtime at
+`crates/event-horizon-lua/src/generated_runtime.rs:1880`), described at
+[lua-bindings.md:360-381](lua-bindings.md#commands).
+
+**Old usage**: `horizon.command(usage, level, fn)` declared the command and attached `fn(player, args)`; a bare
+`horizon.on("command", fn)` was the server hook that heard a declared command being performed.
+**New usage**: `horizon.command(usage, level, fn(player, args))` is unchanged. The hook that hears a mod command is
+`perform_command`, and it is the one hook whose handler keeps positional arguments: `fn(player, args)`, with the
+command's words as the kind. A bare `horizon.on("command", fn)` is now the client hook: it fires for every slash line
+the player types, before the server sees it, and `horizon.cancel()` there drops the line. Registering it from
+`scripts/server/` fails the load, and `horizon.command` in a client state raises the server-only error.
+
+```lua
+-- old: scripts/init.lua
+horizon.command("parasite count [kind:word]", 0, function(player, args)
+  horizon.feedback(("%d"):format(count_parasites(args.kind)))
+end)
+horizon.on("command", function(player, args)        -- also heard the declared commands
+  horizon.log("a mod command ran: " .. args.raw)
+end)
+
+-- new: scripts/server/init.lua; the second handler is perform_command (no kind hears
+-- every declared command, as the bare old handler did). scripts/client/ gets the
+-- client `command` hook instead, with `function(event)` and `event.command`
+horizon.command("parasite count [kind:word]", 0, function(player, args)
+  horizon.feedback(("%d"):format(count_parasites(args.kind)))
+end)
+horizon.on("perform_command", function(player, args)
+  horizon.log("a mod command ran: " .. args.raw)
+end)
+```
+
+### Per-mob saved data: `horizon.entity_data(id)`
+
+**Where it is today**: declared as `entity_data: (id: number) -> Data?` ([horizon.d.lua:975](api/horizon.d.lua)), the
+function at `crates/event-horizon-lua/src/lua_mods.rs:331`, the read at `lua_mods.rs:639-681`, its writeback
+`store_fetched` (`lua_mods.rs:973`) after the handlers return (`lua_mods.rs:2873`);
+described at [lua-bindings.md:393](lua-bindings.md#timers-and-saved-data).
+
+**Old usage**: the last argument of the mob hooks (`mob_died`, `mob_killed`, `mob_tick`, `mob_interact`), edited in
+place and written back after the handler. None of the generated events carries it.
+**New usage**: read the table by the entity id the event names, in any hook with a host:
+`horizon.entity_data(event.entity)`, written back after the call exactly like `horizon.world_data()`
+([lua-bindings.md:405-406](lua-bindings.md#timers-and-saved-data)). It is nil when the entity is not in the level on a
+server. On a client it is server-only: from any hook that is not a draw hook it raises "horizon.entity_data is only
+available in scripts/server/ (this is the client state of mod ...)", and a draw hook is refused before any table is
+built.
+
+```lua
+-- old: the saved table was the last argument, written back for you
+horizon.on("mob_tick", function(dimension, mob, data)
+  data.ticks = (data.ticks or 0) + 1
+end, "minecraft:cow")
+
+-- new: the event names the entity; the table is a read with the same writeback
+horizon.on("entity_tick_post", function(event)
+  local data = horizon.entity_data(event.entity)
+  if data then data.ticks = (data.ticks or 0) + 1 end
+end, "minecraft:cow")
+```
+
+A mod that already worked around the loss kept this state in `horizon.world_data()` keyed by the mob's id. That still
+loads, but move the keys to `horizon.entity_data`: an entity's table is saved with the entity, and stays out of the
+world's table.
+
