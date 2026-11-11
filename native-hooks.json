@@ -2336,6 +2336,7 @@
       "name": "loot_function",
       "version": 1,
       "target": "horizon_world::loot::native_loot_function",
+      "side": "server",
       "mod_api": {
         "contract": "collect",
         "out": "stack"
@@ -2345,6 +2346,7 @@
       "name": "loot_condition",
       "version": 1,
       "target": "horizon_world::loot::native_loot_condition",
+      "side": "server",
       "mod_api": {
         "contract": "collect",
         "out": "holds"
