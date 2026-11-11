@@ -658,7 +658,8 @@ or `--tools-cache <dir>` override it)
    `horizon-modkit` checkout: when that sibling is missing, `--modkit <dir>` (or `$MODKIT`) points the analysis
    at the real checkout through a staged `.luaurc` in the cache — the mod's own `.luaurc` is never edited — and
    with no modkit to be found at all, only the `@modkit` require's diagnostics are dropped, with a notice (the step
-   still passes, and its JSON `detail` carries the notice). A `--modkit` that is not a directory is an error.
+   still passes, and its JSON `detail` carries the notice). A `--modkit` that is not a directory is an error, and so
+   is a `$MODKIT` that is set but not a directory (`$MODKIT: <path> is not a directory`); `--modkit` wins over it.
 
 Steps 2 and 3 run in-process (StyLua and selene are linked in). Nothing is looked up on the `PATH`: step 4 runs the
 luau-lsp in the cache (downloaded once) or the binary that `--luau-lsp <path>` names.

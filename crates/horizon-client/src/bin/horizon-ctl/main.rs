@@ -106,6 +106,23 @@ impl Client {
     }
 }
 
+/// A request line the control socket can carry: one line. A line break in it
+/// would end the request early and the game would read the rest as another command.
+fn one_line_refusal(line: &str) -> Option<Failure> {
+    if !line.contains(['\n', '\r']) {
+        return None;
+    }
+    let name = line.split_whitespace().next().unwrap_or("command");
+    let hint = if name == "lua" {
+        "join the statements with ';' or use a file"
+    } else {
+        "send each line as its own horizon-ctl call"
+    };
+    Some(Failure::usage(format!(
+        "a control command must be one line (the control socket is line based): {name} has a line break in it; {hint}"
+    )))
+}
+
 /// Whether a game's protocol (`MAJOR.MINOR.PATCH`) is on the requested line (`MAJOR.MINOR`, or a full version):
 /// every part the line names must match. Before 1.0 a patch only adds, so `0.1` takes `0.1.0` and `0.1.4`.
 fn on_line(protocol: &str, line: &str) -> bool {
@@ -170,6 +187,10 @@ impl Session {
     }
     /// Send a line to the game; a reply with "error" is a failure.
     pub fn game(&mut self, line: &str) -> Result<Value, Failure> {
+        // Checked before connecting: a line break would make the game read a second command.
+        if let Some(refusal) = one_line_refusal(line) {
+            return Err(refusal);
+        }
         let result = self.client()?.send(line);
         if result.as_ref().is_err_and(|f| f.status == UNREACHABLE) {
             // Reconnect next time (the game may have restarted).
@@ -829,6 +850,44 @@ mod tests {
             assert_eq!(f.reply["error"], horizon_core::no_ai::REFUSAL);
         }
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A request line with a line break would be read by the game as a second
+    /// command, so it is refused before anything is sent; a normal line still
+    /// reaches the socket (here, a missing one: a connection error).
+    #[test]
+    fn a_control_line_with_a_line_break_is_refused_before_it_is_sent() {
+        let home =
+            std::env::temp_dir().join(format!("horizon-ctl-one-line-{}", std::process::id()));
+        std::fs::create_dir_all(&home).unwrap();
+        let mut s = Session::new(home.join("nobody.sock"), None);
+        s.home = home.clone();
+        let prefix = "a control command must be one line (the control socket is line based): ";
+        for words in [
+            &["lua", "print(1)\nprint(2)"][..],
+            &["chat", "a\nquit"],
+            &["chat", "a\rquit"],
+        ] {
+            let words: Vec<String> = words.iter().map(|w| w.to_string()).collect();
+            let f = s.run(&words).unwrap_err();
+            assert_eq!(f.status, USAGE, "{words:?}");
+            assert_eq!(f.reply["kind"], "usage", "{words:?}");
+            let error = f.reply["error"].as_str().unwrap();
+            assert!(error.starts_with(prefix), "{error}");
+            assert!(
+                error.contains(&format!("{} has a line break", words[0])),
+                "{error}"
+            );
+            if words[0] == "lua" {
+                assert!(error.contains("join the statements with ';'"), "{error}");
+            }
+        }
+        for words in [&["chat", "hello", "world"][..], &["lua", "print(1)"]] {
+            let words: Vec<String> = words.iter().map(|w| w.to_string()).collect();
+            let f = s.run(&words).unwrap_err();
+            assert_eq!(f.reply["kind"], "connection", "{words:?}");
+        }
+        std::fs::remove_dir_all(home).unwrap();
     }
 
     #[test]

@@ -43,12 +43,37 @@ const SERVER_STOP_TIMEOUT: Duration = Duration::from_secs(60);
 // this point a stuck server must not hold the "Saving world..." screen
 // forever, so its thread is detached and the close fails loudly.
 const SERVER_STOP_ABANDON: Duration = Duration::from_secs(600);
+const SERVER_ABANDON_ERROR: &str =
+    "the integrated server did not stop in time; its world may not be fully saved";
 
 /// Whether the closing save gives up on an integrated server that has not
 /// stopped after `waiting`: only past the abandon point, so a slow final
 /// save still finishes. A stuck server never holds the screen past it.
 fn server_stop_give_up(waiting: Duration) -> bool {
     waiting >= SERVER_STOP_ABANDON
+}
+
+/// What the closing save does with an integrated server still stopping.
+#[derive(Debug, PartialEq)]
+enum ServerStage {
+    /// Keep waiting. `slow` is set on the one poll that first passes
+    /// `SERVER_STOP_TIMEOUT`: the poll that logs the slow error.
+    Wait { slow: bool },
+    /// Detach the server and fail the close with this message.
+    Abandon(&'static str),
+}
+
+/// The closing save's decision after waiting `waiting` for the server to
+/// stop. `timed_out` is the one-shot flag: set once the slow wait is reported.
+fn poll_server_stage(waiting: Duration, timed_out: &mut bool) -> ServerStage {
+    if server_stop_give_up(waiting) {
+        return ServerStage::Abandon(SERVER_ABANDON_ERROR);
+    }
+    if !*timed_out && waiting >= SERVER_STOP_TIMEOUT {
+        *timed_out = true;
+        return ServerStage::Wait { slow: true };
+    }
+    ServerStage::Wait { slow: false }
 }
 // How often the wait warns while the server is still stopping.
 const SERVER_STOP_WARN: Duration = Duration::from_secs(10);
@@ -172,26 +197,23 @@ impl Game<'_> {
                         let waiting = save.started.elapsed();
                         // A stuck server must not hold the closing save
                         // forever: the window detaches its thread instead.
-                        if server_stop_give_up(waiting) {
-                            log::error!(
-                                "Horizon: the integrated server did not stop in time \
-                                 (running: {}, autosaving: {}, smoothed tick {:.1} ms); \
-                                 its world may not be fully saved",
-                                !server.stopped(),
-                                server.is_saving(),
-                                server.smoothed_tick_ms()
-                            );
-                            self.integrated.take().unwrap().abandon();
-                            return Err("the integrated server did not stop in time; \
-                                 its world may not be fully saved"
-                                .into());
-                        }
                         // Past the first timeout the wait is officially slow:
                         // say so once, loudly, and keep waiting for the save
                         // instead of detaching its thread mid-write.
-                        if !save.server_timed_out && waiting >= SERVER_STOP_TIMEOUT {
-                            save.server_timed_out = true;
-                            log::error!(
+                        match poll_server_stage(waiting, &mut save.server_timed_out) {
+                            ServerStage::Abandon(message) => {
+                                log::error!(
+                                    "Horizon: the integrated server did not stop in time \
+                                     (running: {}, autosaving: {}, smoothed tick {:.1} ms); \
+                                     its world may not be fully saved",
+                                    !server.stopped(),
+                                    server.is_saving(),
+                                    server.smoothed_tick_ms()
+                                );
+                                self.integrated.take().unwrap().abandon();
+                                return Err(message.into());
+                            }
+                            ServerStage::Wait { slow: true } => log::error!(
                                 "Horizon: the integrated server did not stop within {} s \
                                  (running: {}, autosaving: {}, smoothed tick {:.1} ms); \
                                  the close keeps waiting for its world to save",
@@ -199,7 +221,8 @@ impl Game<'_> {
                                 !server.stopped(),
                                 server.is_saving(),
                                 server.smoothed_tick_ms()
-                            );
+                            ),
+                            ServerStage::Wait { slow: false } => {}
                         }
                         if save
                             .warned
@@ -378,6 +401,36 @@ mod tests {
         assert!(
             server_stop_give_up(SERVER_STOP_ABANDON),
             "a stuck server never holds the saving screen"
+        );
+    }
+
+    /// The closing save's server wait, through the decision it takes: 59 s
+    /// keeps waiting silently, the first poll past 60 s reports the slow wait
+    /// once and keeps waiting, and only 600 s abandons the server.
+    #[test]
+    fn poll_server_stage_warns_once_and_abandons_only_a_stuck_server() {
+        let mut timed_out = false;
+        assert_eq!(
+            poll_server_stage(Duration::from_secs(59), &mut timed_out),
+            ServerStage::Wait { slow: false }
+        );
+        assert!(!timed_out, "59 s is not yet the slow wait");
+        assert_eq!(
+            poll_server_stage(Duration::from_secs(61), &mut timed_out),
+            ServerStage::Wait { slow: true },
+            "the first poll past 60 s reports the slow wait"
+        );
+        assert!(timed_out, "the one-shot flag is set");
+        assert_eq!(
+            poll_server_stage(Duration::from_secs(62), &mut timed_out),
+            ServerStage::Wait { slow: false },
+            "the slow wait is reported once, not on every poll"
+        );
+        assert_eq!(
+            poll_server_stage(SERVER_STOP_ABANDON, &mut timed_out),
+            ServerStage::Abandon(
+                "the integrated server did not stop in time; its world may not be fully saved"
+            )
         );
     }
 }

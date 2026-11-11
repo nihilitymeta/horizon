@@ -410,6 +410,9 @@ fn check_inner(args: &[String], verbose: bool) -> (serde_json::Value, Result<(),
         );
         return (check_value(None, &[], Some(&e), false), Err(e));
     }
+    if let Err(e) = modkit_env_check_with(args, |name| std::env::var_os(name)) {
+        return (check_value(None, &[], Some(&e), false), Err(e));
+    }
     let path = Path::new(&file);
     // A mod folder: built to its target/horizon-mod/<id>.hmod for the
     // registry's checks, the folder itself for the scripts.
@@ -708,6 +711,32 @@ fn modkit_dir_with(
     flag(args, "--modkit")
         .map(PathBuf::from)
         .or_else(|| get("MODKIT").map(PathBuf::from))
+}
+
+/// A `$MODKIT` that is set but names no directory is an error: left alone it
+/// would look like no checkout at all. `--modkit` wins over it, so it is then
+/// not read. The environment is a parameter, so tests never write it.
+fn modkit_env_check_with(
+    args: &[String],
+    get: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> Result<(), String> {
+    if flag(args, "--modkit").is_some() {
+        return Ok(());
+    }
+    match get("MODKIT") {
+        None => Ok(()),
+        Some(value) if value.is_empty() => {
+            Err("$MODKIT is empty: unset it or name a modkit checkout".into())
+        }
+        Some(value) => {
+            let path = PathBuf::from(value);
+            if path.is_dir() {
+                Ok(())
+            } else {
+                Err(format!("$MODKIT: {} is not a directory", path.display()))
+            }
+        }
+    }
 }
 
 /// Whether the script steps may not fetch anything: `--offline`, or
@@ -1227,6 +1256,51 @@ mod tests {
         .unwrap_err();
         assert!(e.contains("script check failed"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A `$MODKIT` that is set but names no directory is an error, not the
+    /// same as unset; `--modkit` wins over it, so then it is not read.
+    #[test]
+    fn a_set_but_bad_modkit_env_is_an_error_unless_the_flag_wins() {
+        // The environment is a parameter: no test writes the real one.
+        let env = |value: &str| {
+            let value = std::ffi::OsString::from(value);
+            move |name: &str| {
+                assert_eq!(name, "MODKIT");
+                Some(value.clone())
+            }
+        };
+        let manifest = env!("CARGO_MANIFEST_DIR");
+        let bare = ["check".to_owned(), "mod".to_owned()];
+        let with_flag = [
+            "check".to_owned(),
+            "mod".to_owned(),
+            "--modkit".to_owned(),
+            "/no/such/modkit".to_owned(),
+        ];
+        assert_eq!(modkit_env_check_with(&bare, env(manifest)), Ok(()));
+        assert_eq!(
+            modkit_env_check_with(&bare, env("/no/such/modkit")).unwrap_err(),
+            "$MODKIT: /no/such/modkit is not a directory"
+        );
+        assert_eq!(
+            modkit_env_check_with(&bare, env(&format!("{manifest}/Cargo.toml"))).unwrap_err(),
+            format!("$MODKIT: {manifest}/Cargo.toml is not a directory")
+        );
+        assert!(
+            modkit_env_check_with(&bare, env(""))
+                .unwrap_err()
+                .starts_with("$MODKIT is empty"),
+        );
+        assert_eq!(
+            modkit_env_check_with(&with_flag, env("/no/such/modkit")),
+            Ok(())
+        );
+        assert_eq!(
+            modkit_env_check_with(&bare, |_: &str| None),
+            Ok(()),
+            "an unset $MODKIT is no checkout, not an error"
+        );
     }
 
     /// `--modkit` wins over `$MODKIT`, which wins over no checkout: the flag

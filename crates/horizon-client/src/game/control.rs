@@ -31,6 +31,14 @@ fn reload_mods_refusal(runs_mods: bool) -> Option<&'static str> {
     )
 }
 
+/// `lua` runs on the server thread's Luau console, so, as with `reload-mods`,
+/// a window that only joins a remote server has no console here to run it on.
+fn lua_refusal(runs_mods: bool) -> Option<&'static str> {
+    (!runs_mods).then_some(
+        "lua runs on the server this game runs; this game is a client of a remote server, so run it there",
+    )
+}
+
 fn hello() -> Value {
     json!({
         "protocol": PROTOCOL,
@@ -1319,10 +1327,7 @@ impl Game<'_> {
                     return Err("usage: reload-mods [ID]".into());
                 }
                 self.require_world()?;
-                let runs_mods = self.integrated.is_some()
-                    || self.serving.is_some()
-                    || self.options.dedicated.is_some();
-                if let Some(refusal) = reload_mods_refusal(runs_mods) {
+                if let Some(refusal) = reload_mods_refusal(self.runs_server_here()) {
                     return Err(refusal.into());
                 }
                 let id = words.get(1).copied();
@@ -1342,6 +1347,9 @@ impl Game<'_> {
                     );
                 }
                 self.require_world()?;
+                if let Some(refusal) = lua_refusal(self.runs_server_here()) {
+                    return Err(refusal.into());
+                }
                 match horizon_client::dev_input::console::start_lua_run(chunk, reply.clone()) {
                     Ok(value) => Ok(value),
                     Err(e) => Err(e.into()),
@@ -1404,6 +1412,12 @@ impl Game<'_> {
             self.world.modified.extend(keys);
         }
         self.save_game()
+    }
+
+    /// Whether this game runs a server that ticks the mods: single player,
+    /// a LAN host or a dedicated server (not a window that only joins one).
+    fn runs_server_here(&self) -> bool {
+        self.integrated.is_some() || self.serving.is_some() || self.options.dedicated.is_some()
     }
 
     fn require_world(&self) -> Result<()> {
@@ -1867,6 +1881,14 @@ mod tests {
         assert_eq!(reload_mods_refusal(true), None);
         let refusal = reload_mods_refusal(false).unwrap();
         assert!(refusal.starts_with("reload-mods reloads"), "{refusal}");
+        assert!(refusal.contains("remote server"), "{refusal}");
+    }
+
+    #[test]
+    fn lua_needs_a_server_here_that_runs_the_console() {
+        assert_eq!(lua_refusal(true), None);
+        let refusal = lua_refusal(false).unwrap();
+        assert!(refusal.starts_with("lua runs"), "{refusal}");
         assert!(refusal.contains("remote server"), "{refusal}");
     }
 

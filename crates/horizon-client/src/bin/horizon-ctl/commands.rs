@@ -918,6 +918,10 @@ pub fn line_for(c: &Cmd, args: &Value) -> Result<Vec<String>, String> {
             if let Some(missing) = gap {
                 return Err(format!("{} needs {missing} to be given too", p.name));
             }
+            // The control socket reads one line per request: a newline would cut the chunk.
+            if c.name == "lua" && text.contains(['\n', '\r']) {
+                return Err("lua CHUNK must be one line (the control socket is line based): join the statements with ';' or use a file".to_owned());
+            }
             if p.ty == Ty::Rest {
                 rest = Some(text);
             } else if text.contains(char::is_whitespace) || text.is_empty() {
@@ -1054,6 +1058,25 @@ mod tests {
             line_for(lua, &json!({}))
                 .unwrap_err()
                 .contains("chunk is required")
+        );
+    }
+
+    #[test]
+    fn lua_chunk_with_a_newline_is_refused_before_it_is_sent() {
+        // The control socket is line based: a newline would cut the chunk and drop the rest.
+        let lua = find("lua").unwrap();
+        let message = "lua CHUNK must be one line (the control socket is line based): join the statements with ';' or use a file";
+        assert_eq!(
+            line_for(lua, &json!({ "chunk": "print(1)\nprint(2)" })).unwrap_err(),
+            message
+        );
+        assert_eq!(
+            line_for(lua, &json!({ "chunk": "print(1)\rprint(2)" })).unwrap_err(),
+            message
+        );
+        assert_eq!(
+            line_for(lua, &json!({ "chunk": "print(1); print(2)" })).unwrap(),
+            ["lua", "print(1); print(2)"]
         );
     }
 
