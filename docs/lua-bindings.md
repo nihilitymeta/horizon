@@ -72,6 +72,14 @@ capability `scripts` and `experimental = ["scripts"]` in its manifest, and its i
 packs `scripts/` next to `assets/` and `data/`; `horizon_mods::Content` lists the scripts, checks their paths,
 and checks the entry points. The Mods page says "May run its own scripts in your worlds".
 
+A mod may pin the hook surface it was built for with `lua_hook_surface = 1` in its manifest. The engine's
+surface version is `LUA_HOOK_SURFACE_VERSION` in `crates/event-horizon-lua/src/generated_hooks/mod.rs`, written
+by `cargo run -p xtask -- lua-hooks` from the committed version and fingerprint in `xtask/src/lua_hooks.rs`
+(the check fails with "hook surface changed" when the surface changes shape without a bump, so the stamp never
+goes stale silently). A mod without the line loads as before; a mod whose number differs from the engine's is
+not loaded, with `mod <id> was built for Lua hook surface <N>, this engine has <M>`. `cargo horizon-mod check`
+reports the same error, since it loads the mod the way the game does.
+
 This script counts natural zombie spawns:
 
 ```lua
@@ -657,6 +665,7 @@ and the file and line, when:
 - a script fails to load
 - `horizon.on` is given a hook it does not know
 - a command or goal fails when it is declared
+- the manifest's `lua_hook_surface` differs from the engine's `LUA_HOOK_SURFACE_VERSION`
 
 With `--resources <26.3 folder>` (the prepared vanilla folder), it also layers the mod's content on that folder, as the
 game does at start, and exits with code 1 when the game would refuse it. A refused file leaves every content mod out

@@ -63,6 +63,12 @@ pub struct Manifest {
     /// game loads them first and refuses to run this mod without them.
     #[serde(default)]
     pub depends: Vec<String>,
+    /// The Lua hook surface the mod was built for
+    /// (`LUA_HOOK_SURFACE_VERSION` in the engine's generated hooks): absent
+    /// means no check (existing mods keep loading), present and different
+    /// from the engine's means the mod is not loaded, with both numbers.
+    #[serde(default)]
+    pub lua_hook_surface: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -496,6 +502,18 @@ capabilities = ["game-read", "hud"]
         let with_storage = EXAMPLE.replace("\"hud\"", "\"hud\", \"storage\"");
         let m = Manifest::parse(&with_storage).unwrap();
         assert_eq!(m.check_imports(["horizon:mods/storage@0.1.0"]), Ok(()));
+    }
+
+    #[test]
+    fn the_hook_surface_is_optional_and_parses_as_a_number() {
+        let absent = Manifest::parse(EXAMPLE).unwrap();
+        assert_eq!(absent.lua_hook_surface, None);
+        let pinned = Manifest::parse(&format!("{EXAMPLE}lua_hook_surface = 1\n")).unwrap();
+        assert_eq!(pinned.lua_hook_surface, Some(1));
+        let zero = Manifest::parse(&format!("{EXAMPLE}lua_hook_surface = 0\n")).unwrap();
+        assert_eq!(zero.lua_hook_surface, Some(0));
+        let text = Manifest::parse(&format!("{EXAMPLE}lua_hook_surface = \"1\"\n"));
+        assert!(text.is_err(), "the surface is a number, not a string");
     }
 
     #[test]

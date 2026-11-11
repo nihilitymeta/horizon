@@ -4565,6 +4565,22 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
     }
 }
 
+/// The `.d.lua` type of an extra table field (the spike's hand notes: the
+/// block at the event's `pos`, or the block of its `state`; a level tick's
+/// `block` with its `props` and `data`). Both `horizon.d.lua` and the hook
+/// surface fingerprint derive from this, so the two cannot disagree about
+/// an extra field.
+pub fn extra_ts(conv: &Conv) -> &'static str {
+    match conv {
+        Conv::BlockAtPos | Conv::BlockFromState => "string",
+        Conv::StateProps | Conv::LevelProps => "Props",
+        Conv::LevelData => "Data?",
+        // The host's dimension, always a string.
+        Conv::HostDimension => "string",
+        _ => "any",
+    }
+}
+
 /// The `.d.lua` type of a replace reader.
 pub fn replace_ts(read: ReplaceRead, ret: &str) -> String {
     match read {
@@ -4587,6 +4603,14 @@ pub fn replace_ts(read: ReplaceRead, ret: &str) -> String {
         ReplaceRead::Bytes => "string".into(),
         ReplaceRead::AnswerState => "string?".into(),
     }
+}
+
+/// A replace out's published event-table field type: nil until the handler
+/// answers, hence the trailing `?`. Both `horizon.d.lua` and the hook
+/// surface fingerprint derive from this, so the two cannot disagree about
+/// a replace out.
+pub fn replace_field_ts(o: &Out) -> String {
+    format!("{}?", replace_ts(o.read, &o.ret))
 }
 
 /// Strip the outer `Option<..>` layer of a replace return type.

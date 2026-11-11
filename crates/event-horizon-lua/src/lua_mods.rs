@@ -1718,6 +1718,22 @@ impl LuaMod {
         Ok(m)
     }
 
+    /// Whether the mod's declared Lua hook surface matches this engine's:
+    /// absent means no check (existing mods keep loading), present and equal
+    /// to the engine's loads, and anything else is a load error naming the
+    /// mod and both versions.
+    fn check_hook_surface(manifest: &horizon_mods::Manifest) -> Result<(), String> {
+        match manifest.lua_hook_surface {
+            None => Ok(()),
+            Some(pinned) if pinned == crate::generated_hooks::LUA_HOOK_SURFACE_VERSION => Ok(()),
+            Some(pinned) => Err(format!(
+                "mod {} was built for Lua hook surface {pinned}, this engine has {}",
+                manifest.id,
+                crate::generated_hooks::LUA_HOOK_SURFACE_VERSION
+            )),
+        }
+    }
+
     /// The mod's id, version and the scripts of `side` (its folder and
     /// `scripts/shared/`), read from its `.hmod` or folder. The other side's
     /// folder is not read: its files do not reach this state.
@@ -1728,6 +1744,7 @@ impl LuaMod {
         let at = |e: String| format!("{}: {e}", path.display());
         let package = Package::read(path).map_err(at)?;
         let manifest = package.manifest;
+        Self::check_hook_surface(&manifest).map_err(at)?;
         if !manifest.capabilities.contains(&Capability::Scripts) {
             return Err(at(format!("no capability scripts in {MANIFEST}")));
         }
@@ -3327,6 +3344,34 @@ mod tests {
     // crate's test-support constructors (horizon-client's `test_events`).
     use horizon_client::mod_api::{BlockPos, ServerTickPhase};
     use horizon_client::test_events;
+
+    #[test]
+    fn the_hook_surface_check_names_both_versions_on_a_mismatch() {
+        use crate::generated_hooks::LUA_HOOK_SURFACE_VERSION;
+        let base = "id = \"m\"\nname = \"M\"\nversion = \"1\"\napi = \"0.1\"\n";
+        let absent = horizon_mods::Manifest::parse(base).unwrap();
+        assert_eq!(LuaMod::check_hook_surface(&absent), Ok(()));
+        let equal = horizon_mods::Manifest::parse(&format!(
+            "{base}lua_hook_surface = {LUA_HOOK_SURFACE_VERSION}\n"
+        ))
+        .unwrap();
+        assert_eq!(LuaMod::check_hook_surface(&equal), Ok(()));
+        for pinned in [
+            LUA_HOOK_SURFACE_VERSION.wrapping_add(1),
+            LUA_HOOK_SURFACE_VERSION.wrapping_sub(1),
+        ] {
+            let stale =
+                horizon_mods::Manifest::parse(&format!("{base}lua_hook_surface = {pinned}\n"))
+                    .unwrap();
+            assert_eq!(
+                LuaMod::check_hook_surface(&stale),
+                Err(format!(
+                    "mod m was built for Lua hook surface {pinned}, this engine has {LUA_HOOK_SURFACE_VERSION}"
+                )),
+                "a higher and a lower surface both fail"
+            );
+        }
+    }
 
     const MANIFEST_TEXT: &str = r#"
 id = "ruby"

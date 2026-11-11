@@ -7,7 +7,7 @@
 //! file is not what the tables here say, and tests keep the tables equal to
 //! the runtime: every hook `horizon.on` takes has a handler type, every
 //! function the runtime installs has a declaration.
-use super::lua_model::{Class, Kind, classify, event_name, replace_ts};
+use super::lua_model::{Class, Kind, classify, event_name, extra_ts, replace_field_ts};
 use std::{fs, path::Path};
 
 /// The tables a hook or helper hands a script, as Luau types.
@@ -291,20 +291,6 @@ struct GeneratedHook {
     has_kind: bool,
 }
 
-/// The `.d.lua` type of an extra table field (the spike's hand notes: the
-/// block at the event's `pos`, or the block of its `state`; a level tick's
-/// `block` with its `props` and `data`).
-fn extra_ts(conv: &super::lua_model::Conv) -> &'static str {
-    match conv {
-        super::lua_model::Conv::BlockAtPos | super::lua_model::Conv::BlockFromState => "string",
-        super::lua_model::Conv::StateProps | super::lua_model::Conv::LevelProps => "Props",
-        super::lua_model::Conv::LevelData => "Data?",
-        // The host's dimension, always a string.
-        super::lua_model::Conv::HostDimension => "string",
-        _ => "any",
-    }
-}
-
 fn generated_hooks() -> Result<Vec<GeneratedHook>, String> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let mut out = Vec::new();
@@ -334,7 +320,7 @@ fn generated_hooks() -> Result<Vec<GeneratedHook>, String> {
         }
         if let Some(o) = &model.out {
             // A replace out seeds nil until the handler answers.
-            fields.push(format!("{}: {}?", o.name, replace_ts(o.read, &o.ret)));
+            fields.push(format!("{}: {}", o.name, replace_field_ts(o)));
         }
         // `perform_command` answers `(player, args)`, not an event table:
         // the handler keeps the `horizon.command` shape, kind-filtered by

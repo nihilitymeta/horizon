@@ -17,8 +17,9 @@
 
 use crate::lua_model::{
     Class, Conv, Field, HookClass, Host, Kind, Model, ReplaceRead, Side, assert_lines,
-    canonical_elem, classify, declaration_served, dup_leaf, listened_flag, listened_flag_field,
-    lua_read, mutate_line, replace_sample, sample, table_leaves,
+    canonical_elem, classify, declaration_served, dup_leaf, event_keys, extra_ts, listened_flag,
+    listened_flag_field, lua_read, mutate_line, replace_field_ts, replace_sample, sample,
+    table_leaves,
 };
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -29,6 +30,19 @@ const KIND_TWO: &str = "minecraft:skeleton";
 const ENTITY_ONE: i64 = 11;
 const ENTITY_TWO: i64 = 13;
 const ENTITY_GONE: i64 = 99;
+
+/// The Lua hook surface version, stamped into the generated output
+/// (`LUA_HOOK_SURFACE_VERSION` in `generated_hooks/mod.rs`). The Factorio
+/// `api_version` idea: bump this by hand whenever the surface changes shape
+/// (a hook added or removed, a kind filter changed, a field added, removed
+/// or retyped), and update `LUA_HOOK_SURFACE_FINGERPRINT` beside it.
+/// A mod built for another surface fails at load with both numbers, instead
+/// of failing later on a missing hook name.
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 1;
+/// The committed fingerprint of the surface `LUA_HOOK_SURFACE_VERSION`
+/// describes: `lua-hooks --check` fails when the freshly computed one
+/// differs, so nobody forgets the bump above.
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "09ae0b3def574f52";
 
 /// The macro's host kind for a model host.
 fn host_ident(host: Host) -> &'static str {
@@ -3581,9 +3595,97 @@ fn format_snippet(text: &str) -> Result<String, String> {
     String::from_utf8(out.stdout).map_err(|e| e.to_string())
 }
 
+/// One generated hook's canonical surface line: what a Lua mod can observe
+/// about the hook (its name, its kind filter, its cancel/collect/replace
+/// contract and out shape, every event-table key's name and published Lua
+/// type, every extra table field's name and published type). A flat seed's
+/// native parameter has no table key of its own, so the line lists the
+/// published keys (`event_keys`: the flat keys with their `.d.lua` types,
+/// plus each text field's `{name}_component` sibling) — the same list
+/// `horizon.d.lua` is built from. Sorted by hook name upstream, and by key
+/// inside each hook, so the fingerprint diff stays meaningful.
+fn surface_line(model: &Model) -> String {
+    let mut line = format!(
+        "{}|{}|{}|cancel:{}|out:",
+        model.name,
+        kind_tt(model),
+        model.contract,
+        model.cancel_flag.as_deref().unwrap_or("-"),
+    );
+    match &model.out {
+        Some(o) => line.push_str(&format!("{}={}", o.name, replace_field_ts(o))),
+        None => line.push('-'),
+    }
+    line.push_str("|fields:");
+    let mut fields: Vec<String> = model
+        .fields
+        .iter()
+        .flat_map(event_keys)
+        .map(|(name, ts)| format!("{name}={ts}"))
+        .collect();
+    fields.sort();
+    line.push_str(&fields.join(","));
+    line.push_str("|extras:");
+    let mut extras: Vec<String> = model
+        .extras
+        .iter()
+        .map(|e| format!("{}={}", e.name, extra_ts(&e.conv)))
+        .collect();
+    extras.sort();
+    line.push_str(&extras.join(","));
+    line
+}
+
+/// The canonical surface description: one [`surface_line`] per generated
+/// hook, sorted by hook name, so the fingerprint is deterministic.
+fn surface_canonical(models: &[&Model]) -> String {
+    let mut lines: Vec<String> = models.iter().map(|m| surface_line(m)).collect();
+    lines.sort();
+    lines.join("\n")
+}
+
+/// FNV-1a over the canonical surface: hand-rolled so the fingerprint is
+/// stable across compilers (no hasher-version drift), 16 hex digits.
+fn surface_fingerprint(canonical: &str) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in canonical.as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+/// The freshly computed fingerprint of the generated hooks in `classes`.
+fn fingerprint_of(classes: &[HookClass]) -> String {
+    let models: Vec<&Model> = classes
+        .iter()
+        .filter_map(|hc| match &hc.class {
+            Class::Generated(model) => Some(model),
+            _ => None,
+        })
+        .collect();
+    surface_fingerprint(&surface_canonical(&models))
+}
+
+/// The `--check` gate for the committed fingerprint: `Ok` when the surface
+/// still matches, the bump message (with the new fingerprint to commit)
+/// when it changed shape.
+fn check_surface_fingerprint(computed: &str) -> Result<(), String> {
+    if computed == LUA_HOOK_SURFACE_FINGERPRINT {
+        return Ok(());
+    }
+    Err(format!(
+        "hook surface changed: bump LUA_HOOK_SURFACE_VERSION and update the fingerprint (new fingerprint: `{computed}`)"
+    ))
+}
+
 pub fn run(check: bool) -> Result<(), String> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let classes = classify(&root)?;
+    // The fingerprint gate runs before the per-hook gates below: any shape
+    // change (a hook added, a field retyped) must first say "bump the
+    // version", and only then do the uncovered-field errors name the work.
+    check_surface_fingerprint(&fingerprint_of(&classes))?;
     let (mut generated, mut adapter, mut tick, mut cannot, mut handle, mut protocol) =
         (0, 0, 0, 0, 0, 0);
     let mut kinded = 0;
@@ -3841,6 +3943,27 @@ pub fn run(check: bool) -> Result<(), String> {
          .ok()\n        \
          .map(|i| HOOK_SIDES[i].1)\n}\n\n",
     );
+    text.push_str(
+        "/// The Lua hook surface version this engine implements: a mod built\n\
+         /// for another surface fails at load naming both versions, instead\n\
+         /// of failing later on a missing hook name. Bumped by hand in\n\
+         /// `xtask/src/lua_hooks.rs` whenever the surface changes shape.\n\
+         #[allow(dead_code)]\n",
+    );
+    text.push_str(&format!(
+        "pub const LUA_HOOK_SURFACE_VERSION: u32 = {LUA_HOOK_SURFACE_VERSION};\n\n"
+    ));
+    text.push_str(
+        "/// The fingerprint of the surface above (every generated hook's\n\
+         /// name, kind filter, contract and published field types): `lua-hooks\n\
+         /// --check` fails when the freshly computed one differs, so the\n\
+         /// version above is bumped with the change.\n\
+         #[allow(dead_code)]\n",
+    );
+    text.push_str(&format!(
+        "pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = \"{}\";\n\n",
+        fingerprint_of(&classes)
+    ));
     text.push_str("#[cfg(test)]\nmod test_support;\n\n");
     text.push_str("#[cfg(test)]\nmod spike_tests;\n\n");
     text.push_str("#[cfg(test)]\nmod round3_tests;\n\n");
@@ -3967,8 +4090,11 @@ pub fn run(check: bool) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{LuaTok, lex_lua, lua_asserts_player_name, side_table};
-    use crate::lua_model::{Side, side_of};
+    use super::{
+        LUA_HOOK_SURFACE_VERSION, LuaTok, check_surface_fingerprint, lex_lua,
+        lua_asserts_player_name, side_table, surface_canonical, surface_fingerprint,
+    };
+    use crate::lua_model::{Class, Conv, Field, Host, Kind, Model, Side, event_keys, side_of};
 
     /// A tiny catalog: one hook per side tag, plus one with no tag.
     fn tiny_catalog() -> Vec<serde_json::Value> {
@@ -3998,6 +4124,136 @@ mod tests {
              (\"server_tick\", HookSide::Server),\n\
              ];\n"
         );
+    }
+
+    /// A minimal generated model: one hook, one field, nothing else.
+    fn tiny_model(name: &str, field: &str, ts: &str) -> Model {
+        Model {
+            name: name.to_owned(),
+            event: "TinyEvent".to_owned(),
+            contract: "listen".to_owned(),
+            host: Host::GameMut,
+            fields: vec![Field {
+                name: field.to_owned(),
+                conv: Conv::Plain,
+                ts: ts.to_owned(),
+                key: None,
+            }],
+            extras: Vec::new(),
+            skipped: Vec::new(),
+            dispatch_params: Vec::new(),
+            out: None,
+            cancel_flag: None,
+            frame: false,
+            kind: Kind::None,
+            lifetimes: String::new(),
+            _borrows: false,
+        }
+    }
+
+    #[test]
+    fn the_surface_starts_at_version_one() {
+        assert_eq!(LUA_HOOK_SURFACE_VERSION, 1);
+    }
+
+    #[test]
+    fn the_surface_fingerprint_is_stable_and_sorted() {
+        let a = tiny_model("b_hook", "pos", "{ x: number, y: number, z: number }");
+        let b = tiny_model("a_hook", "kind", "string");
+        let one = surface_fingerprint(&surface_canonical(&[&a, &b]));
+        let swapped = surface_fingerprint(&surface_canonical(&[&b, &a]));
+        assert_eq!(one, swapped, "hook order must not move the fingerprint");
+        assert_eq!(one.len(), 16, "16 hex digits, {one}");
+        assert!(one.chars().all(|c| c.is_ascii_hexdigit()), "{one}");
+    }
+
+    #[test]
+    fn a_published_type_change_moves_the_surface_fingerprint() {
+        use std::path::Path;
+        // The real catalog: the fingerprint covers what a mod sees, so the
+        // test pins a real hook's published keys, not a synthetic model. A
+        // synthetic `Conv::Plain` model stays green when a published mapping
+        // changes, which is the hole this test closes.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let classes = crate::lua_model::classify(&root).unwrap();
+        let models: Vec<&Model> = classes
+            .iter()
+            .filter_map(|hc| match &hc.class {
+                Class::Generated(m) => Some(m),
+                _ => None,
+            })
+            .collect();
+        let baseline = surface_fingerprint(&surface_canonical(&models));
+        // `server_tick`'s `phase` seed is stored as native `any`, but
+        // published as flat keys: pin the published `world_running` type.
+        let server_tick = models
+            .iter()
+            .find(|m| m.name == "server_tick")
+            .expect("server_tick generates");
+        let keys: Vec<(String, String)> = server_tick.fields.iter().flat_map(event_keys).collect();
+        assert!(
+            keys.contains(&("world_running".to_owned(), "boolean".to_owned())),
+            "published server_tick keys: {keys:?}"
+        );
+        // The reviewer's mutation (`world_running` boolean -> string in
+        // `flat_ts`) must move the fingerprint. `flat_ts` is a pure function
+        // of the converter, so the test retypes the published key the same
+        // way the mutation does: the `TickPhase` seed becomes its
+        // `WorldPhaseName` sibling, which publishes the same `phase` key
+        // without `world_running`.
+        let mut owned: Vec<Model> = models.iter().map(|m| (*m).clone()).collect();
+        let tick = owned
+            .iter_mut()
+            .find(|m| m.name == "server_tick")
+            .expect("server_tick generates");
+        let phase = tick
+            .fields
+            .iter_mut()
+            .find(|f| f.conv == Conv::TickPhase)
+            .expect("server_tick has a TickPhase seed");
+        phase.conv = Conv::WorldPhaseName;
+        let moved = surface_fingerprint(&surface_canonical(&owned.iter().collect::<Vec<_>>()));
+        assert_ne!(
+            moved, baseline,
+            "dropping a published key must change the surface"
+        );
+        // And the gate must name the bump for the moved surface.
+        let err = check_surface_fingerprint(&moved).unwrap_err();
+        assert!(
+            err.contains(
+                "hook surface changed: bump LUA_HOOK_SURFACE_VERSION and update the fingerprint"
+            ),
+            "{err}"
+        );
+        assert!(err.contains(&moved), "{err}");
+        // A changed kind filter moves it too.
+        let mut kinded = tiny_model("mob_spawned", "kind", "string");
+        kinded.kind = Kind::Field;
+        assert_ne!(
+            surface_fingerprint(&surface_canonical(&[&kinded])),
+            surface_fingerprint(&surface_canonical(&[&tiny_model(
+                "mob_spawned",
+                "kind",
+                "string"
+            )])),
+            "a changed kind filter must change the surface"
+        );
+    }
+
+    #[test]
+    fn the_check_gate_names_the_bump_on_a_mismatch() {
+        assert_eq!(
+            check_surface_fingerprint(super::LUA_HOOK_SURFACE_FINGERPRINT),
+            Ok(())
+        );
+        let err = check_surface_fingerprint("ffffffffffffffff").unwrap_err();
+        assert!(
+            err.contains(
+                "hook surface changed: bump LUA_HOOK_SURFACE_VERSION and update the fingerprint"
+            ),
+            "{err}"
+        );
+        assert!(err.contains("ffffffffffffffff"), "{err}");
     }
 
     #[test]

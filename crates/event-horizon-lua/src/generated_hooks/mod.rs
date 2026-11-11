@@ -1267,6 +1267,20 @@ pub fn hook_side(name: &str) -> Option<HookSide> {
         .map(|i| HOOK_SIDES[i].1)
 }
 
+/// The Lua hook surface version this engine implements: a mod built
+/// for another surface fails at load naming both versions, instead
+/// of failing later on a missing hook name. Bumped by hand in
+/// `xtask/src/lua_hooks.rs` whenever the surface changes shape.
+#[allow(dead_code)]
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 1;
+
+/// The fingerprint of the surface above (every generated hook's
+/// name, kind filter, contract and published field types): `lua-hooks
+/// --check` fails when the freshly computed one differs, so the
+/// version above is bumped with the change.
+#[allow(dead_code)]
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "09ae0b3def574f52";
+
 #[cfg(test)]
 mod test_support;
 
