@@ -1,0 +1,11 @@
+# The selene standard library `cargo horizon-mod check` lints Lua mods against
+# (issue 53). Hand-written and minimal for now: the `horizon` API surface
+# (`registry`, `horizon`) as `any` on top of selene's built-in Luau std; a
+# generated std from the Lua API model is a follow-up.
+name: horizon
+base: luau
+globals:
+  registry:
+    any: true
+  horizon:
+    any: true

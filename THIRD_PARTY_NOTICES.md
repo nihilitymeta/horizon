@@ -317,3 +317,12 @@ is preserved.
 [150a414b09a1](https://github.com/starling-client/starling/tree/150a414b09a18c900489d9462a7fc035dae744b7)
 (`android` branch), written mostly by Vasysik. Starling is licensed under the same MIT license as
 Horizon (Copyright (c) 2026 Ludovic Marie and the Horizon contributors).
+
+## StyLua, selene and full_moon
+
+`cargo-horizon-mod`'s script checks link three libraries unmodified: [StyLua](https://github.com/JohnnyMorganz/StyLua)
+2.6.0 (formatting, as `stylua_lib`), [selene-lib](https://github.com/Kampfkarren/selene) 0.31.0
+(linting, with its `full_moon` 2.2.0 parser), and StyLua's `full_moon` 3.0.0 parser (with
+`full_moon_derive` 0.11.0). The two `full_moon` majors sit side by side, as Cargo resolves them.
+All are licensed under the Mozilla Public License 2.0; their sources are on their crates.io package
+pages (`stylua`, `selene-lib`, `full_moon`, `full_moon_derive`) and in their repositories.

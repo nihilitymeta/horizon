@@ -9,4 +9,7 @@ local ns = registry.id
 -- (assets/{id}/lang/en_us.json).
 registry.item("wand", { template = "minecraft:stick", max_stack_size = 1 })
 registry.asset("items/wand", { model = { type = "minecraft:model", model = ns .. ":item/wand" } })
-registry.asset("models/item/wand", { parent = "minecraft:item/generated", textures = { layer0 = "minecraft:item/stick" } })
+registry.asset(
+  "models/item/wand",
+  { parent = "minecraft:item/generated", textures = { layer0 = "minecraft:item/stick" } }
+)

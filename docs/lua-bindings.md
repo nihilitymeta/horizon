@@ -640,6 +640,29 @@ scripts gets only this check.
 `cargo horizon-mod check <folder> --game <horizon-client> --dev-mod <library> [--resources <26.3 folder>]` runs it
 after the registry's checks.
 
+For a mod folder, `check` also runs the script steps, each reported on its own and each failing the command on its
+own (issue 53):
+
+1. the headless load above (`--no-scripts` skips this step only);
+2. StyLua formatting, as `cargo horizon-mod fmt [folder]` writes it: Luau syntax, two-space indent;
+3. selene linting, against the Luau std plus the `horizon` and `registry` globals (a hand-written std in
+   `crates/cargo-horizon-mod/tools/` for now);
+4. `luau-lsp analyze` with `docs/api/horizon.d.lua` as `@horizon` definitions — luau-lsp is C++, so a pinned
+   release binary (1.70.1) is downloaded into the user cache dir, never the repo: `$XDG_CACHE_HOME/horizon-mod/tools` or
+`~/.cache/horizon-mod/tools` on Linux and macOS, `%LOCALAPPDATA%\horizon-mod\tools` on Windows (`HORIZON_MOD_TOOLS_CACHE`
+or `--tools-cache <dir>` override it)
+   and its SHA-256 verified against `crates/cargo-horizon-mod/tools/luau-lsp.toml` before it runs. `--offline`
+   (or `HORIZON_MOD_OFFLINE`) skips the step with a notice when the binary is not cached; `--luau-lsp <binary>`
+   runs a binary of your choosing instead of the pinned one. The modkit's own scripts are a dependency, not the
+   mod's code, so their diagnostics are not reported. The mod's `.luaurc` aliases `@modkit` to a sibling
+   `horizon-modkit` checkout: when that sibling is missing, `--modkit <dir>` (or `$MODKIT`) points the analysis
+   at the real checkout through a staged `.luaurc` in the cache — the mod's own `.luaurc` is never edited — and
+   with no modkit to be found at all, only the `@modkit` require's diagnostics are dropped, with a notice (the step
+   still passes, and its JSON `detail` carries the notice). A `--modkit` that is not a directory is an error.
+
+Steps 2 and 3 run in-process (StyLua and selene are linked in). Nothing is looked up on the `PATH`: step 4 runs the
+luau-lsp in the cache (downloaded once) or the binary that `--luau-lsp <path>` names.
+
 ## Reloading
 
 `/reload`, and any data load after the first, reads the mod's scripts again and runs `scripts/init.lua` from the

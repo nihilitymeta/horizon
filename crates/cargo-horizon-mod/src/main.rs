@@ -1,4 +1,4 @@
-//! `cargo horizon-mod`: make Horizon content mods (`docs/modpacks.md`): blocks,
+//! `cargo horizon-mod`: make Horizon content mods (`docs/mods.md`): blocks,
 //! items, data and assets, no code. Code mods are native (docs/native-mods.md).
 //!
 //! - `new <path> [--name "Name"]`: a content mod from the template; with
@@ -9,11 +9,15 @@
 //! - `run [--game <horizon-client>] [-- <game args>]`: build, then play with
 //!   the mod.
 //! - `check <file> [--json]`: what the registry checks of a submission
-//!   (`.hmod`, `.hnmod`, `.hpack`, resource pack `.zip`, `.hshader`).
+//!   (`.hmod`, `.hnmod`, `.hpack`, resource pack `.zip`, `.hshader`). For a
+//!   scripted mod folder, also the script steps in order (issue 53): the
+//!   game's headless load, StyLua formatting, selene lint, luau-lsp types.
+//! - `fmt [folder]`: rewrite the mod's scripts to StyLua's format.
 //! - `registry build|review|check|list`: the registry repository's CI.
 use horizon_mods::{Capability, Content, Manifest, Package, manifest::MANIFEST};
 mod check;
 mod registry;
+mod scripts;
 
 use std::{
     path::{Path, PathBuf},
@@ -33,8 +37,9 @@ fn main() -> ExitCode {
         }),
         Some("run") => run(&args[1..]),
         Some("check") => check(&args[1..]),
+        Some("fmt") => fmt(&args[1..]),
         Some("registry") => registry::main(&args[1..]),
-        _ => Err("usage: cargo horizon-mod new <path> [--name \"Name\"] [--template content|lua|native [--horizon <commit>]] | build | run [--game <horizon-client>] [-- <game args>] | check <file or folder> [--kind <kind>] [--key <public key> --signature <file.minisig>] [--game <horizon-client>] [--dev-mod <library>]... [--resources <26.3 folder>] [--no-scripts] [--json] | registry build|review|check|list".into()),
+        _ => Err("usage: cargo horizon-mod new <path> [--name \"Name\"] [--template content|lua|native [--horizon <commit>]] | build | run [--game <horizon-client>] [-- <game args>] | check <file or folder> [--kind <kind>] [--key <public key> --signature <file.minisig>] [--game <horizon-client>] [--dev-mod <library>]... [--resources <26.3 folder>] [--no-scripts] [--offline] [--luau-lsp <binary>] [--modkit <dir>] [--tools-cache <dir>] [--json] | fmt [folder] | registry build|review|check|list".into()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -49,6 +54,81 @@ fn main() -> ExitCode {
 fn flag<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
     let i = args.iter().position(|a| a == flag)?;
     args.get(i + 1).map(String::as_str)
+}
+
+/// The `check` flags that take a value in the next argument.
+const CHECK_VALUE_FLAGS: &[&str] = &[
+    "--kind",
+    "--key",
+    "--signature",
+    "--game",
+    "--dev-mod",
+    "--resources",
+    "--luau-lsp",
+    "--modkit",
+    "--tools-cache",
+];
+
+/// The `check` switches (flags without a value).
+const CHECK_SWITCHES: &[&str] = &["--json", "--no-scripts", "--offline"];
+
+/// Checks `args` against a subcommand's flags: an unknown `--flag` is an
+/// error naming the known ones, and a value flag given twice is an error
+/// unless it may repeat. A value flag's value is skipped, whatever it is
+/// (a missing one is `check_path`'s error).
+fn validate_flags(
+    args: &[String],
+    values: &[&str],
+    switches: &[&str],
+    repeatable: &[&str],
+) -> Result<(), String> {
+    let mut seen: Vec<&str> = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        let arg = args[i].as_str();
+        i += 1;
+        if !arg.starts_with("--") {
+            continue;
+        }
+        if values.contains(&arg) {
+            if seen.contains(&arg) && !repeatable.contains(&arg) {
+                return Err(format!("{arg} is given twice"));
+            }
+            seen.push(arg);
+            i += 1;
+        } else if !switches.contains(&arg) {
+            let known: Vec<&str> = values.iter().chain(switches).copied().collect();
+            return Err(format!(
+                "unknown flag {arg}: this command takes {}",
+                known.join(", ")
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The mod's path in `check`'s arguments: the first argument that is neither
+/// a flag nor the value of a value-taking flag, so `check --json <mod>` and
+/// `check <mod> --modkit <dir>` both name the mod. A value-taking flag with
+/// no value (none, or another flag next) is an error.
+fn check_path(args: &[String]) -> Result<Option<&str>, String> {
+    let mut path = None;
+    let mut i = 0;
+    while i < args.len() {
+        let arg = args[i].as_str();
+        if CHECK_VALUE_FLAGS.contains(&arg) {
+            match args.get(i + 1) {
+                Some(value) if !value.starts_with("--") => i += 2,
+                _ => return Err(format!("{arg} needs a value")),
+            }
+        } else {
+            if !arg.starts_with("--") && path.is_none() {
+                path = Some(arg);
+            }
+            i += 1;
+        }
+    }
+    Ok(path)
 }
 
 fn new(args: &[String]) -> Result<(), String> {
@@ -289,43 +369,89 @@ fn build_in(root: &Path) -> Result<PathBuf, String> {
 }
 
 /// `check <file>`: the registry's checks of a submission, printed; fails
-/// when one does.
+/// when one does. With `--json`, one JSON object is printed once, at the end,
+/// with the real overall result and each script step's pass/fail.
 fn check(args: &[String]) -> Result<(), String> {
-    let file = args
-        .first()
-        .filter(|a| !a.starts_with("--"))
-        .ok_or("cargo horizon-mod check <file or folder>")?;
-    let path = Path::new(file);
+    let want_json = args.iter().any(|a| a == "--json");
+    let (value, result) = check_inner(args, !want_json);
+    if want_json {
+        println!("{value}");
+    }
+    result
+}
+
+/// The check itself: `verbose` prints the human-readable text as it goes (off
+/// with `--json`, where the returned value is the whole output). The value
+/// always carries the overall result: `ok`, the registry `report` when its
+/// checks passed, every script step's pass/fail in `steps`, and `error` when
+/// the check failed.
+fn check_inner(args: &[String], verbose: bool) -> (serde_json::Value, Result<(), String>) {
+    if let Err(e) = validate_flags(args, CHECK_VALUE_FLAGS, CHECK_SWITCHES, &["--dev-mod"]) {
+        return (check_value(None, &[], Some(&e), false), Err(e));
+    }
+    let file = match check_path(args) {
+        Ok(Some(file)) => file.to_string(),
+        Ok(None) => {
+            let e = "cargo horizon-mod check <file or folder>".to_string();
+            return (check_value(None, &[], Some(&e), false), Err(e));
+        }
+        Err(e) => return (check_value(None, &[], Some(&e), false), Err(e)),
+    };
+    // `--modkit` names the checkout the types step reads: one that is not
+    // there is an error, not a silent downgrade (`$MODKIT`, an ambient
+    // setting, still falls back to the notice).
+    if let Some(dir) = flag(args, "--modkit")
+        .map(Path::new)
+        .filter(|d| !d.is_dir())
+    {
+        let e = format!(
+            "--modkit {}: not a directory (no modkit checkout there)",
+            dir.display()
+        );
+        return (check_value(None, &[], Some(&e), false), Err(e));
+    }
+    let path = Path::new(&file);
     // A mod folder: built to its target/horizon-mod/<id>.hmod for the
     // registry's checks, the folder itself for the scripts.
     let built;
     let (path, folder) = if path.is_dir() {
-        built = build_in(path)?;
-        (built.as_path(), Some(path))
+        match build_in(path) {
+            Ok(hmod) => {
+                built = hmod;
+                (built.as_path(), Some(path))
+            }
+            Err(e) => return (check_value(None, &[], Some(&e), false), Err(e)),
+        }
     } else {
         (path, None)
     };
     let kind = match flag(args, "--kind") {
         Some(k) => horizon_mods::index::Kind::from(k.to_string()),
         None if folder.is_some() => horizon_mods::index::Kind::Mod,
-        None => check::kind_of(path)
-            .ok_or("pass --kind mod|modpack|resourcepack: the extension doesn't say")?,
+        None => match check::kind_of(path) {
+            Some(k) => k,
+            None => {
+                let e =
+                    "pass --kind mod|modpack|resourcepack: the extension doesn't say".to_string();
+                return (check_value(None, &[], Some(&e), false), Err(e));
+            }
+        },
     };
-    let signature = flag(args, "--signature")
+    let signature = match flag(args, "--signature")
         .map(|p| std::fs::read_to_string(p).map_err(|e| format!("{p}: {e}")))
-        .transpose()?;
-    let report = check::check(path, kind, flag(args, "--key"), signature.as_deref());
-    if args.iter().any(|a| a == "--json") {
-        let json = match &report {
-            Ok(r) => serde_json::json!({"ok": true, "report": r.json()}),
-            Err(e) => serde_json::json!({"ok": false, "error": e}),
-        };
-        println!("{json}");
-    }
-    let report = report?;
-    if !args.iter().any(|a| a == "--json") {
+        .transpose()
+    {
+        Ok(s) => s,
+        Err(e) => return (check_value(None, &[], Some(&e), false), Err(e)),
+    };
+    let report = match check::check(path, kind, flag(args, "--key"), signature.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return (check_value(None, &[], Some(&e), false), Err(e)),
+    };
+    if verbose {
         print!("{}", report.text());
     }
+    let report_json = Some(report.json());
     // A scripted mod's scripts: loaded headlessly by the game (`horizon-client
     // --check-mod`), with the libraries it depends on from --dev-mod; with
     // --resources, any mod's content is also layered on the vanilla folder as
@@ -337,13 +463,24 @@ fn check(args: &[String]) -> Result<(), String> {
         .contains(&horizon_mods::Capability::Scripts)
         && !args.iter().any(|a| a == "--no-scripts");
     if scripted || resources.is_some() {
-        let game = flag(args, "--game")
+        let game = match flag(args, "--game")
             .map(str::to_string)
             .or_else(|| std::env::var("HORIZON_CLIENT").ok())
-            .ok_or("the mod has scripts or --resources was given: pass --game <path to horizon-client> (or set HORIZON_CLIENT) to load them headlessly, or --no-scripts")?;
+        {
+            Some(g) => g,
+            None => {
+                let e = "the mod has scripts or --resources was given: pass --game <path to horizon-client> (or set HORIZON_CLIENT) to load them headlessly, or --no-scripts".to_string();
+                return (check_value(report_json, &[], Some(&e), false), Err(e));
+            }
+        };
         let target = folder.unwrap_or(path);
         let mut cmd = Command::new(&game);
         cmd.arg("--check-mod").arg(target);
+        // With --json, stdout is the one JSON value: the game's output goes
+        // to stderr.
+        if !verbose {
+            cmd.stdout(std::process::Stdio::from(std::io::stderr()));
+        }
         for w in args.windows(2) {
             if w[0] == "--dev-mod" {
                 cmd.arg("--dev-mod").arg(&w[1]);
@@ -352,11 +489,282 @@ fn check(args: &[String]) -> Result<(), String> {
         if let Some(r) = resources {
             cmd.arg("--resources").arg(r);
         }
-        let status = cmd.status().map_err(|e| format!("{game}: {e}"))?;
-        if !status.success() {
-            return Err("the game refused the mod (above)".into());
+        match cmd.status() {
+            Ok(status) if status.success() => {}
+            Ok(_) => {
+                let e = "the game refused the mod (above)".to_string();
+                return (check_value(report_json, &[], Some(&e), false), Err(e));
+            }
+            Err(e) => {
+                let e = format!("{game}: {e}");
+                return (check_value(report_json, &[], Some(&e), false), Err(e));
+            }
         }
     }
+    // The script steps of a mod folder, each reported on its own (issue 53):
+    // StyLua format, selene lint, luau-lsp types. `--no-scripts` above skips
+    // only the game's load; these three need nothing on the PATH (luau-lsp
+    // comes from the user cache, or is skipped with a notice).
+    let mut steps = Vec::new();
+    if let Some(folder) = folder {
+        let manifest = match std::fs::read_to_string(folder.join(MANIFEST)) {
+            Ok(text) => match Manifest::parse(&text) {
+                Ok(m) => m,
+                Err(e) => {
+                    let e = e.to_string();
+                    return (check_value(report_json, &[], Some(&e), false), Err(e));
+                }
+            },
+            Err(e) => {
+                let e = e.to_string();
+                return (check_value(report_json, &[], Some(&e), false), Err(e));
+            }
+        };
+        let content = match Content::read(folder, &manifest) {
+            Ok(c) => c,
+            Err(e) => {
+                let e = e.to_string();
+                return (check_value(report_json, &[], Some(&e), false), Err(e));
+            }
+        };
+        if !content.scripts.is_empty() {
+            let cache = match scripts::tools_cache(flag(args, "--tools-cache").map(Path::new)) {
+                Ok(c) => c,
+                Err(e) => return (check_value(report_json, &[], Some(&e), false), Err(e)),
+            };
+            match script_steps(
+                folder,
+                &content.scripts,
+                &cache,
+                offline(args),
+                modkit_dir(args).as_deref(),
+                flag(args, "--luau-lsp").map(Path::new),
+            ) {
+                Ok(run) => {
+                    for step in &run {
+                        if verbose {
+                            for line in &step.lines {
+                                println!("{line}");
+                            }
+                        }
+                        // Notices are human output on stderr, in every mode.
+                        for note in &step.notes {
+                            eprintln!("{note}");
+                        }
+                    }
+                    steps = run;
+                }
+                Err(e) => return (check_value(report_json, &[], Some(&e), false), Err(e)),
+            }
+            if steps.iter().any(|s| !s.ok) {
+                let e = "a script check failed (above)".to_string();
+                return (
+                    check_value(report_json, &step_values(&steps), Some(&e), false),
+                    Err(e),
+                );
+            }
+        }
+    }
+    (
+        check_value(report_json, &step_values(&steps), None, true),
+        Ok(()),
+    )
+}
+
+/// One script step's result, reported as text lines and as `--json` (which
+/// carries the step's name). `notes` are notices for stderr, in every mode.
+struct ScriptStep {
+    ok: bool,
+    lines: Vec<String>,
+    notes: Vec<String>,
+    json: serde_json::Value,
+}
+
+/// The script steps over a mod folder's scripts: StyLua format, selene lint,
+/// luau-lsp types.
+fn script_steps(
+    folder: &Path,
+    scripts: &[String],
+    cache: &Path,
+    offline: bool,
+    modkit: Option<&Path>,
+    explicit: Option<&Path>,
+) -> Result<Vec<ScriptStep>, String> {
+    let mut steps = Vec::new();
+    let bad = scripts::unformatted(folder, scripts)?;
+    steps.push(ScriptStep {
+        ok: bad.is_empty(),
+        lines: if bad.is_empty() {
+            vec!["scripts format: ok".to_string()]
+        } else {
+            let mut lines = vec![format!(
+                "scripts format: needs formatting ({}): run cargo horizon-mod fmt",
+                bad.len()
+            )];
+            lines.extend(bad.iter().map(|name| format!("  {name}")));
+            lines
+        },
+        notes: Vec::new(),
+        json: serde_json::json!({"name": "format", "ok": bad.is_empty(), "bad": bad}),
+    });
+    let found = scripts::lints(folder, scripts)?;
+    let errors: Vec<&String> = found.iter().filter(|l| l.error).map(|l| &l.text).collect();
+    let warnings: Vec<&String> = found.iter().filter(|l| !l.error).map(|l| &l.text).collect();
+    steps.push(ScriptStep {
+        ok: errors.is_empty(),
+        lines: if errors.is_empty() {
+            vec![format!(
+                "scripts lint: ok{}",
+                warnings.iter().map(|w| format!("\n  {w}")).collect::<String>()
+            )]
+        } else {
+            let mut lines = vec![format!("scripts lint: {} error(s)", errors.len())];
+            lines.extend(found.iter().map(|lint| format!("  {}", lint.text)));
+            lines
+        },
+        notes: Vec::new(),
+        json: serde_json::json!({"name": "lint", "ok": errors.is_empty(), "errors": errors, "warnings": warnings}),
+    });
+    // A pass with part unchecked (no modkit: its `@modkit` requires) keeps
+    // status `pass`, and its detail carries the notice for a parser.
+    let (ok, status, detail, lines, notes) =
+        match scripts::analyze(folder, scripts, explicit, cache, offline, modkit)? {
+            scripts::Outcome::Pass => (
+                true,
+                "pass",
+                String::new(),
+                vec!["scripts types: ok".to_string()],
+                Vec::new(),
+            ),
+            scripts::Outcome::Unchecked(why) => (
+                true,
+                "pass",
+                why.clone(),
+                vec!["scripts types: ok".to_string()],
+                vec![format!("scripts types: {why}")],
+            ),
+            scripts::Outcome::Skip(why) => (
+                true,
+                "skipped",
+                why.clone(),
+                Vec::new(),
+                vec![format!("scripts types: skipped ({why})")],
+            ),
+            scripts::Outcome::Fail(why) => (
+                false,
+                "failed",
+                why.clone(),
+                vec![format!("scripts types: failed\n{why}")],
+                Vec::new(),
+            ),
+        };
+    steps.push(ScriptStep {
+        ok,
+        lines,
+        notes,
+        json: serde_json::json!({"name": "types", "ok": ok, "status": status, "detail": detail}),
+    });
+    Ok(steps)
+}
+
+fn step_values(steps: &[ScriptStep]) -> Vec<serde_json::Value> {
+    steps.iter().map(|s| s.json.clone()).collect()
+}
+
+/// The single `--json` value: the overall result, the registry report when
+/// its checks passed, every script step's pass/fail, and the error when the
+/// check failed.
+fn check_value(
+    report: Option<serde_json::Value>,
+    steps: &[serde_json::Value],
+    error: Option<&str>,
+    ok: bool,
+) -> serde_json::Value {
+    let mut value = serde_json::json!({"ok": ok});
+    if let Some(r) = report {
+        value["report"] = r;
+    }
+    if !steps.is_empty() {
+        value["steps"] = serde_json::Value::Array(steps.to_vec());
+    }
+    if let Some(e) = error {
+        value["error"] = serde_json::Value::String(e.to_string());
+    }
+    value
+}
+
+/// The modkit checkout for the types step: `--modkit <dir>` wins over the
+/// `$MODKIT` environment (docs/lua-bindings.md), which wins over staging
+/// with no checkout at all.
+fn modkit_dir(args: &[String]) -> Option<PathBuf> {
+    modkit_dir_with(args, |name| std::env::var_os(name))
+}
+
+/// `modkit_dir` with the environment as a parameter, so tests never write it.
+fn modkit_dir_with(
+    args: &[String],
+    get: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> Option<PathBuf> {
+    flag(args, "--modkit")
+        .map(PathBuf::from)
+        .or_else(|| get("MODKIT").map(PathBuf::from))
+}
+
+/// Whether the script steps may not fetch anything: `--offline`, or
+/// `HORIZON_MOD_OFFLINE` set to `1`, `true`, `yes` or `on`
+/// (case-insensitive). Anything else — empty, `0`, `false`, `no`, `off` —
+/// means online, so `HORIZON_MOD_OFFLINE=false` does not turn offline on.
+fn offline(args: &[String]) -> bool {
+    offline_with(args, |name| std::env::var_os(name))
+}
+
+/// `offline` with the environment as a parameter, so tests never write it.
+fn offline_with(args: &[String], get: impl Fn(&str) -> Option<std::ffi::OsString>) -> bool {
+    if args.iter().any(|a| a == "--offline") {
+        return true;
+    }
+    let value = get("HORIZON_MOD_OFFLINE")
+        .map(|v| v.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    matches!(value.as_str(), "1" | "true" | "yes" | "on")
+}
+
+/// `fmt [folder]`: rewrite the mod's scripts in place to StyLua's format
+/// (Luau, two-space indent) — what `check`'s format step asks for.
+fn fmt(args: &[String]) -> Result<(), String> {
+    validate_flags(args, &[], &["--check"], &[])?;
+    let root = Path::new(
+        args.iter()
+            .find(|a| !a.starts_with("--"))
+            .map_or(".", AsRef::as_ref),
+    );
+    let manifest_text = std::fs::read_to_string(root.join(MANIFEST))
+        .map_err(|e| format!("{MANIFEST}: {e} (run this in a mod's folder)"))?;
+    let manifest = Manifest::parse(&manifest_text)?;
+    let content = Content::read(root, &manifest)?;
+    if content.scripts.is_empty() {
+        return Err("no scripts/ in the mod: nothing to format".into());
+    }
+    // `--check` writes nothing: it lists the scripts that need formatting.
+    if args.iter().any(|a| a == "--check") {
+        let bad = scripts::unformatted(root, &content.scripts)?;
+        if bad.is_empty() {
+            println!("{} script(s) already formatted", content.scripts.len());
+            return Ok(());
+        }
+        for name in &bad {
+            println!("needs formatting: {name}");
+        }
+        return Err(format!(
+            "{} script(s) need formatting: run cargo horizon-mod fmt",
+            bad.len()
+        ));
+    }
+    let changed = scripts::format_scripts(root, &content.scripts)?;
+    println!(
+        "{} script(s) already formatted",
+        content.scripts.len() - changed
+    );
     Ok(())
 }
 
@@ -490,10 +898,396 @@ mod tests {
         let report = check::check(&hmod, check::kind_of(&hmod).unwrap(), None, None).unwrap();
         assert!(report.text().contains("scripts"), "{}", report.text());
         // The folder checks too (built on the way); its scripts need the game.
-        check(&[path.display().to_string(), "--no-scripts".into()]).unwrap();
+        check(&[
+            path.display().to_string(),
+            "--no-scripts".into(),
+            "--offline".into(),
+            "--tools-cache".into(),
+            dir.join("cache").display().to_string(),
+        ])
+        .unwrap();
         let e = check(&[path.display().to_string()]).unwrap_err();
         assert!(e.contains("--game"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// `check` on the generated Lua template passes every step available
+    /// offline: format and lint run in-process, the type step is skipped
+    /// with a notice.
+    #[test]
+    fn check_passes_every_offline_step_on_the_lua_template() {
+        let dir = scratch("lua-template-offline");
+        let path = dir.join("wand-mod");
+        new(&[
+            path.display().to_string(),
+            "--template".into(),
+            "lua".into(),
+        ])
+        .unwrap();
+        check(&[
+            path.display().to_string(),
+            "--no-scripts".into(),
+            "--offline".into(),
+            "--tools-cache".into(),
+            dir.join("cache").display().to_string(),
+        ])
+        .unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// `--json` reports one object at the end, with the real overall result:
+    /// a failing format step gives a single `ok:false` value carrying every
+    /// step's pass/fail (no early `ok:true` before the steps run).
+    #[test]
+    fn json_reports_a_failing_format_step_once_with_ok_false() {
+        let dir = scratch("lua-json-fmt");
+        let path = dir.join("wand-mod");
+        new(&[
+            path.display().to_string(),
+            "--template".into(),
+            "lua".into(),
+        ])
+        .unwrap();
+        let init = path.join("scripts/init.lua");
+        let source = std::fs::read_to_string(&init).unwrap();
+        std::fs::write(
+            &init,
+            source.replace(
+                "local p = player.position",
+                "local   p   =   player.position",
+            ),
+        )
+        .unwrap();
+        let args = [
+            path.display().to_string(),
+            "--no-scripts".into(),
+            "--offline".into(),
+            "--tools-cache".into(),
+            dir.join("cache").display().to_string(),
+        ];
+        let (value, result) = check_inner(&args, false);
+        assert!(result.is_err(), "a bad format fails the check");
+        assert_eq!(value["ok"], serde_json::Value::Bool(false), "{value}");
+        assert!(value["report"].is_object(), "{value}");
+        let steps = value["steps"].as_array().expect("{value}");
+        assert_eq!(steps.len(), 3, "{value}");
+        let format = steps
+            .iter()
+            .find(|s| s["name"] == "format")
+            .expect("{value}");
+        assert_eq!(format["ok"], serde_json::Value::Bool(false), "{value}");
+        assert!(
+            format["bad"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|b| b == "scripts/init.lua"),
+            "{value}"
+        );
+        for step in steps {
+            assert!(
+                step["name"].is_string() && step["ok"].is_boolean(),
+                "{value}"
+            );
+        }
+        // And the passing side: formatted again, the same value says ok.
+        fmt(&[path.display().to_string()]).unwrap();
+        let (value, result) = check_inner(&args, false);
+        assert!(result.is_ok(), "{value}");
+        assert_eq!(value["ok"], serde_json::Value::Bool(true), "{value}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// An unknown `--flag` is an error naming the known ones, and a value flag
+    /// given twice is an error too (`--dev-mod` may repeat).
+    #[test]
+    fn unknown_flags_and_repeated_values_are_errors() {
+        let dir = scratch("check-flags");
+        let path = dir.join("wand-mod");
+        new(&[
+            path.display().to_string(),
+            "--template".into(),
+            "lua".into(),
+        ])
+        .unwrap();
+        let (_, result) = check_inner(
+            &[
+                path.display().to_string(),
+                "--typo".into(),
+                "--no-scripts".into(),
+            ],
+            false,
+        );
+        let e = result.unwrap_err();
+        assert!(
+            e.contains("unknown flag --typo") && e.contains("--modkit"),
+            "{e}"
+        );
+        let (_, result) = check_inner(
+            &[
+                path.display().to_string(),
+                "--modkit".into(),
+                "/a".into(),
+                "--modkit".into(),
+                "/b".into(),
+            ],
+            false,
+        );
+        let e = result.unwrap_err();
+        assert!(e.contains("--modkit is given twice"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// `fmt --check` reports the scripts that need formatting, fails, and
+    /// writes nothing; an unknown flag to `fmt` is an error.
+    #[test]
+    fn fmt_check_reports_unformatted_files_without_writing() {
+        let dir = scratch("fmt-check");
+        let path = dir.join("wand-mod");
+        new(&[
+            path.display().to_string(),
+            "--template".into(),
+            "lua".into(),
+        ])
+        .unwrap();
+        let init = path.join("scripts/init.lua");
+        let source = std::fs::read_to_string(&init).unwrap();
+        let messy = source.replace(
+            "local p = player.position",
+            "local   p   =   player.position",
+        );
+        std::fs::write(&init, &messy).unwrap();
+        let e = fmt(&[path.display().to_string(), "--check".into()]).unwrap_err();
+        assert!(e.contains("need formatting"), "{e}");
+        assert_eq!(
+            std::fs::read_to_string(&init).unwrap(),
+            messy,
+            "--check wrote"
+        );
+        let e = fmt(&[path.display().to_string(), "--typo".into()]).unwrap_err();
+        assert!(e.contains("unknown flag --typo"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The mod's path may follow a switch (`check --json <mod>`), and a
+    /// value-taking flag with no value (or another flag next) is an error.
+    #[test]
+    fn the_check_path_may_follow_a_flag_and_flags_need_values() {
+        let dir = scratch("check-flag-order");
+        let path = dir.join("wand-mod");
+        new(&[
+            path.display().to_string(),
+            "--template".into(),
+            "lua".into(),
+        ])
+        .unwrap();
+        let args = [
+            "--json".into(),
+            path.display().to_string(),
+            "--no-scripts".into(),
+            "--offline".into(),
+            "--tools-cache".into(),
+            dir.join("cache").display().to_string(),
+        ];
+        let (value, result) = check_inner(&args, false);
+        assert!(result.is_ok(), "{value}");
+        assert_eq!(value["ok"], serde_json::Value::Bool(true), "{value}");
+        let (_, result) = check_inner(
+            &[
+                path.display().to_string(),
+                "--modkit".into(),
+                "--json".into(),
+            ],
+            false,
+        );
+        let e = result.unwrap_err();
+        assert!(e.contains("--modkit needs a value"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A badly formatted script fails `check` (non-zero exit); `fmt` fixes it
+    /// and `check` passes again.
+    #[test]
+    fn check_fails_on_bad_formatting_and_fmt_fixes_it() {
+        let dir = scratch("lua-fmt");
+        let path = dir.join("wand-mod");
+        new(&[
+            path.display().to_string(),
+            "--template".into(),
+            "lua".into(),
+        ])
+        .unwrap();
+        let init = path.join("scripts/init.lua");
+        let source = std::fs::read_to_string(&init).unwrap();
+        std::fs::write(
+            &init,
+            source.replace(
+                "local p = player.position",
+                "local   p   =   player.position",
+            ),
+        )
+        .unwrap();
+        let args = |extra: &str| {
+            [
+                path.display().to_string(),
+                "--no-scripts".into(),
+                extra.into(),
+                "--tools-cache".into(),
+                dir.join("cache").display().to_string(),
+            ]
+        };
+        let e = check(&args("--offline")).unwrap_err();
+        assert!(e.contains("script check failed"), "{e}");
+        fmt(&[path.display().to_string()]).unwrap();
+        assert!(
+            std::fs::read_to_string(&init)
+                .unwrap()
+                .contains("local p = player.position")
+        );
+        check(&args("--offline")).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A script with a selene-detectable defect (an undefined global) fails
+    /// the lint step, and so `check`.
+    #[test]
+    fn check_fails_on_a_selene_error() {
+        let dir = scratch("lua-lint");
+        let path = dir.join("wand-mod");
+        new(&[
+            path.display().to_string(),
+            "--template".into(),
+            "lua".into(),
+        ])
+        .unwrap();
+        let init = path.join("scripts/init.lua");
+        let source = std::fs::read_to_string(&init).unwrap();
+        std::fs::write(
+            &init,
+            source.replace("horizon.broadcast(", "no_such_api.broadcast("),
+        )
+        .unwrap();
+        let e = check(&[
+            path.display().to_string(),
+            "--no-scripts".into(),
+            "--offline".into(),
+            "--tools-cache".into(),
+            dir.join("cache").display().to_string(),
+        ])
+        .unwrap_err();
+        assert!(e.contains("script check failed"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The real luau-lsp (downloaded into the user cache on first run, or
+    /// already there) type-checks a fresh Lua template through `check`
+    /// with only the modkit path passed, and every step passes. A
+    /// deliberate type error (`horizon.set_block("a")`) then fails the
+    /// types step. Run it with the modkit at hand:
+    /// `MODKIT=/path/to/horizon-modkit cargo nextest run -p cargo-horizon-mod --run-ignored only`
+    /// (needs the network once, or a cached luau-lsp binary).
+    #[test]
+    #[ignore]
+    fn check_passes_the_types_step_with_the_real_luau_lsp_on_a_fresh_template() {
+        let modkit = std::env::var_os("MODKIT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| panic!("set MODKIT=<horizon-modkit checkout> to run this test"));
+        let dir = scratch("lua-template-luau-lsp");
+        let path = dir.join("wand-mod");
+        new(&[
+            path.display().to_string(),
+            "--template".into(),
+            "lua".into(),
+        ])
+        .unwrap();
+        check(&[
+            path.display().to_string(),
+            "--no-scripts".into(),
+            "--modkit".into(),
+            modkit.display().to_string(),
+        ])
+        .unwrap();
+        // A type error the definitions catch: set_block takes numbers.
+        let init = path.join("scripts/init.lua");
+        let source = std::fs::read_to_string(&init).unwrap();
+        std::fs::write(
+            &init,
+            source.replace(
+                "local M = modkit.mod",
+                "horizon.set_block(\"a\")\nlocal M = modkit.mod",
+            ),
+        )
+        .unwrap();
+        let e = check(&[
+            path.display().to_string(),
+            "--no-scripts".into(),
+            "--modkit".into(),
+            modkit.display().to_string(),
+        ])
+        .unwrap_err();
+        assert!(e.contains("script check failed"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// `--modkit` wins over `$MODKIT`, which wins over no checkout: the flag
+    /// is read first, the environment only without it.
+    #[test]
+    fn the_modkit_flag_wins_over_the_env_which_wins_over_nothing() {
+        // The environment is a parameter: no test writes the real one.
+        let env = |value: Option<&str>| {
+            let value = value.map(std::ffi::OsString::from);
+            move |name: &str| {
+                assert_eq!(name, "MODKIT");
+                value.clone()
+            }
+        };
+        let flag = |dir: &str| {
+            modkit_dir_with(
+                &["check".into(), "mod".into(), "--modkit".into(), dir.into()],
+                env(Some("/from/env")),
+            )
+        };
+        assert_eq!(flag("/from/flag"), Some(PathBuf::from("/from/flag")));
+        let args = ["check".into(), "mod".into()];
+        assert_eq!(
+            modkit_dir_with(&args, env(Some("/from/env"))),
+            Some(PathBuf::from("/from/env"))
+        );
+        assert_eq!(modkit_dir_with(&args, env(None)), None);
+    }
+
+    /// Only `1`, `true`, `yes` and `on` (case-insensitive) turn offline on:
+    /// empty, `0`, `false`, `no` and `off` mean online.
+    #[test]
+    fn only_truthy_values_turn_offline_on() {
+        // The environment is a parameter: no test writes the real one.
+        let env = |value: Option<&str>| {
+            let value = value.map(std::ffi::OsString::from);
+            move |_: &str| value.clone()
+        };
+        for value in ["1", "true", "TRUE", "yes", "Yes", "on", "ON"] {
+            assert!(
+                offline_with(&[], env(Some(value))),
+                "{value:?} means offline"
+            );
+        }
+        for value in [
+            None,
+            Some(""),
+            Some("0"),
+            Some("false"),
+            Some("FALSE"),
+            Some("no"),
+            Some("off"),
+            Some("2"),
+            Some("banana"),
+        ] {
+            assert!(!offline_with(&[], env(value)), "{value:?} means online");
+        }
+        assert!(
+            offline_with(&["--offline".into()], env(Some("false"))),
+            "the flag still turns offline on"
+        );
     }
 
     #[test]

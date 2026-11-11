@@ -66,7 +66,11 @@ jobs:
           binary="target/${{ matrix.target }}/release/cargo-horizon-mod"
           [ -f "$binary.exe" ] && binary="$binary.exe"
           mkdir -p dist
-          tar -czf "dist/$(basename "$binary" | sed 's/\.exe$//')-${{ matrix.target }}.tar.gz" -C "$(dirname "$binary")" "$(basename "$binary")"
+          # THIRD_PARTY_NOTICES.md rides along: the binary links MPL-2.0 libraries (StyLua, selene) and MPL 3.2 asks
+          # recipients to be told where their source is.
+          stage="dist/stage"; rm -rf "$stage"; mkdir -p "$stage"
+          cp "$binary" THIRD_PARTY_NOTICES.md "$stage/"
+          tar -czf "dist/$(basename "$binary" | sed 's/\.exe$//')-${{ matrix.target }}.tar.gz" -C "$stage" "$(basename "$binary")" THIRD_PARTY_NOTICES.md
       - uses: actions/upload-artifact@v7
         with:
           name: cargo-horizon-mod-${{ matrix.target }}

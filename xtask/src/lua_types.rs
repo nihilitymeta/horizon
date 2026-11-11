@@ -113,6 +113,165 @@ const TYPES: &[(&str, &str)] = &[
     ),
 ];
 
+/// The Luau keywords (the language reference's list): a table field named
+/// one cannot be written bare, but a quoted string-literal property can
+/// (`{ start: number, ["end"]: number }`).
+const LUAU_KEYWORDS: &[&str] = &[
+    "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "if", "in", "local",
+    "nil", "not", "or", "repeat", "return", "then", "true", "until", "while",
+];
+
+/// The keyword field that starts after the separator at `sep` (`{`, `,` or a
+/// newline), with any spacing or indentation before its name: the name's
+/// index and the keyword. The name must be followed by a colon, so
+/// `endpoint:` is not `end` (and `elseif:` is not `else`).
+fn keyword_field_at(defs: &str, sep: usize) -> Option<(usize, &'static str)> {
+    let trimmed = defs[sep + 1..].trim_start_matches([' ', '\t', '\r', '\n']);
+    let start = defs.len() - trimmed.len();
+    let keyword = LUAU_KEYWORDS.iter().copied().find(|kw| {
+        trimmed
+            .strip_prefix(kw)
+            .is_some_and(|after| after.trim_start_matches([' ', '\t']).starts_with(':'))
+    })?;
+    Some((start, keyword))
+}
+
+/// Rewrites every keyword-named table field of a rendered definitions file
+/// to its quoted form. It sees the field lists of both the hand-written
+/// tables (`TYPES`, `FUNCTIONS`) and the generated ones, whose nested table
+/// types (`{ start: number, end: number }`) are built in the model, out of
+/// reach here. A field starts after `{`, `,` or a line break, with any
+/// spacing or indentation before its name; parameter names share the
+/// `, ` separator, but a keyword can never be one, so the rewrite is safe
+/// there too. String literals and `--` comments are skipped: a `{ end: ` or
+/// `, end: ` inside one is text, and quoting it would break the string.
+fn quote_keyword_fields(defs: &str) -> String {
+    #[derive(PartialEq)]
+    enum State {
+        Code,
+        LineComment,
+        LongComment(usize),
+        SingleString,
+        DoubleString,
+        LongString(usize),
+    }
+    /// A long bracket opener at `i` (`[[`, `[=[`, ...): its `=` count.
+    fn open_bracket(bytes: &[u8], i: usize) -> Option<usize> {
+        if bytes.get(i) != Some(&b'[') {
+            return None;
+        }
+        let mut level = 0;
+        while bytes.get(i + 1 + level) == Some(&b'=') {
+            level += 1;
+        }
+        if bytes.get(i + 1 + level) == Some(&b'[') {
+            Some(level)
+        } else {
+            None
+        }
+    }
+    /// A long bracket closer at `i` (`]]`, `]=]`, ...) for `level`.
+    fn close_bracket(bytes: &[u8], i: usize, level: usize) -> bool {
+        if bytes.get(i) != Some(&b']') {
+            return false;
+        }
+        for k in 0..level {
+            if bytes.get(i + 1 + k) != Some(&b'=') {
+                return false;
+            }
+        }
+        bytes.get(i + 1 + level) == Some(&b']')
+    }
+    let bytes = defs.as_bytes();
+    let mut out = String::with_capacity(defs.len());
+    let mut i = 0;
+    let mut state = State::Code;
+    while i < bytes.len() {
+        match state {
+            State::Code => {
+                if bytes[i] == b'-' && bytes.get(i + 1) == Some(&b'-') {
+                    if let Some(level) = open_bracket(bytes, i + 2) {
+                        let end = i + 4 + level;
+                        out.push_str(&defs[i..end]);
+                        i = end;
+                        state = State::LongComment(level);
+                    } else {
+                        out.push_str("--");
+                        i += 2;
+                        state = State::LineComment;
+                    }
+                } else if bytes[i] == b'\'' {
+                    out.push('\'');
+                    i += 1;
+                    state = State::SingleString;
+                } else if bytes[i] == b'"' {
+                    out.push('"');
+                    i += 1;
+                    state = State::DoubleString;
+                } else if let Some(level) = open_bracket(bytes, i) {
+                    let end = i + 2 + level;
+                    out.push_str(&defs[i..end]);
+                    i = end;
+                    state = State::LongString(level);
+                } else if matches!(bytes[i], b'{' | b',' | b'\n') {
+                    out.push(bytes[i] as char);
+                    i += 1;
+                    if let Some((start, keyword)) = keyword_field_at(defs, i - 1) {
+                        // The indentation or spacing before the name is kept.
+                        out.push_str(&defs[i..start]);
+                        out.push_str(&format!("[\"{keyword}\"]"));
+                        i = start + keyword.len();
+                    }
+                } else {
+                    let c = defs[i..].chars().next().expect("a char at i");
+                    out.push(c);
+                    i += c.len_utf8();
+                }
+            }
+            State::LineComment => {
+                let c = defs[i..].chars().next().expect("a char at i");
+                out.push(c);
+                i += c.len_utf8();
+                if c == '\n' {
+                    state = State::Code;
+                }
+            }
+            State::SingleString | State::DoubleString => {
+                let quote = if state == State::SingleString {
+                    b'\''
+                } else {
+                    b'"'
+                };
+                let c = defs[i..].chars().next().expect("a char at i");
+                out.push(c);
+                i += c.len_utf8();
+                if c == '\\' {
+                    // An escape: the next character is literal text.
+                    if let Some(next) = defs[i..].chars().next() {
+                        out.push(next);
+                        i += next.len_utf8();
+                    }
+                } else if (c as u32) == quote as u32 {
+                    state = State::Code;
+                }
+            }
+            State::LongString(level) | State::LongComment(level) => {
+                if close_bracket(bytes, i, level) {
+                    let end = i + 2 + level;
+                    out.push_str(&defs[i..end]);
+                    i = end;
+                    state = State::Code;
+                } else {
+                    let c = defs[i..].chars().next().expect("a char at i");
+                    out.push(c);
+                    i += c.len_utf8();
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Extra `horizon.on(name, fn[, kind])` overloads beyond the generated
 /// hooks' own: empty now that every hook is generated (the generated
 /// overloads come from the model below). The declaration-served
@@ -416,7 +575,10 @@ fn render() -> Result<String, String> {
         out.push_str(&format!("    {name}: {ty},\n"));
     }
     out.push_str("}\n");
-    Ok(out)
+    // Keyword-named fields get their quoted form last, over everything:
+    // the generated events, the hand-written tables and the nested table
+    // types the model builds.
+    Ok(quote_keyword_fields(&out))
 }
 
 pub fn run(check: bool) -> Result<(), String> {
@@ -657,5 +819,80 @@ mod tests {
     #[test]
     fn the_definitions_are_what_the_tables_say() {
         super::run(true).unwrap();
+    }
+
+    /// A `{ end: ` or `, end: ` inside a string literal or a `--` comment is
+    /// text, not a field: quoting it there would break the string. A field
+    /// in code is still quoted.
+    #[test]
+    fn keyword_lookalikes_in_strings_and_comments_are_left_alone() {
+        let input = "export type T = { start: number, end: number }\n\
+             -- a comment: { end: number }, end: number\n\
+             --[[ a long comment: { end: number }, end: number ]]\n\
+             local s = \"{ end: number }, end: number\"\n\
+             local q = '{ end: number }, end: number'\n\
+             local l = [[{ end: number }, end: number]]\n\
+             local e = \"an escaped quote \\\" { end: number }\"\n";
+        let out = super::quote_keyword_fields(input);
+        assert!(
+            out.contains("export type T = { start: number, [\"end\"]: number }"),
+            "{out}"
+        );
+        for kept in [
+            "-- a comment: { end: number }, end: number\n",
+            "--[[ a long comment: { end: number }, end: number ]]\n",
+            "\"{ end: number }, end: number\"",
+            "'{ end: number }, end: number'",
+            "[[{ end: number }, end: number]]",
+            "\"an escaped quote \\\" { end: number }\"",
+        ] {
+            assert!(out.contains(kept), "{kept} was rewritten: {out}");
+        }
+    }
+
+    /// A keyword field is quoted when it starts a line of a multi-line block
+    /// and when its braces or commas are unspaced; a keyword that only starts
+    /// a longer name (`endpoint:`, `ending:`) is left alone.
+    #[test]
+    fn keyword_fields_are_quoted_across_lines_and_without_spaces() {
+        let input = "declare x: {\n    start: number,\n    end: number,\n}\n\
+             export type U = {end: number,start: number}\n\
+             export type V = { endpoint: number, ending: number }\n";
+        let out = super::quote_keyword_fields(input);
+        assert!(out.contains("\n    [\"end\"]: number,\n"), "{out}");
+        assert!(out.contains("{[\"end\"]: number,start: number}"), "{out}");
+        assert!(
+            out.contains("{ endpoint: number, ending: number }"),
+            "{out}"
+        );
+    }
+
+    /// A table field named with a Luau keyword is rendered in its quoted
+    /// form, and nothing in the generated file writes one bare: a keyword
+    /// field is a syntax error to luau-lsp. The keyword list here is its
+    /// own (the language reference's), not the generator's.
+    #[test]
+    fn keyword_named_fields_are_quoted() {
+        let keywords = [
+            "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "if", "in",
+            "local", "nil", "not", "or", "repeat", "return", "then", "true", "until", "while",
+        ];
+        let defs = super::render().unwrap();
+        // The three event tables that carry a range: their `end` is quoted.
+        for line in defs.lines() {
+            if line.contains("start: number") {
+                assert!(line.contains("[\"end\"]: number"), "{line}");
+            }
+        }
+        // No bare keyword field anywhere: not after `{`, not after `,`.
+        for line in defs.lines() {
+            for keyword in keywords {
+                assert!(
+                    !line.contains(&format!("{{ {keyword}: "))
+                        && !line.contains(&format!(", {keyword}: ")),
+                    "bare keyword field `{keyword}`: {line}",
+                );
+            }
+        }
     }
 }

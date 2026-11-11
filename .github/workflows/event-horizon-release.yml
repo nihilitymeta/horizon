@@ -112,6 +112,8 @@ jobs:
             cp "target/release/$program${{ matrix.exe }}" "dist/$dir/"
           done
           cp "launcher/target/release/horizon-launcher${{ matrix.exe }}" "dist/$dir/"
+          # cargo-horizon-mod links MPL-2.0 libraries (StyLua, selene): the notice says where their source is.
+          cp THIRD_PARTY_NOTICES.md "dist/$dir/"
           cd dist
           if [[ "${{ runner.os }}" == Windows ]]; then 7z a -tzip "$dir.zip" "$dir" >/dev/null; else tar -czf "$dir.tar.gz" "$dir"; fi
       - uses: actions/upload-artifact@v7

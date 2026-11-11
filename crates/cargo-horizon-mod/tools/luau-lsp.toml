@@ -1,0 +1,27 @@
+# luau-lsp for `cargo horizon-mod check`'s type-analysis step (issue 53).
+# Downloaded once into the user cache dir (never the repo), SHA-256 verified.
+# The hashes are the `digest` GitHub publishes for each release asset.
+version = "1.70.1"
+needs_pin = false
+
+# Platform keys are `<os>-<arch>` as Rust's std::env::consts reports them.
+# The macOS build is one universal zip for both architectures.
+[target.linux-x86_64]
+url = "https://github.com/JohnnyMorganz/luau-lsp/releases/download/1.70.1/luau-lsp-linux-x86_64.zip"
+sha256 = "1a2ea1ae4f98f8946cefd970a4b54853e11ab4775e6932faa7f60cf920346567"
+
+[target.linux-aarch64]
+url = "https://github.com/JohnnyMorganz/luau-lsp/releases/download/1.70.1/luau-lsp-linux-arm64.zip"
+sha256 = "6062345b95124ca937b8c324b74bc3fddb1d6919ba133c58f8b17945ce1acbc2"
+
+[target.windows-x86_64]
+url = "https://github.com/JohnnyMorganz/luau-lsp/releases/download/1.70.1/luau-lsp-win64.zip"
+sha256 = "64225b9738102a30de6ee09fb28e5a3827edc402ecf2a6364af570312468159f"
+
+[target.macos-x86_64]
+url = "https://github.com/JohnnyMorganz/luau-lsp/releases/download/1.70.1/luau-lsp-macos.zip"
+sha256 = "7d3936e8dec6dc77547abd061d2e950da392562a5f94858b880f23dba50d84cd"
+
+[target.macos-aarch64]
+url = "https://github.com/JohnnyMorganz/luau-lsp/releases/download/1.70.1/luau-lsp-macos.zip"
+sha256 = "7d3936e8dec6dc77547abd061d2e950da392562a5f94858b880f23dba50d84cd"
