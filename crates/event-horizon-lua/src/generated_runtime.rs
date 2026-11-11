@@ -5092,3 +5092,28 @@ macro_rules! gen_replace {
         }
     };
 }
+
+#[cfg(test)]
+mod duration_writeback_tests {
+    use super::*;
+
+    /// A script's seconds for a `Duration` field, through the conversion the
+    /// write-back uses: integer and fractional seconds convert, negative
+    /// seconds clamp to zero, and NaN and infinity are refused.
+    #[test]
+    fn duration_seconds_from_lua() {
+        let lua = Lua::new();
+        let secs = |v: Value| <Duration as LuaStruct>::from_value(&lua, v, "timeout");
+        assert_eq!(secs(Value::Integer(1)).unwrap(), Duration::from_secs(1));
+        assert_eq!(
+            secs(Value::Number(1.5)).unwrap(),
+            Duration::from_millis(1500)
+        );
+        assert_eq!(secs(Value::Integer(-5)).unwrap(), Duration::ZERO);
+        assert_eq!(secs(Value::Number(-5.0)).unwrap(), Duration::ZERO);
+        for bad in [f64::NAN, f64::INFINITY] {
+            let e = secs(Value::Number(bad)).unwrap_err().to_string();
+            assert!(e.contains("timeout"), "{bad}: {e}");
+        }
+    }
+}

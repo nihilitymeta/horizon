@@ -270,12 +270,23 @@ return function(horizon, report, base)
   -- The globals the timers use, from `base` (BASE_CODE), as the runner's are.
   local xpcall, type, text, traceback = base.xpcall, base.type, base.text, base.traceback
   local max, floor, remove = base.max, base.floor, base.remove
+  local error = base.error
   local timers, tick = {}, 0
+  -- A delay is a finite number of ticks: `after` takes zero or more, `every`
+  -- one or more. Anything else is a Lua error at the call, so the mod's
+  -- scripts fail to load; a NaN or infinite delay would hold a timer that
+  -- never fires, until the next reload.
+  local function delay(name, ticks, least)
+    if type(ticks) ~= "number" or ticks ~= ticks or ticks == 1 / 0 or ticks == -1 / 0 or ticks < least then
+      error("horizon." .. name .. ": the delay must be a finite number of ticks, at least " .. least, 3)
+    end
+    return ticks
+  end
   horizon.after = function(ticks, fn)
-    timers[#timers + 1] = { due = tick + max(1, floor(ticks)), fn = fn }
+    timers[#timers + 1] = { due = tick + max(1, floor(delay("after", ticks, 0))), fn = fn }
   end
   horizon.every = function(ticks, fn)
-    local n = max(1, floor(ticks))
+    local n = max(1, floor(delay("every", ticks, 1)))
     timers[#timers + 1] = { due = tick + n, every = n, fn = fn }
   end
   horizon.ticks = function() return tick end
@@ -971,9 +982,11 @@ fn command_args(
                     )));
                 }
             },
-            "number" => match word.parse::<f64>() {
-                Ok(n) => args.set(*name, n)?,
-                Err(_) => {
+            // `NaN`, `inf` and a value past f64's range parse too: a
+            // number a script can use is finite, so they are refused.
+            "number" => match word.parse::<f64>().ok().filter(|n| n.is_finite()) {
+                Some(n) => args.set(*name, n)?,
+                None => {
                     return Ok(Some(Text::tr(
                         "horizon.lua.command.needs_number",
                         &[name, &quoted],
@@ -2395,6 +2408,9 @@ impl LuaMod {
         // out are written back after.
         let reader = std::cell::RefCell::new(reader);
         let fetched: std::cell::RefCell<Vec<Fetched>> = std::cell::RefCell::new(Vec::new());
+        // The profiler's stopwatch, set around the budget's own span below:
+        // `None` when the call never reached the handlers.
+        let elapsed: std::cell::Cell<Option<Duration>> = std::cell::Cell::new(None);
         let result = lua.scope(|scope| {
             let read = match &*reader.borrow() {
                 Reader::None => Value::Nil,
@@ -2416,14 +2432,24 @@ impl LuaMod {
             args.push_front(Value::Table(handlers));
             // The runner returns a handler's message rather than raising it
             // (see RUNNER_CODE): raised here, with its text intact.
-            let failed = self
+            // The profiler times the same span the budget times: the whole
+            // hook firing (every handler of the mod for the hook). The map
+            // update waits until the scope is back
+            // (below), so no lock is held while Lua runs.
+            let started = Instant::now();
+            let outcome = self
                 .budget
-                .run(limit * count, || runner.call::<Value>(args))?;
-            match failed {
+                .run(limit * count, || runner.call::<Value>(args));
+            elapsed.set(Some(started.elapsed()));
+            match outcome? {
                 Value::String(message) => Err(mlua::Error::runtime(message.to_string_lossy())),
                 _ => Ok(()),
             }
         });
+        if let Some(taken) = elapsed.take() {
+            let overrun = matches!(&result, Err(e) if is_overrun(e));
+            crate::profiler::note(&self.id, hook, taken, overrun);
+        }
         // The runner restores the slot itself when it gets that far; one
         // stopped by the budget (raised at every safepoint past the
         // deadline) may not, so it is restored here in any case.
@@ -2833,6 +2859,12 @@ impl Hooks for LuaMod {
     // Every hook is generated (`generated_hooks`, one method per native
     // hook), each with one event table.
     impl_generated_hooks!();
+}
+
+/// A handler stopped by the interrupt, as opposed to one that failed on its
+/// own: the budget's message (`Budget::run`).
+pub(crate) fn is_overrun(e: &mlua::Error) -> bool {
+    e.to_string().contains("ran over its time budget")
 }
 
 /// A handler's error for the log, the console and the status row: the hook
@@ -5597,18 +5629,24 @@ experimental = ["scripts"]
         }
         fn flush(&self) {}
     }
-    fn capture_logs() {
+    /// Every test that reads `TEST_LOG` holds its guard for the whole test:
+    /// `cargo test` runs them on threads of one process, and a clear in one
+    /// would wipe another's records.
+    static LOG_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    fn capture_logs() -> std::sync::MutexGuard<'static, ()> {
+        let guard = LOG_TESTS.lock().unwrap_or_else(|e| e.into_inner());
         static ONCE: std::sync::Once = std::sync::Once::new();
         ONCE.call_once(|| {
             let _ = log::set_logger(&TestLogger);
             log::set_max_level(log::LevelFilter::Error);
         });
         TEST_LOG.lock().unwrap().clear();
+        guard
     }
 
     #[test]
     fn timer_traceback_survives_debug_nil() {
-        capture_logs();
+        let _logs = capture_logs();
         let (dir, path) = hmod(
             "timers-debug-nil",
             &[(
@@ -5721,7 +5759,7 @@ experimental = ["scripts"]
     /// included, because neither is run through `tostring` on the way out.
     #[test]
     fn a_replaced_string_tostring_keeps_the_messages() {
-        capture_logs();
+        let _logs = capture_logs();
         let (m, mut host, dir) = dead_mod(
             "string_tostring",
             br#"
@@ -5801,7 +5839,7 @@ experimental = ["scripts"]
     /// capped to 20 frames with a `... N more` line, not the whole stack.
     #[test]
     fn timer_tracebacks_are_capped_like_handlers() {
-        capture_logs();
+        let _logs = capture_logs();
         let (dir, path) = hmod(
             "timer-deep",
             &[(
@@ -7192,6 +7230,127 @@ experimental = ["scripts"]
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A handler fired N times reports N calls for that hook, none for a
+    /// hook that never fired, and no overruns for clean runs.
+    #[test]
+    fn profiler_counts_calls_per_mod_and_hook() {
+        let _lock = crate::profiler::test_lock();
+        let (m, _host, dir) = dead_mod(
+            "profile_calls",
+            br#"
+            horizon.on("mob_spawned", function() end)
+            horizon.on("mob_killed", function() end)
+            "#,
+        );
+        for _ in 0..3 {
+            m.call_bare("mob_spawned", None, ("end", true), &mut |_, _| Ok(()))
+                .unwrap();
+        }
+        let rows = crate::profiler::profile_report();
+        let fired = rows
+            .iter()
+            .find(|r| r.r#mod == "profile_calls" && r.hook == "mob_spawned")
+            .expect("the fired hook is reported");
+        assert_eq!(fired.calls, 3, "{fired:?}");
+        assert_eq!(fired.overruns, 0, "{fired:?}");
+        assert!(
+            rows.iter()
+                .all(|r| !(r.r#mod == "profile_calls" && r.hook == "mob_killed")),
+            "a hook that never fired has no row: {rows:?}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A handler spinning past a tiny budget reports one call, one overrun,
+    /// and a max time at least the budget: the same interrupt the budget
+    /// tests trip, on a small scale.
+    #[test]
+    fn profiler_counts_an_overrun_past_a_tiny_budget() {
+        let _lock = crate::profiler::test_lock();
+        let (m, _host, dir) = dead_mod(
+            "profile_overrun",
+            br#"horizon.on("mob_spawned", function() while true do end end)"#,
+        );
+        let limit = Duration::from_millis(50);
+        let e = m
+            .run_handlers_with("mob_spawned", None, Reader::None, ("end", true), limit)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("ran over"), "{e}");
+        let rows = crate::profiler::profile_report();
+        let row = rows
+            .iter()
+            .find(|r| r.r#mod == "profile_overrun" && r.hook == "mob_spawned")
+            .expect("the stopped call is reported");
+        assert_eq!(row.calls, 1, "{row:?}");
+        assert_eq!(row.overruns, 1, "{row:?}");
+        assert!(
+            row.max_ns >= limit.as_nanos() as u64,
+            "the call ran past its budget: {row:?}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Two mods hearing the same hook are reported as two rows, each with
+    /// its own count.
+    #[test]
+    fn profiler_reports_two_mods_separately() {
+        let _lock = crate::profiler::test_lock();
+        let (a, _ha, dir_a) = dead_mod(
+            "profile_mod_a",
+            br#"horizon.on("mob_spawned", function() end)"#,
+        );
+        let (b, _hb, dir_b) = dead_mod(
+            "profile_mod_b",
+            br#"horizon.on("mob_spawned", function() end)"#,
+        );
+        for _ in 0..2 {
+            a.call_bare("mob_spawned", None, ("end", true), &mut |_, _| Ok(()))
+                .unwrap();
+        }
+        b.call_bare("mob_spawned", None, ("end", true), &mut |_, _| Ok(()))
+            .unwrap();
+        let rows = crate::profiler::profile_report();
+        let row_a = rows
+            .iter()
+            .find(|r| r.r#mod == "profile_mod_a" && r.hook == "mob_spawned")
+            .expect("mod a is reported");
+        let row_b = rows
+            .iter()
+            .find(|r| r.r#mod == "profile_mod_b" && r.hook == "mob_spawned")
+            .expect("mod b is reported");
+        assert_eq!(row_a.calls, 2, "{row_a:?}");
+        assert_eq!(row_b.calls, 1, "{row_b:?}");
+        std::fs::remove_dir_all(&dir_a).unwrap();
+        std::fs::remove_dir_all(&dir_b).unwrap();
+    }
+
+    /// `profile_reset` drops the report: no row of the mod survives it.
+    #[test]
+    fn profiler_reset_zeroes_everything() {
+        let _lock = crate::profiler::test_lock();
+        let (m, _host, dir) = dead_mod(
+            "profile_reset_me",
+            br#"horizon.on("mob_spawned", function() end)"#,
+        );
+        m.call_bare("mob_spawned", None, ("end", true), &mut |_, _| Ok(()))
+            .unwrap();
+        assert!(
+            crate::profiler::profile_report()
+                .iter()
+                .any(|r| r.r#mod == "profile_reset_me"),
+            "the call is reported before the reset"
+        );
+        crate::profiler::profile_reset();
+        assert!(
+            crate::profiler::profile_report()
+                .iter()
+                .all(|r| r.r#mod != "profile_reset_me"),
+            "no row of the mod survives the reset"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn loot_drops_keeps_same_id_stacks_truncates_on_nil_and_appends() {
         let (dir, path) = hmod(
@@ -8083,6 +8242,79 @@ experimental = ["scripts"]
                 "minecraft:the_nether:minecraft:item_frame:9:false",
             ]
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A `<n:number>` word is a number only when it is finite: `NaN`,
+    /// `inf`, `-inf` and a value past f64's range are refused the way a
+    /// non-number is (the usage message, nothing passed on).
+    #[test]
+    fn a_command_number_must_be_finite() {
+        let lua = mlua::Lua::new();
+        let usage = "mycmd <n:number>";
+        for word in ["NaN", "inf", "-inf", "1e400"] {
+            let args = lua.create_table().unwrap();
+            let refusal = command_args(&lua, usage, &format!("mycmd {word}"), &args).unwrap();
+            assert!(refusal.is_some(), "{word} is refused");
+            assert!(
+                args.get::<mlua::Value>("n").unwrap().is_nil(),
+                "{word} is not passed on"
+            );
+        }
+        let args = lua.create_table().unwrap();
+        assert!(
+            command_args(&lua, usage, "mycmd 2.5", &args)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(args.get::<f64>("n").unwrap(), 2.5);
+    }
+
+    /// `horizon.after` takes a delay of zero or more ticks and `horizon.every`
+    /// one of at least one, both finite. A NaN or infinite delay (a timer
+    /// that never fires and leaks until reload), a negative `after`, or a
+    /// zero `every` is refused when the mod's scripts run; `after(0)` stays
+    /// legal. The mod keeps its old timers, as a failed reload does.
+    #[test]
+    fn a_timer_delay_must_be_finite_and_in_range() {
+        let (dir, path) = hmod("timer-delay", &[("scripts/init.lua", b"")]);
+        let cases = [
+            ("horizon.after(1/0, function() end)", "horizon.after"),
+            ("horizon.after(0/0, function() end)", "horizon.after"),
+            ("horizon.after(-1, function() end)", "horizon.after"),
+            ("horizon.every(1/0, function() end)", "horizon.every"),
+            ("horizon.every(0/0, function() end)", "horizon.every"),
+            ("horizon.every(0, function() end)", "horizon.every"),
+        ];
+        let m = LuaMod::load(&path, &[]).unwrap();
+        for (code, func) in cases {
+            std::fs::write(
+                &path,
+                Package::write_files(
+                    MANIFEST_TEXT,
+                    None,
+                    &[("scripts/init.lua", code.as_bytes())],
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            let e = m.reload().expect_err(&format!("{code} is refused"));
+            assert!(e.contains(func), "{code}: the error names {func}: {e}");
+        }
+        std::fs::write(
+            &path,
+            Package::write_files(
+                MANIFEST_TEXT,
+                None,
+                &[(
+                    "scripts/init.lua",
+                    b"horizon.after(0, function() end)\nhorizon.every(1, function() end)",
+                )],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        m.reload().expect("after(0) and every(1) load");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

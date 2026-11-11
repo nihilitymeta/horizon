@@ -261,6 +261,17 @@ fn tag_of(data: &Tag, path: Option<String>) -> Result<Tag, String> {
 }
 
 /// Run `code` with `mc` bound to the host. Errors go to the window.
+/// One profiler row's numbers as a Lua table: `calls`, `total_ms`,
+/// `max_ms` (fractional milliseconds) and `overruns`.
+fn profile_stats(lua: &Lua, row: &crate::profiler::ProfileRow) -> mlua::Result<Table> {
+    let stats = lua.create_table()?;
+    stats.set("calls", row.calls)?;
+    stats.set("total_ms", row.total_ns as f64 / 1_000_000.0)?;
+    stats.set("max_ms", row.max_ns as f64 / 1_000_000.0)?;
+    stats.set("overruns", row.overruns)?;
+    Ok(stats)
+}
+
 fn lua_run(host: &mut dyn Host, lua: &Lua, label: &str, code: &str) {
     console::push(Kind::Echo, label);
     let host = RefCell::new(host);
@@ -488,6 +499,50 @@ fn lua_run(host: &mut dyn Host, lua: &Lua, label: &str, code: &str) {
             "reload_mods",
             lua.create_function(|_, id: Option<String>| {
                 horizon_client::dev_input::mods::request_reload(id.as_deref());
+                Ok(())
+            })?,
+        )?;
+        mc.set(
+            "profile",
+            lua.create_function(|lua, ()| {
+                // The profiler's rows keyed by mod id then hook name, for
+                // lookups (`pairs` over it has no order: see `profile_rows`).
+                // Each hook's table carries `calls`, `total_ms`, `max_ms`
+                // and `overruns` since the last `mc.profile_reset()`.
+                let out = lua.create_table()?;
+                for row in crate::profiler::profile_report() {
+                    let by_hook: Table = match out.get::<Value>(row.r#mod.as_str())? {
+                        Value::Table(t) => t,
+                        _ => {
+                            let t = lua.create_table()?;
+                            out.set(row.r#mod.as_str(), t.clone())?;
+                            t
+                        }
+                    };
+                    by_hook.set(row.hook.as_str(), profile_stats(lua, &row)?)?;
+                }
+                Ok(out)
+            })?,
+        )?;
+        mc.set(
+            "profile_rows",
+            lua.create_function(|lua, ()| {
+                // The same rows as an array sorted by mod id then hook name,
+                // each with `mod` and `hook` beside its numbers.
+                let list = lua.create_table()?;
+                for row in crate::profiler::profile_report() {
+                    let stats = profile_stats(lua, &row)?;
+                    stats.set("mod", row.r#mod.as_str())?;
+                    stats.set("hook", row.hook.as_str())?;
+                    list.push(stats)?;
+                }
+                Ok(list)
+            })?,
+        )?;
+        mc.set(
+            "profile_reset",
+            lua.create_function(|_, ()| {
+                crate::profiler::profile_reset();
                 Ok(())
             })?,
         )?;
@@ -770,6 +825,97 @@ mod tests {
         assert!(
             text.iter().any(|l| l.contains("unknown entity id 99")),
             "the id is refused: {text:?}"
+        );
+    }
+
+    /// The profiler's rows in the console, from a fresh state: the Lua side
+    /// stores what it read in globals, and the test reads them back.
+    fn profile_in_lua(code: &str) -> Lua {
+        let mut host = TestHost::default();
+        let lua = vm().expect("a state");
+        lua_run(&mut host, &lua, "the console's test", code);
+        lua
+    }
+
+    /// `mc.profile_rows()` is the report as an array sorted by mod then
+    /// hook (a `pairs` over `mc.profile()` has no order to test), and
+    /// `mc.profile_reset()` clears the rows.
+    #[test]
+    fn profile_rows_are_sorted_and_reset_clears_them() {
+        let _lock = crate::profiler::test_lock();
+        let d = std::time::Duration::from_millis(1);
+        crate::profiler::note("console_order_b", "a_hook", d, false);
+        crate::profiler::note("console_order_a", "z_hook", d, false);
+        crate::profiler::note("console_order_a", "b_hook", d, false);
+        let lua = profile_in_lua(
+            r#"
+            local names = {}
+            for _, row in ipairs(mc.profile_rows()) do
+              if string.sub(row.mod, 1, 14) == "console_order_" then
+                names[#names + 1] = row.mod .. "/" .. row.hook
+              end
+            end
+            ORDER = table.concat(names, ",")
+            mc.profile_reset()
+            "#,
+        );
+        let order: String = lua.globals().get("ORDER").unwrap();
+        assert_eq!(
+            order,
+            "console_order_a/b_hook,console_order_a/z_hook,console_order_b/a_hook"
+        );
+        assert!(
+            crate::profiler::profile_report()
+                .iter()
+                .all(|r| !r.r#mod.starts_with("console_order_")),
+            "the console's reset clears the rows"
+        );
+    }
+
+    /// `mc.profile()` and `mc.profile_rows()` report the numbers of
+    /// `profile_report()`, and times are fractional milliseconds: a handler
+    /// under 1 ms is not shown as 0. The spin is real work of at least 12
+    /// ms, so the floors below are independent of the code under test.
+    #[test]
+    fn profile_in_the_console_has_fractional_milliseconds() {
+        let _lock = crate::profiler::test_lock();
+        let started = std::time::Instant::now();
+        while started.elapsed() < std::time::Duration::from_millis(12) {
+            std::hint::spin_loop();
+        }
+        crate::profiler::note("console_fraction", "mob_spawned", started.elapsed(), false);
+        crate::profiler::note(
+            "console_fraction",
+            "mob_spawned",
+            std::time::Duration::from_micros(400),
+            true,
+        );
+        let lua = profile_in_lua(
+            r#"
+            for _, row in ipairs(mc.profile_rows()) do
+              if row.mod == "console_fraction" then
+                FLAT = {row.calls, row.total_ms, row.max_ms, row.overruns}
+              end
+            end
+            local s = mc.profile()["console_fraction"]["mob_spawned"]
+            NESTED = {s.calls, s.total_ms, s.max_ms, s.overruns}
+            "#,
+        );
+        let read = |name: &str| -> Vec<f64> {
+            let t: mlua::Table = lua.globals().get(name).unwrap();
+            (1..=4).map(|i| t.get::<f64>(i).unwrap()).collect()
+        };
+        let flat = read("FLAT");
+        assert_eq!(flat, read("NESTED"), "both forms report the same row");
+        // Two calls, one of them stopped by the budget.
+        assert_eq!(flat[0], 2.0, "{flat:?}");
+        assert_eq!(flat[3], 1.0, "{flat:?}");
+        // total_ms is the 12 ms spin plus the 0.4 ms call; max_ms is the spin.
+        assert!(flat[1] >= 12.4, "total_ms is in milliseconds: {flat:?}");
+        assert!(flat[2] >= 12.0, "max_ms is the slowest firing: {flat:?}");
+        assert!(
+            flat[2] < flat[1],
+            "the second call adds to the total: {flat:?}"
         );
     }
 }

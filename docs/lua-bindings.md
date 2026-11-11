@@ -374,8 +374,8 @@ commands, which is what `horizon.command` declares and `perform_command` hears.
 
 | Function | Description |
 |---|---|
-| `horizon.after(ticks, fn)` | Runs *fn* once after *ticks* server ticks |
-| `horizon.every(ticks, fn)` | Runs *fn* every *ticks* server ticks |
+| `horizon.after(ticks, fn)` | Runs *fn* once after *ticks* server ticks (a finite number, zero or more; anything else fails the load) |
+| `horizon.every(ticks, fn)` | Runs *fn* every *ticks* server ticks (a finite number, one or more; anything else fails the load) |
 | `horizon.world_data()` | Gets the mod's saved table on the world |
 | `horizon.player_data(player)` | Gets the mod's saved table on a player, by name or UUID; nil for a player the server does not hold, such as a player on the hub or the acting one |
 | `horizon.entity_data(id)` | Gets the mod's saved table on an entity, by id. Nil on a server when the entity is not in the level, or on an attachment error. On a client copy the id is not checked: an unknown id reads as an empty table, recorded for writeback, but the attachment is not synced, so a write stays on the client copy — a table is no proof the entity exists there. Written back after the call, exactly like `horizon.world_data()` |
@@ -752,6 +752,12 @@ The developer tools are made for this ([dev-tools.md](dev-tools.md)). Start the 
   `/watch <targets> <path>` to chart one number of it over time.
 - In the console, `mc.mods()` and `mc.reload_mods([id])` do what the console's mod section does, for a script of
   the tools' own.
+- In the console, `mc.profile()` reports each mod's hook cost since the last reset, keyed by mod id then hook
+  name: each hook's table carries `calls` (hook firings: one per firing, however many handlers the mod has for
+  the hook), `total_ms` (all firings), `max_ms` (the slowest hook firing) and `overruns` (firings the time budget
+  stopped). The times are fractional milliseconds. `mc.profile_rows()` gives the same numbers as an array of
+  `{mod=, hook=, calls=, total_ms=, max_ms=, overruns=}` sorted by mod id then hook name, for a listing whose order
+  matters. `mc.profile_reset()` zeroes every counter.
 
 ## Plan
 

@@ -14,5 +14,7 @@ mod generated_runtime;
 mod generated_hooks;
 pub mod hud_hooks;
 pub mod lua_mods;
+pub mod profiler;
 
 pub use lua_mods::{check_mod, discover};
+pub use profiler::{ProfileRow, profile_report, profile_reset};

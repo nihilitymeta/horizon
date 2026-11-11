@@ -31,15 +31,21 @@
 //! positions are separate numbers (like the positions elsewhere), corners
 //! are the `Corner` names (`top_left`, `top_right`, `bottom_left`,
 //! `bottom_right`).
-use crate::lua_mods::{LuaMod, qualify};
+use crate::lua_mods::{LuaMod, is_overrun, qualify};
 use horizon_client::mod_api::{Corner, Corners, Host, HudBatch, ItemStack};
 use mlua::{Error, Lua, Table};
 use std::cell::RefCell;
 
-/// A handler stopped by the interrupt, as opposed to one that failed on its
-/// own: the budget's message (`Budget::run` in `lua_mods`).
-fn is_overrun(e: &mlua::Error) -> bool {
-    e.to_string().contains("ran over its time budget")
+/// The float arguments of a draw helper must be finite: a NaN or infinite
+/// size or position from a script would reach native layout. Refuses the
+/// first one that is not, naming it (`batch.fill`: `w`).
+fn finite_args(helper: &str, args: &[(&str, f32)]) -> mlua::Result<()> {
+    match args.iter().find(|(_, v)| !v.is_finite()) {
+        Some((name, v)) => Err(Error::runtime(format!(
+            "{helper}: `{name}` must be a finite number, got {v}"
+        ))),
+        None => Ok(()),
+    }
 }
 
 /// The corner `name` (`top_left`...) names, or an error naming them all.
@@ -72,6 +78,7 @@ pub(crate) fn fill_fn<'a>(
     batch: &'a RefCell<&mut HudBatch>,
 ) -> impl Fn(&Lua, (f32, f32, f32, f32, u32)) -> mlua::Result<()> + 'a {
     move |_, (x, y, w, h, argb)| {
+        finite_args("batch.fill", &[("x", x), ("y", y), ("w", w), ("h", h)])?;
         let mut borrowed = batch
             .try_borrow_mut()
             .map_err(|_| Error::runtime("hud: the batch is already drawn into (reentrant draw)"))?;
@@ -86,6 +93,7 @@ pub(crate) fn text_fn<'a>(
     batch: &'a RefCell<&mut HudBatch>,
 ) -> impl Fn(&Lua, (String, f32, f32, u32, bool)) -> mlua::Result<()> + 'a {
     move |_, (text, x, y, rgb, shadow)| {
+        finite_args("batch.text", &[("x", x), ("y", y)])?;
         let mut borrowed = batch
             .try_borrow_mut()
             .map_err(|_| Error::runtime("hud: the batch is already drawn into (reentrant draw)"))?;
@@ -102,6 +110,19 @@ pub(crate) fn sprite_fn<'a>(
     batch: &'a RefCell<&mut HudBatch>,
 ) -> impl Fn(&Lua, (String, f32, f32, f32, f32, f32, f32, f32, f32)) -> mlua::Result<bool> + 'a {
     move |_, (name, sx, sy, sw, sh, dx, dy, dw, dh)| {
+        finite_args(
+            "batch.sprite",
+            &[
+                ("sx", sx),
+                ("sy", sy),
+                ("sw", sw),
+                ("sh", sh),
+                ("dx", dx),
+                ("dy", dy),
+                ("dw", dw),
+                ("dh", dh),
+            ],
+        )?;
         let mut borrowed = batch
             .try_borrow_mut()
             .map_err(|_| Error::runtime("hud: the batch is already drawn into (reentrant draw)"))?;
@@ -116,6 +137,7 @@ pub(crate) fn item_fn<'a>(
     batch: &'a RefCell<&mut HudBatch>,
 ) -> impl Fn(&Lua, (String, f32, f32, f32)) -> mlua::Result<bool> + 'a {
     move |_, (id, x, y, size)| {
+        finite_args("batch.item", &[("x", x), ("y", y), ("size", size)])?;
         let mut borrowed = batch
             .try_borrow_mut()
             .map_err(|_| Error::runtime("hud: the batch is already drawn into (reentrant draw)"))?;
@@ -130,6 +152,7 @@ pub(crate) fn item_stack_fn<'a>(
     batch: &'a RefCell<&mut HudBatch>,
 ) -> impl Fn(&Lua, (Table, f32, f32, f32)) -> mlua::Result<bool> + 'a {
     move |_, (stack, x, y, size)| {
+        finite_args("batch.item_stack", &[("x", x), ("y", y), ("size", size)])?;
         let stack = stack_of(&stack)?;
         let mut borrowed = batch
             .try_borrow_mut()
@@ -145,6 +168,7 @@ pub(crate) fn item_model_fn<'a>(
     batch: &'a RefCell<&mut HudBatch>,
 ) -> impl Fn(&Lua, (String, String, f32, f32, f32)) -> mlua::Result<bool> + 'a {
     move |_, (item, model, x, y, size)| {
+        finite_args("batch.item_model", &[("x", x), ("y", y), ("size", size)])?;
         let mut borrowed = batch
             .try_borrow_mut()
             .map_err(|_| Error::runtime("hud: the batch is already drawn into (reentrant draw)"))?;
@@ -158,6 +182,19 @@ pub(crate) fn quad_fn<'a>(
     batch: &'a RefCell<&mut HudBatch>,
 ) -> impl Fn(&Lua, (f32, f32, f32, f32, f32, f32, f32, f32, u32)) -> mlua::Result<()> + 'a {
     move |_, (x1, y1, x2, y2, x3, y3, x4, y4, argb)| {
+        finite_args(
+            "batch.quad",
+            &[
+                ("x1", x1),
+                ("y1", y1),
+                ("x2", x2),
+                ("y2", y2),
+                ("x3", x3),
+                ("y3", y3),
+                ("x4", x4),
+                ("y4", y4),
+            ],
+        )?;
         let mut borrowed = batch
             .try_borrow_mut()
             .map_err(|_| Error::runtime("hud: the batch is already drawn into (reentrant draw)"))?;
@@ -183,6 +220,7 @@ pub(crate) fn place_fn<'a>(
     corners: &'a RefCell<&mut Corners>,
 ) -> impl Fn(&Lua, (String, f32, f32)) -> mlua::Result<(f32, f32)> + 'a {
     move |_, (name, w, h)| {
+        finite_args("corners.place", &[("w", w), ("h", h)])?;
         let mut borrowed = corners.try_borrow_mut().map_err(|_| {
             Error::runtime("hud: the corners are already placed into (reentrant draw)")
         })?;
@@ -1440,5 +1478,82 @@ mod tests {
         assert_eq!(tells.len(), 1);
         assert!(tells[0].contains("hello from hud"), "{}", tells[0]);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A NaN or infinite float argument of a draw helper is a Lua error
+    /// that names the argument, and nothing is drawn: the sizes and
+    /// positions reach native layout. A finite number too big for f32 (1e39
+    /// narrows to infinity) is refused the same way.
+    #[test]
+    fn a_non_finite_draw_argument_is_a_lua_error_naming_it() {
+        let cases = [
+            (
+                "fill_nan_w",
+                "event.batch.fill(0, 0, 0/0, 4, 4278190080)",
+                "`w`",
+            ),
+            (
+                "fill_inf_h",
+                "event.batch.fill(0, 0, 1, 1/0, 4278190080)",
+                "`h`",
+            ),
+            (
+                "text_inf_x",
+                r#"event.batch.text("hi", 1/0, 2, 16777215, false)"#,
+                "`x`",
+            ),
+            (
+                "text_huge_y",
+                r#"event.batch.text("hi", 1, 1e39, 16777215, false)"#,
+                "`y`",
+            ),
+            (
+                "sprite_nan_dw",
+                r#"event.batch.sprite("gui/x", 0, 0, 1, 1, 0, 0, 0/0, 1)"#,
+                "`dw`",
+            ),
+            (
+                "item_inf_size",
+                r#"event.batch.item("stone", 0, 0, 1/0)"#,
+                "`size`",
+            ),
+            (
+                "item_stack_nan_x",
+                r#"event.batch.item_stack({id = "stone", count = 1, damage = 0}, 0/0, 0, 16)"#,
+                "`x`",
+            ),
+            (
+                "item_model_nan_y",
+                r#"event.batch.item_model("stone", "m", 0, 0/0, 16)"#,
+                "`y`",
+            ),
+            (
+                "quad_nan_x4",
+                "event.batch.quad(0, 0, 1, 0, 1, 1, 0/0, 1, 4278190080)",
+                "`x4`",
+            ),
+            (
+                "place_nan_w",
+                r#"event.corners.place("top_left", 0/0, 1)"#,
+                "`w`",
+            ),
+        ];
+        for (name, call, arg) in cases {
+            let id = format!("ruby_hud_{name}");
+            let source = format!(r#"horizon.on("hud", function(event) {call} end)"#);
+            let (m, id, dir) = hmod(name, &id, &source);
+            let mods = boxed(m);
+            let mut host = RecordingHost::default();
+            let mut batch = HudBatch::new([800, 600]);
+            let mut corners = Corners::new(800.0, 600.0, 0.0);
+            dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+            let e = last_error(&id).unwrap_or_else(|| panic!("{name}: the handler did not fail"));
+            assert!(e.contains(arg), "{name}: the error names {arg}: {e}");
+            assert!(
+                host.draws.lock().unwrap().is_empty(),
+                "{name}: nothing is drawn"
+            );
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
     }
 }
