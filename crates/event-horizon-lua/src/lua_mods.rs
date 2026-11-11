@@ -175,6 +175,7 @@ const CLIENT_API: &[&str] = &[
     "handled",
     "cancel",
     "require",
+    "net_send_to_server",
 ];
 /// The server-only `horizon` names a client state's draw-hook handler
 /// (`hud`, `gui_layer_post`) may still call: the reads that answer through
@@ -2258,6 +2259,9 @@ impl LuaMod {
             "drop_item",
             "set_nickname",
             "effect",
+            "net_send_to_player",
+            "send_custom_payload_to_player",
+            "net_send_to_server",
         ] {
             let slot = slot.clone();
             api.set(
@@ -3225,6 +3229,46 @@ impl LuaMod {
                     host.push_mob(&dimension, id, v);
                 } else {
                     host.teleport_mob(&dimension, id, v);
+                }
+            }
+            "net_send_to_player" | "send_custom_payload_to_player" => {
+                let (who, channel, data): (Value, String, Value) =
+                    (args.get(1)?, args.get(2)?, args.get(3)?);
+                // A Lua string's bytes, NUL and all: what the other side's
+                // `event.data` reads, byte for byte.
+                let Value::String(data) = &data else {
+                    return Err(mlua::Error::runtime(format!(
+                        "{action}: data is a string of bytes"
+                    )));
+                };
+                let Some(uuid) = uuid_of(host, &who) else {
+                    log::debug!("[lua:{}] {action}: no such player", self.id);
+                    return Ok(());
+                };
+                let bytes = data.as_bytes().to_vec();
+                let r = if action == "net_send_to_player" {
+                    host.net_send_to_player(uuid, &channel, &bytes)
+                } else {
+                    host.send_custom_payload_to_player(uuid, &channel, &bytes)
+                };
+                // A refused send is ordinary (past the cap, a bad channel):
+                // report it and carry on, as `run_command` does, so later
+                // queued actions still run.
+                if let Err(e) = r {
+                    self.error(format!("{action}: {e}"));
+                }
+            }
+            "net_send_to_server" => {
+                let (channel, data): (String, Value) = (args.get(1)?, args.get(2)?);
+                let Value::String(data) = &data else {
+                    return Err(mlua::Error::runtime(format!(
+                        "{action}: data is a string of bytes"
+                    )));
+                };
+                let bytes = data.as_bytes().to_vec();
+                // As above: a refusal is reported, not fatal to the queue.
+                if let Err(e) = host.net_send_to_server(&channel, &bytes) {
+                    self.error(format!("{action}: {e}"));
                 }
             }
             other => self.warn(format!("unknown action {other}")),
@@ -4289,6 +4333,36 @@ experimental = ["scripts"]
                 .unwrap()
                 .push(format!("gave {count} {item}"));
             count
+        }
+        fn net_send_to_player(
+            &mut self,
+            player: u128,
+            channel: &str,
+            data: &[u8],
+        ) -> Result<(), String> {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("net_send_to_player {player} {channel} {data:?}"));
+            Ok(())
+        }
+        fn send_custom_payload_to_player(
+            &mut self,
+            player: u128,
+            channel: &str,
+            data: &[u8],
+        ) -> Result<(), String> {
+            self.lines.lock().unwrap().push(format!(
+                "send_custom_payload_to_player {player} {channel} {data:?}"
+            ));
+            Ok(())
+        }
+        fn net_send_to_server(&mut self, channel: &str, data: &[u8]) -> Result<(), String> {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("net_send_to_server {channel} {data:?}"));
+            Ok(())
         }
         fn carried_stack(&mut self, slot: i32) -> Option<&mut ItemStack> {
             (slot == 3).then_some(&mut self.carried)
@@ -9516,6 +9590,267 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
         let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
         assert_eq!(m.id(), "ruby");
         assert_eq!(m.side(), LuaSide::Client);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn net_send_to_player_and_custom_payload_reach_the_host() {
+        // The server half, byte for byte: what the handler queued is what
+        // the host is handed, NUL and high bytes included, and an empty
+        // string sends an empty payload.
+        let (dir, path) = hmod(
+            "net_send_server",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("net_from_client", function(event)
+                  horizon.net_send_to_player(event.player, "ruby:back", event.data)
+                  horizon.send_custom_payload_to_player(event.player, "ruby:back", string.char(0, 200, 65))
+                  horizon.net_send_to_player("steve", "ruby:back", "")
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            0x123e4567_e89b_12d3_a456_426614174000,
+            "ruby:from",
+            &[116u8, 0, 159],
+        );
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            [
+                "net_send_to_player 24249434048109030647017182301789831168 ruby:back [116, 0, 159]",
+                "send_custom_payload_to_player 24249434048109030647017182301789831168 ruby:back [0, 200, 65]",
+                "net_send_to_player 24249434048109030647017182301789831168 ruby:back []",
+            ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn net_send_to_server_runs_after_client_hooks() {
+        // The client half: queued actions apply after a client hook
+        // (`net_from_server`), as they do after the client tick, so a
+        // client mod answers the server from a handler.
+        let (dir, path) = hmod(
+            "net_send_client",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("net_from_server", function(event)
+                  horizon.net_send_to_server("ruby:back", event.data)
+                end)
+                horizon.on("client_tick_post", function(event)
+                  horizon.net_send_to_server("ruby:tick", string.char(0, 129))
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        horizon_client::mod_api::dispatch_net_from_server(
+            &mut host,
+            &mods,
+            "ruby:from",
+            &[1u8, 0, 255],
+        );
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            [
+                "net_send_to_server ruby:back [1, 0, 255]",
+                "net_send_to_server ruby:tick [0, 129]",
+            ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_failing_net_send_surfaces_and_later_actions_still_run() {
+        // A refused net send does not cancel the rest of the handler's
+        // queued actions: one `net_from_client` handler queues a failing
+        // send and then a `broadcast`, and the `broadcast` runs while the
+        // refusal is reported with the action's name. (Driving the real
+        // `call_kind` drain, not `run_action` on its own.)
+        struct NetFailHost {
+            lines: Mutex<Vec<String>>,
+        }
+        impl Host for NetFailHost {
+            fn net_send_to_player(
+                &mut self,
+                _player: u128,
+                _channel: &str,
+                _data: &[u8],
+            ) -> Result<(), String> {
+                Err("past 32 messages this tick".into())
+            }
+            fn net_send_to_server(&mut self, _channel: &str, _data: &[u8]) -> Result<(), String> {
+                Err("the server carries no mod messages".into())
+            }
+            fn broadcast(&self, line: horizon_client::mod_api::Text) {
+                self.lines
+                    .lock()
+                    .unwrap()
+                    .push(format!("broadcast {}", line.plain()));
+            }
+        }
+        let (dir, path) = hmod(
+            "net_send_err",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("net_from_client", function(event)
+                  horizon.net_send_to_player(event.player, "ruby:back", event.data)
+                  horizon.broadcast("after")
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        set_status(ModStatus {
+            id: m.id().into(),
+            side: m.side().as_str().to_owned(),
+            ..Default::default()
+        });
+        let id = m.id().to_owned();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = NetFailHost {
+            lines: Mutex::new(Vec::new()),
+        };
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            0x123e4567_e89b_12d3_a456_426614174000,
+            "ruby:from",
+            &[116u8, 0, 159],
+        );
+        assert_eq!(*host.lines.lock().unwrap(), ["broadcast after"]);
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.error)
+            .expect("the refusal is reported");
+        assert!(
+            e.contains("net_send_to_player: past 32 messages this tick"),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_client_state_stubs_the_player_helpers_but_keeps_net_send_to_server() {
+        // The two player helpers raise the server-only error on the
+        // client; `net_send_to_server` is kept, so at load it fails only
+        // for lack of a hook to give it a host.
+        let (dir, path) = hmod(
+            "client_net_stubs",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                local function expect_server_only(name, f)
+                  local ok, err = pcall(f)
+                  assert(not ok, name .. " should fail in a client state")
+                  assert(
+                    string.find(tostring(err), "horizon." .. name .. " is only available in scripts/server/", 1, true),
+                    name .. ": " .. tostring(err)
+                  )
+                end
+                expect_server_only("net_send_to_player", function()
+                  horizon.net_send_to_player("steve", "ruby:x", "hi")
+                end)
+                expect_server_only("send_custom_payload_to_player", function()
+                  horizon.send_custom_payload_to_player("steve", "ruby:x", "hi")
+                end)
+                local ok, err = pcall(horizon.net_send_to_server, "ruby:x", "hi")
+                assert(not ok, "a kept helper fails at load for want of a handler, not as a stub")
+                assert(not string.find(tostring(err), "is only available in scripts/server/", 1, true), tostring(err))
+                assert(string.find(tostring(err), "horizon.net_send_to_server: actions work inside a hook's handler", 1, true), tostring(err))
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        assert_eq!(m.side(), LuaSide::Client);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn in_a_draw_hook_the_player_helpers_raise_and_net_send_to_server_applies_after_the_frame() {
+        // In a client draw hook the server-only helpers raise the
+        // server-only error, like `set_block`; the kept client action
+        // queues and applies after the frame, like `tell`/`broadcast`.
+        let (dir, path) = hmod(
+            "client_net_draw",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("hud", function(event)
+                  __witness = (__witness or 0) + 1
+                  local ok1, e1 = pcall(horizon.net_send_to_player, "steve", "ruby:x", "hi")
+                  PA = (not ok1) and tostring(e1) or "ran"
+                  local ok2, e2 = pcall(horizon.send_custom_payload_to_player, "steve", "ruby:x", "hi")
+                  PB = (not ok2) and tostring(e2) or "ran"
+                  local ok3, e3 = pcall(horizon.net_send_to_server, "ruby:x", "hi")
+                  PC = ok3 and "queued" or tostring(e3)
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let state = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let mut batch = horizon_client::mod_api::HudBatch::new([800, 600]);
+        let mut corners = horizon_client::mod_api::Corners::new(800.0, 600.0, 0.0);
+        horizon_client::mod_api::dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+        assert_eq!(state.globals().get::<i64>("__witness").unwrap(), 1);
+        let pa: String = state.globals().get("PA").unwrap();
+        assert!(
+            pa.contains("horizon.net_send_to_player is only available in scripts/server/"),
+            "{pa}"
+        );
+        let pb: String = state.globals().get("PB").unwrap();
+        assert!(
+            pb.contains(
+                "horizon.send_custom_payload_to_player is only available in scripts/server/"
+            ),
+            "{pb}"
+        );
+        let pc: String = state.globals().get("PC").unwrap();
+        assert_eq!(pc, "queued");
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            ["net_send_to_server ruby:x [104, 105]"]
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -450,6 +450,14 @@ const LUA_HELPERS: &[(&str, &str)] = &[
     ("mob_views", "`horizon.mobs()`"),
     ("mod_block_entity_data", "`data` in the block hooks"),
     (
+        "net_send_to_player",
+        "`horizon.net_send_to_player(player, channel, data)`",
+    ),
+    (
+        "net_send_to_server",
+        "`horizon.net_send_to_server(channel, data)`",
+    ),
+    (
         "particles",
         "`horizon.particles(name, x, y, z[, count, spread, speed])`",
     ),
@@ -469,6 +477,10 @@ const LUA_HELPERS: &[(&str, &str)] = &[
     ("push_mob", "`horizon.push_mob(dimension, id, x, y, z)`"),
     ("remove_mob", "`horizon.remove_mob(dimension, id)`"),
     ("run_command", "`horizon.run_command(line)`"),
+    (
+        "send_custom_payload_to_player",
+        "`horizon.send_custom_payload_to_player(player, channel, data)`",
+    ),
     (
         "set_block",
         "`horizon.set_block(x, y, z, id[, props][, flags])`",

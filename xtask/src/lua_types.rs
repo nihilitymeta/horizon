@@ -502,6 +502,18 @@ const FUNCTIONS: &[(&str, &str)] = &[
         "effect",
         "(target: number | string | ReadPlayer, name: string, ticks: number, amplifier: number?) -> ()",
     ),
+    (
+        "net_send_to_player",
+        "(who: string | ReadPlayer, channel: string, data: string) -> ()",
+    ),
+    (
+        "send_custom_payload_to_player",
+        "(who: string | ReadPlayer, channel: string, data: string) -> ()",
+    ),
+    (
+        "net_send_to_server",
+        "(channel: string, data: string) -> ()",
+    ),
 ];
 
 /// The `registry` global of `scripts/registry.lua`.

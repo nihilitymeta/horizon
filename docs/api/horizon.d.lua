@@ -1019,6 +1019,9 @@ declare horizon: {
     drop_item: (x: number, y: number, z: number, id: string, count: number?) -> (),
     set_nickname: (who: string | ReadPlayer, name: string?) -> (),
     effect: (target: number | string | ReadPlayer, name: string, ticks: number, amplifier: number?) -> (),
+    net_send_to_player: (who: string | ReadPlayer, channel: string, data: string) -> (),
+    send_custom_payload_to_player: (who: string | ReadPlayer, channel: string, data: string) -> (),
+    net_send_to_server: (channel: string, data: string) -> (),
 }
 
 -- `scripts/registry.lua` and its modules (`scripts/registry/`) run with this instead of `horizon`.
