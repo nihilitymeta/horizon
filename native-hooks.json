@@ -1070,6 +1070,7 @@
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_block_entity_container",
       "neoforge": "Capabilities.Item.BLOCK",
+      "side": "both",
       "cancellable": false,
       "mod_api": {
         "contract": "replace",
@@ -1494,6 +1495,7 @@
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_block_entity_fluids",
       "neoforge": "Capabilities.FluidHandler.BLOCK",
+      "side": "server",
       "cancellable": false,
       "mod_api": {
         "contract": "replace",
@@ -1773,6 +1775,7 @@
       "name": "consume_effect",
       "version": 1,
       "target": "horizon_client::game::native_hooks::Game<'_>::native_consume_effect",
+      "side": "server",
       "mod_api": {
         "contract": "listen"
       }

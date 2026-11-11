@@ -3,6 +3,7 @@
     {
       "name": "stateful_block_entity",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_stateful_block_entity",
+      "side": "both",
       "mod_api": {
         "contract": "listen"
       }
@@ -10,6 +11,7 @@
     {
       "name": "block_entity_from_state",
       "target": "horizon_client::game::native_hooks::GameLevel<'_>::native_block_entity_from_state",
+      "side": "both",
       "mod_api": {
         "contract": "replace",
         "out": "entity"
