@@ -562,6 +562,8 @@ fn tick(host: &mut dyn Host) {
 }
 
 fn lua_run_tickers(host: &mut dyn Host, lua: &Lua) {
+    // A tick handler's error aborts the chunk through `exec`, so mlua's own
+    // call handler attaches the traceback with the handler's frames.
     let code = "for _, f in ipairs(mc_tickers_now) do f() end";
     let tickers: Table = match lua.named_registry_value(TICKERS) {
         Ok(t) => t,

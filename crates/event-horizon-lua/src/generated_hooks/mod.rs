@@ -1677,7 +1677,7 @@ macro_rules! impl_generated_hooks {
     gen_listen!(client_start, game_mut, horizon_client::mod_api::ClientStartEvent, (none), []);
     gen_listen!(client_disconnecting, game_ref, horizon_client::mod_api::ClientDisconnectingEvent, (none), []);
     gen_listen!(client_stopping, game_ref, horizon_client::mod_api::ClientStoppingEvent, (none), []);
-    gen_listen!(menu_background, game_ref, horizon_client::mod_api::MenuBackgroundEvent<'_>, (none), [radius: copy_ref => mut_scalar_ref]);
+    gen_listen!(menu_background, game_ref, horizon_client::mod_api::MenuBackgroundEvent<'_>, (none), [radius: copy_ref => mut_opt_scalar]);
     gen_cancel!(anvil_update, game_mut, horizon_client::mod_api::AnvilUpdateEvent<'_>, (none), [player: player, left: item, right: opt_item, item_name: copy, vanilla_output: opt_item, vanilla_xp_cost: copy, vanilla_material_cost: copy, output: s_opt(horizon_client::mod_api::ItemStack) => w_optmut(horizon_client::mod_api::ItemStack), xp_cost: copy => mut_scalar, material_cost: copy => mut_scalar]);
     gen_replace!(block_clone_item, game_ref, horizon_client::mod_api::BlockCloneItemEvent<'_>, (none), [block: cloned, pos: pos, state: state_game, state_props: state_props_note], stack : item, Option<ItemStack>);
     gen_cancel!(block_entity_accepts_fluid, game_ref, horizon_client::mod_api::BlockEntityAcceptsFluidEvent<'_>, (none), [block: cloned, tank: copy, fluid: cloned]);
@@ -1699,7 +1699,7 @@ macro_rules! impl_generated_hooks {
     gen_listen!(custom_payload_from_client, game_mut, horizon_client::mod_api::CustomPayloadFromClientEvent<'_>, (none), [player: uuid, channel: cloned, data: s_bytes]);
     gen_cancel!(entity_change_block_v2, game_mut, horizon_client::mod_api::EntityChangeBlockV2Event<'_>, (field kind), [player: opt_uuid, entity: copy, kind: cloned, pos: pos, from: cloned, to: cloned]);
     gen_cancel!(entity_interact_specific, game_mut, horizon_client::mod_api::EntityInteractSpecificEvent<'_>, (field kind), [entity: copy, kind: cloned, stack: opt_item, location: vec3]);
-    gen_listen!(entity_outline, game_ref, horizon_client::mod_api::EntityOutlineEvent<'_>, (field kind), [entity_id: copy, kind: cloned, outline: copy_ref => mut_scalar_ref]);
+    gen_listen!(entity_outline, game_ref, horizon_client::mod_api::EntityOutlineEvent<'_>, (field kind), [entity_id: copy, kind: cloned, outline: copy_ref => mut_opt_scalar]);
     gen_listen!(fishing_hook_landed, game_mut, horizon_client::mod_api::FishingHookLandedEvent<'_>, (none), [player: uuid, hook: copy, dimension: cloned, block: pos, face: pos]);
     gen_cancel!(handshake, none, horizon_client::mod_api::HandshakeEvent<'_>, (none), [address: s_val(std::net::SocketAddr), host: mut_string => mut_string, intent: copy, reason: s_opt_text => w_opt_text]);
     gen_cancel!(interact_entity_v2, game_mut, horizon_client::mod_api::InteractEntityV2Event<'_>, (field kind), [entity: copy, kind: cloned, hand: s_val(horizon_client::mod_api::Hand), stack: opt_item]);

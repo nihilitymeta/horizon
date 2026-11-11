@@ -7,16 +7,17 @@
 //! `generated_hooks::test_support` (`FakeHost` names id 7 stone and every
 //! other id after itself).
 
-use super::test_support::{FakeHost, FakeLevel, boxed, loaded, no_error};
+use super::test_support::{FakeHost, FakeLevel, boxed, drop_dir, loaded, no_error};
 use crate::generated_runtime::{
-    LuaStruct, placement_answer, props_of, split_state_name, struct_vec_from_lua,
-    struct_vec_to_lua, text_from_parts,
+    INTERNED_CAP, LuaStruct, StrInterner, placement_answer, props_of, split_state_name,
+    struct_vec_from_lua, struct_vec_to_lua, text_from_parts,
 };
 use horizon_client::item_data::StackData;
 use horizon_client::mod_api::{
     BlockStateId, Compound, Corner, Direction, Hand, ItemStack, ModContainer, ModEnergyBuffer,
     NativeConfigKind, NativeFluidAction, NativeScreen, Tag, Text, dispatch_broadcast_message,
-    dispatch_console_line, dispatch_custom_block_fluids, dispatch_item_after_vertical_collision,
+    dispatch_commands, dispatch_console_line, dispatch_custom_block_fluids,
+    dispatch_entity_outline, dispatch_item_after_vertical_collision, dispatch_menu_background,
     dispatch_menu_input_closed, dispatch_mouse_scrolling, dispatch_net_from_client,
     dispatch_player_login, dispatch_prepare_anvil, dispatch_screen, dispatch_shader_params,
     dispatch_state_for_placement,
@@ -31,6 +32,15 @@ fn lua() -> Lua {
 
 fn s(lua: &Lua, s: &str) -> Value {
     lua.create_string(s).map(Value::String).unwrap()
+}
+
+/// The hook's recorded error for a mod that just failed.
+fn hook_error_of(id: &str) -> String {
+    horizon_client::dev_input::mods::status()
+        .into_iter()
+        .find(|s| s.id == id)
+        .and_then(|s| s.error)
+        .expect("the failing dispatch is the hook's error")
 }
 
 /// Id 7 is stone; every id above 7 names itself, and both split into an id
@@ -1083,6 +1093,309 @@ fn console_line_reply_in_place_edit_applies() {
         Some("red")
     );
     no_error(&id);
+}
+
+/// Interned names (command words, emissive layers) are kept once: repeating
+/// the same names never grows the table, and distinct names past the cap are
+/// refused with a Lua error instead of leaking without bound.
+#[test]
+fn interned_names_dedupe_and_cap() {
+    let mut interner = StrInterner::default();
+    let first = interner.intern("helpers").unwrap();
+    assert!(std::ptr::eq(first, interner.intern("helpers").unwrap()));
+    assert_eq!(interner.len(), 1);
+    for i in 0..INTERNED_CAP - 1 {
+        interner.intern(&format!("name-{i}")).unwrap();
+    }
+    assert_eq!(interner.len(), INTERNED_CAP);
+    for i in 0..INTERNED_CAP - 1 {
+        interner.intern(&format!("name-{i}")).unwrap();
+    }
+    assert_eq!(interner.len(), INTERNED_CAP);
+    let err = interner.intern("one-too-many").unwrap_err();
+    assert!(err.to_string().contains(&INTERNED_CAP.to_string()), "{err}");
+    // A refused batch interns nothing: lengths and the remaining capacity
+    // are validated before any name leaks.
+    let mut roomy = StrInterner::default();
+    roomy.intern("kept").unwrap();
+    let mut flood: Vec<String> = (0..INTERNED_CAP).map(|i| format!("new-{i}")).collect();
+    flood.push("kept".into());
+    let err = roomy.intern_all(&flood).unwrap_err();
+    assert!(err.to_string().contains(&INTERNED_CAP.to_string()), "{err}");
+    assert_eq!(roomy.len(), 1);
+    // One name past 256 bytes is refused naming the limit; 256 lands.
+    let long = "x".repeat(257);
+    let err = roomy.intern(&long).unwrap_err();
+    assert!(err.to_string().contains("256"), "{err}");
+    assert_eq!(roomy.len(), 1);
+    let exact = "y".repeat(256);
+    roomy.intern(&exact).unwrap();
+    assert_eq!(roomy.len(), 2);
+}
+
+/// An emissive write (`{a, b}` pairs) with more fresh names than the cap is
+/// refused as a whole: nothing is interned, so the process-wide cap stays
+/// open for the next name.
+#[test]
+fn refused_emissive_write_interns_nothing() {
+    let lua = Lua::new();
+    let layers = lua.create_table().unwrap();
+    for i in 0..3000 {
+        let pair = lua.create_table().unwrap();
+        pair.set("a", format!("fresh-a-{i}")).unwrap();
+        pair.set("b", format!("fresh-b-{i}")).unwrap();
+        layers.raw_set(i + 1, pair).unwrap();
+    }
+    let err =
+        struct_vec_from_lua::<(&'static str, &'static str)>(&lua, &layers, "layers").unwrap_err();
+    assert!(err.to_string().contains("too many interned"), "{err}");
+    let brand_new = crate::generated_runtime::static_str("brand-new").unwrap();
+    assert_eq!(brand_new, "brand-new");
+}
+
+/// The `zoom` replace arm (`struct_out` into `NativeZoom::from_value`): a
+/// `"nan"` string, a Lua number past f32 and infinity are Lua errors naming
+/// `zoom.factor` or `zoom.turn`; legit values (`0.0`, `-0.0`, `1.5`) pass bit
+/// for bit.
+#[test]
+fn non_finite_zoom_fields_are_refused() {
+    use horizon_client::mod_api::NativeZoom;
+    let bad = ["\"nan\"", "0/0", "1e39", "1/0", "-1/0"];
+    for field in ["factor", "turn"] {
+        for (i, value) in bad.iter().enumerate() {
+            let (factor, turn) = if field == "factor" {
+                (*value, "1.0")
+            } else {
+                ("1.0", *value)
+            };
+            let script = format!(
+                "horizon.on(\"zoom\", function(event) event.zoom = {{ factor = {factor}, smooth = false, turn = {turn} }} end)"
+            );
+            let (m, id, dir) = loaded(&format!("zoom_bad_{field}_{i}"), &script);
+            let mut zoom: Option<NativeZoom> = None;
+            horizon_client::mod_api::dispatch_zoom(&FakeHost::empty(), &boxed(m), &mut zoom);
+            let e = hook_error_of(&id);
+            assert!(e.contains(&format!("zoom.{field}")), "{field} {value}: {e}");
+            assert!(e.contains("finite"), "{field} {value}: {e}");
+            assert!(
+                zoom.is_none_or(|z| z.factor.is_finite() && z.turn.is_finite()),
+                "{field} {value}: {zoom:?}"
+            );
+            drop_dir(dir);
+        }
+    }
+    for value in ["0.0", "-0.0", "1.5"] {
+        let script = format!(
+            "horizon.on(\"zoom\", function(event) event.zoom = {{ factor = {value}, smooth = false, turn = {value} }} end)"
+        );
+        let (m, id, dir) = loaded(&format!("zoom_legit_{}", value.len()), &script);
+        let mut zoom: Option<NativeZoom> = None;
+        horizon_client::mod_api::dispatch_zoom(&FakeHost::empty(), &boxed(m), &mut zoom);
+        no_error(&id);
+        let want: f32 = value.parse().unwrap();
+        let got = zoom.expect("the handler wrote a zoom");
+        assert_eq!(got.factor.to_bits(), want.to_bits(), "factor {value}");
+        assert_eq!(got.turn.to_bits(), want.to_bits(), "turn {value}");
+        drop_dir(dir);
+    }
+}
+
+/// MerchantOffer's `price_multiplier` (`from_value`, the `offer` struct arm):
+/// the same refusals, naming `offer.price_multiplier`, and legit values pass.
+#[test]
+fn non_finite_merchant_price_is_refused() {
+    use horizon_client::mod_api::MerchantOffer;
+    let lua = lua();
+    for (price, want) in [
+        ("0/0", None),
+        ("\"nan\"", None),
+        ("1e39", None),
+        ("1/0", None),
+        ("0.0", Some(0.0f32)),
+        ("-0.0", Some(-0.0f32)),
+        ("1.5", Some(1.5f32)),
+    ] {
+        let offer: Value = lua
+            .load(format!(
+                r#"return {{ base_cost_a = {{ stack = {{ id = "test:offer", count = 1, damage = 0 }} }},
+                result = {{ id = "test:offer:out", count = 2, damage = 3 }}, uses = 52, max_uses = 4,
+                reward_exp = true, special_price_diff = 5, demand = 6, price_multiplier = {price}, xp = 7 }}"#
+            ))
+            .eval()
+            .unwrap();
+        let got = <MerchantOffer as LuaStruct>::from_value(&lua, offer, "offer");
+        match (got, want) {
+            (Ok(o), Some(w)) => assert_eq!(o.price_multiplier.to_bits(), w.to_bits(), "{price}"),
+            (Err(e), None) => {
+                let e = e.to_string();
+                assert!(e.contains("offer.price_multiplier"), "{price}: {e}");
+                assert!(e.contains("finite"), "{price}: {e}");
+            }
+            (got, want) => panic!("{price}: got {:?}, want {want:?}", got.is_ok()),
+        }
+    }
+}
+
+/// The `pair` arm (`read_pair`, the `tooltip_component` size) and the `value`
+/// arm (`finite_value`): non-finite components and values are refused.
+#[test]
+fn non_finite_pair_and_value_arms_are_refused() {
+    let lua = lua();
+    // The pair arm: `read_pair` refuses a non-finite component.
+    for (x, want) in [
+        ("0/0", None),
+        ("1e39", None),
+        ("1/0", None),
+        ("-0.0", Some(-0.0f32)),
+        ("1.5", Some(1.5f32)),
+    ] {
+        let t: mlua::Table = lua
+            .load(format!("return {{ x = {x}, y = 1.0 }}"))
+            .eval()
+            .unwrap();
+        match (crate::generated_runtime::read_pair(&t), want) {
+            (Ok(p), Some(w)) => assert_eq!(p[0].to_bits(), w.to_bits(), "{x}"),
+            (Err(e), None) => assert!(e.to_string().contains("finite"), "{x}: {e}"),
+            (got, want) => panic!("{x}: got {got:?}, want {want:?}"),
+        }
+    }
+
+    // The value arm's generic path: a string "nan", a Lua number past f32,
+    // and a finite number.
+    let nan = lua.create_string("nan").unwrap();
+    assert!(
+        crate::generated_runtime::finite_value::<f32>(Value::String(nan), &lua, "multiplier")
+            .is_err()
+    );
+    assert!(
+        crate::generated_runtime::finite_value::<f32>(Value::Number(1e39), &lua, "multiplier")
+            .is_err()
+    );
+    let ok = crate::generated_runtime::finite_value::<f32>(Value::Number(1.5), &lua, "multiplier");
+    assert_eq!(ok.unwrap(), 1.5);
+}
+
+/// A Lua `nil` written to an `&mut Option<number>` field clears it, the way
+/// `nil` already clears an optional string.
+#[test]
+fn nil_clears_an_option_number() {
+    let (m, id, dir) = loaded(
+        "nil_clears_option_radius",
+        r#"horizon.on("menu_background", function(event) event.radius = nil end)"#,
+    );
+    let mods = boxed(m);
+    let mut radius = Some(1.5);
+    dispatch_menu_background(&FakeHost::empty(), &mods, &mut radius);
+    assert_eq!(radius, None);
+    no_error(&id);
+    drop_dir(dir);
+    let (m, id, dir) = loaded(
+        "nil_clears_option_outline",
+        r#"horizon.on("entity_outline", function(event) event.outline = nil end, "minecraft:zombie")"#,
+    );
+    let mods = boxed(m);
+    let mut outline = Some(9);
+    dispatch_entity_outline(
+        &FakeHost::empty(),
+        &mods,
+        7,
+        "minecraft:zombie",
+        &mut outline,
+    );
+    assert_eq!(outline, None);
+    no_error(&id);
+    drop_dir(dir);
+}
+
+/// A numeric string that coerces to a non-finite float is refused at
+/// write-back into an `&mut Option<number>` field too, on the converted
+/// value: the previous value stays.
+#[test]
+fn coerced_string_floats_are_refused_for_option_numbers() {
+    let (m, id, dir) = loaded(
+        "coerced_string_option_radius",
+        r#"horizon.on("menu_background", function(event) event.radius = "nan" end)"#,
+    );
+    let mods = boxed(m);
+    let mut radius = Some(1.5);
+    dispatch_menu_background(&FakeHost::empty(), &mods, &mut radius);
+    assert_eq!(radius, Some(1.5));
+    let e = hook_error_of(&id);
+    assert!(e.contains("menu_background"), "{e}");
+    assert!(e.contains("radius"), "{e}");
+    drop_dir(dir);
+}
+
+/// A `commands` write that fails the intern cap interns nothing: the
+/// write-back validates first, so after a refused 5000-name write the
+/// previous value is intact and a later one-name write still lands.
+#[test]
+fn refused_commands_write_interns_nothing() {
+    let (m, id, dir) = loaded(
+        "commands_keep",
+        r#"horizon.on("commands", function(event) event.commands = {"keep:me"} end)"#,
+    );
+    let mods = boxed(m);
+    let mut commands: Vec<&'static str> = vec!["seed:one"];
+    dispatch_commands(&mut FakeHost::empty(), &mods, &mut commands);
+    assert_eq!(commands, vec!["keep:me"]);
+    no_error(&id);
+    drop_dir(dir);
+
+    let (m, id, dir) = loaded(
+        "commands_flood",
+        r#"horizon.on("commands", function(event)
+          local t = {}
+          for i = 1, 5000 do t[i] = "flood:" .. i end
+          event.commands = t
+        end)"#,
+    );
+    let mods = boxed(m);
+    dispatch_commands(&mut FakeHost::empty(), &mods, &mut commands);
+    assert_eq!(commands, vec!["keep:me"]);
+    let e = hook_error_of(&id);
+    assert!(e.contains("commands"), "{e}");
+    assert!(e.contains("4096"), "{e}");
+    drop_dir(dir);
+
+    let (m, id, dir) = loaded(
+        "commands_single",
+        r#"horizon.on("commands", function(event) event.commands = {"single:ok"} end)"#,
+    );
+    let mods = boxed(m);
+    dispatch_commands(&mut FakeHost::empty(), &mods, &mut commands);
+    assert_eq!(commands, vec!["single:ok"]);
+    no_error(&id);
+    drop_dir(dir);
+}
+
+/// A `commands` name past 256 bytes is refused naming the limit, while a
+/// 256-byte name still lands.
+#[test]
+fn overlong_commands_name_is_refused() {
+    let (m, id, dir) = loaded(
+        "commands_long",
+        r#"horizon.on("commands", function(event) event.commands = {string.rep("x", 300)} end)"#,
+    );
+    let mods = boxed(m);
+    let mut commands: Vec<&'static str> = vec!["seed:one"];
+    dispatch_commands(&mut FakeHost::empty(), &mods, &mut commands);
+    assert_eq!(commands, vec!["seed:one"]);
+    let e = hook_error_of(&id);
+    assert!(e.contains("commands"), "{e}");
+    assert!(e.contains("256"), "{e}");
+    drop_dir(dir);
+
+    let (m, id, dir) = loaded(
+        "commands_exact",
+        r#"horizon.on("commands", function(event) event.commands = {string.rep("y", 256)} end)"#,
+    );
+    let mods = boxed(m);
+    dispatch_commands(&mut FakeHost::empty(), &mods, &mut commands);
+    assert_eq!(commands.len(), 1);
+    assert_eq!(commands[0].len(), 256);
+    no_error(&id);
+    drop_dir(dir);
 }
 
 /// An unset placement answer leaves the decision to the next mod.

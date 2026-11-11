@@ -193,13 +193,17 @@ fn seed_tag(conv: &Conv, ty: &str, key: Option<&str>) -> String {
 
 /// The write-back tag for a mutable field: `None` transcribes no tag, and
 /// the runtime's catch-all expands it to nothing. `ty` picks the dereference
-/// like the seed does, `key` the struct shape for `Struct`. The reference
-/// generator (`hooks_doc`) shares this rule for its set clauses.
+/// like the seed does (`&mut Option<scalar>` clears on `nil`, like an
+/// optional string does, instead of ignoring it), `key` the struct shape for
+/// `Struct`. The reference generator (`hooks_doc`) shares this rule for its
+/// set clauses.
 pub(crate) fn write_tag(conv: &Conv, ty: &str, key: Option<&str>) -> Option<String> {
     match conv {
         Conv::MutScalar => Some(
             if owned_mut_scalar(ty) {
                 "mut_scalar"
+            } else if ty.contains("Option<") {
+                "mut_opt_scalar"
             } else {
                 "mut_scalar_ref"
             }

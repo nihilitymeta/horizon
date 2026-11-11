@@ -700,9 +700,9 @@ one budget: 250 ms of wall-clock time for each handler registered, as one call. 
 behaves like any other error of the handler: it goes to the log and the dev tools' console, and a goal reads it as
 "no". A `pcall` around the slow code catches that error, but the next loop iteration or call raises it again, so
 nothing of the handler runs past its deadline, and the actions it queued are dropped. This holds for the timers' own
-`pcall` too.
+call too.
 
-`init.lua`, with the modules it requires, has five seconds at load and at reload. A state may use up to 64 MiB.
+`init.lua`, with the modules it requires, has five seconds at load and at reload. A state may use up to 64 MiB. Names the scripts hand over where the engine needs them for the whole session (command words) are interned once each: at most 4096 distinct names of at most 256 bytes each, and anything past either limit is refused with a Lua error instead of leaking without bound.
 
 A script reads nothing but its own mod (`lua_mods::Budget`, in `event-horizon-lua`):
 
@@ -715,6 +715,12 @@ the handlers after it do not run for that event. Nothing that the handlers befor
 neither their actions, `cancel()` included, nor their changes to a saved table (`data`, `world_data`,
 `player_data`, `entity_data`). The event goes on as if the mod had not heard it, and the log has the error. So a mod that must not
 lose work splits the work across hooks, or guards it with `pcall` itself.
+
+A handler's error reads the same in the log, the dev tools' console and the mod's status row: the hook first, then
+the message's first line (which names the Lua file and line), then the traceback indented under it, capped to the
+first 20 frames with a `... N more` line. A thrown value that is not a string is reported with its type. A write-back that
+hands the game a NaN or an infinity is refused the same way, naming the field. Setting an optional number (or string)
+field to `nil` clears it.
 
 ## Not built yet
 

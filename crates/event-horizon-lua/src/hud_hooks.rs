@@ -210,13 +210,13 @@ pub(crate) fn finish(mod_: &LuaMod, host: &mut dyn Host, hook: &str, outcome: Qu
             mod_.note_frame_outcome(hook, false);
             for (action, args) in actions {
                 if let Err(e) = mod_.run_action(host, &action, &args) {
-                    mod_.error(format!("{hook}: {e}"));
+                    mod_.error(crate::lua_mods::handler_error_text(hook, &e));
                 }
             }
         }
         Err(e) => {
             let overrun = is_overrun(&e);
-            mod_.error(format!("{hook}: {e}"));
+            mod_.error(crate::lua_mods::handler_error_text(hook, &e));
             mod_.note_frame_outcome(hook, overrun);
         }
     }

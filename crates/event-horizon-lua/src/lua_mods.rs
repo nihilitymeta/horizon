@@ -131,7 +131,12 @@ const QUEUE: &str = "horizon_queue";
 /// by the budget mid-way.
 const RUNNER: &str = "horizon_runner";
 const RUNNER_CODE: &str = r#"
-return function(slot)
+return function(slot, base)
+  -- The globals the runner calls, taken from `base` (BASE_CODE, built before
+  -- any script ran): a script that later assigns `error`, `xpcall`, `debug`
+  -- or any other global cannot change how a failure is caught or reported.
+  local xpcall, error = base.xpcall, base.error
+  local type, ipairs, traceback, text = base.type, base.ipairs, base.traceback, base.text
   return function(handlers, host, full, ...)
     -- A hook fired from inside a handler (a summon answered at once tells of
     -- the spawn) runs nested: the outer call's host is kept for it. slot[3]
@@ -141,16 +146,58 @@ return function(slot)
     slot[2] = full
     slot[3] = depth + 1
     local failed
+    -- A string error gains the handler's traceback here, where its frames
+    -- still run; anything else a script throws (a table, a number) gains it
+    -- too, with its type named. A Rust error travels as userdata, which
+    -- `tostring` would flatten, so it passes through for the host to report.
+    local function with_trace(e)
+      local t = type(e)
+      if t == "string" then
+        return e .. "\nstack traceback:" .. traceback("", 2)
+      elseif t ~= "userdata" then
+        return "(" .. t .. ") " .. text(e) .. "\nstack traceback:" .. traceback("", 2)
+      end
+      return e
+    end
     for _, f in ipairs(handlers) do
-      local ok, e = pcall(f, ...)
+      local ok, e = xpcall(f, with_trace, ...)
       if not ok then failed = e break end
     end
     slot[1] = outer_host
     slot[2] = outer_full
     slot[3] = depth
-    if failed ~= nil then error(failed, 0) end
+    if failed == nil then return end
+    -- A message is returned, not raised: mlua would run a raised error's text
+    -- through `__tostring`, which a script may replace. Rust raises it.
+    if type(failed) == "string" then return failed end
+    error(failed, 0)
   end
 end
+"#;
+/// The registry key of the table of the globals the runtime's chunks use
+/// (`BASE_CODE`): built once, before any script runs, and read by the
+/// runner, the reads and the timers, so none of them looks a global up while
+/// a script may have replaced it. Scripts never see it.
+const BASE: &str = "horizon_base";
+const BASE_CODE: &str = r#"
+local xpcall, error, pcall = xpcall, error, pcall
+local type, tostring, ipairs = type, tostring, ipairs
+local traceback = debug.traceback
+local max, floor, remove = math.max, math.floor, table.remove
+-- A value's text for an error message, never failing: a `__tostring` that
+-- throws, or returns no string, gives a placeholder instead.
+local function text(e)
+  -- A string is its own text: `tostring` would run it through a `__tostring`
+  -- a script may have replaced on the string metatable.
+  if type(e) == "string" then return e end
+  local ok, s = pcall(tostring, e)
+  if ok and type(s) == "string" then return s end
+  return "<unprintable " .. type(e) .. ">"
+end
+return {
+  xpcall = xpcall, error = error, pcall = pcall, type = type, ipairs = ipairs,
+  traceback = traceback, text = text, max = max, floor = floor, remove = remove,
+}
 "#;
 /// The registry key of the table holding the call in progress: `[1]` its
 /// read function (`horizon.block` and the other reads go through it; nil in
@@ -166,7 +213,8 @@ pub(crate) const TIMERS_HANDLER: &str = "horizon_timers";
 /// runner keeps in the slot while the handlers run; outside a call there is
 /// none, and a read is an error.
 const READS_CODE: &str = r#"
-return function(slot, horizon)
+return function(slot, horizon, base)
+  local error, pcall, text = base.error, base.pcall, base.text
   local function read(what, ...)
     local f = slot[1]
     if f == nil then
@@ -201,7 +249,7 @@ return function(slot, horizon)
   local on = horizon.on
   horizon.on = function(name, f, kind)
     local ok, e = pcall(on, name, f, kind)
-    if not ok then error(tostring(e), 2) end
+    if not ok then error(text(e), 2) end
   end
   -- A summon with a host at hand is made at once and answers the mob's id;
   -- in a level hook it waits for the level's pass (the queued action).
@@ -218,13 +266,16 @@ end
 /// if repeating, kept, and the timers after it run: the handler itself does
 /// not fail, so what the other timers asked for and saved stands.
 const TIMERS_CODE: &str = r#"
-return function(horizon, report)
+return function(horizon, report, base)
+  -- The globals the timers use, from `base` (BASE_CODE), as the runner's are.
+  local xpcall, type, text, traceback = base.xpcall, base.type, base.text, base.traceback
+  local max, floor, remove = base.max, base.floor, base.remove
   local timers, tick = {}, 0
   horizon.after = function(ticks, fn)
-    timers[#timers + 1] = { due = tick + math.max(1, math.floor(ticks)), fn = fn }
+    timers[#timers + 1] = { due = tick + max(1, floor(ticks)), fn = fn }
   end
   horizon.every = function(ticks, fn)
-    local n = math.max(1, math.floor(ticks))
+    local n = max(1, floor(ticks))
     timers[#timers + 1] = { due = tick + n, every = n, fn = fn }
   end
   horizon.ticks = function() return tick end
@@ -235,9 +286,21 @@ return function(horizon, report)
     while i <= #timers do
       local t = timers[i]
       if t.due <= tick then
-        if t.every then t.due = tick + t.every; i = i + 1 else table.remove(timers, i) end
-        local ok, e = pcall(t.fn)
-        if not ok then report(tostring(e)) end
+        if t.every then t.due = tick + t.every; i = i + 1 else remove(timers, i) end
+        -- A string error gains the timer's traceback here, where its
+        -- frames still run; anything else a script throws gains it too,
+        -- with its type named, as the runner does.
+        local function with_trace(e)
+          local t = type(e)
+          if t == "string" then
+            return e .. "\nstack traceback:" .. traceback("", 2)
+          elseif t ~= "userdata" then
+            return "(" .. t .. ") " .. text(e) .. "\nstack traceback:" .. traceback("", 2)
+          end
+          return e
+        end
+        local ok, e = xpcall(t.fn, with_trace)
+        if not ok then report(text(e)) end
       else
         i = i + 1
       end
@@ -829,8 +892,9 @@ impl LuaMod {
 /// Installs the read wrappers (`READS_CODE`) on the `horizon` table.
 fn install_reads(lua: &Lua, api: &Table) -> mlua::Result<()> {
     let slot: Table = lua.named_registry_value(HOST_SLOT)?;
+    let base: Table = lua.named_registry_value(BASE)?;
     let install: Function = lua.load(READS_CODE).set_name("horizon").eval()?;
-    install.call::<()>((slot, api))
+    install.call::<()>((slot, api, base))
 }
 
 /// Installs the timers (`TIMERS_CODE`) on the `horizon` table: their handler
@@ -926,12 +990,16 @@ fn command_args(
 
 fn install_timers(lua: &Lua, api: &Table, id: &str) -> mlua::Result<()> {
     let install: Function = lua.load(TIMERS_CODE).set_name("horizon").eval()?;
+    let base: Table = lua.named_registry_value(BASE)?;
     let id = id.to_owned();
+    // A timer's failure reads as a handler's does: the same formatter, the
+    // traceback capped to 20 frames.
     let report = lua.create_function(move |_, message: String| {
-        log::error!("[lua:{id}] server_tick: timer: {message}");
+        let text = handler_error_text("server_tick: timer", &mlua::Error::runtime(message));
+        log::error!("[lua:{id}] {text}");
         Ok(())
     })?;
-    let handler: Function = install.call((api, report))?;
+    let handler: Function = install.call((api, report, base))?;
     lua.set_named_registry_value(TIMERS_HANDLER, handler)
 }
 /// The registry key of the modules `require` ran: `name -> value`.
@@ -1493,12 +1561,14 @@ impl LuaMod {
             .globals()
             .get::<Table>(GLOBAL)
             .map_err(|e| e.to_string())?;
-        let stage = || -> mlua::Result<(Vec<(&str, Value)>, Vec<(&str, Value)>)> {
-            let mut registry = Vec::new();
+        // Set aside as they are before anything is replaced, so every error
+        // from here on (staging included) puts them back.
+        let mut registry: Vec<(&str, Value)> = Vec::new();
+        let mut timers: Vec<(&str, Value)> = Vec::new();
+        let staged = (|| -> mlua::Result<()> {
             for key in [HANDLERS, KIND_HANDLERS, LOADED, TIMERS_HANDLER] {
                 registry.push((key, lua.named_registry_value::<Value>(key)?));
             }
-            let mut timers = Vec::new();
             for name in ["after", "every", "ticks"] {
                 timers.push((name, api.get::<Value>(name)?));
             }
@@ -1507,41 +1577,45 @@ impl LuaMod {
             lua.set_named_registry_value(LOADED, lua.create_table()?)?;
             // The timers' handler is the first `server_tick` handler: a new
             // one, over an empty list, for the new script.
-            install_timers(lua, &api, &self.id)?;
-            Ok((registry, timers))
-        };
-        let (registry, timers) = stage().map_err(|e| e.to_string())?;
-        fn swap<T>(m: &Mutex<T>, new: T) -> Result<T, String> {
-            let mut guard = m.lock().map_err(|_| "a mod's registrations".to_owned())?;
-            Ok(std::mem::replace(&mut *guard, new))
-        }
-        let old_commands = swap(&self.commands, Vec::new())?;
-        let old_goals = swap(&self.goals, HashMap::new())?;
-        let old_kinds = swap(&self.kinds, HashMap::new())?;
-        let old_declared = swap(&self.block_entities, HashMap::new())?;
-        let old_scripts = swap(&self.scripts, scripts)?;
-        let old_library_scripts = swap(&self.library_scripts, library_scripts)?;
-        let Err(e) = self.run(ENTRY) else {
-            return Ok(());
-        };
-        // Back as it was: whatever the failed script registered is dropped
-        // with the fresh tables.
-        let restore = || -> mlua::Result<()> {
+            install_timers(lua, &api, &self.id)
+        })();
+        // Back as it was: the registry tables and the timers' closures.
+        let restore = |registry: Vec<(&str, Value)>, timers: Vec<(&str, Value)>| {
             for (key, value) in registry {
                 lua.set_named_registry_value(key, value)?;
             }
             for (name, value) in timers {
                 api.set(name, value)?;
             }
-            Ok(())
+            Ok::<(), mlua::Error>(())
         };
-        let restored = restore();
-        swap(&self.commands, old_commands)?;
-        swap(&self.goals, old_goals)?;
-        swap(&self.kinds, old_kinds)?;
-        swap(&self.block_entities, old_declared)?;
-        swap(&self.scripts, old_scripts)?;
-        swap(&self.library_scripts, old_library_scripts)?;
+        if let Err(e) = staged {
+            let restored = restore(registry, timers);
+            restored.map_err(|e| e.to_string())?;
+            return Err(e.to_string());
+        }
+        fn swap<T>(m: &Mutex<T>, new: T) -> T {
+            let mut guard = m.lock().unwrap_or_else(|p| p.into_inner());
+            std::mem::replace(&mut *guard, new)
+        }
+        let old_commands = swap(&self.commands, Vec::new());
+        let old_goals = swap(&self.goals, HashMap::new());
+        let old_kinds = swap(&self.kinds, HashMap::new());
+        let old_declared = swap(&self.block_entities, HashMap::new());
+        let old_scripts = swap(&self.scripts, scripts);
+        let old_library_scripts = swap(&self.library_scripts, library_scripts);
+        let Err(e) = self.run(ENTRY) else {
+            return Ok(());
+        };
+        // Whatever the failed script registered is dropped with the fresh
+        // tables; the old ones come back whole.
+        let restored = restore(registry, timers);
+        swap(&self.commands, old_commands);
+        swap(&self.goals, old_goals);
+        swap(&self.kinds, old_kinds);
+        swap(&self.block_entities, old_declared);
+        swap(&self.scripts, old_scripts);
+        swap(&self.library_scripts, old_library_scripts);
         restored.map_err(|e| e.to_string())?;
         Err(e.to_string())
     }
@@ -1645,8 +1719,13 @@ impl LuaMod {
         lua.set_named_registry_value(LOADED, lua.create_table()?)?;
         let slot = lua.create_table()?;
         lua.set_named_registry_value(HOST_SLOT, &slot)?;
+        // The base table first: the runner, the reads and the timers take
+        // their globals from it, so none of them reads one a script may
+        // have replaced.
+        let base: Table = lua.load(BASE_CODE).set_name("horizon").eval()?;
+        lua.set_named_registry_value(BASE, &base)?;
         let make_runner: Function = lua.load(RUNNER_CODE).set_name("horizon").eval()?;
-        let runner: Function = make_runner.call(&slot)?;
+        let runner: Function = make_runner.call((&slot, &base))?;
         lua.set_named_registry_value(RUNNER, runner)?;
         let api = lua.create_table()?;
         let id = self.id.clone();
@@ -2167,7 +2246,7 @@ impl LuaMod {
     }
 
     fn hook_error(&self, hook: &str, e: mlua::Error) -> Flow {
-        self.error(format!("{hook}: {e}"));
+        self.error(handler_error_text(hook, &e));
         Flow::Continue
     }
 
@@ -2335,7 +2414,15 @@ impl LuaMod {
             args.push_front(Value::Boolean(full));
             args.push_front(read);
             args.push_front(Value::Table(handlers));
-            self.budget.run(limit * count, || runner.call::<()>(args))
+            // The runner returns a handler's message rather than raising it
+            // (see RUNNER_CODE): raised here, with its text intact.
+            let failed = self
+                .budget
+                .run(limit * count, || runner.call::<Value>(args))?;
+            match failed {
+                Value::String(message) => Err(mlua::Error::runtime(message.to_string_lossy())),
+                _ => Ok(()),
+            }
         });
         // The runner restores the slot itself when it gets that far; one
         // stopped by the budget (raised at every safepoint past the
@@ -2579,9 +2666,12 @@ impl LuaMod {
                 let (y1, y2) = (y1.min(y2), y1.max(y2));
                 let (z1, z2) = (z1.min(z2), z1.max(z2));
                 // Widened before the subtraction: the corners are any i32.
+                // The product is u128, so a full-world span in both axes
+                // reports its honest count (2^64) instead of wrapping past
+                // the cap below, and is refused before any allocation.
                 let span = |a: i32, b: i32| i64::from(b) - i64::from(a) + 1;
-                let columns = span(x1, x2) * span(z1, z2);
-                if columns > FILL_COLUMNS {
+                let columns = (span(x1, x2) as u128) * (span(z1, z2) as u128);
+                if columns > FILL_COLUMNS as u128 {
                     return Err(mlua::Error::runtime(format!(
                         "fill: {columns} columns, at most {FILL_COLUMNS}"
                     )));
@@ -2743,6 +2833,43 @@ impl Hooks for LuaMod {
     // Every hook is generated (`generated_hooks`, one method per native
     // hook), each with one event table.
     impl_generated_hooks!();
+}
+
+/// A handler's error for the log, the console and the status row: the hook
+/// first, then the error's first line (which names the Lua file and line),
+/// then the traceback indented, capped to the first 20 frames with a
+/// `... N more` line. mlua decorates the message with its kind
+/// (`runtime error: ...`), which stays, so existing matches keep working.
+pub(crate) fn handler_error_text(hook: &str, e: &mlua::Error) -> String {
+    let text = e.to_string();
+    let mut lines = text.lines();
+    let first = lines.next().unwrap_or("").trim_end();
+    let mut out = format!("{hook}: {first}");
+    // Every non-empty line after the first, in order: the traceback body.
+    // Its `stack traceback:` header is shown but not counted, so the cap is
+    // on frames.
+    let body: Vec<&str> = lines
+        .map(str::trim_end)
+        .filter(|line| !line.is_empty())
+        .collect();
+    const MAX_FRAMES: usize = 20;
+    let is_header = |line: &str| line.trim() == "stack traceback:";
+    let frames = body.iter().filter(|line| !is_header(line)).count();
+    let mut shown = 0;
+    for line in &body {
+        if is_header(line) {
+            out.push_str("\n  ");
+            out.push_str(line.trim());
+        } else if shown < MAX_FRAMES {
+            out.push_str("\n  ");
+            out.push_str(line);
+            shown += 1;
+        }
+    }
+    if frames > MAX_FRAMES {
+        out.push_str(&format!("\n  ... {} more", frames - MAX_FRAMES));
+    }
+    out
 }
 
 /// The table at `key` in `table`, made when there is none.
@@ -5224,6 +5351,707 @@ experimental = ["scripts"]
                 "summon minecraft:item at 1.5,65,3.5 of minecraft:bone x4",
             ]
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A full-world fill is refused with its honest column count (2^32 by
+    /// 2^32), not `i64::MAX` from a wrapping multiply: still refused before
+    /// any allocation.
+    #[test]
+    fn fill_overflow_reports_the_honest_count() {
+        let (m, mut host, dir) = dead_mod(
+            "fill_honest_count",
+            br#"
+            horizon.command("hugefill", 0, function(player, args)
+              horizon.fill(-2147483648, 0, -2147483648, 2147483647, 0, 2147483647, "stone")
+            end)
+            "#,
+        );
+        let steve = host.acting_player().unwrap();
+        let mut event = test_events::perform_command_event(&steve, "hugefill");
+        assert_eq!(m.perform_command(&mut host, &mut event), Flow::Cancel);
+        let e = hook_error_of(&m);
+        assert!(e.contains("18446744073709551616"), "{e}");
+        assert!(!e.contains("9223372036854775807"), "{e}");
+        assert!(
+            !host
+                .lines
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|l| l.starts_with("edit ")),
+            "no edit ran: {:?}",
+            host.lines.lock().unwrap()
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// NaN and infinity are refused at write-back, for a plain number and a
+    /// knockback-style `{x, y, z}` table alike: the values stay as they were.
+    #[test]
+    fn non_finite_floats_are_refused_at_write_back() {
+        let (m, _host, dir) = dead_mod(
+            "non_finite_floats",
+            br#"
+            horizon.on("living_fall", function(event)
+              if MODE == "nan" then event.distance = 0/0 end
+              if MODE == "inf" then event.distance = 1/0 end
+            end, "minecraft:cow")
+            "#,
+        );
+        for mode in ["nan", "inf"] {
+            m.lua.globals().set("MODE", mode).unwrap();
+            let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+            assert_eq!(m.living_fall(&mut fall), Flow::Continue);
+            assert_eq!(fall.distance, 4.0);
+            let e = hook_error_of(&m);
+            assert!(e.contains("living_fall"), "{mode}: {e}");
+            assert!(e.contains("distance"), "{mode}: {e}");
+        }
+        // A knockback-style `{x, y, z}` table with a NaN component.
+        let lua = Lua::new();
+        let bad = lua.create_table().unwrap();
+        bad.set("x", f64::NAN).unwrap();
+        bad.set("y", 0.0).unwrap();
+        bad.set("z", 0.0).unwrap();
+        let err = <[f64; 3] as crate::generated_runtime::LuaStruct>::from_value(
+            &lua,
+            Value::Table(bad),
+            "knockback_velocity",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("knockback_velocity"), "{err}");
+        // Finite values still land.
+        let good = lua.create_table().unwrap();
+        good.set("x", 1.0).unwrap();
+        good.set("y", 2.0).unwrap();
+        good.set("z", 3.0).unwrap();
+        assert_eq!(
+            <[f64; 3] as crate::generated_runtime::LuaStruct>::from_value(
+                &lua,
+                Value::Table(good),
+                "knockback_velocity",
+            )
+            .unwrap(),
+            [1.0, 2.0, 3.0]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A numeric string that coerces to a non-finite float is refused at
+    /// write-back, on the converted value: `"nan"`/`"inf"` never reach the
+    /// game as a quiet NaN, for an f64 field and an f32 field alike. A
+    /// numeric string that parses finite keeps working.
+    #[test]
+    fn coerced_string_floats_are_refused_at_write_back() {
+        let (m, _host, dir) = dead_mod(
+            "coerced_string_floats",
+            br#"
+            horizon.on("living_fall", function(event)
+              if MODE == "nan" then event.distance = "nan" end
+              if MODE == "inf" then event.distance = "inf" end
+              if MODE == "mult_nan" then event.multiplier = "nan" end
+              if MODE == "finite" then event.distance = "1.5" end
+            end, "minecraft:cow")
+            "#,
+        );
+        for (mode, field) in [
+            ("nan", "distance"),
+            ("inf", "distance"),
+            ("mult_nan", "multiplier"),
+        ] {
+            m.lua.globals().set("MODE", mode).unwrap();
+            let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+            m.living_fall(&mut fall);
+            assert!(
+                fall.distance.is_finite(),
+                "{mode}: distance is {}",
+                fall.distance
+            );
+            assert!(
+                fall.multiplier.is_finite(),
+                "{mode}: multiplier is {}",
+                fall.multiplier
+            );
+            assert_eq!((fall.distance, fall.multiplier), (4.0, 1.0), "{mode}");
+            let e = hook_error_of(&m);
+            assert!(e.contains("living_fall"), "{mode}: {e}");
+            assert!(e.contains(field), "{mode}: {e}");
+        }
+        // A numeric string that parses finite still lands.
+        m.lua.globals().set("MODE", "finite").unwrap();
+        let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+        m.living_fall(&mut fall);
+        assert_eq!((fall.distance, fall.multiplier), (1.5, 1.0));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A finite Lua number that does not fit f32 is refused at write-back:
+    /// `1e39` would otherwise land as infinity. The f32 values that are
+    /// finite stay accepted, bit for bit (the smallest subnormal is
+    /// `from_bits(1)`).
+    #[test]
+    fn overflowing_f32_write_back_is_refused() {
+        let (m, _host, dir) = dead_mod(
+            "overflowing_f32",
+            br#"
+            horizon.on("living_fall", function(event)
+              if MODE == "huge" then event.multiplier = 1e39 end
+              if MODE == "roundtrip" then event.multiplier = event.multiplier end
+              if MODE == "zero" then event.multiplier = 0.0 end
+              if MODE == "negzero" then event.multiplier = -0.0 end
+            end, "minecraft:cow")
+            "#,
+        );
+        m.lua.globals().set("MODE", "huge").unwrap();
+        let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+        m.living_fall(&mut fall);
+        assert!(
+            fall.multiplier.is_finite(),
+            "multiplier is {}",
+            fall.multiplier
+        );
+        assert_eq!(fall.multiplier, 1.0);
+        let e = hook_error_of(&m);
+        assert!(e.contains("living_fall"), "{e}");
+        assert!(e.contains("multiplier"), "{e}");
+        // The finite f32 edges round-trip unchanged.
+        for edge in [f32::MAX, f32::MIN_POSITIVE, f32::from_bits(1), 0.0] {
+            m.lua.globals().set("MODE", "roundtrip").unwrap();
+            // A fresh status: an error left by an earlier case would hide a
+            // refusal here.
+            set_status(ModStatus {
+                id: m.id().into(),
+                ..Default::default()
+            });
+            let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, edge);
+            m.living_fall(&mut fall);
+            let status_error = horizon_client::dev_input::mods::status()
+                .into_iter()
+                .find(|s| s.id == m.id())
+                .and_then(|s| s.error);
+            assert_eq!(status_error, None, "edge {edge} refused");
+            assert_eq!(fall.multiplier.to_bits(), edge.to_bits(), "edge {edge}");
+        }
+        m.lua.globals().set("MODE", "zero").unwrap();
+        let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+        m.living_fall(&mut fall);
+        assert_eq!(fall.multiplier.to_bits(), 0.0f32.to_bits());
+        m.lua.globals().set("MODE", "negzero").unwrap();
+        let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+        m.living_fall(&mut fall);
+        assert_eq!(fall.multiplier.to_bits(), (-0.0f32).to_bits());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A script that nils `debug` must not break later tracebacks: the runner
+    /// captured `debug.traceback` when it was built, so a later string error
+    /// still names its message and its file and line.
+    #[test]
+    fn handler_traceback_survives_debug_nil() {
+        let (m, _host, dir) = dead_mod(
+            "debug_nil",
+            br#"
+            horizon.on("living_fall", function(event)
+              debug = nil
+              error("boom-after-nil")
+            end, "minecraft:cow")
+            "#,
+        );
+        let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+        m.living_fall(&mut fall);
+        let e = hook_error_of(&m);
+        assert!(e.contains("boom-after-nil"), "{e}");
+        assert!(e.contains("scripts/init.lua"), "{e}");
+        assert!(!e.contains("error in error handling"), "{e}");
+        // The traceback's first frame is the handler's own line: only the
+        // wrapper's traceback (after its header) produces that frame.
+        let first_frame = e
+            .lines()
+            .skip_while(|l| !l.contains("stack traceback:"))
+            .nth(1)
+            .unwrap_or("");
+        assert!(
+            first_frame
+                .trim_start()
+                .starts_with("[string \"scripts/init.lua\"]"),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The timers report failures only to the log, so a test-only recorder
+    /// observes them here: the timer chunk captured `debug.traceback` when
+    /// it was built, so a timer that fails after `debug = nil` still
+    /// reports its own message.
+    static TEST_LOG: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    struct TestLogger;
+    impl log::Log for TestLogger {
+        fn enabled(&self, _meta: &log::Metadata) -> bool {
+            true
+        }
+        fn log(&self, record: &log::Record) {
+            if record.level() <= log::Level::Error {
+                TEST_LOG.lock().unwrap().push(record.args().to_string());
+            }
+        }
+        fn flush(&self) {}
+    }
+    fn capture_logs() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            let _ = log::set_logger(&TestLogger);
+            log::set_max_level(log::LevelFilter::Error);
+        });
+        TEST_LOG.lock().unwrap().clear();
+    }
+
+    #[test]
+    fn timer_traceback_survives_debug_nil() {
+        capture_logs();
+        let (dir, path) = hmod(
+            "timers-debug-nil",
+            &[(
+                "scripts/init.lua",
+                br#"
+                debug = nil
+                horizon.after(1, function() error("timer-boom") end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let context = test_events::native_lifecycle_context(
+            horizon_client::mod_api::NativeAuthority::IntegratedServer,
+            horizon_client::mod_api::NativeWorldEpoch::new(1),
+            horizon_client::mod_api::NativeTickId::new(1),
+        );
+        m.server_tick(
+            &mut host,
+            &mut test_events::server_tick_event(
+                &context,
+                ServerTickPhase::ServerTickEnd {
+                    world_running: true,
+                },
+            ),
+        );
+        let logs = TEST_LOG.lock().unwrap().join("\n");
+        assert!(logs.contains("timer-boom"), "{logs}");
+        assert!(logs.contains("scripts/init.lua"), "{logs}");
+        // The timer's traceback is formatted and capped like a handler's: its
+        // first frame, after the header, is the timer's own line.
+        let after_header = logs.split("stack traceback:").nth(1).unwrap_or("");
+        assert!(
+            after_header
+                .trim_start()
+                .starts_with("[string \"scripts/init.lua\"]"),
+            "{logs}"
+        );
+        assert!(!logs.contains("error in error handling"), "{logs}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A non-string error names its type and still carries the handler's
+    /// frames: `error({})` is reported as a table error with the handler's
+    /// file and line, not the runner chunk's.
+    #[test]
+    fn table_errors_name_their_type_and_handler_frames() {
+        let (m, _host, dir) = dead_mod(
+            "table_error",
+            br#"
+            horizon.on("living_fall", function(event)
+              error({})
+            end, "minecraft:cow")
+            "#,
+        );
+        let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+        m.living_fall(&mut fall);
+        let e = hook_error_of(&m);
+        assert!(e.contains("table"), "{e}");
+        assert!(e.contains("scripts/init.lua"), "{e}");
+        // The handler's frames lead the traceback, not the runner chunk's.
+        let first_frame = e
+            .lines()
+            .find(|l| l.trim_start().starts_with('['))
+            .unwrap_or("");
+        assert!(first_frame.contains("scripts/init.lua"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A script that replaces the globals the runner calls (`error`, `xpcall`,
+    /// `debug`) cannot swallow a handler's failure: the failure is reported,
+    /// the handler's write-back is not applied, and the traceback survives.
+    #[test]
+    fn script_globals_cannot_swallow_or_strip_a_handler_failure() {
+        for (name, setup) in [
+            ("swallow_error", "error = function() end"),
+            ("xpcall_pcall", "xpcall = pcall"),
+            ("debug_nil", "debug = nil"),
+        ] {
+            let script = format!(
+                r#"
+                {setup}
+                horizon.on("living_fall", function(event)
+                  event.distance = 99
+                  missing_function()
+                end, "minecraft:cow")
+                "#
+            );
+            let (m, _host, dir) = dead_mod(name, script.as_bytes());
+            let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+            m.living_fall(&mut fall);
+            assert_eq!(fall.distance, 4.0, "{name}: write-back applied");
+            let e = hook_error_of(&m);
+            assert!(e.contains("attempt to call a nil value"), "{name}: {e}");
+            assert!(e.contains("stack traceback"), "{name}: {e}");
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+    }
+
+    /// A script that replaces the `__tostring` of strings does not change a
+    /// message: a handler's and a timer's keep their text, the traceback
+    /// included, because neither is run through `tostring` on the way out.
+    #[test]
+    fn a_replaced_string_tostring_keeps_the_messages() {
+        capture_logs();
+        let (m, mut host, dir) = dead_mod(
+            "string_tostring",
+            br#"
+            getmetatable("").__tostring = function() return "REPLACED" end
+            horizon.after(1, function() error("timer-boom") end)
+            horizon.on("living_fall", function(event)
+              error("handler-boom")
+            end, "minecraft:cow")
+            "#,
+        );
+        let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+        m.living_fall(&mut fall);
+        let e = hook_error_of(&m);
+        assert!(e.contains("handler-boom"), "{e}");
+        assert!(e.contains("stack traceback"), "{e}");
+        assert!(!e.contains("REPLACED"), "{e}");
+        let context = test_events::native_lifecycle_context(
+            horizon_client::mod_api::NativeAuthority::IntegratedServer,
+            horizon_client::mod_api::NativeWorldEpoch::new(1),
+            horizon_client::mod_api::NativeTickId::new(1),
+        );
+        m.server_tick(
+            &mut host,
+            &mut test_events::server_tick_event(
+                &context,
+                ServerTickPhase::ServerTickEnd {
+                    world_running: true,
+                },
+            ),
+        );
+        let logs = TEST_LOG.lock().unwrap().join("\n");
+        assert!(logs.contains("timer-boom"), "{logs}");
+        assert!(!logs.contains("REPLACED"), "{logs}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A handler that raises 15000 frames deep reports in milliseconds, with
+    /// a traceback of at most 20 frames and a `... N more` line: the traceback
+    /// is not built from the whole stack, and no memory error comes out.
+    /// Measured at 14 ms and 964 bytes (VERIFIED, nextest); the bound is loose.
+    #[test]
+    fn a_deep_handler_error_is_fast_and_its_traceback_capped() {
+        let (m, _host, dir) = dead_mod(
+            "deep_pin",
+            br#"
+            horizon.on("living_fall", function(event)
+              local function f(n)
+                if n == 0 then error("deep-boom") end
+                return 1 + f(n - 1)
+              end
+              f(15000)
+            end, "minecraft:cow")
+            "#,
+        );
+        let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+        let started = std::time::Instant::now();
+        m.living_fall(&mut fall);
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "{:?}",
+            started.elapsed()
+        );
+        let e = hook_error_of(&m);
+        assert!(e.contains("deep-boom"), "{e}");
+        assert!(e.len() < 4096, "{} bytes", e.len());
+        let frames = e.lines().filter(|l| l.contains("function f")).count();
+        assert_eq!(frames, 20, "{e}");
+        assert!(
+            e.lines()
+                .any(|l| l.trim_start().starts_with("... ") && l.ends_with(" more")),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A timer that raises deep is reported like a handler: its traceback is
+    /// capped to 20 frames with a `... N more` line, not the whole stack.
+    #[test]
+    fn timer_tracebacks_are_capped_like_handlers() {
+        capture_logs();
+        let (dir, path) = hmod(
+            "timer-deep",
+            &[(
+                "scripts/init.lua",
+                br#"
+                horizon.after(1, function()
+                  local function f(n)
+                    if n == 0 then error("timer-deep-boom") end
+                    return 1 + f(n - 1)
+                  end
+                  f(15000)
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let context = test_events::native_lifecycle_context(
+            horizon_client::mod_api::NativeAuthority::IntegratedServer,
+            horizon_client::mod_api::NativeWorldEpoch::new(1),
+            horizon_client::mod_api::NativeTickId::new(1),
+        );
+        m.server_tick(
+            &mut host,
+            &mut test_events::server_tick_event(
+                &context,
+                ServerTickPhase::ServerTickEnd {
+                    world_running: true,
+                },
+            ),
+        );
+        let logs = TEST_LOG.lock().unwrap().join("\n");
+        assert!(logs.contains("timer-deep-boom"), "{logs}");
+        let frames = logs.lines().filter(|l| l.contains("function f")).count();
+        assert_eq!(frames, 20, "{logs}");
+        assert!(
+            logs.lines()
+                .any(|l| l.trim_start().starts_with("... ") && l.ends_with(" more")),
+            "{logs}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A table error whose `__tostring` throws still reports: the message
+    /// names the type, not "error in error handling".
+    #[test]
+    fn an_error_value_whose_tostring_throws_still_reports() {
+        let (m, _host, dir) = dead_mod(
+            "tostring_throws",
+            br#"
+            horizon.on("living_fall", function(event)
+              error(setmetatable({}, {__tostring = function() error("inner") end}))
+            end, "minecraft:cow")
+            "#,
+        );
+        let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+        m.living_fall(&mut fall);
+        let e = hook_error_of(&m);
+        assert!(e.contains("(table)"), "{e}");
+        assert!(!e.contains("error in error handling"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// `/reload` after a script set `debug = nil` still reloads: the timer
+    /// chunk runs from what the state captured at load. A reload that fails
+    /// keeps the old handler firing, and a clean one registers the new.
+    #[test]
+    fn reload_after_debug_nil_keeps_the_handlers_firing() {
+        let (dir, path) = hmod(
+            "reload-debug-nil",
+            &[(
+                "scripts/init.lua",
+                b"debug = nil\nTICKS = 0\nhorizon.on('server_tick', function() TICKS = TICKS + 1 end)",
+            )],
+        );
+        let m = LuaMod::load(&path, &[]).unwrap();
+        let rewrite = |src: &[u8]| {
+            std::fs::write(
+                &path,
+                Package::write_files(MANIFEST_TEXT, None, &[("scripts/init.lua", src)]).unwrap(),
+            )
+            .unwrap();
+        };
+        let tick = |m: &LuaMod| {
+            let event = m.lua.create_table().unwrap();
+            event.set("phase", "end").unwrap();
+            event.set("world_running", true).unwrap();
+            m.call_bare("server_tick", None, event, &mut |_, _| Ok(()))
+                .unwrap();
+        };
+        rewrite(b"debug = nil\nhorizon.on('server_tick', function() TICKS = TICKS + 100 end)\nerror('x')");
+        let e = m.reload().unwrap_err();
+        assert!(e.contains("x"), "{e}");
+        tick(&m);
+        assert_eq!(m.lua.globals().get::<i64>("TICKS").unwrap(), 1);
+        rewrite(b"debug = nil\nhorizon.on('server_tick', function() TICKS = TICKS + 10 end)");
+        m.reload().unwrap();
+        tick(&m);
+        assert_eq!(m.lua.globals().get::<i64>("TICKS").unwrap(), 11);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A deep handler's traceback is capped to the first 20 frames with a
+    /// "... N more" line.
+    #[test]
+    fn long_tracebacks_are_capped_at_twenty_frames() {
+        let (m, _host, dir) = dead_mod(
+            "deep_traceback",
+            br#"
+            horizon.on("living_fall", function(event)
+              local function f(n)
+                if n == 0 then error("deep-boom") end
+                f(n - 1)
+              end
+              f(30)
+            end, "minecraft:cow")
+            "#,
+        );
+        let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+        m.living_fall(&mut fall);
+        let e = hook_error_of(&m);
+        assert!(e.contains("deep-boom"), "{e}");
+        // The traceback body: the `stack traceback:` header, then exactly 20
+        // frames, then the more line (the header is not a frame).
+        let lines: Vec<&str> = e.lines().collect();
+        let body: Vec<&&str> = lines[1..].iter().filter(|l| !l.trim().is_empty()).collect();
+        assert!(
+            body.len() == 22,
+            "header, 20 frames, the more line: {body:?}"
+        );
+        assert_eq!(body[0].trim(), "stack traceback:", "{body:?}");
+        assert!(!body[1..21].iter().any(|l| l.contains("more")), "{body:?}");
+        assert!(body[21].contains("more"), "{body:?}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A failing handler's error names the hook and the Lua file and line,
+    /// whether Lua raised it or a Rust call inside the handler did: the log,
+    /// the console and the status row all read this text.
+    #[test]
+    fn handler_errors_name_the_file_and_line() {
+        let (m, _host, dir) = dead_mod(
+            "handler_traceback",
+            br#"
+            horizon.on("living_fall", function(event)
+              if MODE == "boom" then error("boom") end
+              horizon.set_distance(1)
+            end, "minecraft:cow")
+            "#,
+        );
+        for mode in ["boom", "rust"] {
+            m.lua.globals().set("MODE", mode).unwrap();
+            let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, 1.0);
+            assert_eq!(m.living_fall(&mut fall), Flow::Continue);
+            let e = hook_error_of(&m);
+            // The first line names the hook and the message; a traceback with
+            // the handler's file and line rides along, indented under it.
+            let mut lines = e.lines();
+            let first = lines.next().unwrap_or("");
+            assert!(first.contains("living_fall"), "{mode}: {e}");
+            // A Lua-raised message carries its file and line on the first line.
+            if mode == "boom" {
+                assert!(first.contains("scripts/init.lua"), "{mode}: {e}");
+            }
+            let rest: Vec<&str> = lines.collect();
+            assert!(
+                rest.iter().any(|l| l.contains("stack traceback")),
+                "{mode}: {e}"
+            );
+            assert!(
+                rest.iter()
+                    .any(|l| l.starts_with("  ") && l.contains("scripts/init.lua")),
+                "{mode}: {e}"
+            );
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The `/lua` console reports a failing chunk and a failing tick handler
+    /// with the chunk's name and the Lua line.
+    #[test]
+    fn console_errors_name_the_chunk_and_line() {
+        use horizon_client::dev_input::console as lua_console;
+        lua_console::clear();
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let context = test_events::native_lifecycle_context(
+            horizon_client::mod_api::NativeAuthority::IntegratedServer,
+            horizon_client::mod_api::NativeWorldEpoch::new(1),
+            horizon_client::mod_api::NativeTickId::new(1),
+        );
+        let mut tick = |console: &crate::console::Console| {
+            console.server_tick(
+                &mut host,
+                &mut test_events::server_tick_event(
+                    &context,
+                    ServerTickPhase::ServerTickEnd {
+                        world_running: true,
+                    },
+                ),
+            )
+        };
+        let console = crate::console::Console;
+        lua_console::submit("lua1", "error('boom')");
+        tick(&console);
+        let lines = lua_console::lines();
+        assert!(
+            lines
+                .iter()
+                .any(|(k, t)| *k == lua_console::Kind::Err && t.contains("lua1")),
+            "{lines:?}"
+        );
+        lua_console::submit("lua2", "mc.on_tick(function() error('tick-boom') end)");
+        tick(&console);
+        // The window keeps one entry per line, so join the error entries.
+        let lines = lua_console::lines();
+        let errs: Vec<&str> = lines
+            .iter()
+            .filter(|(k, _)| *k == lua_console::Kind::Err)
+            .map(|(_, t)| t.as_str())
+            .collect();
+        let joined = errs.join("\n");
+        assert!(joined.contains("tick-boom"), "{joined}");
+        assert!(joined.contains("stack traceback"), "{joined}");
+        // The handler's own file and line rides in the traceback, not just
+        // the message's first line.
+        assert!(joined.matches("lua2").count() >= 2, "{joined}");
+    }
+
+    /// A load-time failure names its file and line through `--check-mod`.
+    #[test]
+    fn a_load_error_reports_its_file_and_line_through_check_mod() {
+        let (dir, path) = hmod("load-boom", &[("scripts/init.lua", b"error('boom')")]);
+        let e = check_mod(&path, &[], None).unwrap_err();
+        assert!(e.contains("scripts/init.lua"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

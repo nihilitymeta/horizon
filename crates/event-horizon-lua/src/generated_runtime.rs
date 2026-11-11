@@ -82,7 +82,13 @@ pub(crate) fn pair_table(lua: &Lua, pos: [f32; 2]) -> mlua::Result<Table> {
 pub(crate) fn read_number(t: &Table, key: &str) -> mlua::Result<f32> {
     match t.get::<Value>(key)? {
         Value::Integer(n) => Ok(n as f32),
-        Value::Number(n) => Ok(n as f32),
+        // A Lua number past f32 narrows to infinity, and NaN stays NaN: both
+        // are refused here, as the struct fields are (`req_finite`).
+        Value::Number(n) => {
+            let f = n as f32;
+            f.check_writeback_finite(key)?;
+            Ok(f)
+        }
         v => Err(mlua::Error::runtime(format!(
             "{key}: expected a number, got {}",
             v.type_name()
@@ -685,19 +691,52 @@ macro_rules! gen_seed {
 /// One _event-table field's write-back: what the handler changed, read into
 /// the native _event after the handlers ran. Fields transcribed without a
 /// write tag expand to nothing. A `nil` where the native type is not optional
-/// leaves the native value unchanged.
+/// leaves the native value unchanged. Floats are checked on the converted
+/// value, after `FromLua` (a `"nan"` string coerces to NaN, and a finite
+/// `f64` narrows to an infinite `f32`), so non-finite results never reach
+/// the game.
 macro_rules! gen_writeback {
     ($table:ident, $lua:ident, $event:ident, $level:expr, $field:ident) => {};
     ($table:ident, $lua:ident, $event:ident, $level:expr, $field:ident, mut_scalar) => {
         match $table.get::<mlua::Value>(stringify!($field))? {
             mlua::Value::Nil => {}
-            v => $event.$field = mlua::FromLua::from_lua(v, $lua)?,
+            v => {
+                let converted = mlua::FromLua::from_lua(v, $lua)?;
+                crate::generated_runtime::WritebackFinite::check_writeback_finite(
+                    &converted,
+                    stringify!($field),
+                )?;
+                $event.$field = converted;
+            }
         }
     };
     ($table:ident, $lua:ident, $event:ident, $level:expr, $field:ident, mut_scalar_ref) => {
         match $table.get::<mlua::Value>(stringify!($field))? {
             mlua::Value::Nil => {}
-            v => *$event.$field = mlua::FromLua::from_lua(v, $lua)?,
+            v => {
+                let converted = mlua::FromLua::from_lua(v, $lua)?;
+                crate::generated_runtime::WritebackFinite::check_writeback_finite(
+                    &converted,
+                    stringify!($field),
+                )?;
+                *$event.$field = converted;
+            }
+        }
+    };
+    // An `&mut Option<scalar>` field: `nil` clears it (like `mut_opt_string`
+    // does), anything else writes back as `Some`, refusing non-finite
+    // floats the way the scalar arms do.
+    ($table:ident, $lua:ident, $event:ident, $level:expr, $field:ident, mut_opt_scalar) => {
+        match $table.get::<mlua::Value>(stringify!($field))? {
+            mlua::Value::Nil => *$event.$field = None,
+            v => {
+                let converted = mlua::FromLua::from_lua(v, $lua)?;
+                crate::generated_runtime::WritebackFinite::check_writeback_finite(
+                    &converted,
+                    stringify!($field),
+                )?;
+                *$event.$field = Some(converted);
+            }
         }
     };
     ($table:ident, $lua:ident, $event:ident, $level:expr, $field:ident, mut_string) => {
@@ -726,11 +765,13 @@ macro_rules! gen_writeback {
         match $table.get::<mlua::Value>(stringify!($field))? {
             mlua::Value::Nil => {}
             mlua::Value::Table(updated) => {
-                *$event.$field = [
-                    updated.get::<f64>("x")?,
-                    updated.get::<f64>("y")?,
-                    updated.get::<f64>("z")?,
-                ]
+                let x: f64 = updated.get("x")?;
+                let y: f64 = updated.get("y")?;
+                let z: f64 = updated.get("z")?;
+                crate::generated_runtime::check_finite(stringify!($field), "x", x)?;
+                crate::generated_runtime::check_finite(stringify!($field), "y", y)?;
+                crate::generated_runtime::check_finite(stringify!($field), "z", z)?;
+                *$event.$field = [x, y, z];
             }
             v => {
                 return Err(mlua::Error::runtime(format!(
@@ -745,7 +786,10 @@ macro_rules! gen_writeback {
         match $table.get::<mlua::Value>(stringify!($field))? {
             mlua::Value::Nil => {}
             mlua::Value::Table(updated) => {
-                *$event.$field = crate::generated_runtime::read_pair(&updated)?
+                let pair = crate::generated_runtime::read_pair(&updated)?;
+                crate::generated_runtime::check_finite(stringify!($field), "x", pair[0] as f64)?;
+                crate::generated_runtime::check_finite(stringify!($field), "y", pair[1] as f64)?;
+                *$event.$field = pair
             }
             v => {
                 return Err(mlua::Error::runtime(format!(
@@ -776,10 +820,7 @@ macro_rules! gen_writeback {
             mlua::Value::Nil => {}
             mlua::Value::Table(updated) => {
                 let owned = crate::generated_runtime::read_string_seq(&updated)?;
-                *$event.$field = owned
-                    .iter()
-                    .map(|s| crate::generated_runtime::static_str(s))
-                    .collect();
+                *$event.$field = crate::generated_runtime::static_strs(&owned)?;
             }
             v => {
                 return Err(mlua::Error::runtime(format!(
@@ -940,7 +981,7 @@ macro_rules! gen_listen {
                 Ok(())
             })();
             if let Err(e) = outcome {
-                self.error(format!("{hook}: {e}"));
+                self.error(crate::lua_mods::handler_error_text(hook, &e));
             }
         }
     };
@@ -977,7 +1018,7 @@ macro_rules! gen_listen {
                 Ok(())
             })();
             if let Err(e) = outcome {
-                self.error(format!("{hook}: {e}"));
+                self.error(crate::lua_mods::handler_error_text(hook, &e));
             }
         }
     };
@@ -1013,7 +1054,7 @@ macro_rules! gen_listen {
                 Ok(())
             })();
             if let Err(e) = outcome {
-                self.error(format!("{hook}: {e}"));
+                self.error(crate::lua_mods::handler_error_text(hook, &e));
             }
         }
     };
@@ -1046,7 +1087,7 @@ macro_rules! gen_listen {
                 Ok(())
             })();
             if let Err(e) = outcome {
-                self.error(format!("{hook}: {e}"));
+                self.error(crate::lua_mods::handler_error_text(hook, &e));
             }
         }
     };
@@ -1083,7 +1124,7 @@ macro_rules! gen_listen {
                 Ok(())
             })();
             if let Err(e) = outcome {
-                self.error(format!("{hook}: {e}"));
+                self.error(crate::lua_mods::handler_error_text(hook, &e));
             }
         }
     };
@@ -1166,7 +1207,7 @@ macro_rules! gen_server_tick {
                 Ok(())
             })();
             if let Err(e) = outcome {
-                self.error(format!("{hook}: {e}"));
+                self.error(crate::lua_mods::handler_error_text(hook, &e));
             }
         }
     };
@@ -1207,7 +1248,7 @@ macro_rules! gen_loot_drops {
                 Ok(())
             })();
             if let Err(e) = outcome {
-                self.error(format!("{hook}: {e}"));
+                self.error(crate::lua_mods::handler_error_text(hook, &e));
             }
         }
     };
@@ -1342,7 +1383,7 @@ macro_rules! gen_level_tick {
             // did: `handled` only counts on the success path, whose actions
             // already ran.
             if let Err(e) = outcome {
-                self.error(format!("{hook}: {e}"));
+                self.error(crate::lua_mods::handler_error_text(hook, &e));
                 return Flow::Continue;
             }
             if handled {
@@ -1440,7 +1481,7 @@ macro_rules! gen_block_entity_tick {
             // conversion or the data writeback — only logs, as the old
             // `hook_error` did.
             if let Err(e) = outcome {
-                self.error(format!("{hook}: {e}"));
+                self.error(crate::lua_mods::handler_error_text(hook, &e));
             }
         }
     };
@@ -1587,7 +1628,7 @@ macro_rules! gen_mob_ai_register {
             // every handler returns. An error from inside the apply closure
             // keeps the actions it already applied, as before.
             if let Err(e) = outcome {
-                self.error(format!("{hook}: {e}"));
+                self.error(crate::lua_mods::handler_error_text(hook, &e));
             }
         }
     };
@@ -1762,7 +1803,7 @@ macro_rules! gen_data_pack_files {
                 Ok(())
             })();
             if let Err(e) = outcome {
-                self.error(format!("{hook}: {e}"));
+                self.error(crate::lua_mods::handler_error_text(hook, &e));
             }
         }
     };
@@ -1884,7 +1925,7 @@ macro_rules! gen_register_commands {
                 Ok(())
             })();
             if let Err(e) = outcome {
-                self.error(format!("{hook}: {e}"));
+                self.error(crate::lua_mods::handler_error_text(hook, &e));
             }
         }
     };
@@ -2118,6 +2159,22 @@ macro_rules! gen_cancel {
 pub trait LuaStruct: Sized {
     fn to_value(lua: &Lua, v: &Self) -> mlua::Result<Value>;
     fn from_value(lua: &Lua, v: Value, field: &str) -> mlua::Result<Self>;
+    /// A whole sequence written back, element by element. A type whose
+    /// values carry `&'static str` names overrides it, so the whole write is
+    /// validated before anything is interned.
+    fn from_seq(lua: &Lua, t: &Table, field: &str) -> mlua::Result<Vec<Self>> {
+        let len = seq_len(lua, t, field)?;
+        let mut out = Vec::with_capacity(len);
+        for i in 1..=len {
+            let v: Value = t.get(i)?;
+            let v = match v {
+                Value::Boolean(false) => Value::Nil,
+                v => v,
+            };
+            out.push(Self::from_value(lua, v, field)?);
+        }
+        Ok(out)
+    }
 }
 
 /// A required table key back through its own shape; a wrong shape errors
@@ -2127,6 +2184,89 @@ pub(crate) fn req_key<T: mlua::FromLua>(t: &Table, key: &str, field: &str) -> ml
         mlua::Error::runtime(format!("{field}.{key}: expected a different shape here"))
     })
 }
+
+/// `req_key` for a float or any scalar the script writes back: checked after
+/// the conversion, so a `"nan"` string, a Lua number past f32, and infinity
+/// are refused naming `field.key`.
+pub(crate) fn req_finite<T: mlua::FromLua + WritebackFinite>(
+    t: &Table,
+    key: &str,
+    field: &str,
+) -> mlua::Result<T> {
+    let v: T = req_key(t, key, field)?;
+    v.check_writeback_finite(&format!("{field}.{key}"))?;
+    Ok(v)
+}
+
+/// A whole value the script wrote back (the `value` replace arm), checked
+/// after the conversion like `req_finite`.
+pub(crate) fn finite_value<T: mlua::FromLua + WritebackFinite>(
+    v: Value,
+    lua: &Lua,
+    field: &str,
+) -> mlua::Result<T> {
+    let converted = T::from_lua(v, lua)?;
+    converted.check_writeback_finite(field)?;
+    Ok(converted)
+}
+
+/// A float the script wrote back, refused when it is NaN or infinite, like
+/// Duration: non-finite floats never reach the game.
+pub(crate) fn check_finite(field: &str, key: &str, n: f64) -> mlua::Result<()> {
+    if n.is_finite() {
+        Ok(())
+    } else {
+        Err(mlua::Error::runtime(format!(
+            "{field}.{key}: expected a finite number, got {n}"
+        )))
+    }
+}
+
+/// A scalar the script wrote back, checked on the converted value: floats
+/// refuse NaN and infinity (a `"nan"` string coerces through `FromLua`, and
+/// a finite `f64` narrows to an infinite `f32`, so checking the Lua number
+/// first misses both), while every other scalar is always finite.
+pub(crate) trait WritebackFinite {
+    fn check_writeback_finite(&self, field: &str) -> mlua::Result<()>;
+}
+
+impl WritebackFinite for f32 {
+    fn check_writeback_finite(&self, field: &str) -> mlua::Result<()> {
+        if self.is_finite() {
+            Ok(())
+        } else {
+            Err(mlua::Error::runtime(format!(
+                "{field}: expected a finite number, got {self}"
+            )))
+        }
+    }
+}
+
+impl WritebackFinite for f64 {
+    fn check_writeback_finite(&self, field: &str) -> mlua::Result<()> {
+        if self.is_finite() {
+            Ok(())
+        } else {
+            Err(mlua::Error::runtime(format!(
+                "{field}: expected a finite number, got {self}"
+            )))
+        }
+    }
+}
+
+macro_rules! always_finite {
+    ($($t:ty),* $(,)?) => {
+        $(impl WritebackFinite for $t {
+            fn check_writeback_finite(&self, _field: &str) -> mlua::Result<()> {
+                Ok(())
+            }
+        })*
+    };
+}
+
+always_finite!(
+    bool, char, i8, i16, i32, i64, u8, u16, u32, u64, usize, isize, i128, u128
+);
 
 /// A required nested table: `{field}.{key}` must be a table for `from_value`.
 pub(crate) fn req_table(
@@ -2159,21 +2299,105 @@ pub(crate) fn lua_string(v: Value, field: &str) -> mlua::Result<String> {
     }
 }
 
+/// How many distinct strings the scripts may hand over where the engine
+/// needs `&'static str` (command names, emissive layers): repeated `/reload`
+/// cycles reuse the same names, and anything past this is refused with a Lua
+/// error instead of leaking without bound.
+pub(crate) const INTERNED_CAP: usize = 4096;
+
+/// How long one handed-over name may be, in bytes: a longer name is refused
+/// with a Lua error naming this limit instead of sticking around for the
+/// process.
+pub(crate) const INTERNED_NAME_MAX: usize = 256;
+
 /// One interned copy of each distinct string the scripts hand over where the
-/// engine needs `&'static str` (command names, emissive layers): native mods
-/// are trusted code, and the set of names is small and stable.
-pub(crate) fn static_str(s: &str) -> &'static str {
-    use std::collections::HashSet;
-    use std::sync::Mutex;
-    static INTERNED: Mutex<Option<HashSet<&'static str>>> = Mutex::new(None);
-    let mut guard = INTERNED.lock().unwrap_or_else(|e| e.into_inner());
-    let set = guard.get_or_insert_with(HashSet::new);
-    if let Some(found) = set.get(s) {
-        return found;
+/// engine needs `&'static str` (command names, emissive layers): the same
+/// name always answers the same leaked copy (so repeated `/reload` cycles
+/// with the same names never grow the table), names longer than
+/// [`INTERNED_NAME_MAX`] bytes are refused, and distinct names past
+/// [`INTERNED_CAP`] are refused. Native mods are trusted code, and the set
+/// of names is small and stable.
+#[derive(Default)]
+pub(crate) struct StrInterner {
+    set: std::collections::HashSet<&'static str>,
+}
+
+impl StrInterner {
+    /// The interned copy of `s`, leaking one copy per distinct string.
+    pub(crate) fn intern(&mut self, s: &str) -> mlua::Result<&'static str> {
+        check_name_len(s)?;
+        if let Some(found) = self.set.get(s) {
+            return Ok(found);
+        }
+        if self.set.len() >= INTERNED_CAP {
+            return Err(mlua::Error::runtime(format!(
+                "too many interned strings: at most {INTERNED_CAP} distinct names"
+            )));
+        }
+        let leaked: &'static str = Box::leak(s.to_owned().into_boxed_str());
+        self.set.insert(leaked);
+        Ok(leaked)
     }
-    let leaked: &'static str = Box::leak(s.to_owned().into_boxed_str());
-    set.insert(leaked);
-    leaked
+
+    /// The interned copies of a whole write-back at once: the lengths and
+    /// the remaining capacity are validated before anything is interned, so
+    /// a refused write leaves the table unchanged.
+    pub(crate) fn intern_all(&mut self, names: &[String]) -> mlua::Result<Vec<&'static str>> {
+        for s in names {
+            check_name_len(s)?;
+        }
+        let mut unseen = std::collections::HashSet::new();
+        for s in names {
+            if !self.set.contains(s.as_str()) {
+                unseen.insert(s.as_str());
+            }
+        }
+        if self.set.len() + unseen.len() > INTERNED_CAP {
+            return Err(mlua::Error::runtime(format!(
+                "too many interned strings: at most {INTERNED_CAP} distinct names"
+            )));
+        }
+        let mut out = Vec::with_capacity(names.len());
+        for s in names {
+            out.push(self.intern(s)?);
+        }
+        Ok(out)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.set.len()
+    }
+}
+
+/// One handed-over name's length, refused past the limit.
+fn check_name_len(s: &str) -> mlua::Result<()> {
+    if s.len() > INTERNED_NAME_MAX {
+        return Err(mlua::Error::runtime(format!(
+            "interned name too long: at most {INTERNED_NAME_MAX} bytes, got {}",
+            s.len()
+        )));
+    }
+    Ok(())
+}
+
+/// Every `&'static str` the scripts hand over lives here, one leaked copy
+/// per distinct string for the process.
+static INTERNED: std::sync::LazyLock<std::sync::Mutex<StrInterner>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(StrInterner::default()));
+
+pub(crate) fn static_str(s: &str) -> mlua::Result<&'static str> {
+    INTERNED.lock().unwrap_or_else(|e| e.into_inner()).intern(s)
+}
+
+/// A whole `commands` write-back at once, validated before anything is
+/// interned: a refused write leaves the table and the previous value
+/// unchanged.
+pub(crate) fn static_strs(names: &[String]) -> mlua::Result<Vec<&'static str>> {
+    INTERNED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .intern_all(names)
 }
 
 /// A seeded sequence table's length and its `nil` holes (1-based), hidden
@@ -2283,17 +2507,7 @@ pub(crate) fn struct_vec_from_lua<T: LuaStruct>(
     t: &Table,
     field: &str,
 ) -> mlua::Result<Vec<T>> {
-    let len = seq_len(lua, t, field)?;
-    let mut out = Vec::with_capacity(len);
-    for i in 1..=len {
-        let v: Value = t.get(i)?;
-        let v = match v {
-            Value::Boolean(false) => Value::Nil,
-            v => v,
-        };
-        out.push(T::from_value(lua, v, field)?);
-    }
-    Ok(out)
+    T::from_seq(lua, t, field)
 }
 
 /// Loot's kind filter: the block's id or the dying entity's kind, with the
@@ -2568,20 +2782,47 @@ impl LuaStruct for (&'static str, &'static str) {
         Ok(Value::Table(t))
     }
     fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
-        match v {
-            Value::Table(t) => {
-                let a: Value = t.get("a")?;
-                let b: Value = t.get("b")?;
-                Ok((
-                    <&'static str>::from_value(_lua, a, field)?,
-                    <&'static str>::from_value(_lua, b, field)?,
-                ))
-            }
-            other => Err(mlua::Error::runtime(format!(
-                "{field}: expected {{a, b}}, got {}",
-                other.type_name()
-            ))),
+        let (a, b) = emissive_names(v, field)?;
+        Ok((static_str(&a)?, static_str(&b)?))
+    }
+    /// The whole write's names are read first and interned together, so a
+    /// write past the cap (or with a name too long) is refused with no name
+    /// interned.
+    fn from_seq(lua: &Lua, t: &Table, field: &str) -> mlua::Result<Vec<Self>> {
+        let len = seq_len(lua, t, field)?;
+        let mut names = Vec::with_capacity(2 * len);
+        for i in 1..=len {
+            let v: Value = t.get(i)?;
+            let v = match v {
+                Value::Boolean(false) => Value::Nil,
+                v => v,
+            };
+            let (a, b) = emissive_names(v, field)?;
+            names.push(a);
+            names.push(b);
         }
+        let interned = static_strs(&names)?;
+        Ok(interned
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|p| (p[0], p[1]))
+            .collect())
+    }
+}
+
+/// An emissive layer's two names, read from its `{a, b}` table.
+fn emissive_names(v: Value, field: &str) -> mlua::Result<(String, String)> {
+    match v {
+        Value::Table(t) => {
+            let a: Value = t.get("a")?;
+            let b: Value = t.get("b")?;
+            Ok((lua_string(a, field)?, lua_string(b, field)?))
+        }
+        other => Err(mlua::Error::runtime(format!(
+            "{field}: expected {{a, b}}, got {}",
+            other.type_name()
+        ))),
     }
 }
 
@@ -2743,10 +2984,15 @@ impl LuaStruct for Option<[f32; 2]> {
     fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
         match v {
             Value::Nil | Value::Boolean(false) => Ok(None),
-            Value::Table(t) => Ok(Some([
-                req_key::<f32>(&t, "x", field)?,
-                req_key::<f32>(&t, "y", field)?,
-            ])),
+            Value::Table(t) => {
+                let [x, y] = [
+                    req_finite::<f32>(&t, "x", field)?,
+                    req_finite::<f32>(&t, "y", field)?,
+                ];
+                check_finite(field, "x", x as f64)?;
+                check_finite(field, "y", y as f64)?;
+                Ok(Some([x, y]))
+            }
             other => Err(mlua::Error::runtime(format!(
                 "{field}: expected {{x, y}} or nil, got {}",
                 other.type_name()
@@ -2766,9 +3012,9 @@ impl LuaStruct for NativeZoom {
     fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
         match v {
             Value::Table(t) => Ok(NativeZoom {
-                factor: req_key::<f32>(&t, "factor", field)?,
+                factor: req_finite::<f32>(&t, "factor", field)?,
                 smooth: req_key::<bool>(&t, "smooth", field)?,
-                turn: req_key::<f32>(&t, "turn", field)?,
+                turn: req_finite::<f32>(&t, "turn", field)?,
             }),
             other => Err(mlua::Error::runtime(format!(
                 "{field}: expected a zoom table, got {}",
@@ -2794,8 +3040,8 @@ impl LuaStruct for NativeMinimap {
                 let corner: Value = t.get("corner")?;
                 Ok(NativeMinimap {
                     corner: Corner::from_value(lua, corner, field)?,
-                    size: req_key::<f32>(&t, "size", field)?,
-                    blocks_per_pixel: req_key::<f32>(&t, "blocks_per_pixel", field)?,
+                    size: req_finite::<f32>(&t, "size", field)?,
+                    blocks_per_pixel: req_finite::<f32>(&t, "blocks_per_pixel", field)?,
                     rotate: req_key::<bool>(&t, "rotate", field)?,
                     round: req_key::<bool>(&t, "round", field)?,
                 })
@@ -2853,11 +3099,11 @@ impl LuaStruct for NativeScreen {
             Value::Table(t) => {
                 let (slots, at) = req_table(lua, &t, "slots", field)?;
                 Ok(NativeScreen {
-                    width: req_key::<f32>(&t, "width", field)?,
-                    height: req_key::<f32>(&t, "height", field)?,
+                    width: req_finite::<f32>(&t, "width", field)?,
+                    height: req_finite::<f32>(&t, "height", field)?,
                     slots: struct_vec_from_lua(lua, &slots, &at)?,
-                    inventory_y: req_key::<f32>(&t, "inventory_y", field)?,
-                    inventory_x: req_key::<f32>(&t, "inventory_x", field)?,
+                    inventory_y: req_finite::<f32>(&t, "inventory_y", field)?,
+                    inventory_x: req_finite::<f32>(&t, "inventory_x", field)?,
                     own_labels: req_key::<bool>(&t, "own_labels", field)?,
                     own_background: req_key::<bool>(&t, "own_background", field)?,
                 })
@@ -3454,7 +3700,7 @@ impl LuaStruct for MerchantOffer {
                     reward_exp: req_key::<bool>(&t, "reward_exp", field)?,
                     special_price_diff: req_key::<i32>(&t, "special_price_diff", field)?,
                     demand: req_key::<i32>(&t, "demand", field)?,
-                    price_multiplier: req_key::<f32>(&t, "price_multiplier", field)?,
+                    price_multiplier: req_finite::<f32>(&t, "price_multiplier", field)?,
                     xp: req_key::<i32>(&t, "xp", field)?,
                 })
             }
@@ -3680,7 +3926,7 @@ impl LuaStruct for MusicLayer {
         match v {
             Value::Table(t) => Ok(MusicLayer {
                 sound: req_key::<String>(&t, "sound", field)?,
-                volume: req_key::<f32>(&t, "volume", field)?,
+                volume: req_finite::<f32>(&t, "volume", field)?,
             }),
             other => Err(mlua::Error::runtime(format!(
                 "{field}: expected a layer table, got {}",
@@ -4064,11 +4310,17 @@ impl LuaStruct for [f64; 3] {
     }
     fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
         match v {
-            Value::Table(t) => Ok([
-                req_key::<f64>(&t, "x", field)?,
-                req_key::<f64>(&t, "y", field)?,
-                req_key::<f64>(&t, "z", field)?,
-            ]),
+            Value::Table(t) => {
+                let [x, y, z] = [
+                    req_finite::<f64>(&t, "x", field)?,
+                    req_finite::<f64>(&t, "y", field)?,
+                    req_finite::<f64>(&t, "z", field)?,
+                ];
+                check_finite(field, "x", x)?;
+                check_finite(field, "y", y)?;
+                check_finite(field, "z", z)?;
+                Ok([x, y, z])
+            }
             other => Err(mlua::Error::runtime(format!(
                 "{field}: expected {{x, y, z}}, got {}",
                 other.type_name()
@@ -4112,11 +4364,17 @@ impl LuaStruct for [f32; 3] {
     }
     fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
         match v {
-            Value::Table(t) => Ok([
-                req_key::<f32>(&t, "x", field)?,
-                req_key::<f32>(&t, "y", field)?,
-                req_key::<f32>(&t, "z", field)?,
-            ]),
+            Value::Table(t) => {
+                let [x, y, z] = [
+                    req_finite::<f32>(&t, "x", field)?,
+                    req_finite::<f32>(&t, "y", field)?,
+                    req_finite::<f32>(&t, "z", field)?,
+                ];
+                check_finite(field, "x", x as f64)?;
+                check_finite(field, "y", y as f64)?;
+                check_finite(field, "z", z as f64)?;
+                Ok([x, y, z])
+            }
             other => Err(mlua::Error::runtime(format!(
                 "{field}: expected {{x, y, z}}, got {}",
                 other.type_name()
@@ -4135,10 +4393,15 @@ impl LuaStruct for [f32; 2] {
     }
     fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
         match v {
-            Value::Table(t) => Ok([
-                req_key::<f32>(&t, "x", field)?,
-                req_key::<f32>(&t, "y", field)?,
-            ]),
+            Value::Table(t) => {
+                let [x, y] = [
+                    req_finite::<f32>(&t, "x", field)?,
+                    req_finite::<f32>(&t, "y", field)?,
+                ];
+                check_finite(field, "x", x as f64)?;
+                check_finite(field, "y", y as f64)?;
+                Ok([x, y])
+            }
             other => Err(mlua::Error::runtime(format!(
                 "{field}: expected {{x, y}}, got {}",
                 other.type_name()
@@ -4289,12 +4552,17 @@ impl LuaStruct for [[f32; 4]; 8] {
                 let mut out = [[0.0f32; 4]; 8];
                 for (i, slot) in slots.iter().enumerate() {
                     let at = format!("{field}[{}]", i + 1);
-                    out[i] = [
-                        req_key::<f32>(slot, "x", &at)?,
-                        req_key::<f32>(slot, "y", &at)?,
-                        req_key::<f32>(slot, "z", &at)?,
-                        req_key::<f32>(slot, "w", &at)?,
+                    let [x, y, z, w] = [
+                        req_finite::<f32>(slot, "x", &at)?,
+                        req_finite::<f32>(slot, "y", &at)?,
+                        req_finite::<f32>(slot, "z", &at)?,
+                        req_finite::<f32>(slot, "w", &at)?,
                     ];
+                    check_finite(&at, "x", x as f64)?;
+                    check_finite(&at, "y", y as f64)?;
+                    check_finite(&at, "z", z as f64)?;
+                    check_finite(&at, "w", w as f64)?;
+                    out[i] = [x, y, z, w];
                 }
                 Ok(out)
             }
@@ -4361,7 +4629,7 @@ impl LuaStruct for &'static str {
         str_value(lua, v)
     }
     fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
-        Ok(static_str(&lua_string(v, field)?))
+        static_str(&lua_string(v, field)?)
     }
 }
 
@@ -4503,7 +4771,11 @@ macro_rules! gen_replace_out {
     ($table:ident, $lua:ident, $out:ident : value $(, $r:expr $(, $s:expr)?)?) => {
         Ok(match $table.get::<mlua::Value>(stringify!($out))? {
             mlua::Value::Nil => None,
-            v => Some(mlua::FromLua::from_lua(v, $lua)?),
+            v => Some(crate::generated_runtime::finite_value(
+                v,
+                $lua,
+                stringify!($out),
+            )?),
         })
     };
     ($table:ident, $lua:ident, $out:ident : pair $(, $r:expr $(, $s:expr)?)?) => {
@@ -4634,7 +4906,7 @@ macro_rules! gen_replace {
             match outcome {
                 Ok(value) => value,
                 Err(e) => {
-                    self.error(format!("{hook}: {e}"));
+                    self.error(crate::lua_mods::handler_error_text(hook, &e));
                     None
                 }
             }
@@ -4680,7 +4952,7 @@ macro_rules! gen_replace {
             match outcome {
                 Ok(value) => value,
                 Err(e) => {
-                    self.error(format!("{hook}: {e}"));
+                    self.error(crate::lua_mods::handler_error_text(hook, &e));
                     None
                 }
             }
@@ -4725,7 +4997,7 @@ macro_rules! gen_replace {
             match outcome {
                 Ok(value) => value,
                 Err(e) => {
-                    self.error(format!("{hook}: {e}"));
+                    self.error(crate::lua_mods::handler_error_text(hook, &e));
                     None
                 }
             }
@@ -4769,7 +5041,7 @@ macro_rules! gen_replace {
             match outcome {
                 Ok(value) => value,
                 Err(e) => {
-                    self.error(format!("{hook}: {e}"));
+                    self.error(crate::lua_mods::handler_error_text(hook, &e));
                     None
                 }
             }
@@ -4813,7 +5085,7 @@ macro_rules! gen_replace {
             match outcome {
                 Ok(value) => value,
                 Err(e) => {
-                    self.error(format!("{hook}: {e}"));
+                    self.error(crate::lua_mods::handler_error_text(hook, &e));
                     None
                 }
             }
