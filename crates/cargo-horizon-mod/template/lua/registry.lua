@@ -1,6 +1,7 @@
 -- What the mod adds, declared once when the game starts (docs/lua-bindings.md,
 -- "Declaring content"). Adding an item, block or entity type here
--- needs the game restarted; scripts/init.lua reloads with /reload.
+-- needs the game restarted; scripts/server/init.lua and
+-- scripts/client/init.lua reload with /reload.
 -- As the mod grows, move parts into scripts/registry/ and require them
 -- here: require("@registry/items") runs scripts/registry/items.lua.
 local ns = registry.id

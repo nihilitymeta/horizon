@@ -985,6 +985,42 @@ macro_rules! gen_listen {
             }
         }
     };
+    // The client tick's start: like `game_mut` below, but a reload the
+    // developer tools asked for runs at the start of the client tick for
+    // client states, as `gen_server_tick` does at a server tick's start.
+    // The poll runs before the `has_any_handlers` early-out, so a client
+    // state with no `client_tick_pre` handler still reloads (its timers
+    // live on `client_tick_post`, not here).
+    (client_tick_pre, game_mut, $event:ty, (none), []) => {
+        fn client_tick_pre(&self, host: &mut dyn horizon_client::mod_api::Host, _event: &mut $event) {
+            let hook = "client_tick_pre";
+            if self.reload_asked() {
+                self.reload_now("the console");
+            }
+            if !self.has_any_handlers(hook) {
+                return;
+            }
+            let outcome = (|| -> mlua::Result<()> {
+                let lua = &self.lua;
+                let table = lua.create_table()?;
+                #[cfg(test)] crate::generated_runtime::note_event_table();
+                self.call_kind(
+                    hook,
+                    None,
+                    host,
+                    table.clone(),
+                    &mut |host, action, args| {
+                        self.run_action(host, action, args)?;
+                        Ok(())
+                    },
+                )?;
+                Ok(())
+            })();
+            if let Err(e) = outcome {
+                self.error(crate::lua_mods::handler_error_text(hook, &e));
+            }
+        }
+    };
     ($name:ident, game_mut, $event:ty, $kind:tt, [$($field:ident : $seed:ident $(($st:ty))? $(=> $write:ident $(($wt:ty))?)?),* $(,)?]) => {
         fn $name(&self, host: &mut dyn horizon_client::mod_api::Host, _event: &mut $event) {
             let hook = stringify!($name);
@@ -1698,10 +1734,20 @@ pub(crate) fn batch_table<'s, 'e: 's, 'h: 's>(
 /// closes, never undefined behaviour; a handler error resets the overrun
 /// count through `finish`, while a budget miss counts toward disabling
 /// until `/reload` registers the hook again.
+///
+/// Frame hooks run on the Render thread and must never wait for the
+/// turn: each arm takes it with a non-blocking `try_acquire` before the
+/// scope (a `lua.scope` holds the Lua lock for its whole lifetime, so a
+/// blocking wait inside it would deadlock a holder like `log_line` on
+/// `Log writer` that needs that lock). When the state is busy the frame
+/// is skipped silently (no error line).
 macro_rules! gen_frame {
     ($name:ident, game_mut, $event:ty, $kind:tt, [batch : hud_batch, corners : corners $(,)?]) => {
         fn $name(&self, host: &mut dyn horizon_client::mod_api::Host, _event: &mut $event) {
             let hook = stringify!($name);
+            let Some(_frame_turn) = self.turn.try_acquire(Some(hook)) else {
+                return;
+            };
             if !self.has_handlers(hook) {
                 self.note_frame_outcome(hook, false);
                 return;
@@ -1735,6 +1781,9 @@ macro_rules! gen_frame {
     ($name:ident, game_mut, $event:ty, $kind:tt, [layer : cloned, batch : hud_batch $(,)?]) => {
         fn $name(&self, host: &mut dyn horizon_client::mod_api::Host, _event: &mut $event) {
             let hook = stringify!($name);
+            let Some(_frame_turn) = self.turn.try_acquire(Some(hook)) else {
+                return;
+            };
             if !self.has_handlers(hook) {
                 self.note_frame_outcome(hook, false);
                 return;

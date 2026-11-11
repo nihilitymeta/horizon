@@ -21,7 +21,9 @@
 use horizon_client::dev_input::mods::{
     ModStatus, reload_asked, reload_generation, set_error, set_status,
 };
+use horizon_client::mod_api::HookSide;
 use horizon_client::mod_api::ItemStack;
+use horizon_client::mod_api::ModSide;
 use horizon_client::mod_api::NativeCommand;
 use horizon_client::mod_api::{
     AttachmentCodec, AttachmentType, BlockStateId, Compound, Flow, Holder, Hooks, Host,
@@ -34,6 +36,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
+#[path = "turn.rs"]
+pub(crate) mod turn;
 
 /// A line for the developer tools' console, when they are on.
 fn to_console(error: bool, line: String) {
@@ -108,13 +112,102 @@ impl Budget {
     }
 }
 
-/// The file a scripted mod starts from, inside its folder.
-pub const ENTRY: &str = horizon_mods::content::SCRIPT_ENTRY;
+/// The game a mod's Lua state runs in. A scripted mod has one state per side
+/// it has an entry for: `scripts/server/init.lua` (the server's state) and
+/// `scripts/client/init.lua` (the window's). Both read `scripts/shared/`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LuaSide {
+    Server,
+    Client,
+}
+
+impl LuaSide {
+    /// The side's name: `horizon.side` gives it, and it names the folder.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LuaSide::Server => "server",
+            LuaSide::Client => "client",
+        }
+    }
+
+    /// The file the side's state starts from.
+    pub fn entry(self) -> &'static str {
+        match self {
+            LuaSide::Server => horizon_mods::content::SERVER_ENTRY,
+            LuaSide::Client => horizon_mods::content::CLIENT_ENTRY,
+        }
+    }
+
+    /// Whether this side's state may register a handler for a hook on
+    /// `hook`'s side: its own side's hooks, and the hooks of both.
+    pub fn allows(self, hook: HookSide) -> bool {
+        matches!(
+            (self, hook),
+            (LuaSide::Server, HookSide::Server | HookSide::Both)
+                | (LuaSide::Client, HookSide::Client | HookSide::Both)
+        )
+    }
+}
+
+/// The folder every side's state reads its modules from, beside the side's own.
+const SHARED_DIR: &str = "scripts/shared";
 
 /// The content mod's manifest, which names the mod.
 const MANIFEST: &str = "horizon-mod.toml";
 /// The Lua global the game provides.
 const GLOBAL: &str = "horizon";
+/// The `horizon` names a client state keeps: everything else on the
+/// table is server-only and raises in a client state.
+const CLIENT_API: &[&str] = &[
+    "mod_id",
+    "mod_version",
+    "side",
+    "libraries",
+    "log",
+    "on",
+    "after",
+    "every",
+    "ticks",
+    "config",
+    "save_config",
+    "dev",
+    "distance",
+    "handled",
+    "cancel",
+    "require",
+];
+/// The server-only `horizon` names a client state's draw-hook handler
+/// (`hud`, `gui_layer_post`) may still call: the reads that answer through
+/// the shared host (`Reader::Shared`, `&self` only), and the two queued
+/// chat actions (`tell`, `broadcast`) that run after the frame. The
+/// saved-table reads and `summon` are listed only so the call reaches
+/// their draw-hook refusal (they are never served in a draw hook); every
+/// other server-only name (queued actions like `set_block`, declarations
+/// like `command`, `goal`, `block_entity`) raises the server-only error
+/// even inside a draw hook.
+const DRAW_API: &[&str] = &[
+    "block",
+    "block_property",
+    "light",
+    "surface_height",
+    "time",
+    "raycast",
+    "player",
+    "players",
+    "acting_player",
+    "mob",
+    "mobs",
+    "inventory",
+    "count_items",
+    "carried_items",
+    "data",
+    "world_data",
+    "player_data",
+    "entity_data",
+    "summon",
+    "tell",
+    "broadcast",
+];
 /// The registry key of the handlers table: `name -> { fn, fn, ... }`.
 const HANDLERS: &str = "horizon_handlers";
 /// The registry key of the handlers that watch one kind of event
@@ -205,7 +298,7 @@ return {
 /// many runners are in progress (0: no hook's handlers run, and an action
 /// has nowhere to go).
 const HOST_SLOT: &str = "horizon_host";
-/// The registry key of the timers' own `server_tick` handler, so a listing
+/// The registry key of the timers' own tick handler, so a listing
 /// of the handlers can leave it out.
 pub(crate) const TIMERS_HANDLER: &str = "horizon_timers";
 /// `horizon.block`, `block_property`, `mob`, `mobs`, `players`, `player`,
@@ -261,8 +354,8 @@ return function(slot, horizon, base)
 end
 "#;
 /// `horizon.after(ticks, fn)` and `horizon.every(ticks, fn)`: timers run from
-/// the server's tick (the end of a tick while the world runs), as a handler
-/// of their own; a timer that fails is reported to the log (`report`) and,
+/// the state's own tick (the end of a server tick while the world runs, or
+/// each client tick), as a handler of their own; a timer that fails is reported to the log (`report`) and,
 /// if repeating, kept, and the timers after it run: the handler itself does
 /// not fail, so what the other timers asked for and saved stands.
 const TIMERS_CODE: &str = r#"
@@ -291,7 +384,9 @@ return function(horizon, report, base)
   end
   horizon.ticks = function() return tick end
   local function run_timers(event)
-    if event.phase ~= "end" or not event.world_running then return end
+    -- A server tick counts only its end phase in a running world;
+    -- a client tick has no phase to gate on, and counts outright.
+    if event.phase ~= nil and (event.phase ~= "end" or not event.world_running) then return end
     tick = tick + 1
     local i = 1
     while i <= #timers do
@@ -317,7 +412,6 @@ return function(horizon, report, base)
       end
     end
   end
-  horizon.on("server_tick", run_timers)
   return run_timers
 end
 "#;
@@ -909,7 +1003,7 @@ fn install_reads(lua: &Lua, api: &Table) -> mlua::Result<()> {
 }
 
 /// Installs the timers (`TIMERS_CODE`) on the `horizon` table: their handler
-/// is the first `server_tick` handler.
+/// is the first handler of the state's own tick hook.
 /// A usage's words before its arguments (`parasite count` of `parasite count
 /// [kind:word]`), joined by single spaces: the command's name.
 fn command_words(usage: &str) -> String {
@@ -1001,18 +1095,31 @@ fn command_args(
     Ok(None)
 }
 
-fn install_timers(lua: &Lua, api: &Table, id: &str) -> mlua::Result<()> {
+fn install_timers(lua: &Lua, api: &Table, id: &str, side: LuaSide) -> mlua::Result<()> {
     let install: Function = lua.load(TIMERS_CODE).set_name("horizon").eval()?;
     let base: Table = lua.named_registry_value(BASE)?;
     let id = id.to_owned();
+    // The state's own tick: `server_tick` on the server, `client_tick_post`
+    // on the client. A client timer counts client ticks, and vice versa.
+    let hook = match side {
+        LuaSide::Server => "server_tick",
+        LuaSide::Client => "client_tick_post",
+    };
+    let hook_report = format!("{hook}: timer");
     // A timer's failure reads as a handler's does: the same formatter, the
     // traceback capped to 20 frames.
     let report = lua.create_function(move |_, message: String| {
-        let text = handler_error_text("server_tick: timer", &mlua::Error::runtime(message));
+        let text = handler_error_text(&hook_report, &mlua::Error::runtime(message));
         log::error!("[lua:{id}] {text}");
         Ok(())
     })?;
     let handler: Function = install.call((api, report, base))?;
+    // The timers' own handler heads the hook's list, before any script's.
+    // It is the runtime's, not the script's, so it is put there here and
+    // not through `horizon.on`: the side gate refuses a state that
+    // registers a hook of the other side, and a timer is not one.
+    let handlers: Table = lua.named_registry_value(HANDLERS)?;
+    table_in(lua, &handlers, hook)?.push(handler.clone())?;
     lua.set_named_registry_value(TIMERS_HANDLER, handler)
 }
 /// The registry key of the modules `require` ran: `name -> value`.
@@ -1021,6 +1128,8 @@ const LOADED: &str = "horizon_loaded";
 /// One scripted mod: its folder and its Lua state.
 pub struct LuaMod {
     id: String,
+    /// The game this state runs in: its folder, entry and `horizon.side`.
+    side: LuaSide,
     /// The mod's version, from its manifest (`horizon.mod_version`).
     version: String,
     /// The versions of the mods it depends on, by id (`horizon.libraries`).
@@ -1067,13 +1176,16 @@ pub struct LuaMod {
     /// reach then). The generated `player` seeds keep it through
     /// `player_by_uuid`.
     names: Mutex<HashMap<u128, String>>,
-    /// The mod's settings file (`horizon.config`): `config/<id>.json` of
-    /// the game folder; none when the folder is not known (a test).
+    /// The mod's settings file (`horizon.config`): the server state uses
+    /// `config/<id>.json` of the game folder, the client state
+    /// `config/<id>.client.json`; none when the folder is not known (a test).
     config_path: Option<PathBuf>,
     /// Reloads done, for the status.
     reloads: AtomicU32,
     /// The `RELOAD_ALL` generation served last.
     reload_seen: AtomicU32,
+    /// One thread at a time runs Lua for this state.
+    turn: turn::ReentrantTurn,
 }
 
 /// A mod's goal definitions, shared with the `horizon.goal` function.
@@ -1158,6 +1270,7 @@ impl std::fmt::Debug for LuaMod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LuaMod")
             .field("id", &self.id)
+            .field("side", &self.side)
             .field("source", &self.source)
             .finish()
     }
@@ -1170,13 +1283,28 @@ type Scripts = Arc<Mutex<HashMap<String, String>>>;
 /// The scripted mods the game runs, in order, as the trait mod list
 /// `entry::main_with` takes: the installed mods in `horizon-mods/` that are
 /// on (`horizon-mods.txt`, as the content loader reads it) and the `--dev-mod`
-/// folders of the command line, when they have capability `scripts`. One
+/// folders of the command line, when they have capability `scripts`. Each
+/// mod gives one state per side it has a folder for (`scripts/server/`,
+/// `scripts/client/`); a `--dedicated` server gives no client state. One
 /// whose scripts fail to load is left out with the error in the log.
 pub fn discover(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
+    load_states(args)
+        .into_iter()
+        .map(|m| Box::new(m) as Box<dyn Hooks>)
+        .collect()
+}
+
+/// The states `discover` runs, in load order (see there), before they are boxed.
+fn load_states(args: impl Iterator<Item = String>) -> Vec<LuaMod> {
     let mut dev: Vec<PathBuf> = Vec::new();
     let mut game_dir: Option<PathBuf> = None;
+    let mut dedicated = false;
     let mut args = args.peekable();
     while let Some(arg) = args.next() {
+        if arg == "--dedicated" {
+            dedicated = true;
+            continue;
+        }
         let value = |flag: &str, args: &mut std::iter::Peekable<_>| -> Option<String> {
             match arg.strip_prefix(flag) {
                 Some(rest) => rest.strip_prefix('=').map(str::to_owned),
@@ -1213,9 +1341,13 @@ pub fn discover(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
         };
         let m = package.manifest;
         let scripted = m.capabilities.contains(&Capability::Scripts);
-        if !scripted && dev.contains(path) && path.join(ENTRY).is_file() {
+        let entry = [LuaSide::Server, LuaSide::Client]
+            .map(LuaSide::entry)
+            .into_iter()
+            .find(|e| path.join(e).is_file());
+        if let Some(entry) = entry.filter(|_| !scripted && dev.contains(path)) {
             log::warn!(
-                "Horizon: {} has {ENTRY} but no capability scripts in {MANIFEST}: not run",
+                "Horizon: {} has {entry} but no capability scripts in {MANIFEST}: not run",
                 path.display()
             );
         }
@@ -1230,7 +1362,7 @@ pub fn discover(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
             depends: m.depends,
         });
     }
-    let mut mods: Vec<Box<dyn Hooks>> = Vec::new();
+    let mut mods: Vec<LuaMod> = Vec::new();
     for step in load_order(&on) {
         let c = &on[step.index];
         if let Some(missing) = step.missing {
@@ -1248,6 +1380,13 @@ pub fn discover(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
         if !c.scripted {
             continue;
         }
+        let sides = match Package::read(&c.path).and_then(|p| Content::read(&c.path, &p.manifest)) {
+            Ok(content) => sides_of(&content, dedicated),
+            Err(e) => {
+                report_not_loaded(c, None, &e);
+                continue;
+            }
+        };
         let libraries: Vec<(String, PathBuf)> = c
             .depends
             .iter()
@@ -1261,29 +1400,51 @@ pub fn discover(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
         // The game folder's `config/`, as the host's `config_dir` names it
         // (the game moves there once its options are read: `--game-dir`).
         let config_dir = game_dir.as_deref().unwrap_or(&here).join("config");
-        match LuaMod::load_with(&c.path, &libraries, Some(&config_dir)) {
-            Ok(lua) => {
-                log::info!(
-                    "Horizon: Lua mod {} loaded from {}",
-                    lua.id,
-                    c.path.display()
-                );
-                lua.publish(None);
-                mods.push(Box::new(lua));
-            }
-            Err(e) => {
-                log::error!("Horizon: Lua mod in {} not loaded: {e}", c.path.display());
-                to_console(true, format!("[{}] not loaded: {e}", c.path.display()));
-                set_status(ModStatus {
-                    id: c.id.clone(),
-                    source: c.path.display().to_string(),
-                    error: Some(e),
-                    ..Default::default()
-                });
+        for side in sides {
+            match LuaMod::load_with(&c.path, side, &libraries, Some(&config_dir)) {
+                Ok(lua) => {
+                    log::info!(
+                        "Horizon: Lua mod {} [{}] loaded from {}",
+                        lua.id,
+                        side.as_str(),
+                        c.path.display()
+                    );
+                    lua.publish(None);
+                    mods.push(lua);
+                }
+                Err(e) => report_not_loaded(c, Some(side), &format!("[{}] {e}", side.as_str())),
             }
         }
     }
     mods
+}
+
+/// The sides a scripted mod runs a state on: `Server` when it has
+/// `scripts/server/init.lua`, `Client` when it has `scripts/client/init.lua`
+/// and the process is not a dedicated server (which has no window).
+fn sides_of(content: &Content, dedicated: bool) -> Vec<LuaSide> {
+    let mut sides = Vec::new();
+    if content.has_server() {
+        sides.push(LuaSide::Server);
+    }
+    if content.has_client() && !dedicated {
+        sides.push(LuaSide::Client);
+    }
+    sides
+}
+
+/// A scripted mod whose state did not load: the log, the console and the
+/// status row of the mod in the side `side` (None: no side ran yet).
+fn report_not_loaded(c: &Candidate, side: Option<LuaSide>, e: &str) {
+    log::error!("Horizon: Lua mod in {} not loaded: {e}", c.path.display());
+    to_console(true, format!("[{}] not loaded: {e}", c.path.display()));
+    set_status(ModStatus {
+        id: c.id.clone(),
+        side: side.map(|s| s.as_str().to_owned()).unwrap_or_default(),
+        source: c.path.display().to_string(),
+        error: Some(e.to_owned()),
+        ..Default::default()
+    });
 }
 
 /// Loads the mod at `path` headlessly, as the game would at start, with the
@@ -1314,6 +1475,8 @@ pub fn check_mod(
     // The registry script, as the content loader runs it.
     let content = Content::read(path, &manifest).map_err(at)?;
     let mut lines = Vec::new();
+    // Every side the mod has a folder for is loaded, the dedicated one too.
+    let sides = sides_of(&content, false);
     if let Some(base) = resources {
         lines.extend(check_content(base, &manifest.id, content).map_err(at)?);
     }
@@ -1351,16 +1514,25 @@ pub fn check_mod(
     // A settings folder of its own: `horizon.config()` works at load, and
     // what a script saves there is thrown away with it.
     let config = std::env::temp_dir().join(format!("horizon-check-mod-{}", std::process::id()));
-    let loaded = LuaMod::load_with(path, &libraries, Some(&config));
-    let _ = std::fs::remove_dir_all(&config);
-    let m = loaded?;
-    lines.push(format!("{}: scripts loaded", m.id));
-    if let Ok(scripts) = m.scripts.lock() {
-        let mut names: Vec<&String> = scripts.keys().collect();
-        names.sort();
-        for name in names {
-            lines.push(format!("  {name}"));
+    let mut failures = Vec::new();
+    for side in sides {
+        match LuaMod::load_with(path, side, &libraries, Some(&config)) {
+            Ok(m) => {
+                lines.push(format!("{}: [{}] scripts loaded", m.id, side.as_str()));
+                if let Ok(scripts) = m.scripts.lock() {
+                    let mut names: Vec<&String> = scripts.keys().collect();
+                    names.sort();
+                    for name in names {
+                        lines.push(format!("  {name}"));
+                    }
+                }
+            }
+            Err(e) => failures.push(at(format!("[{}] {e}", side.as_str()))),
         }
+    }
+    let _ = std::fs::remove_dir_all(&config);
+    if !failures.is_empty() {
+        return Err(failures.join("\n"));
     }
     for (id, lib) in &libraries {
         lines.push(format!("  with {id} from {}", lib.display()));
@@ -1481,22 +1653,28 @@ fn load_order(on: &[Candidate]) -> Vec<Step> {
 }
 
 impl LuaMod {
-    /// Load the mod at `path` (a `.hmod` or a mod folder): its id from
-    /// `horizon-mod.toml`, its scripts read once, `scripts/init.lua` run.
-    pub fn load(path: &Path, libraries: &[(String, PathBuf)]) -> Result<Self, String> {
-        Self::load_with(path, libraries, None)
+    /// Load the mod at `path` (a `.hmod` or a mod folder) as its `side`
+    /// state: its id from `horizon-mod.toml`, the side's scripts read once,
+    /// the side's entry run.
+    pub fn load(
+        path: &Path,
+        side: LuaSide,
+        libraries: &[(String, PathBuf)],
+    ) -> Result<Self, String> {
+        Self::load_with(path, side, libraries, None)
     }
 
     /// `load`, with `config_dir` the folder of the mods' settings files
     /// (`config/` of the game folder: `horizon.config` reads `<id>.json`
-    /// there, at load too).
+    /// there on the server, `<id>.client.json` on the client, at load too).
     pub fn load_with(
         path: &Path,
+        side: LuaSide,
         libraries: &[(String, PathBuf)],
         config_dir: Option<&Path>,
     ) -> Result<Self, String> {
-        let (id, version, scripts) = Self::read_scripts(path)?;
-        let (library_scripts, library_versions) = Self::read_libraries(libraries)?;
+        let (id, version, scripts) = Self::read_scripts(path, side)?;
+        let (library_scripts, library_versions) = Self::read_libraries(libraries, side)?;
         let lua = Lua::new();
         lua.set_memory_limit(MEMORY).map_err(|e| e.to_string())?;
         let budget = Budget::default();
@@ -1504,9 +1682,14 @@ impl LuaMod {
         let world_attachment = mod_attachment_named(&id, "world");
         let player_attachment = mod_attachment_named(&id, "player");
         let entity_attachment = mod_attachment_named(&id, "data");
-        let config_path = config_dir.map(|d| d.join(format!("{id}.json")));
+        let config_file = match side {
+            LuaSide::Server => format!("{id}.json"),
+            LuaSide::Client => format!("{id}.client.json"),
+        };
+        let config_path = config_dir.map(|d| d.join(config_file));
         let m = LuaMod {
             id,
+            side,
             version,
             library_versions,
             source: path.to_owned(),
@@ -1528,14 +1711,20 @@ impl LuaMod {
             config_path,
             reloads: AtomicU32::new(0),
             reload_seen: AtomicU32::new(reload_generation()),
+            turn: turn::ReentrantTurn::new(),
         };
         m.install_api().map_err(|e| e.to_string())?;
-        m.run(ENTRY).map_err(|e| e.to_string())?;
+        m.run(side.entry()).map_err(|e| e.to_string())?;
         Ok(m)
     }
 
-    /// The mod's id, version and scripts, read from its `.hmod` or folder.
-    fn read_scripts(path: &Path) -> Result<(String, String, HashMap<String, String>), String> {
+    /// The mod's id, version and the scripts of `side` (its folder and
+    /// `scripts/shared/`), read from its `.hmod` or folder. The other side's
+    /// folder is not read: its files do not reach this state.
+    fn read_scripts(
+        path: &Path,
+        side: LuaSide,
+    ) -> Result<(String, String, HashMap<String, String>), String> {
         let at = |e: String| format!("{}: {e}", path.display());
         let package = Package::read(path).map_err(at)?;
         let manifest = package.manifest;
@@ -1544,8 +1733,13 @@ impl LuaMod {
         }
         let content = Content::read(path, &manifest).map_err(at)?;
         let mut reader = content.reader().map_err(at)?;
-        let mut scripts = HashMap::with_capacity(content.scripts.len());
-        for name in &content.scripts {
+        let own = match side {
+            LuaSide::Server => &content.server_scripts,
+            LuaSide::Client => &content.client_scripts,
+        };
+        let names: Vec<&String> = own.iter().chain(&content.shared_scripts).collect();
+        let mut scripts = HashMap::with_capacity(names.len());
+        for name in names {
             let bytes = reader.read(name).map_err(at)?;
             let code = String::from_utf8(bytes).map_err(|_| at(format!("{name}: not UTF-8")))?;
             scripts.insert(name.clone(), code);
@@ -1553,13 +1747,12 @@ impl LuaMod {
         Ok((manifest.id, manifest.version, scripts))
     }
 
-    /// The libraries' scripts, the first library's winning a shared name.
-    /// A library without scripts (content only) contributes none.
-    /// The libraries' scripts, the first library's winning a shared name, and
-    /// each library's version by id. A library without scripts (content only)
-    /// contributes none.
+    /// The libraries' scripts of `side`, the first library's winning a shared
+    /// name, and each library's version by id. A library without scripts
+    /// (content only) contributes none.
     fn read_libraries(
         libraries: &[(String, PathBuf)],
+        side: LuaSide,
     ) -> Result<(HashMap<String, String>, Vec<(String, String)>), String> {
         let mut out: HashMap<String, String> = HashMap::new();
         let mut versions = Vec::new();
@@ -1570,7 +1763,7 @@ impl LuaMod {
                 continue;
             }
             let (_, _, scripts) =
-                Self::read_scripts(path).map_err(|e| format!("library {id}: {e}"))?;
+                Self::read_scripts(path, side).map_err(|e| format!("library {id}: {e}"))?;
             for (name, code) in scripts {
                 out.entry(name).or_insert(code);
             }
@@ -1588,8 +1781,20 @@ impl LuaMod {
     /// mob keeps the definition it was made with either way, until the
     /// mob's AI is set up again.
     pub fn reload(&self) -> Result<(), String> {
-        let (_, _, scripts) = Self::read_scripts(&self.source)?;
-        let (library_scripts, _) = Self::read_libraries(&self.libraries)?;
+        let (_, _, scripts) = Self::read_scripts(&self.source, self.side)?;
+        let (library_scripts, _) = Self::read_libraries(&self.libraries, self.side)?;
+        // Hold the per-state turn for the whole reload: the registry
+        // tables, timers and `run` touch the host slot and the queue.
+        let _guard = self
+            .turn
+            .try_acquire_timeout(turn::TURN_TIMEOUT)
+            .ok_or_else(|| {
+                let note = self
+                    .turn
+                    .held_by()
+                    .unwrap_or_else(|| "unknown holder".to_owned());
+                format!("{}: turn timed out ({})", self.id, note)
+            })?;
         let lua = &self.lua;
         // What the running mod registered, kept aside while the new script
         // runs: the registry tables, the timers (their handler and the
@@ -1613,9 +1818,9 @@ impl LuaMod {
             lua.set_named_registry_value(HANDLERS, lua.create_table()?)?;
             lua.set_named_registry_value(KIND_HANDLERS, lua.create_table()?)?;
             lua.set_named_registry_value(LOADED, lua.create_table()?)?;
-            // The timers' handler is the first `server_tick` handler: a new
-            // one, over an empty list, for the new script.
-            install_timers(lua, &api, &self.id)
+            // The timers' handler is the first handler of the state's own
+            // tick hook: a new one, over an empty list, for the new script.
+            install_timers(lua, &api, &self.id, self.side)
         })();
         // Back as it was: the registry tables and the timers' closures.
         let restore = |registry: Vec<(&str, Value)>, timers: Vec<(&str, Value)>| {
@@ -1642,7 +1847,7 @@ impl LuaMod {
         let old_declared = swap(&self.block_entities, HashMap::new());
         let old_scripts = swap(&self.scripts, scripts);
         let old_library_scripts = swap(&self.library_scripts, library_scripts);
-        let Err(e) = self.run(ENTRY) else {
+        let Err(e) = self.run(self.side.entry()) else {
             return Ok(());
         };
         // Whatever the failed script registered is dropped with the fresh
@@ -1663,8 +1868,32 @@ impl LuaMod {
         &self.id
     }
 
+    /// The side this state runs in.
+    pub fn side(&self) -> LuaSide {
+        self.side
+    }
+
     /// Reload because of `why`, and tell the log and the console how it went.
     pub(crate) fn reload_now(&self, why: &str) {
+        // Take the turn once and hold it across reload and publish: inner
+        // takes are re-entrant, so a firing from another thread serialises
+        // until the status write lands. If the outer take times out, the
+        // reload must not run (and its writes must not be expected).
+        let _outer_guard = match self.turn.try_acquire_timeout(turn::TURN_TIMEOUT) {
+            Some(g) => g,
+            None => {
+                let note = self
+                    .turn
+                    .held_by()
+                    .unwrap_or_else(|| "unknown holder".to_owned());
+                log::error!(
+                    "Horizon: Lua mod {} reload_now: turn timed out ({})",
+                    self.id,
+                    note
+                );
+                return;
+            }
+        };
         match self.reload() {
             Ok(()) => {
                 // Fresh tables, fresh chances: a frame hook disabled for
@@ -1693,11 +1922,22 @@ impl LuaMod {
 
     /// Whether the developer tools asked this mod to reload since last asked.
     fn reload_asked(&self) -> bool {
-        reload_asked(&self.id, &self.reload_seen)
+        reload_asked(&self.id, self.side.as_str(), &self.reload_seen)
     }
 
     /// The status the developer tools show, with `error` as the last error.
     fn publish(&self, error: Option<String>) {
+        let _guard = match self.turn.try_acquire_timeout(turn::TURN_TIMEOUT) {
+            Some(g) => g,
+            None => {
+                let note = self
+                    .turn
+                    .held_by()
+                    .unwrap_or_else(|| "unknown holder".to_owned());
+                log::warn!("[lua:{}] publish: turn timed out ({})", self.id, note);
+                return;
+            }
+        };
         let handlers = (|| -> mlua::Result<Vec<(String, usize)>> {
             let table: Table = self.lua.named_registry_value(HANDLERS)?;
             // The timers' own handler is the runtime's, not the script's.
@@ -1725,6 +1965,7 @@ impl LuaMod {
         goals.sort();
         set_status(ModStatus {
             id: self.id.clone(),
+            side: self.side.as_str().to_owned(),
             source: self.source.display().to_string(),
             scripts: self.scripts.lock().map(|s| s.len()).unwrap_or(0),
             reloads: self.reloads.load(Ordering::Relaxed),
@@ -1738,7 +1979,7 @@ impl LuaMod {
     pub(crate) fn error(&self, text: String) {
         log::error!("[lua:{}] {text}", self.id);
         to_console(true, format!("[{}] {text}", self.id));
-        set_error(&self.id, text);
+        set_error(&self.id, self.side.as_str(), text);
     }
 
     /// Something dropped or odd: the log and the console.
@@ -1751,11 +1992,15 @@ impl LuaMod {
         let lua = &self.lua;
         let scripts = self.scripts.clone();
         let library_scripts = self.library_scripts.clone();
+        let side = self.side;
+        let gate_owner = self.id.clone();
         lua.set_named_registry_value(HANDLERS, lua.create_table()?)?;
         lua.set_named_registry_value(KIND_HANDLERS, lua.create_table()?)?;
         lua.set_named_registry_value(QUEUE, lua.create_table()?)?;
         lua.set_named_registry_value(LOADED, lua.create_table()?)?;
         let slot = lua.create_table()?;
+        // Entry 4 is the draw-hook flag for the client filter below.
+        slot.set(4, false)?;
         lua.set_named_registry_value(HOST_SLOT, &slot)?;
         // The base table first: the runner, the reads and the timers take
         // their globals from it, so none of them reads one a script may
@@ -1768,6 +2013,7 @@ impl LuaMod {
         let api = lua.create_table()?;
         let id = self.id.clone();
         api.set("mod_id", id.as_str())?;
+        api.set("side", side.as_str())?;
         // The manifest's version, and the versions of the mods this one
         // depends on: a library reads its own from `horizon.libraries`.
         api.set("mod_version", self.version.as_str())?;
@@ -1805,7 +2051,8 @@ impl LuaMod {
         // `horizon.on(name, fn[, kind])`: a handler of the hook `name`, one
         // of the generated hooks; with `kind`, only for events of that
         // kind (a kind-filtered hook), which keeps a hook that fires for
-        // every kind free for the others.
+        // every kind free for the others. A state registers only the hooks
+        // of its side and of both sides (`LuaSide::allows`).
         let kinds = self.kinds.clone();
         api.set(
             "on",
@@ -1820,6 +2067,20 @@ impl LuaMod {
                                 names.sort_unstable();
                                 names.join(", ")
                             }
+                        )));
+                    }
+                    if let Some(hook) = crate::generated_hooks::hook_side(&name)
+                        && !side.allows(hook)
+                    {
+                        // The hook's own side: the one its folder is named for.
+                        let runs = match hook {
+                            HookSide::Client => "client",
+                            HookSide::Server | HookSide::Both => "server",
+                        };
+                        return Err(mlua::Error::runtime(format!(
+                            "hook '{name}' runs on the {runs}: register it from scripts/{runs}/ \
+                             (this is the {} state of mod {gate_owner})",
+                            side.as_str()
                         )));
                     }
                     // The generated hooks without a kind filter answer every
@@ -2053,10 +2314,11 @@ impl LuaMod {
         // The reads and the timers over the actions: a summon with a host at
         // hand is a read (it answers the id).
         install_reads(lua, &api)?;
-        install_timers(lua, &api, &self.id)?;
-        // `horizon.config()`: the mod's own settings, `config/<id>.json` of
-        // the game folder as a table (empty when there is none);
-        // `horizon.save_config(t)` writes it. No host needed: at load too.
+        install_timers(lua, &api, &self.id, self.side)?;
+        // `horizon.config()`: the mod's own settings file (`config/<id>.json`
+        // on the server, `config/<id>.client.json` on the client) as a table
+        // (empty when there is none); `horizon.save_config(t)` writes it.
+        // No host needed: at load too.
         let config_path = self.config_path.clone();
         let id = self.id.clone();
         api.set(
@@ -2106,15 +2368,17 @@ impl LuaMod {
                 Ok(())
             })?,
         )?;
-        // `require("name")`: `scripts/name.lua` of this mod, run once.
+        // `require("name")`: a module of this state's side folder, then of
+        // `scripts/shared/`, run once.
         api.set(
             "require",
             lua.create_function(move |lua, name: String| {
                 // `modkit.entity`, `modkit/entity` or `@modkit/entity` (the
                 // form a Luau editor resolves through `.luaurc` aliases) is
-                // `scripts/modkit/entity.lua`, or
-                // `scripts/modkit/entity/init.lua`: the mod's own first, then
-                // the mods it depends on.
+                // `scripts/<side>/modkit/entity.lua`, or
+                // `scripts/<side>/modkit/entity/init.lua`, or the same under
+                // `scripts/shared/`: the mod's own first, then the mods it
+                // depends on.
                 let name = name.strip_prefix('@').unwrap_or(&name).replace('/', ".");
                 let plain = !name.is_empty()
                     && !name.contains("..")
@@ -2141,8 +2405,10 @@ impl LuaMod {
                 }
                 let path = name.replace('.', "/");
                 let keys = [
-                    format!("scripts/{path}.lua"),
-                    format!("scripts/{path}/init.lua"),
+                    format!("scripts/{}/{path}.lua", side.as_str()),
+                    format!("scripts/{}/{path}/init.lua", side.as_str()),
+                    format!("{SHARED_DIR}/{path}.lua"),
+                    format!("{SHARED_DIR}/{path}/init.lua"),
                 ];
                 let find = |map: &Scripts| -> Option<(String, String)> {
                     let map = map.lock().ok()?;
@@ -2153,8 +2419,8 @@ impl LuaMod {
                     .or_else(|| find(&library_scripts))
                     .ok_or_else(|| {
                         mlua::Error::runtime(format!(
-                            "require({name:?}): no {} in the mod or the mods it depends on",
-                            keys[0]
+                            "require({name:?}): no {} or {} in the mod or the mods it depends on",
+                            keys[0], keys[2]
                         ))
                     })?;
                 let v: Value = lua.load(code.as_str()).set_name(&key).eval()?;
@@ -2163,13 +2429,53 @@ impl LuaMod {
                 Ok(v)
             })?,
         )?;
+        // A client state keeps only `CLIENT_API`; every other entry raises
+        // the server-only error. One pass over the finished table, so a
+        // name added later is server-only by default. A draw hook
+        // (`hud`, `gui_layer_post`) keeps the shared host, but only for
+        // the names in `DRAW_API`: one of those delegates to the real
+        // entry, which answers or refuses as a draw hook
+        // (`Reader::Shared`); every other server-only name raises the
+        // server-only error even inside a draw hook.
+        if side == LuaSide::Client {
+            let id = self.id.clone();
+            let keys: Vec<String> = api
+                .pairs::<String, Value>()
+                .map(|result| result.map(|(name, _)| name))
+                .collect::<mlua::Result<Vec<_>>>()?;
+            for key in keys {
+                if CLIENT_API.contains(&key.as_str()) {
+                    continue;
+                }
+                let name = key.clone();
+                let id = id.clone();
+                let slot = slot.clone();
+                let original: Value = api.get(key.clone())?;
+                let Value::Function(original) = original else {
+                    continue;
+                };
+                let stub = lua.create_function(
+                    move |_, args: MultiValue| -> mlua::Result<Value> {
+                        let draw = slot.raw_get::<Option<bool>>(4)?.unwrap_or(false);
+                        if draw && DRAW_API.contains(&name.as_str()) {
+                            original.call(args)
+                        } else {
+                            Err(mlua::Error::runtime(format!(
+                                "horizon.{name} is only available in scripts/server/ (this is the client state of mod {id})"
+                            )))
+                        }
+                    },
+                )?;
+                api.set(key, stub)?;
+            }
+        }
         lua.globals().set(GLOBAL, &api)?;
         lua.globals()
             .set("require", api.get::<Function>("require")?)?;
         Ok(())
     }
 
-    /// Runs the script at `name` (`scripts/init.lua`).
+    /// Runs the script at `name` (the side's entry, `scripts/<side>/init.lua`).
     fn run(&self, name: &str) -> mlua::Result<()> {
         let code = self
             .scripts
@@ -2177,6 +2483,17 @@ impl LuaMod {
             .ok()
             .and_then(|s| s.get(name).cloned())
             .ok_or_else(|| mlua::Error::runtime(format!("{name}: not in the mod")))?;
+        // Hold the turn for the load; the budget starts after it.
+        let _guard = self
+            .turn
+            .try_acquire_timeout(turn::TURN_TIMEOUT)
+            .ok_or_else(|| {
+                let note = self
+                    .turn
+                    .held_by()
+                    .unwrap_or_else(|| "unknown holder".to_owned());
+                mlua::Error::runtime(format!("{name}: turn timed out ({note})"))
+            })?;
         self.budget.run(LOAD_BUDGET, || {
             self.lua.load(code.as_str()).set_name(name).exec()
         })
@@ -2187,6 +2504,20 @@ impl LuaMod {
     /// hooks (`hud_hooks`) check it first, so an unregistered frame hook
     /// does no Lua work and no table allocation.
     pub(crate) fn has_handlers(&self, hook: &str) -> bool {
+        let _guard = match self
+            .turn
+            .try_acquire_timeout_label(turn::TURN_TIMEOUT, Some(hook))
+        {
+            Some(g) => g,
+            None => {
+                let note = self
+                    .turn
+                    .held_by()
+                    .unwrap_or_else(|| "unknown holder".to_owned());
+                log::error!("[lua:{}] {hook}: turn timed out ({})", self.id, note);
+                return false;
+            }
+        };
         let handlers: mlua::Result<Table> = self.lua.named_registry_value(HANDLERS);
         handlers.is_ok_and(|h| h.get::<Option<Table>>(hook).ok().flatten().is_some())
     }
@@ -2205,6 +2536,16 @@ impl LuaMod {
     /// The handlers of `hook`, in registration order: those for every kind,
     /// then those watching `kind`.
     fn handlers(&self, hook: &str, kind: Option<&str>) -> mlua::Result<Vec<Function>> {
+        let _guard = self
+            .turn
+            .try_acquire_timeout_label(turn::TURN_TIMEOUT, Some(hook))
+            .ok_or_else(|| {
+                let note = self
+                    .turn
+                    .held_by()
+                    .unwrap_or_else(|| "unknown holder".to_owned());
+                mlua::Error::runtime(format!("{hook}: turn timed out ({note})"))
+            })?;
         let lua = &self.lua;
         let mut out = Vec::new();
         let handlers: Table = lua.named_registry_value(HANDLERS)?;
@@ -2308,6 +2649,21 @@ impl LuaMod {
             }
             *misses
         };
+        let _guard = match self.turn.try_acquire_timeout(turn::TURN_TIMEOUT) {
+            Some(g) => g,
+            None => {
+                let note = self
+                    .turn
+                    .held_by()
+                    .unwrap_or_else(|| "unknown holder".to_owned());
+                log::error!(
+                    "[lua:{}] {hook}: turn timed out disabling frame hook ({})",
+                    self.id,
+                    note
+                );
+                return;
+            }
+        };
         if let Ok(handlers) = self.lua.named_registry_value::<Table>(HANDLERS) {
             let _ = handlers.set(hook, Value::Nil);
         }
@@ -2405,6 +2761,18 @@ impl LuaMod {
         args: impl mlua::IntoLuaMulti,
         limit: Duration,
     ) -> mlua::Result<Vec<(String, Table)>> {
+        // One thread at a time per state; a wait does not count toward the
+        // budget and is bounded at 5 s, after which this firing errors.
+        let _guard = self
+            .turn
+            .try_acquire_timeout_label(turn::TURN_TIMEOUT, Some(hook))
+            .ok_or_else(|| {
+                let note = self
+                    .turn
+                    .held_by()
+                    .unwrap_or_else(|| "unknown holder".to_owned());
+                mlua::Error::runtime(format!("{hook}: turn timed out ({note})"))
+            })?;
         let lua = &self.lua;
         let list = self.handlers(hook, kind)?;
         if list.is_empty() {
@@ -2424,6 +2792,7 @@ impl LuaMod {
             slot.get::<Value>(2)?,
             slot.get::<Option<i64>>(3)?.unwrap_or(0),
         );
+        let outer_draw = slot.get::<Option<bool>>(4)?.unwrap_or(false);
         if outer.2 == 0 {
             queue.clear()?;
         }
@@ -2432,6 +2801,8 @@ impl LuaMod {
         // call's scope only, whatever kept it, and the saved tables it handed
         // out are written back after.
         let reader = std::cell::RefCell::new(reader);
+        let is_draw = matches!(&*reader.borrow(), Reader::Shared(_));
+        slot.set(4, is_draw)?;
         let fetched: std::cell::RefCell<Vec<Fetched>> = std::cell::RefCell::new(Vec::new());
         // The profiler's stopwatch, set around the budget's own span below:
         // `None` when the call never reached the handlers.
@@ -2473,7 +2844,7 @@ impl LuaMod {
         });
         if let Some(taken) = elapsed.take() {
             let overrun = matches!(&result, Err(e) if is_overrun(e));
-            crate::profiler::note(&self.id, hook, taken, overrun);
+            crate::profiler::note(&self.id, self.side.as_str(), hook, taken, overrun);
         }
         // The runner restores the slot itself when it gets that far; one
         // stopped by the budget (raised at every safepoint past the
@@ -2481,6 +2852,7 @@ impl LuaMod {
         slot.set(1, outer.0)?;
         slot.set(2, outer.1)?;
         slot.set(3, outer.2)?;
+        slot.set(4, outer_draw)?;
         // What the handlers queued, in order; taken out whether or not
         // they all ran, and handed on only when they did.
         let mut out = Vec::new();
@@ -2881,6 +3253,13 @@ pub(crate) fn dimension_id(dimension: LevelDimension) -> &'static str {
 }
 
 impl Hooks for LuaMod {
+    fn mod_side(&self) -> Option<ModSide> {
+        match self.side {
+            LuaSide::Server => Some(ModSide::Server),
+            LuaSide::Client => Some(ModSide::Client),
+        }
+    }
+
     // Every hook is generated (`generated_hooks`, one method per native
     // hook), each with one event table.
     impl_generated_hooks!();
@@ -2978,13 +3357,13 @@ experimental = ["scripts"]
             "ok",
             &[
                 (
-                    "scripts/init.lua",
+                    "scripts/server/init.lua",
                     b"local n = require('util')\nassert(n == 42, 'util')\nassert(require('util') == 42)\nhorizon.on('server_tick', function() end)\nhorizon.log('ready ' .. horizon.mod_id)",
                 ),
-                ("scripts/util.lua", b"return 42"),
+                ("scripts/server/util.lua", b"return 42"),
             ],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         assert_eq!(m.id(), "ruby");
         let handlers: Table = m.lua.named_registry_value(HANDLERS).unwrap();
         let ticks: Table = handlers.get("server_tick").unwrap();
@@ -2998,7 +3377,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "goals",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.goal("stalk", {
                   flags = {"move", "look"},
@@ -3016,13 +3395,14 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         // `load` leaves a status row behind, so a later `error`-like lookup
         // sees this mod; the handler then runs against a real mob. The
         // defined goal attaches at its priority, and the missing goal is the
         // handler's error.
         set_status(ModStatus {
             id: m.id().into(),
+            side: m.side().as_str().to_owned(),
             ..Default::default()
         });
         let mut mob = horizon_client::mobs::Mob::new(
@@ -3060,7 +3440,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "goals-two",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.goal("alpha", { can_use = function() return false end })
                 horizon.goal("beta", { can_use = function() return false end })
@@ -3074,9 +3454,10 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         set_status(ModStatus {
             id: m.id().into(),
+            side: m.side().as_str().to_owned(),
             ..Default::default()
         });
         let mut mob = horizon_client::mobs::Mob::new(
@@ -3108,7 +3489,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "rotation",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.on("mob_ai_register", function(event)
                   local mob = event.mob
@@ -3119,7 +3500,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut mob = horizon_client::mobs::Mob::new(
             1,
             horizon_client::mobs::MobType::cow_for_tests(),
@@ -3145,7 +3526,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "rotation-bad",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.on("mob_ai_register", function(event)
                   horizon.set_body_rotation("swivel")
@@ -3153,13 +3534,14 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         // `load` leaves a status row behind, so a later `error`-like lookup
         // sees this mod; the handler then runs against a real mob. The
         // game's own unknown-mode error must name the accepted modes, and
         // the mob stays vanilla.
         set_status(ModStatus {
             id: m.id().into(),
+            side: m.side().as_str().to_owned(),
             ..Default::default()
         });
         let mut mob = horizon_client::mobs::Mob::new(
@@ -3203,12 +3585,13 @@ experimental = ["scripts"]
         let manifest = MANIFEST_TEXT.replacen("id = \"ruby\"", &format!("id = \"{name}\""), 1);
         std::fs::write(
             &path,
-            Package::write_files(&manifest, None, &[("scripts/init.lua", script)]).unwrap(),
+            Package::write_files(&manifest, None, &[("scripts/server/init.lua", script)]).unwrap(),
         )
         .unwrap();
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         set_status(ModStatus {
             id: m.id().into(),
+            side: m.side().as_str().to_owned(),
             ..Default::default()
         });
         let host = MobHost {
@@ -3588,7 +3971,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "ticks",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 LAMPS = 0
                 TICKS = 0
@@ -3608,7 +3991,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut level = FakeLevel {
             block: "ruby:hive",
             props: vec![("stage".into(), "dormant".into())],
@@ -3702,7 +4085,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "ticks-error",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.on("tick_block", function(event)
                   event.data.charge = event.data.charge + 1
@@ -3714,11 +4097,12 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         // `load` leaves no status row behind on its own; without one the
         // error lookup below sees nothing.
         set_status(ModStatus {
             id: m.id().into(),
+            side: m.side().as_str().to_owned(),
             ..Default::default()
         });
         let key = |k: &str| horizon_world::nbt::JavaString::from(k);
@@ -4172,7 +4556,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "item-hooks",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 LOG = {}
                 local function log(s) LOG[#LOG + 1] = s end
@@ -4214,7 +4598,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -4307,7 +4691,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "world-hooks",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 LOG = {}
                 local function log(s) LOG[#LOG + 1] = s end
@@ -4330,7 +4714,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -4390,7 +4774,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "break-place-pickup",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 LOG = {}
                 local function log(s) LOG[#LOG + 1] = s end
@@ -4419,7 +4803,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -4489,7 +4873,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "died-hooks",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 LOG = {}
                 local function log(s) LOG[#LOG + 1] = s end
@@ -4499,7 +4883,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -4556,7 +4940,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "killed-uuid",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 LOG = {}
                 local function log(s) LOG[#LOG + 1] = s end
@@ -4566,7 +4950,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -4611,7 +4995,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "timers-data",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 N = 0
                 horizon.after(3, function()
@@ -4633,7 +5017,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -4802,7 +5186,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "entity-data",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.on("interact_entity", function(event)
                   __witness = (__witness or 0) + 1
@@ -4826,7 +5210,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = data_host();
         let key = |k: &str| JavaString::from(k);
         // Entity 7 starts with a long: leaving it alone must keep the type.
@@ -4898,7 +5282,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "entity-data-error",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.on("interact_entity", function(event)
                   __witness = (__witness or 0) + 1
@@ -4909,7 +5293,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = data_host();
         m.interact_entity(
             &mut host,
@@ -4931,7 +5315,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "held",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.on("player_tick", function(event)
                   __witness = (__witness or 0) + 1
@@ -4950,7 +5334,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = data_host();
         m.player_tick(&mut host, &mut test_events::player_tick_event());
         assert_eq!(witness(&m.lua), 1);
@@ -4982,7 +5366,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "acting",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.on("player_tick", function(event)
                   __witness = (__witness or 0) + 1
@@ -4999,7 +5383,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = data_host();
         m.player_tick(&mut host, &mut test_events::player_tick_event());
         // Steve acts, though alex is `players()[1]`: the acting player is
@@ -5025,7 +5409,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "timers-gate",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 N = 0
                 horizon.after(1, function() N = N + 1 end)
@@ -5033,7 +5417,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -5086,11 +5470,122 @@ experimental = ["scripts"]
     }
 
     #[test]
+    fn client_timers_fire_on_client_ticks() {
+        let (dir, path) = hmod(
+            "client-timers",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                N = 0
+                horizon.after(2, function() N = N + 1 end)
+                horizon.every(3, function() N = N + 10 end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let lua = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let n = |lua: &Lua| lua.globals().get::<i32>("N").unwrap();
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        assert_eq!(n(&lua), 0);
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        assert_eq!(n(&lua), 1);
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        assert_eq!(n(&lua), 11);
+        for _ in 0..2 {
+            horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        }
+        assert_eq!(n(&lua), 11);
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        assert_eq!(n(&lua), 21);
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        assert_eq!(n(&lua), 21);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn client_timers_do_not_fire_on_server_tick() {
+        let (dir, path) = hmod(
+            "client-timers-server-tick",
+            &[(
+                "scripts/client/init.lua",
+                b"N = 0\nhorizon.after(1, function() N = N + 1 end)",
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let lua = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let context = test_events::native_lifecycle_context(
+            horizon_client::mod_api::NativeAuthority::IntegratedServer,
+            horizon_client::mod_api::NativeWorldEpoch::new(1),
+            horizon_client::mod_api::NativeTickId::new(1),
+        );
+        for _ in 0..3 {
+            horizon_client::mod_api::dispatch_server_tick(
+                &mut host,
+                &mods,
+                &context,
+                ServerTickPhase::ServerTickEnd {
+                    world_running: true,
+                },
+            );
+        }
+        assert_eq!(lua.globals().get::<i32>("N").unwrap(), 0);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn server_timers_do_not_fire_on_client_tick_post() {
+        let (dir, path) = hmod(
+            "server-timers-client-tick",
+            &[(
+                "scripts/server/init.lua",
+                b"N = 0\nhorizon.after(1, function() N = N + 1 end)\nhorizon.every(1, function() N = N + 10 end)",
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let lua = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        for _ in 0..3 {
+            horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        }
+        assert_eq!(lua.globals().get::<i32>("N").unwrap(), 0);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn commands_feedback_titles_sounds_and_particles_reach_the_host() {
         let (dir, path) = hmod(
             "commands",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.command("parasite count [kind:word] [n:integer]", 2, function(player, args)
                   horizon.feedback("count " .. (args.kind or "all") .. " " .. tostring(args.n) .. " by " .. player.name)
@@ -5111,7 +5606,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -5203,7 +5698,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "on-hears-words",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.command("parasite count [kind:word]", 0, function(player, args)
                   COUNT = (COUNT or 0) + 1
@@ -5220,7 +5715,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -5251,7 +5746,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "helpers",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 -- The settings file, at load: empty the first time, then what was saved.
                 local c = horizon.config()
@@ -5303,7 +5798,7 @@ experimental = ["scripts"]
             )],
         );
         let config = dir.join("config");
-        let m = LuaMod::load_with(&path, &[], Some(&config)).unwrap();
+        let m = LuaMod::load_with(&path, LuaSide::Server, &[], Some(&config)).unwrap();
         // Saved as JSON a person can edit, and read back at the next load.
         let saved: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(config.join("ruby.json")).unwrap())
@@ -5579,6 +6074,7 @@ experimental = ["scripts"]
             // refusal here.
             set_status(ModStatus {
                 id: m.id().into(),
+                side: m.side().as_str().to_owned(),
                 ..Default::default()
             });
             let mut fall = test_events::living_fall_event(7, "minecraft:cow", 4.0, edge);
@@ -5619,7 +6115,7 @@ experimental = ["scripts"]
         m.living_fall(&mut fall);
         let e = hook_error_of(&m);
         assert!(e.contains("boom-after-nil"), "{e}");
-        assert!(e.contains("scripts/init.lua"), "{e}");
+        assert!(e.contains("scripts/server/init.lua"), "{e}");
         assert!(!e.contains("error in error handling"), "{e}");
         // The traceback's first frame is the handler's own line: only the
         // wrapper's traceback (after its header) produces that frame.
@@ -5631,7 +6127,7 @@ experimental = ["scripts"]
         assert!(
             first_frame
                 .trim_start()
-                .starts_with("[string \"scripts/init.lua\"]"),
+                .starts_with("[string \"scripts/server/init.lua\"]"),
             "{e}"
         );
         std::fs::remove_dir_all(&dir).unwrap();
@@ -5675,14 +6171,14 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "timers-debug-nil",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 debug = nil
                 horizon.after(1, function() error("timer-boom") end)
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -5708,14 +6204,14 @@ experimental = ["scripts"]
         );
         let logs = TEST_LOG.lock().unwrap().join("\n");
         assert!(logs.contains("timer-boom"), "{logs}");
-        assert!(logs.contains("scripts/init.lua"), "{logs}");
+        assert!(logs.contains("scripts/server/init.lua"), "{logs}");
         // The timer's traceback is formatted and capped like a handler's: its
         // first frame, after the header, is the timer's own line.
         let after_header = logs.split("stack traceback:").nth(1).unwrap_or("");
         assert!(
             after_header
                 .trim_start()
-                .starts_with("[string \"scripts/init.lua\"]"),
+                .starts_with("[string \"scripts/server/init.lua\"]"),
             "{logs}"
         );
         assert!(!logs.contains("error in error handling"), "{logs}");
@@ -5739,13 +6235,13 @@ experimental = ["scripts"]
         m.living_fall(&mut fall);
         let e = hook_error_of(&m);
         assert!(e.contains("table"), "{e}");
-        assert!(e.contains("scripts/init.lua"), "{e}");
+        assert!(e.contains("scripts/server/init.lua"), "{e}");
         // The handler's frames lead the traceback, not the runner chunk's.
         let first_frame = e
             .lines()
             .find(|l| l.trim_start().starts_with('['))
             .unwrap_or("");
-        assert!(first_frame.contains("scripts/init.lua"), "{e}");
+        assert!(first_frame.contains("scripts/server/init.lua"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -5868,7 +6364,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "timer-deep",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.after(1, function()
                   local function f(n)
@@ -5880,7 +6376,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -5944,15 +6440,16 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "reload-debug-nil",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 b"debug = nil\nTICKS = 0\nhorizon.on('server_tick', function() TICKS = TICKS + 1 end)",
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let rewrite = |src: &[u8]| {
             std::fs::write(
                 &path,
-                Package::write_files(MANIFEST_TEXT, None, &[("scripts/init.lua", src)]).unwrap(),
+                Package::write_files(MANIFEST_TEXT, None, &[("scripts/server/init.lua", src)])
+                    .unwrap(),
             )
             .unwrap();
         };
@@ -6035,7 +6532,7 @@ experimental = ["scripts"]
             assert!(first.contains("living_fall"), "{mode}: {e}");
             // A Lua-raised message carries its file and line on the first line.
             if mode == "boom" {
-                assert!(first.contains("scripts/init.lua"), "{mode}: {e}");
+                assert!(first.contains("scripts/server/init.lua"), "{mode}: {e}");
             }
             let rest: Vec<&str> = lines.collect();
             assert!(
@@ -6044,7 +6541,7 @@ experimental = ["scripts"]
             );
             assert!(
                 rest.iter()
-                    .any(|l| l.starts_with("  ") && l.contains("scripts/init.lua")),
+                    .any(|l| l.starts_with("  ") && l.contains("scripts/server/init.lua")),
                 "{mode}: {e}"
             );
         }
@@ -6112,9 +6609,12 @@ experimental = ["scripts"]
     /// A load-time failure names its file and line through `--check-mod`.
     #[test]
     fn a_load_error_reports_its_file_and_line_through_check_mod() {
-        let (dir, path) = hmod("load-boom", &[("scripts/init.lua", b"error('boom')")]);
+        let (dir, path) = hmod(
+            "load-boom",
+            &[("scripts/server/init.lua", b"error('boom')")],
+        );
         let e = check_mod(&path, &[], None).unwrap_err();
-        assert!(e.contains("scripts/init.lua"), "{e}");
+        assert!(e.contains("scripts/server/init.lua"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -6203,7 +6703,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "reentrant",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.goal("idle", { can_use = function() return false end })
                 horizon.on("mob_ai_register", function(event) horizon.add_goal(1, "idle") end)
@@ -6227,7 +6727,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = Arc::new(LuaMod::load(&path, &[]).unwrap());
+        let m = Arc::new(LuaMod::load(&path, LuaSide::Server, &[]).unwrap());
         let mut host = ReentrantHost {
             lines: Mutex::new(Vec::new()),
             m: Some(m.clone()),
@@ -6287,7 +6787,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "events",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 local function say(line) horizon.broadcast(line) end
                 -- The hooks without a host (mid-hit) have no broadcast: they note.
@@ -6338,7 +6838,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -6513,7 +7013,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "item-projectile-explosion",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 LOG = {}
                 local function log(s) LOG[#LOG + 1] = s end
@@ -6570,7 +7070,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -6692,7 +7192,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "mob-events",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 local function say(line) horizon.broadcast(line) end
                 -- The hooks without a host (mid-hit) have no broadcast: they note.
@@ -6718,7 +7218,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -6831,7 +7331,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "mob-hooks",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 HURT = {}
                 horizon.on("living_incoming_damage", function(event)
@@ -6867,7 +7367,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         // A hurt zombie is nobody's business; the cow's hit is doubled, fire refused.
         let mut hit = test_events::living_incoming_damage_event(
             9,
@@ -7039,11 +7539,11 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "reload",
             &[
-                ("scripts/init.lua", b"VERSION = require('v')\nhorizon.on('server_tick', function() end)\nhorizon.on('server_tick', function() end)"),
-                ("scripts/v.lua", b"return 1"),
+                ("scripts/server/init.lua", b"VERSION = require('v')\nhorizon.on('server_tick', function() end)\nhorizon.on('server_tick', function() end)"),
+                ("scripts/server/v.lua", b"return 1"),
             ],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let handlers = |m: &LuaMod| -> i64 {
             let h: Table = m.lua.named_registry_value(HANDLERS).unwrap();
             h.get::<Option<Table>>("server_tick")
@@ -7063,7 +7563,7 @@ experimental = ["scripts"]
         // ticks, a timer, a command, a goal, a new module value.
         rewrite(&[
             (
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 VERSION = require('v')
                 TICKS = 0
@@ -7073,7 +7573,7 @@ experimental = ["scripts"]
                 horizon.goal("sit", { can_use = function() return false end })
                 "#,
             ),
-            ("scripts/v.lua", b"return 2"),
+            ("scripts/server/v.lua", b"return 2"),
         ]);
         // The first data load is the one the scripts were loaded for; the next reloads.
         let mut files = Vec::new();
@@ -7099,11 +7599,11 @@ experimental = ["scripts"]
         // A broken edit leaves the running handlers, timers, commands and
         // goals alone, whether the script fails before or after registering
         // anything: the half-registered handler is not kept either.
-        rewrite(&[("scripts/init.lua", b"error('x')")]);
+        rewrite(&[("scripts/server/init.lua", b"error('x')")]);
         let e = m.reload().unwrap_err();
         assert!(e.contains("x"), "{e}");
         rewrite(&[(
-            "scripts/init.lua",
+            "scripts/server/init.lua",
             b"horizon.on('server_tick', function() HALF = true end)\nhorizon.command('half', 0, function() end)\nrequire('missing')",
         )]);
         let e = m.reload().unwrap_err();
@@ -7133,7 +7633,7 @@ experimental = ["scripts"]
         assert!(m.lua.globals().get::<bool>("LATER").unwrap());
         // The next good edit is live again.
         rewrite(&[(
-            "scripts/init.lua",
+            "scripts/server/init.lua",
             b"horizon.on('server_tick', function() end)",
         )]);
         m.reload().unwrap();
@@ -7148,13 +7648,13 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "budget",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 b"N = 0\n\
                   horizon.on('server_tick', function() while true do end end)\n\
                   horizon.on('world_lifecycle', function() N = N + 1 end)",
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         // The tick handlers hear an event table now, not a bare pair.
         let tick = m.lua.create_table().unwrap();
         tick.set("phase", "end").unwrap();
@@ -7185,7 +7685,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "budget-pcall",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 N = 0
                 -- The first loop's error is caught; the second loop is stopped
@@ -7205,7 +7705,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         // The tick handlers hear an event table now, not a bare pair: the
         // table is what runs the timers, so the tick's overrun is the
         // timers' (they share its budget).
@@ -7381,7 +7881,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "loot-writeback",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 RAN = 0
                 horizon.on("loot_drops", function(event)
@@ -7400,7 +7900,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -7515,7 +8015,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "loot-absent-both",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 RAN = 0
                 horizon.on("loot_drops", function(event)
@@ -7524,7 +8024,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -7573,7 +8073,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "pack-order",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.on("data_pack_files", function(event)
                   assert(event.files[1].path == "data/test/pack.json", "pack first")
@@ -7582,7 +8082,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         // The world's own pack file is already there when the mod appends.
         let mut files = vec![("data/test/pack.json".to_owned(), b"p".to_vec())];
         m.data_pack_files(&NoHost, &mut test_events::data_pack_files_event(&mut files));
@@ -7615,7 +8115,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "goal-action",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.goal("summoner", {
                   can_use = function(mob, state, out)
@@ -7629,7 +8129,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let def = m.goals.lock().unwrap().get("summoner").cloned().unwrap();
         let behaviour = def
             .behaviour(m.lua.clone(), m.id(), m.budget.clone())
@@ -7666,9 +8166,9 @@ experimental = ["scripts"]
         // At init.lua's top level the same: the load fails, naming the call.
         let (dir, path) = hmod(
             "load-action",
-            &[("scripts/init.lua", b"horizon.broadcast('hello')")],
+            &[("scripts/server/init.lua", b"horizon.broadcast('hello')")],
         );
-        let e = LuaMod::load(&path, &[]).unwrap_err();
+        let e = LuaMod::load(&path, LuaSide::Server, &[]).unwrap_err();
         assert!(e.contains("horizon.broadcast"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -7678,7 +8178,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "half",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.on("mob_spawned", function()
                   local w = horizon.world_data()
@@ -7689,7 +8189,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = MobHost {
             attachments: Default::default(),
             health: Vec::new(),
@@ -7788,13 +8288,13 @@ experimental = ["scripts"]
         let (lib_dir, lib) = hmod(
             "lib",
             &[
-                ("scripts/init.lua", b"LIB_RAN = true"),
+                ("scripts/server/init.lua", b"LIB_RAN = true"),
                 (
-                    "scripts/modkit.lua",
+                    "scripts/server/modkit.lua",
                     b"local m = { VERSION = '1', entity = require('modkit.entity') }\nreturn m",
                 ),
                 (
-                    "scripts/modkit/entity/init.lua",
+                    "scripts/server/modkit/entity/init.lua",
                     b"return { kind = 'entity' }",
                 ),
             ],
@@ -7802,13 +8302,13 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "user",
             &[
-                ("scripts/init.lua", b"local modkit = require('@modkit')\nV = modkit.VERSION .. modkit.entity.kind\nMINE = require('mine')\nSAME = require('modkit/entity') == modkit.entity and require('modkit.entity') == modkit.entity"),
-                ("scripts/mine.lua", b"return 'own'"),
+                ("scripts/server/init.lua", b"local modkit = require('@modkit')\nV = modkit.VERSION .. modkit.entity.kind\nMINE = require('mine')\nSAME = require('modkit/entity') == modkit.entity and require('modkit.entity') == modkit.entity"),
+                ("scripts/server/mine.lua", b"return 'own'"),
                 // The mod's own module wins a shared name.
-                ("scripts/modkit/entity.lua", b"return { kind = 'own entity' }"),
+                ("scripts/server/modkit/entity.lua", b"return { kind = 'own entity' }"),
             ],
         );
-        let m = LuaMod::load(&path, &[("lib".into(), lib.clone())]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[("lib".into(), lib.clone())]).unwrap();
         assert_eq!(m.lua.globals().get::<String>("V").unwrap(), "1own entity");
         assert_eq!(m.lua.globals().get::<String>("MINE").unwrap(), "own");
         // `@modkit/entity` and `modkit/entity` name the same module as `modkit.entity`.
@@ -7822,23 +8322,30 @@ experimental = ["scripts"]
                 .is_none()
         );
         // Without the library, the first require fails and names the search.
-        let e = LuaMod::load(&path, &[]).unwrap_err();
+        let e = LuaMod::load(&path, LuaSide::Server, &[]).unwrap_err();
         assert!(
-            e.contains("scripts/modkit.lua") && e.contains("depends on"),
+            e.contains("scripts/server/modkit.lua") && e.contains("depends on"),
             "{e}"
         );
         // A bad name is refused before any lookup.
-        let (bad_dir, bad) = hmod("badname", &[("scripts/init.lua", b"require('../x')")]);
-        assert!(LuaMod::load(&bad, &[]).unwrap_err().contains("for folders"));
+        let (bad_dir, bad) = hmod(
+            "badname",
+            &[("scripts/server/init.lua", b"require('../x')")],
+        );
+        assert!(
+            LuaMod::load(&bad, LuaSide::Server, &[])
+                .unwrap_err()
+                .contains("for folders")
+        );
         // The registry script's modules are not the scripts' to run.
         let (reg_dir, reg) = hmod(
             "registry-module",
             &[
-                ("scripts/init.lua", b"require('@registry/items')"),
+                ("scripts/server/init.lua", b"require('@registry/items')"),
                 ("scripts/registry/items.lua", b"return 1"),
             ],
         );
-        let e = LuaMod::load(&reg, &[]).unwrap_err();
+        let e = LuaMod::load(&reg, LuaSide::Server, &[]).unwrap_err();
         assert!(e.contains("scripts/registry/") && e.contains("once"), "{e}");
         for d in [lib_dir, dir, bad_dir, reg_dir] {
             std::fs::remove_dir_all(&d).unwrap();
@@ -7851,7 +8358,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "block-entity",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 horizon.block_entity("ruby:hive", { ticks = true, data = { charge = 0, name = "x" } })
                 horizon.block_entity("ruby:lamp")
@@ -7868,7 +8375,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let mut host = NoHost;
         let key = |k: &str| horizon_world::nbt::JavaString::from(k);
         // A declared block gets a block entity with its starting data; others none.
@@ -7973,13 +8480,13 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "unknown-hook",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 b"horizon.on(\"player_logged_in\", function() end)\nhorizon.on(\"player_jioned\", function() end)\n",
             )],
         );
-        let e = LuaMod::load(&path, &[]).unwrap_err();
+        let e = LuaMod::load(&path, LuaSide::Server, &[]).unwrap_err();
         assert!(
-            e.contains("scripts/init.lua\"]:2:")
+            e.contains("scripts/server/init.lua\"]:2:")
                 && e.contains("no such hook")
                 && e.contains("player_jioned")
                 && e.contains("player_logged_in")
@@ -7999,19 +8506,22 @@ experimental = ["scripts"]
             "fine",
             &[
                 (
-                    "scripts/init.lua",
+                    "scripts/server/init.lua",
                     b"local m = require(\"helper\")\nhorizon.on(\"player_logged_in\", m.hello)\n",
                 ),
-                ("scripts/helper.lua", b"return { hello = function() end }\n"),
+                (
+                    "scripts/server/helper.lua",
+                    b"return { hello = function() end }\n",
+                ),
             ],
         );
         let lines = check_mod(&path, &[], None).unwrap();
         assert_eq!(
             lines,
             [
-                "ruby: scripts loaded",
-                "  scripts/helper.lua",
-                "  scripts/init.lua"
+                "ruby: [server] scripts loaded",
+                "  scripts/server/helper.lua",
+                "  scripts/server/init.lua"
             ]
         );
         std::fs::remove_dir_all(&dir).unwrap();
@@ -8034,7 +8544,8 @@ experimental = ["scripts"]
             let path = dir.join(name);
             std::fs::write(
                 &path,
-                Package::write_files(&manifest, None, &[("scripts/init.lua", init)]).unwrap(),
+                Package::write_files(&manifest, None, &[("scripts/server/init.lua", init)])
+                    .unwrap(),
             )
             .unwrap();
             path
@@ -8056,7 +8567,7 @@ experimental = ["scripts"]
             lines.iter().any(|l| l.contains("with lib from")),
             "{lines:?}"
         );
-        let m = LuaMod::load(&user, &[("lib".into(), new)]).unwrap();
+        let m = LuaMod::load(&user, LuaSide::Server, &[("lib".into(), new)]).unwrap();
         assert_eq!(m.lua.globals().get::<String>("MINE").unwrap(), "0.3.0");
         assert_eq!(m.lua.globals().get::<String>("LIB").unwrap(), "2.1.0");
         std::fs::remove_dir_all(&dir).unwrap();
@@ -8067,13 +8578,13 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "status",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 b"horizon.goal('stalk', { can_use = function() return false end })\n\
                   horizon.on('server_tick', function() end)\n\
                   horizon.on('mob_spawned', function() error('oops') end)",
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         m.publish(None);
         let of = |m: &LuaMod| {
             horizon_client::dev_input::mods::status()
@@ -8107,9 +8618,9 @@ experimental = ["scripts"]
         assert!(of(&m).error.unwrap().contains("oops"));
         // The console asks for a reload, by id or for everyone: each is served once.
         assert!(!m.reload_asked());
-        horizon_client::dev_input::mods::request_reload(Some(m.id()));
+        horizon_client::dev_input::mods::request_reload(Some(m.id()), None);
         assert!(m.reload_asked() && !m.reload_asked());
-        horizon_client::dev_input::mods::request_reload(None);
+        horizon_client::dev_input::mods::request_reload(None, None);
         assert!(m.reload_asked() && !m.reload_asked());
         m.reload_now("the test");
         let s = of(&m);
@@ -8119,15 +8630,71 @@ experimental = ["scripts"]
     }
 
     #[test]
+    fn reload_now_holds_the_turn_across_reload_and_publish() {
+        let (dir, path) = hmod(
+            "reload-turn",
+            &[(
+                "scripts/server/init.lua",
+                br#"horizon.on("server_tick", function() end)"#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        m.publish(None);
+        let of = |m: &LuaMod| {
+            horizon_client::dev_input::mods::status()
+                .into_iter()
+                .find(|s| s.id == m.id())
+                .unwrap()
+        };
+        let before = of(&m).reloads;
+        // A firing started from another thread during the reload is
+        // serialised: reload_now holds the turn until publish returns.
+        // Modelled on turn::tests::two_threads_serialise: the holder
+        // keeps the turn for 50 ms, reload_now waits for it.
+        let waited = std::thread::scope(|s| {
+            let m_ref = &m;
+            let h = s.spawn(move || {
+                let _g = m_ref.turn.try_acquire_timeout(turn::TURN_TIMEOUT).unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            });
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            let t0 = std::time::Instant::now();
+            m.reload_now("the test");
+            let waited = t0.elapsed();
+            h.join().unwrap();
+            waited
+        });
+        assert!(
+            waited >= std::time::Duration::from_millis(35),
+            "reload_now was serialised behind the holder: {waited:?}"
+        );
+        let s = of(&m);
+        assert_eq!(s.reloads, before + 1, "the status store shows the reload");
+        assert!(s.error.is_none());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn a_missing_module_or_a_failing_script_is_an_error_with_the_file_named() {
-        let (dir, path) = hmod("missing", &[("scripts/init.lua", b"require('nothing')")]);
-        let e = LuaMod::load(&path, &[]).unwrap_err();
-        assert!(e.contains("scripts/nothing.lua"), "{e}");
+        let (dir, path) = hmod(
+            "missing",
+            &[("scripts/server/init.lua", b"require('nothing')")],
+        );
+        let e = LuaMod::load(&path, LuaSide::Server, &[]).unwrap_err();
+        assert!(
+            e.contains(
+                "no scripts/server/nothing.lua or scripts/shared/nothing.lua in the mod or the mods it depends on"
+            ),
+            "{e}"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
 
-        let (dir, path) = hmod("broken", &[("scripts/init.lua", b"error('boom')")]);
-        let e = LuaMod::load(&path, &[]).unwrap_err();
-        assert!(e.contains("boom") && e.contains("scripts/init.lua"), "{e}");
+        let (dir, path) = hmod("broken", &[("scripts/server/init.lua", b"error('boom')")]);
+        let e = LuaMod::load(&path, LuaSide::Server, &[]).unwrap_err();
+        assert!(
+            e.contains("boom") && e.contains("scripts/server/init.lua"),
+            "{e}"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -8193,7 +8760,7 @@ experimental = ["scripts"]
         let (dir, path) = hmod(
             "stick",
             &[(
-                "scripts/init.lua",
+                "scripts/server/init.lua",
                 br#"
                 HEARD = {}
                 horizon.on("interact_entity", function(event)
@@ -8212,7 +8779,7 @@ experimental = ["scripts"]
                 "#,
             )],
         );
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         let stick = horizon_client::mod_api::ItemStack {
             item: "horizon_modkit:inspect_stick".into(),
             count: 1,
@@ -8302,7 +8869,7 @@ experimental = ["scripts"]
     /// legal. The mod keeps its old timers, as a failed reload does.
     #[test]
     fn a_timer_delay_must_be_finite_and_in_range() {
-        let (dir, path) = hmod("timer-delay", &[("scripts/init.lua", b"")]);
+        let (dir, path) = hmod("timer-delay", &[("scripts/server/init.lua", b"")]);
         let cases = [
             ("horizon.after(1/0, function() end)", "horizon.after"),
             ("horizon.after(0/0, function() end)", "horizon.after"),
@@ -8311,14 +8878,14 @@ experimental = ["scripts"]
             ("horizon.every(0/0, function() end)", "horizon.every"),
             ("horizon.every(0, function() end)", "horizon.every"),
         ];
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
         for (code, func) in cases {
             std::fs::write(
                 &path,
                 Package::write_files(
                     MANIFEST_TEXT,
                     None,
-                    &[("scripts/init.lua", code.as_bytes())],
+                    &[("scripts/server/init.lua", code.as_bytes())],
                 )
                 .unwrap(),
             )
@@ -8332,7 +8899,7 @@ experimental = ["scripts"]
                 MANIFEST_TEXT,
                 None,
                 &[(
-                    "scripts/init.lua",
+                    "scripts/server/init.lua",
                     b"horizon.after(0, function() end)\nhorizon.every(1, function() end)",
                 )],
             )
@@ -8340,6 +8907,917 @@ experimental = ["scripts"]
         )
         .unwrap();
         m.reload().expect("after(0) and every(1) load");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// `hmod` under the mod id `id`, so one test can hold two mods.
+    fn hmod_as(id: &str, files: &[(&str, &[u8])]) -> (PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("horizon-lua-{}-{id}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{id}.hmod"));
+        let manifest = MANIFEST_TEXT.replacen("id = \"ruby\"", &format!("id = \"{id}\""), 1);
+        std::fs::write(&path, Package::write_files(&manifest, None, files).unwrap()).unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn each_side_reads_its_own_folder_and_shared_only() {
+        let (dir, path) = hmod_as(
+            "three_folders",
+            &[
+                (
+                    "scripts/server/init.lua",
+                    b"SIDE = horizon.side\nSHARED = require('util').who\nSAME = require('same').who\nlocal ok, err = pcall(require, 'client_only')\nOK = ok\nERR = tostring(err)",
+                ),
+                ("scripts/server/same.lua", b"return { who = 'server' }"),
+                (
+                    "scripts/client/init.lua",
+                    b"SIDE = horizon.side\nSHARED = require('util').who\nSAME = require('same').who\nONLY = require('client_only').who",
+                ),
+                ("scripts/client/same.lua", b"return { who = 'client' }"),
+                ("scripts/client/client_only.lua", b"return { who = 'client' }"),
+                ("scripts/shared/util.lua", b"return { who = 'shared' }"),
+                ("scripts/shared/same.lua", b"return { who = 'shared' }"),
+            ],
+        );
+        let server = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let client = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let text = |m: &LuaMod, name: &str| m.lua.globals().get::<String>(name).unwrap();
+        assert_eq!(server.side(), LuaSide::Server);
+        assert_eq!(text(&server, "SIDE"), "server");
+        assert_eq!(text(&server, "SHARED"), "shared");
+        assert_eq!(text(&server, "SAME"), "server");
+        assert!(!server.lua.globals().get::<bool>("OK").unwrap());
+        assert!(text(&server, "ERR").contains("client_only"));
+        assert_eq!(client.side(), LuaSide::Client);
+        assert_eq!(text(&client, "SIDE"), "client");
+        assert_eq!(text(&client, "SHARED"), "shared");
+        assert_eq!(text(&client, "SAME"), "client");
+        assert_eq!(text(&client, "ONLY"), "client");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn discover_gives_a_state_per_side_the_mod_has_and_no_client_when_dedicated() {
+        let (dir_a, both) = hmod_as(
+            "sides_both",
+            &[
+                ("scripts/server/init.lua", b"horizon.log('server')"),
+                ("scripts/client/init.lua", b"horizon.log('client')"),
+            ],
+        );
+        let (dir_b, server_only) = hmod_as(
+            "sides_server",
+            &[("scripts/server/init.lua", b"horizon.log('only')")],
+        );
+        let (dir_c, client_only) = hmod_as(
+            "sides_client",
+            &[("scripts/client/init.lua", b"horizon.log('only')")],
+        );
+        let game = std::env::temp_dir().join(format!("horizon-lua-{}-game", std::process::id()));
+        std::fs::create_dir_all(&game).unwrap();
+        let states = |dedicated: bool| -> Vec<(String, LuaSide)> {
+            let mut args = vec!["--game-dir".to_string(), game.display().to_string()];
+            if dedicated {
+                args.push("--dedicated".into());
+            }
+            for path in [&both, &server_only, &client_only] {
+                args.extend(["--dev-mod".to_string(), path.display().to_string()]);
+            }
+            load_states(args.into_iter())
+                .iter()
+                .map(|m| (m.id().to_owned(), m.side()))
+                .collect()
+        };
+        let pair = |id: &str, side: LuaSide| (id.to_owned(), side);
+        assert_eq!(
+            states(false),
+            [
+                pair("sides_both", LuaSide::Server),
+                pair("sides_both", LuaSide::Client),
+                pair("sides_server", LuaSide::Server),
+                pair("sides_client", LuaSide::Client),
+            ]
+        );
+        assert_eq!(
+            states(true),
+            [
+                pair("sides_both", LuaSide::Server),
+                pair("sides_server", LuaSide::Server),
+            ]
+        );
+        for dir in [dir_a, dir_b, dir_c, game] {
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_shared_only_library_satisfies_a_dependent_require_on_both_sides() {
+        let dir =
+            std::env::temp_dir().join(format!("horizon-lua-{}-shared-lib", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let manifest = |id: &str, depends: &str| {
+            format!(
+                "id = \"{id}\"\nname = \"{id}\"\nversion = \"0.1.0\"\napi = \"0.2\"\nside = \"both\"\ncapabilities = [\"scripts\"]\nexperimental = [\"scripts\"]\ndepends = [{depends}]\n"
+            )
+        };
+        let lib = dir.join("lib.hmod");
+        std::fs::write(
+            &lib,
+            Package::write_files(
+                &manifest("lib", ""),
+                None,
+                &[("scripts/shared/helper.lua", b"return 42")],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let user = dir.join("user.hmod");
+        std::fs::write(
+            &user,
+            Package::write_files(
+                &manifest("user", "\"lib\""),
+                None,
+                &[
+                    ("scripts/server/init.lua", b"local v = require('helper')\nV = v\nhorizon.log('helper ' .. tostring(v))"),
+                    ("scripts/client/init.lua", b"local v = require('helper')\nV = v\nhorizon.log('helper ' .. tostring(v))"),
+                ],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let server = LuaMod::load(&user, LuaSide::Server, &[("lib".into(), lib.clone())]).unwrap();
+        let client = LuaMod::load(&user, LuaSide::Client, &[("lib".into(), lib.clone())]).unwrap();
+        assert_eq!(server.lua.globals().get::<i32>("V").unwrap(), 42);
+        assert_eq!(client.lua.globals().get::<i32>("V").unwrap(), 42);
+        let game = dir.join("game");
+        std::fs::create_dir_all(&game).unwrap();
+        let states: Vec<(String, LuaSide)> = load_states(
+            [
+                "--game-dir".to_string(),
+                game.display().to_string(),
+                "--dev-mod".to_string(),
+                lib.display().to_string(),
+                "--dev-mod".to_string(),
+                user.display().to_string(),
+            ]
+            .into_iter(),
+        )
+        .iter()
+        .map(|m| (m.id().to_owned(), m.side()))
+        .collect();
+        assert_eq!(
+            states,
+            [
+                ("user".to_string(), LuaSide::Server),
+                ("user".to_string(), LuaSide::Client)
+            ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn check_mod_names_the_side_whose_init_fails() {
+        let (dir, path) = hmod_as(
+            "check_sides",
+            &[
+                ("scripts/server/init.lua", b"horizon.log('server ok')"),
+                ("scripts/client/init.lua", b"error('client boom')"),
+            ],
+        );
+        let e = check_mod(&path, &[], None).unwrap_err();
+        assert!(e.contains("[client]") && e.contains("boom"), "{e}");
+        assert!(!e.contains("[server]"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn check_mod_reports_each_side_it_loads() {
+        let (dir, path) = hmod_as(
+            "check_both",
+            &[
+                ("scripts/server/init.lua", b"horizon.log('server ok')"),
+                ("scripts/client/init.lua", b"horizon.log('client ok')"),
+            ],
+        );
+        let lines = check_mod(&path, &[], None).unwrap();
+        assert!(
+            lines.iter().any(|l| l.contains("[server] scripts loaded")),
+            "{lines:?}"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("[client] scripts loaded")),
+            "{lines:?}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The first hook of `side` in the generated table that `horizon.on`
+    /// accepts: the gate tests read their hooks from it, so no test names a
+    /// hook the table could move.
+    fn first_hook(side: HookSide) -> &'static str {
+        crate::generated_hooks::HOOK_SIDES
+            .iter()
+            .find(|(name, s)| {
+                *s == side && crate::generated_hooks::GENERATED_HOOK_NAMES.contains(name)
+            })
+            .map(|(name, _)| *name)
+            .unwrap()
+    }
+
+    #[test]
+    fn a_side_allows_its_own_hooks_and_both() {
+        assert!(LuaSide::Server.allows(HookSide::Server));
+        assert!(LuaSide::Server.allows(HookSide::Both));
+        assert!(!LuaSide::Server.allows(HookSide::Client));
+        assert!(LuaSide::Client.allows(HookSide::Client));
+        assert!(LuaSide::Client.allows(HookSide::Both));
+        assert!(!LuaSide::Client.allows(HookSide::Server));
+    }
+
+    #[test]
+    fn the_generated_table_has_a_hook_of_each_side() {
+        for side in [HookSide::Client, HookSide::Server, HookSide::Both] {
+            assert!(
+                crate::generated_hooks::HOOK_SIDES
+                    .iter()
+                    .any(|(_, s)| *s == side),
+                "no {side:?} hook"
+            );
+        }
+    }
+
+    #[test]
+    fn a_server_state_refuses_a_client_hook_at_load() {
+        let hook = first_hook(HookSide::Client);
+        let lua = format!("horizon.on('{hook}', function() end)");
+        let (dir, path) = hmod_as(
+            "gate_server",
+            &[("scripts/server/init.lua", lua.as_bytes())],
+        );
+        let e = LuaMod::load(&path, LuaSide::Server, &[])
+            .expect_err("a client hook in the server state must fail to load");
+        assert!(
+            e.contains(&format!("hook '{hook}' runs on the client")),
+            "{e}"
+        );
+        assert!(e.contains("register it from scripts/client/"), "{e}");
+        assert!(
+            e.contains("this is the server state of mod gate_server"),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_client_state_refuses_a_server_hook_at_load() {
+        let hook = first_hook(HookSide::Server);
+        let lua = format!("horizon.on('{hook}', function() end)");
+        let (dir, path) = hmod_as(
+            "gate_client",
+            &[("scripts/client/init.lua", lua.as_bytes())],
+        );
+        let e = LuaMod::load(&path, LuaSide::Client, &[])
+            .expect_err("a server hook in the client state must fail to load");
+        assert!(
+            e.contains(&format!("hook '{hook}' runs on the server")),
+            "{e}"
+        );
+        assert!(e.contains("register it from scripts/server/"), "{e}");
+        assert!(
+            e.contains("this is the client state of mod gate_client"),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn each_state_registers_its_own_side_and_both_sides_share_a_both_hook() {
+        let own_server = format!(
+            "horizon.on('{}', function() end)",
+            first_hook(HookSide::Server)
+        );
+        let own_client = format!(
+            "horizon.on('{}', function() end)",
+            first_hook(HookSide::Client)
+        );
+        let both = format!(
+            "horizon.on('{}', function() end)",
+            first_hook(HookSide::Both)
+        );
+        let (dir, path) = hmod_as(
+            "gate_each",
+            &[
+                (
+                    "scripts/server/init.lua",
+                    format!("{own_server}\n{both}").as_bytes(),
+                ),
+                (
+                    "scripts/client/init.lua",
+                    format!("{own_client}\n{both}").as_bytes(),
+                ),
+            ],
+        );
+        assert!(LuaMod::load(&path, LuaSide::Server, &[]).is_ok());
+        assert!(LuaMod::load(&path, LuaSide::Client, &[]).is_ok());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_shared_module_with_a_client_hook_loads_only_in_the_client_state() {
+        let hook = first_hook(HookSide::Client);
+        let shared = format!("horizon.on('{hook}', function() end)");
+        let (dir, path) = hmod_as(
+            "gate_shared",
+            &[
+                ("scripts/server/init.lua", b"require('hud')"),
+                ("scripts/client/init.lua", b"require('hud')"),
+                ("scripts/shared/hud.lua", shared.as_bytes()),
+            ],
+        );
+        let e = LuaMod::load(&path, LuaSide::Server, &[])
+            .expect_err("the server state requires the client hook's module");
+        assert!(e.contains("runs on the client"), "{e}");
+        assert!(LuaMod::load(&path, LuaSide::Client, &[]).is_ok());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+    #[test]
+    fn the_engine_filter_enters_only_the_callers_side_for_a_both_hook() {
+        // `can_eat` is a Both hook with a listen contract (`native-hooks.json`): a counter
+        // handler is all it needs. `client_start` is a Client hook with a listen contract.
+        assert_eq!(
+            crate::generated_hooks::hook_side("can_eat"),
+            Some(HookSide::Both)
+        );
+        assert!(crate::generated_hooks::GENERATED_HOOK_NAMES.contains(&"can_eat"));
+        assert_eq!(
+            crate::generated_hooks::hook_side("client_start"),
+            Some(HookSide::Client)
+        );
+        assert!(crate::generated_hooks::GENERATED_HOOK_NAMES.contains(&"client_start"));
+        let (dir, path) = hmod_as(
+            "entered_filter",
+            &[
+                (
+                    "scripts/server/init.lua",
+                    br#"BOTH_COUNTER = 0
+horizon.on("can_eat", function(event) BOTH_COUNTER = BOTH_COUNTER + 1 end)"#,
+                ),
+                (
+                    "scripts/client/init.lua",
+                    br#"BOTH_COUNTER = 0
+CLIENT_COUNTER = 0
+horizon.on("can_eat", function(event) BOTH_COUNTER = BOTH_COUNTER + 1 end)
+horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 end)"#,
+                ),
+            ],
+        );
+        let game = std::env::temp_dir().join(format!(
+            "horizon-lua-{}-entered-filter-game",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&game).unwrap();
+        let args = vec![
+            "--game-dir".to_string(),
+            game.display().to_string(),
+            "--dev-mod".to_string(),
+            path.display().to_string(),
+        ];
+        let states = load_states(args.into_iter());
+        assert_eq!(states.len(), 2);
+        let server_idx = states
+            .iter()
+            .position(|m| m.side() == LuaSide::Server)
+            .unwrap();
+        let client_idx = states
+            .iter()
+            .position(|m| m.side() == LuaSide::Client)
+            .unwrap();
+        // `discover` boxes the states, which would hide their Lua states; keep handles to read
+        // the per-state counters.
+        let lua_server = states[server_idx].lua.clone();
+        let lua_client = states[client_idx].lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = states
+            .into_iter()
+            .map(|m| Box::new(m) as Box<dyn Hooks>)
+            .collect();
+        assert_eq!(mods[server_idx].mod_side(), Some(ModSide::Server));
+        assert_eq!(mods[client_idx].mod_side(), Some(ModSide::Client));
+        let entered_sides = |caller: Option<ModSide>, hook: &'static str, side: HookSide| {
+            horizon_client::mod_api::with_caller_side(caller, || {
+                horizon_client::mod_api::entered(&mods, hook, side)
+                    .map(|m| m.mod_side())
+                    .collect::<Vec<_>>()
+            })
+        };
+        assert_eq!(
+            entered_sides(Some(ModSide::Server), "can_eat", HookSide::Both),
+            vec![Some(ModSide::Server)]
+        );
+        assert_eq!(
+            entered_sides(Some(ModSide::Client), "can_eat", HookSide::Both),
+            vec![Some(ModSide::Client)]
+        );
+        assert_eq!(
+            entered_sides(None, "can_eat", HookSide::Both),
+            vec![Some(ModSide::Server), Some(ModSide::Client)]
+        );
+        // A Client hook reaches only the client state, whatever the caller; the server state
+        // never registers it (the gate), so the filter is asserted on `entered` directly.
+        for caller in [None, Some(ModSide::Client), Some(ModSide::Server)] {
+            assert_eq!(
+                entered_sides(caller, "client_start", HookSide::Client),
+                vec![Some(ModSide::Client)]
+            );
+        }
+        struct NoopHost;
+        impl Host for NoopHost {}
+        let counter = |lua: &mlua::Lua, name: &str| -> i64 { lua.globals().get(name).unwrap_or(0) };
+        let fire_both = |caller: Option<ModSide>| {
+            horizon_client::mod_api::with_caller_side(caller, || {
+                let host = NoopHost;
+                let stack = ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                };
+                let mut can_eat = false;
+                horizon_client::mod_api::dispatch_can_eat(&host, &mods, &stack, &mut can_eat);
+            });
+        };
+        fire_both(Some(ModSide::Server));
+        assert_eq!(counter(&lua_server, "BOTH_COUNTER"), 1);
+        assert_eq!(counter(&lua_client, "BOTH_COUNTER"), 0);
+        fire_both(Some(ModSide::Client));
+        assert_eq!(counter(&lua_server, "BOTH_COUNTER"), 1);
+        assert_eq!(counter(&lua_client, "BOTH_COUNTER"), 1);
+        fire_both(None);
+        assert_eq!(counter(&lua_server, "BOTH_COUNTER"), 2);
+        assert_eq!(counter(&lua_client, "BOTH_COUNTER"), 2);
+        // A Client hook still reaches the client state when the caller is the server.
+        horizon_client::mod_api::with_caller_side(Some(ModSide::Server), || {
+            let mut host = NoopHost;
+            horizon_client::mod_api::dispatch_client_start(&mut host, &mods);
+        });
+        assert_eq!(counter(&lua_client, "CLIENT_COUNTER"), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&game).unwrap();
+    }
+
+    #[test]
+    fn profiler_splits_the_two_states_of_one_mod_by_side() {
+        let _lock = crate::profiler::test_lock();
+        crate::profiler::profile_reset();
+        let (dir, path) = hmod_as(
+            "profile_sides_both",
+            &[
+                (
+                    "scripts/server/init.lua",
+                    br#"horizon.on("can_eat", function(event) end)"#,
+                ),
+                (
+                    "scripts/client/init.lua",
+                    br#"horizon.on("can_eat", function(event) end)"#,
+                ),
+            ],
+        );
+        let game = std::env::temp_dir().join(format!(
+            "horizon-lua-{}-profile-sides-game",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&game).unwrap();
+        let args = vec![
+            "--game-dir".to_string(),
+            game.display().to_string(),
+            "--dev-mod".to_string(),
+            path.display().to_string(),
+        ];
+        let states = load_states(args.into_iter());
+        assert_eq!(states.len(), 2);
+        let mods: Vec<Box<dyn Hooks>> = states
+            .into_iter()
+            .map(|m| Box::new(m) as Box<dyn Hooks>)
+            .collect();
+        struct NoopHost;
+        impl Host for NoopHost {}
+        let fire = |caller: Option<ModSide>| {
+            horizon_client::mod_api::with_caller_side(caller, || {
+                let host = NoopHost;
+                let stack = ItemStack {
+                    item: "test:stack".into(),
+                    count: 1,
+                    damage: 0,
+                    extra: None,
+                };
+                let mut can_eat = false;
+                horizon_client::mod_api::dispatch_can_eat(&host, &mods, &stack, &mut can_eat);
+            });
+        };
+        fire(Some(ModSide::Server));
+        fire(Some(ModSide::Client));
+        let rows: Vec<_> = crate::profiler::profile_report()
+            .into_iter()
+            .filter(|r| r.r#mod == "profile_sides_both")
+            .collect();
+        assert_eq!(rows.len(), 2, "one row per side: {rows:?}");
+        assert_eq!(rows[0].side, "client");
+        assert_eq!(rows[0].calls, 1);
+        assert_eq!(rows[1].side, "server");
+        assert_eq!(rows[1].calls, 1);
+        assert_eq!(rows[0].hook, "can_eat");
+        assert_eq!(rows[1].hook, "can_eat");
+        crate::profiler::profile_reset();
+        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&game).unwrap();
+    }
+
+    #[test]
+    fn a_client_state_raises_for_server_only_api_and_stays_usable() {
+        let (dir, path) = hmod(
+            "client_stubs",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                local function expect_server_only(name, f)
+                  local ok, err = pcall(f)
+                  assert(not ok, name .. " should fail in a client state")
+                  local text = tostring(err)
+                  assert(
+                    string.find(text, "horizon." .. name .. " is only available in scripts/server/", 1, true),
+                    name .. ": " .. text
+                  )
+                  assert(
+                    string.find(text, "this is the client state of mod ruby", 1, true),
+                    name .. ": " .. text
+                  )
+                end
+                expect_server_only("set_block", function() horizon.set_block(0, 0, 0, "minecraft:stone") end)
+                expect_server_only("world_data", function() return horizon.world_data() end)
+                expect_server_only("player_data", function() return horizon.player_data("x") end)
+                expect_server_only("entity_data", function() return horizon.entity_data(1) end)
+                expect_server_only("summon", function() return horizon.summon("minecraft:overworld", "minecraft:cow", 0, 0, 0) end)
+                expect_server_only("players", function() return horizon.players() end)
+                -- A stubbed error does not break the state.
+                horizon.log("after stubs")
+                assert(horizon.side == "client")
+                local ok, err = pcall(horizon.after, 1, function() end)
+                assert(ok, tostring(err))
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        assert_eq!(m.id(), "ruby");
+        assert_eq!(m.side(), LuaSide::Client);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_client_state_keeps_the_allow_list() {
+        let (dir, path) = hmod(
+            "client_api",
+            &[
+                (
+                    "scripts/client/init.lua",
+                    br#"
+                    assert(horizon.mod_id == "ruby", "mod_id")
+                    assert(horizon.side == "client", "side")
+                    assert(type(horizon.mod_version) == "string", "mod_version")
+                    assert(type(horizon.libraries) == "table", "libraries")
+                    assert(type(horizon.log) == "function", "log")
+                    assert(type(horizon.on) == "function", "on")
+                    assert(type(horizon.after) == "function", "after")
+                    assert(type(horizon.every) == "function", "every")
+                    assert(type(horizon.ticks) == "function", "ticks")
+                    assert(type(horizon.config) == "function", "config")
+                    assert(type(horizon.save_config) == "function", "save_config")
+                    assert(type(horizon.dev) == "table", "dev")
+                    assert(type(horizon.dev.inspect) == "function", "dev.inspect")
+                    assert(type(horizon.distance) == "function", "distance")
+                    assert(type(horizon.handled) == "function", "handled")
+                    assert(type(horizon.cancel) == "function", "cancel")
+                    assert(type(horizon.require) == "function", "require")
+                    local ok, e = pcall(horizon.log, "x")
+                    assert(ok, tostring(e))
+                    local ok2, e2 = pcall(horizon.after, 1, function() end)
+                    assert(ok2, tostring(e2))
+                    local ok3, e3 = pcall(horizon.every, 1, function() end)
+                    assert(ok3, tostring(e3))
+                    local ok4, e4 = pcall(horizon.ticks)
+                    assert(ok4 and type(e4) == "number", tostring(e4))
+                    local d = horizon.distance({ x = 0, y = 0, z = 0 }, { x = 3, y = 4, z = 0 })
+                    assert(d == 5, tostring(d))
+                    assert(pcall(horizon.on, "client_start", function(event) end))
+                    assert(require("util") == 42)
+                    local c = horizon.config()
+                    assert(type(c) == "table", "config")
+                    horizon.save_config({ k = 1 })
+                    local ok5, e5 = pcall(horizon.handled)
+                    assert(not ok5)
+                    assert(not string.find(tostring(e5), "is only available in scripts/server/", 1, true), tostring(e5))
+                    local ok6, e6 = pcall(horizon.cancel)
+                    assert(not ok6)
+                    assert(not string.find(tostring(e6), "is only available in scripts/server/", 1, true), tostring(e6))
+                    "#,
+                ),
+                ("scripts/shared/util.lua", b"return 42"),
+            ],
+        );
+        let config = dir.join("config");
+        let m = LuaMod::load_with(&path, LuaSide::Client, &[], Some(&config)).unwrap();
+        assert_eq!(m.side(), LuaSide::Client);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn each_state_keeps_its_own_settings_file() {
+        let (dir, path) = hmod(
+            "per-side-config",
+            &[
+                (
+                    "scripts/server/init.lua",
+                    br#"
+                    local c = horizon.config()
+                    SERVER_LOAD_A = c.a
+                    SERVER_LOAD_B = c.b
+                    horizon.save_config({a = 1})
+                    local d = horizon.config()
+                    SERVER_AFTER_A = d.a
+                    SERVER_AFTER_B = d.b
+                    "#,
+                ),
+                (
+                    "scripts/client/init.lua",
+                    br#"
+                    local c = horizon.config()
+                    CLIENT_LOAD_A = c.a
+                    CLIENT_LOAD_B = c.b
+                    horizon.save_config({b = 2})
+                    local d = horizon.config()
+                    CLIENT_AFTER_A = d.a
+                    CLIENT_AFTER_B = d.b
+                    "#,
+                ),
+            ],
+        );
+        let config = dir.join("config");
+        let server = LuaMod::load_with(&path, LuaSide::Server, &[], Some(&config)).unwrap();
+        assert!(config.join("ruby.json").exists());
+        assert!(!config.join("ruby.client.json").exists());
+        let g = server.lua.globals();
+        assert!(g.get::<Value>("SERVER_LOAD_A").unwrap().is_nil());
+        assert!(g.get::<Value>("SERVER_LOAD_B").unwrap().is_nil());
+        assert_eq!(g.get::<i64>("SERVER_AFTER_A").unwrap(), 1);
+        assert!(g.get::<Value>("SERVER_AFTER_B").unwrap().is_nil());
+
+        let client = LuaMod::load_with(&path, LuaSide::Client, &[], Some(&config)).unwrap();
+        assert!(config.join("ruby.client.json").exists());
+        let saved_server: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(config.join("ruby.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved_server, serde_json::json!({"a": 1}));
+        let saved_client: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(config.join("ruby.client.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved_client, serde_json::json!({"b": 2}));
+        let g = client.lua.globals();
+        assert!(g.get::<Value>("CLIENT_LOAD_A").unwrap().is_nil());
+        assert!(g.get::<Value>("CLIENT_LOAD_B").unwrap().is_nil());
+        assert_eq!(g.get::<i64>("CLIENT_AFTER_B").unwrap(), 2);
+        assert!(g.get::<Value>("CLIENT_AFTER_A").unwrap().is_nil());
+
+        server.reload().unwrap();
+        client.reload().unwrap();
+        let g = server.lua.globals();
+        assert_eq!(g.get::<i64>("SERVER_LOAD_A").unwrap(), 1);
+        assert!(g.get::<Value>("SERVER_LOAD_B").unwrap().is_nil());
+        let g = client.lua.globals();
+        assert!(g.get::<Value>("CLIENT_LOAD_A").unwrap().is_nil());
+        assert_eq!(g.get::<i64>("CLIENT_LOAD_B").unwrap(), 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_client_state_services_its_own_reload_on_client_tick_pre() {
+        let (dir, path) = hmod_as(
+            "ps7a_client_reload",
+            &[
+                ("scripts/server/init.lua", b"horizon.log('ps7a server')"),
+                ("scripts/client/init.lua", b"horizon.log('ps7a client')"),
+            ],
+        );
+        let game =
+            std::env::temp_dir().join(format!("horizon-lua-{}-ps7a-game", std::process::id()));
+        std::fs::create_dir_all(&game).unwrap();
+        let args = vec![
+            "--game-dir".to_string(),
+            game.display().to_string(),
+            "--dev-mod".to_string(),
+            path.display().to_string(),
+        ];
+        let states = load_states(args.into_iter());
+        assert_eq!(states.len(), 2, "one state per side");
+        let id = states[0].id().to_owned();
+        let mods: Vec<Box<dyn Hooks>> = states
+            .into_iter()
+            .map(|m| Box::new(m) as Box<dyn Hooks>)
+            .collect();
+        let reloads_of = |side: &str| -> u32 {
+            horizon_client::dev_input::mods::status()
+                .into_iter()
+                .find(|s| s.id == id && s.side == side)
+                .map(|s| s.reloads)
+                .unwrap_or(0)
+        };
+        assert_eq!(reloads_of("server"), 0);
+        assert_eq!(reloads_of("client"), 0);
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        // A client-only reload is serviced by the client tick, not the server tick.
+        horizon_client::dev_input::mods::request_reload(Some(&id), Some("client"));
+        horizon_client::mod_api::dispatch_client_tick_pre(&mut host, &mods);
+        assert_eq!(
+            reloads_of("client"),
+            1,
+            "client state reloaded on client_tick_pre"
+        );
+        assert_eq!(
+            reloads_of("server"),
+            0,
+            "server state untouched by a client-only reload"
+        );
+        // A no-side reload moves both: server on its tick, client on its tick.
+        horizon_client::dev_input::mods::request_reload(Some(&id), None);
+        let context = test_events::native_lifecycle_context(
+            horizon_client::mod_api::NativeAuthority::IntegratedServer,
+            horizon_client::mod_api::NativeWorldEpoch::new(1),
+            horizon_client::mod_api::NativeTickId::new(1),
+        );
+        horizon_client::mod_api::dispatch_server_tick(
+            &mut host,
+            &mods,
+            &context,
+            ServerTickPhase::ServerTickStart {
+                world_running: true,
+            },
+        );
+        horizon_client::mod_api::dispatch_client_tick_pre(&mut host, &mods);
+        assert_eq!(
+            reloads_of("server"),
+            1,
+            "server state reloaded on server_tick"
+        );
+        assert_eq!(
+            reloads_of("client"),
+            2,
+            "client state reloaded again on client_tick_pre"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&game).unwrap();
+    }
+
+    #[test]
+    fn concurrent_hooks_on_one_state_lose_no_queue_action_50x() {
+        let (dir, path) = hmod(
+            "concurrent50",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("loot_table_load", function()
+                  local t0 = os.clock()
+                  while os.clock() - t0 < 0.003 do end
+                  horizon.broadcast("hi")
+                end)
+                "#,
+            )],
+        );
+        let m = std::sync::Arc::new(LuaMod::load(&path, LuaSide::Server, &[]).unwrap());
+        let mut total = 0;
+        for _ in 0..50 {
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+            let m1 = m.clone();
+            let b1 = barrier.clone();
+            let h1 = std::thread::spawn(move || {
+                b1.wait();
+                let a = m1
+                    .run_handlers_with("loot_table_load", None, Reader::None, (), HANDLER_BUDGET)
+                    .unwrap();
+                assert_eq!(a.len(), 1, "one queued action per firing");
+                assert_eq!(a[0].0, "broadcast");
+                a.len()
+            });
+            let m2 = m.clone();
+            let b2 = barrier.clone();
+            let h2 = std::thread::spawn(move || {
+                b2.wait();
+                let a = m2
+                    .run_handlers_with("loot_table_load", None, Reader::None, (), HANDLER_BUDGET)
+                    .unwrap();
+                assert_eq!(a.len(), 1, "one queued action per firing");
+                assert_eq!(a[0].0, "broadcast");
+                a.len()
+            });
+            barrier.wait();
+            total += h1.join().unwrap();
+            total += h2.join().unwrap();
+        }
+        assert_eq!(total, 100, "every queued action exactly once");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn two_states_do_not_block_each_other() {
+        let (dir_a, path_a) = hmod(
+            "slowA",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("loot_table_load", function()
+                  local t0 = os.clock()
+                  while os.clock() - t0 < 0.08 do end
+                  horizon.broadcast("slow")
+                end)
+                "#,
+            )],
+        );
+        let (dir_b, path_b) = hmod(
+            "fastB",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("loot_table_load", function()
+                  horizon.broadcast("fast")
+                end)
+                "#,
+            )],
+        );
+        let ma = std::sync::Arc::new(LuaMod::load(&path_a, LuaSide::Server, &[]).unwrap());
+        let mb = std::sync::Arc::new(LuaMod::load(&path_b, LuaSide::Server, &[]).unwrap());
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let ma2 = ma.clone();
+        let b1 = barrier.clone();
+        let ha = std::thread::spawn(move || {
+            b1.wait();
+            let a = ma2
+                .run_handlers_with("loot_table_load", None, Reader::None, (), HANDLER_BUDGET)
+                .unwrap();
+            assert_eq!(a.len(), 1);
+        });
+        barrier.wait();
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        let t0 = std::time::Instant::now();
+        let a = mb
+            .run_handlers_with("loot_table_load", None, Reader::None, (), HANDLER_BUDGET)
+            .unwrap();
+        let elapsed = t0.elapsed();
+        assert_eq!(a.len(), 1);
+        assert!(
+            elapsed < std::time::Duration::from_millis(40),
+            "state B blocked by A: {elapsed:?}"
+        );
+        ha.join().unwrap();
+        std::fs::remove_dir_all(&dir_a).unwrap();
+        std::fs::remove_dir_all(&dir_b).unwrap();
+    }
+
+    #[test]
+    fn reentrancy_same_thread_via_turn() {
+        let (dir, path) = hmod(
+            "reenter",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("loot_table_load", function()
+                  horizon.broadcast("hi")
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        // Hold the turn, then a nested entry must succeed at once.
+        let _outer = m.turn.try_acquire_timeout(turn::TURN_TIMEOUT).unwrap();
+        let t0 = std::time::Instant::now();
+        let a = m
+            .run_handlers_with("loot_table_load", None, Reader::None, (), HANDLER_BUDGET)
+            .unwrap();
+        assert_eq!(a.len(), 1);
+        assert!(
+            t0.elapsed() < std::time::Duration::from_millis(50),
+            "nested blocked"
+        );
+        // A second nested has_handlers also re-enters.
+        assert!(m.has_handlers("server_tick"));
+        drop(_outer);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -35,7 +35,7 @@ fn args(list: &[&str]) -> Vec<String> {
 #[cfg(unix)]
 fn fake_luau_lsp(dir: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
-    let unknown = dir.join("horizon-modkit/scripts/modkit.lua");
+    let unknown = dir.join("horizon-modkit/scripts/server/modkit.lua");
     let path = dir.join("fake-luau-lsp");
     std::fs::write(
         &path,

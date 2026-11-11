@@ -707,7 +707,9 @@ with the API level it arrived in, how it is taken (`listen`: it only hears; `can
 and the handler a scripted mod (`docs/lua-bindings.md`) registers for it, where one exists. Then every helper the host offers them. \
 A hook with an empty Lua cell does not reach Lua: its row says why (`docs/api/hook-exposure.md` lists every such hook with its reason). \
 The full doc of each is on its `native_<name>` function.\n\n");
-    out.push_str("## Hook points\n\n| Hook | API | Taken | Lua | What |\n|---|---|---|---|---|\n");
+    out.push_str(
+        "## Hook points\n\n| Hook | Side | API | Taken | Lua | What |\n|---|---|---|---|---|---|\n",
+    );
     let mut hooks = catalog_hooks(root, &catalog)?;
     hooks.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
     let mut count = 0;
@@ -723,8 +725,10 @@ The full doc of each is on its `native_<name>` function.\n\n");
         if !lua.is_empty() {
             lua_cells += 1;
         }
+        // `classify` already refused a hook with no side tag.
+        let side = hook["side"].as_str().unwrap_or("—");
         out.push_str(&format!(
-            "| `{name}` | {api} | {contract} | {} | {} |\n",
+            "| `{name}` | {side} | {api} | {contract} | {} | {} |\n",
             cell(&lua),
             cell(&text)
         ));

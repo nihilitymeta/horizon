@@ -147,9 +147,26 @@ pub enum Outcome {
     Fail(String),
 }
 
+/// A side a mod runs on: the folder the runtime searches before `scripts/shared/`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Side {
+    Server,
+    Client,
+}
+
+impl Side {
+    fn folder(self) -> &'static str {
+        match self {
+            Side::Server => "server",
+            Side::Client => "client",
+        }
+    }
+}
+
 pub fn analyze(
     root: &Path,
     scripts: &[String],
+    sides: &[Side],
     explicit: Option<&Path>,
     cache: &Path,
     offline: bool,
@@ -159,6 +176,7 @@ pub fn analyze(
         LUAU_LSP_MANIFEST,
         root,
         scripts,
+        sides,
         explicit,
         cache,
         offline,
@@ -169,6 +187,10 @@ pub fn analyze(
 /// The type-analysis step: `luau-lsp analyze --definitions:@horizon=...` over
 /// the scripts. `explicit` is `--luau-lsp <path>`; the pinned binary is
 /// downloaded into `cache` (SHA-256 verified) unless it is already there.
+///
+/// `sides` are the states the mod runs: when it has any, it is analysed once
+/// per side from a staged view with `scripts/shared/` and `scripts/<side>/`
+/// flattened into `scripts/`, as the runtime resolves requires.
 ///
 /// `modkit` is the modkit checkout the scripts' `@modkit` require names
 /// (`--modkit <dir>` or `$MODKIT`). The mod's own `.luaurc` aliases it to a
@@ -184,6 +206,7 @@ pub fn analyze_with(
     manifest_text: &str,
     root: &Path,
     scripts: &[String],
+    sides: &[Side],
     explicit: Option<&Path>,
     cache: &Path,
     offline: bool,
@@ -277,69 +300,152 @@ pub fn analyze_with(
                 .and_then(|m| std::fs::canonicalize(m).ok())
                 .map(normalize)
         });
-    // With a checkout, the analysis runs on a staged copy of the mod that holds
-    // the checkout's scripts under RESERVED_MODKIT. The ignore pattern names
-    // that folder alone, so no checkout's name can hide the mod's own scripts.
-    let stage = match &checkout {
-        Some(kit) => Some(stage_analysis(root, cache, kit)?),
-        None => None,
-    };
     // The modkit's own scripts are a dependency, not the mod's code: their
     // type errors (against the API version the mod pins) are not this mod's.
-    let ignore = stage.as_ref().map(|_| format!("**/{RESERVED_MODKIT}/**"));
-    let (workdir, unresolvable) = match (&stage, &alias) {
-        (Some(dir), _) => (dir.path().to_path_buf(), None),
-        // No modkit to be found: the `@modkit` require cannot resolve, so
-        // its diagnostics are dropped (below) with a one-line notice.
-        (None, Some(p)) => (root.to_path_buf(), Some(unresolvable_prefix(p))),
-        (None, None) => (root.to_path_buf(), None),
+    let ignore = checkout
+        .as_ref()
+        .map(|_| format!("**/{RESERVED_MODKIT}/**"));
+    // No modkit to be found: the `@modkit` require cannot resolve, so its
+    // diagnostics are dropped (below) with a one-line notice.
+    let unresolvable = match &checkout {
+        Some(_) => None,
+        None => alias.as_ref().map(|p| unresolvable_prefix(p)),
     };
-    let mut cmd = Command::new(&binary);
-    cmd.arg("analyze")
-        .arg(format!("--definitions:@horizon={}", definitions.display()));
-    if let Some(pattern) = &ignore {
-        cmd.arg(format!("--ignore={pattern}"));
-    }
-    cmd.args(scripts).current_dir(&workdir);
-    // The binary may have just been written (a download): see `retry_busy`.
-    let output = retry_busy(|| cmd.output()).map_err(|e| format!("{}: {e}", binary.display()))?;
-    let text = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let outcome = if output.status.success() {
-        Outcome::Pass
-    // Without a modkit, the only diagnostics left may be the unresolvable
-    // `@modkit` require: drop those (with a notice) and pass on the rest.
-    // Anything else luau-lsp printed (other than its `[INFO]` noise) fails
-    // the step: a non-zero exit with no `Error` line is still an error (e.g.
-    // `Cannot get <path>: path does not exist`).
-    } else if let Some(expected) = &unresolvable {
-        let kept: Vec<&str> = text
-            .lines()
-            .filter(|l| !is_unresolvable_require(l, expected, std::env::consts::OS))
-            .collect();
-        let dropped = text.lines().count() - kept.len();
-        let remaining: Vec<&&str> = kept.iter().filter(|l| !l.starts_with("[INFO]")).collect();
-        if remaining.is_empty() {
-            if dropped > 0 {
-                Outcome::Unchecked(
-                    "no modkit checkout found: @modkit requires are unchecked (pass --modkit <dir>)"
-                        .into(),
-                )
-            } else {
-                Outcome::Pass
-            }
-        } else {
-            Outcome::Fail(format!("luau-lsp analyze:\n{text}"))
-        }
+    // A mod with per-side folders is analysed once per side from a staged
+    // view flattened the way the runtime resolves requires; one without them
+    // keeps the single analysis over its scripts as it was.
+    let mut runs = Vec::new();
+    if sides.is_empty() {
+        let staged = match &checkout {
+            Some(kit) => Some(stage_analysis(root, cache, Some(kit), None)?),
+            None => None,
+        };
+        let workdir = staged
+            .as_ref()
+            .map_or_else(|| root.to_path_buf(), |s| s.path().to_path_buf());
+        runs.push(Run {
+            side: None,
+            staged,
+            workdir,
+            args: scripts.to_vec(),
+        });
     } else {
-        Outcome::Fail(format!("luau-lsp analyze:\n{text}"))
+        for side in sides {
+            let staged = stage_analysis(root, cache, checkout.as_deref(), Some(*side))?;
+            runs.push(Run {
+                side: Some(*side),
+                workdir: staged.path().to_path_buf(),
+                args: vec!["scripts".into()],
+                staged: Some(staged),
+            });
+        }
+    }
+    let mut failures = Vec::new();
+    let mut unchecked = false;
+    for run in &runs {
+        let mut cmd = Command::new(&binary);
+        cmd.arg("analyze")
+            .arg(format!("--definitions:@horizon={}", definitions.display()));
+        if let Some(pattern) = &ignore {
+            cmd.arg(format!("--ignore={pattern}"));
+        }
+        cmd.args(&run.args).current_dir(&run.workdir);
+        // The binary may have just been written (a download): see `retry_busy`.
+        let output =
+            retry_busy(|| cmd.output()).map_err(|e| format!("{}: {e}", binary.display()))?;
+        if output.status.success() {
+            continue;
+        }
+        let raw_text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        // luau-lsp on Windows prints paths with backslashes: the path parts
+        // are normalised once, before both the drop test and the rewrite.
+        let raw: Vec<String> = raw_text.lines().map(normalize_diagnostic_paths).collect();
+        let mut kept: Vec<&str> = match &unresolvable {
+            Some(expected) => raw
+                .iter()
+                .map(String::as_str)
+                .filter(|l| !is_unresolvable_require(l, expected, std::env::consts::OS))
+                .collect(),
+            None => raw.iter().map(String::as_str).collect(),
+        };
+        let dropped = raw.len() - kept.len();
+        // A require the side's view resolves is not missing: luau-lsp looked
+        // for it in the requiring file's folder (or as a literal dotted file
+        // name), the runtime at the state root. The target is analysed as its
+        // own file anyway, so only a real absence fails.
+        let mut resolved = 0;
+        if let (Some(staged), Some(_)) = (&run.staged, run.side) {
+            let before = kept.len();
+            kept.retain(|line| !is_view_require(line, staged));
+            resolved = before - kept.len();
+        }
+        let text = match &run.staged {
+            Some(staged) => rewrite_paths(&kept.join("\n"), staged),
+            None => kept.join("\n"),
+        };
+        // `[INFO]` lines are noise around the diagnostics; a run that prints
+        // no diagnostic at all still failed, though (e.g. `Cannot get <path>:
+        // path does not exist`), unless its only report was a require the
+        // view resolves.
+        let remaining: Vec<&str> = text.lines().filter(|l| !l.starts_with("[INFO]")).collect();
+        if remaining.is_empty() {
+            if unresolvable.is_some() && dropped > 0 {
+                unchecked = true;
+                continue;
+            }
+            if resolved > 0 {
+                continue;
+            }
+            failures.push(match run.side {
+                Some(side) => format!("[{}] luau-lsp analyze failed", side.folder()),
+                None => {
+                    // A run that only printed `[INFO]` lines still failed:
+                    // name its exit code and keep the output.
+                    let code = output
+                        .status
+                        .code()
+                        .map_or_else(|| "signal".to_string(), |c| c.to_string());
+                    let output = raw_text.trim_end();
+                    if output.is_empty() {
+                        format!("luau-lsp analyze failed (exit {code})")
+                    } else {
+                        format!("luau-lsp analyze failed (exit {code})\n{output}")
+                    }
+                }
+            });
+            continue;
+        }
+        for line in remaining {
+            failures.push(match run.side {
+                Some(side) => format!("[{}] {line}", side.folder()),
+                None => line.to_string(),
+            });
+        }
+    }
+    let outcome = if !failures.is_empty() {
+        Outcome::Fail(format!("luau-lsp analyze:\n{}", failures.join("\n")))
+    } else if unchecked {
+        Outcome::Unchecked(
+            "no modkit checkout found: @modkit requires are unchecked (pass --modkit <dir>)".into(),
+        )
+    } else {
+        Outcome::Pass
     };
-    // `stage` (its guard) is removed on return: the staged copy served this
-    // run alone, pass or fail.
+    // The runs' staged copies (their guards) are removed on return: each
+    // served its run alone, pass or fail.
     Ok(outcome)
+}
+
+/// One luau-lsp run: the whole mod, or one side's flattened staged view.
+struct Run {
+    side: Option<Side>,
+    staged: Option<StagedDir>,
+    workdir: PathBuf,
+    args: Vec<String>,
 }
 
 /// The `@modkit` alias of the mod's `.luaurc`, resolved against the mod's
@@ -476,6 +582,36 @@ fn unresolvable_prefix(alias: &Path) -> String {
     text.strip_suffix(".lua").unwrap_or(&text).to_string()
 }
 
+/// Rewrites the separators of the path parts of one luau-lsp diagnostic line
+/// to `/`, so a Windows run's `scripts\util.lua(1,1)` and `Unknown require:
+/// C:\...\util.lua` match the view's forward-slash paths. Only the path
+/// before the `(line,col)` and the path after `Unknown require: ` change: the
+/// rest of the message is text (`bad escape \q` stays as it is).
+fn normalize_diagnostic_paths(line: &str) -> String {
+    let mut out = line.to_string();
+    if let Some(at) = line_col_open(line) {
+        let path = line[..at].replace('\\', "/");
+        out.replace_range(..at, &path);
+    }
+    if let Some(at) = out.find("Unknown require: ") {
+        let start = at + "Unknown require: ".len();
+        let path = out[start..].replace('\\', "/");
+        out.replace_range(start.., &path);
+    }
+    out
+}
+
+/// Where the `file(line,col)` shape of a diagnostic line opens its `(`: the
+/// first `(` followed by `<digits>,<digits>)`.
+fn line_col_open(line: &str) -> Option<usize> {
+    let at = line.find('(')?;
+    let numbers = |text: &str| text.bytes().all(|b| b.is_ascii_digit()) && !text.is_empty();
+    let rest = &line[at + 1..];
+    let (line_no, rest) = rest.split_once(',')?;
+    let (col, _) = rest.split_once(')')?;
+    (numbers(line_no) && numbers(col)).then_some(at)
+}
+
 /// Whether a luau-lsp line is an `Unknown require` of an unresolvable
 /// `@modkit` path: it names `prefix` followed by `.lua` (the alias itself) or
 /// by `/<...>.lua` (a file in the alias's directory, e.g. `init.lua` or
@@ -507,79 +643,403 @@ fn is_unresolvable_require(line: &str, prefix: &str, os: &str) -> bool {
     })
 }
 
+/// Whether a luau-lsp `Unknown require` names a file the runtime resolves in
+/// the side's flattened view. luau-lsp resolves a require from the requiring
+/// file's folder (one folder up for an `init.lua`, where it looks for the
+/// sibling modules of the folder the runtime's state root is), and takes a
+/// dotted name as a literal file name; the runtime resolves both from the
+/// state root, which the view's `scripts/` is. Such a target is analysed as
+/// its own file, so its report is a resolution quirk, not a missing file.
+fn is_view_require(line: &str, staged: &StagedDir) -> bool {
+    if !line.contains("Unknown require") {
+        return false;
+    }
+    let Some((file, _)) = line.split_once('(') else {
+        return false;
+    };
+    if !file.starts_with("scripts/") {
+        return false;
+    }
+    let Some((_, unknown)) = line.rsplit_once("Unknown require: ") else {
+        return false;
+    };
+    let mut roots = vec![staged.path().display().to_string().replace('\\', "/")];
+    let canonical = canonical(staged.path())
+        .display()
+        .to_string()
+        .replace('\\', "/");
+    if !roots.contains(&canonical) {
+        roots.push(canonical);
+    }
+    let unknown = unknown.trim().replace('\\', "/");
+    let Some(rel) = roots
+        .iter()
+        .find_map(|root| unknown.strip_prefix(&format!("{root}/")))
+    else {
+        return false;
+    };
+    let file = Path::new(file);
+    let dir = file.parent().unwrap_or_else(|| Path::new(""));
+    // An `init.lua` is its folder's module: luau-lsp resolves its requires
+    // from the folder's parent.
+    let base = if file.file_name().is_some_and(|name| name == "init.lua") {
+        dir.parent().unwrap_or_else(|| Path::new(""))
+    } else {
+        dir
+    };
+    let base = base.to_string_lossy().replace('\\', "/");
+    let tail = if base.is_empty() {
+        rel
+    } else {
+        let Some(tail) = rel.strip_prefix(&format!("{base}/")) else {
+            return false;
+        };
+        tail
+    };
+    let Some(name) = tail.strip_suffix(".lua") else {
+        return false;
+    };
+    let name = name.replace('.', "/");
+    // Only the files the flatten copied for this side count (the `map`): the
+    // registry in the view is the separate data stage, not a side module.
+    staged.map.contains_key(&format!("scripts/{name}.lua"))
+        || staged.map.contains_key(&format!("scripts/{name}/init.lua"))
+}
+
 /// Stages the analysis in a unique per-run directory under the cache: the
-/// mod's scripts verbatim, and a `.luaurc` of the mod's own with the
-/// `@modkit` alias pointing at the real checkout. A shared directory lets
-/// two checks in parallel corrupt each other (and its removal error was
-/// ignored). Running there keeps luau-lsp from reading the mod's own
+/// mod's files, and a `.luaurc` of the mod's own with the `@modkit` alias
+/// pointing at the checkout (or, with no checkout, at the mod's own alias
+/// target, which does not resolve and is handled as before). A shared
+/// directory lets two checks in parallel corrupt each other (and its removal
+/// error was ignored). Running there keeps luau-lsp from reading the mod's own
 /// `.luaurc` (whose sibling alias does not resolve) without editing it.
-/// The returned guard removes the directory when it is dropped.
-fn stage_analysis(root: &Path, cache: &Path, modkit: &Path) -> Result<StagedDir, String> {
+///
+/// With a `side`, the staged `scripts/` is rebuilt as that side sees it:
+/// `scripts/shared/**` flattened in, then `scripts/<side>/**` over it, then
+/// the registry as it is. The returned `map` names the real file of each
+/// flattened one. The guard removes the directory when it is dropped.
+fn stage_analysis(
+    root: &Path,
+    cache: &Path,
+    modkit: Option<&Path>,
+    side: Option<Side>,
+) -> Result<StagedDir, String> {
     static STAGES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = STAGES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     // The guard exists before the directory does, so every failure below
     // (including one part-way through creating it) removes what is there.
-    let staged = StagedDir(cache.join(format!("analysis-{}-{n}", std::process::id())));
-    let dir = staged.path();
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let mut staged = StagedDir {
+        path: cache.join(format!("analysis-{}-{n}", std::process::id())),
+        map: HashMap::new(),
+    };
+    let dir = staged.path().to_path_buf();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     // The whole mod, not only its scripts: a `.luaurc` alias or a require can
     // reach any folder of the mod. Its own folder of the reserved name would
     // be taken for the modkit's, so such a mod is refused.
-    if copy_mod(root, dir, cache) {
+    if copy_mod(root, &dir, cache) {
         return Err(format!(
             "the mod has a folder named {RESERVED_MODKIT}, which the check uses for the \
              modkit: rename it"
         ));
     }
-    // The checkout's scripts, under the reserved name: the module itself when
-    // the checkout is a whole repository (its `scripts/modkit`, the layout the
-    // template's sibling alias names), else the checkout.
-    let module = if modkit.join("scripts").join("modkit").is_dir() {
-        modkit.join("scripts").join("modkit")
-    } else {
-        modkit.to_path_buf()
+    if let Some(modkit) = modkit {
+        // The checkout's scripts, under the reserved name: the module itself
+        // when the checkout is a whole repository (its `scripts/modkit`, the
+        // layout the template's sibling alias names, or `scripts/server/modkit`
+        // as the modkit repository has it), else the checkout.
+        let module = ["scripts/modkit", "scripts/server/modkit"]
+            .iter()
+            .map(|path| modkit.join(path))
+            .find(|path| path.is_dir())
+            .unwrap_or_else(|| modkit.to_path_buf());
+        let reserved = dir.join(RESERVED_MODKIT);
+        std::fs::create_dir_all(&reserved).map_err(|e| e.to_string())?;
+        copy_mod(&module, &reserved, cache);
+    }
+    if let Some(side) = side {
+        flatten_scripts(root, &dir, side, &mut staged.map)?;
+    }
+    // A checkout is staged under the reserved name; without one, the mod's
+    // own alias target is kept (absolute), so the unresolvable `@modkit`
+    // require still names the path the caller knows.
+    let alias = match modkit {
+        Some(_) => Some(RESERVED_MODKIT.to_string()),
+        None => modkit_alias(root)?.map(|p| p.display().to_string().replace('\\', "/")),
     };
-    let reserved = dir.join(RESERVED_MODKIT);
-    std::fs::create_dir_all(&reserved).map_err(|e| e.to_string())?;
-    copy_mod(&module, &reserved, cache);
-    let luaurc = staged_luaurc_text(root)?;
+    let luaurc = staged_luaurc_text(root, alias.as_deref(), side)?;
     std::fs::write(dir.join(".luaurc"), luaurc).map_err(|e| e.to_string())?;
     Ok(staged)
+}
+
+/// Rebuilds `stage/scripts/` as `side` sees it: the shared files flattened
+/// in, the side's files over them (a side file wins a same name), then the
+/// registry as it is. `map` records, for every flattened file, its view path
+/// (`scripts/util.lua`) and the real one (`scripts/shared/util.lua`); the
+/// registry is not in it, as it is the separate data stage.
+fn flatten_scripts(
+    root: &Path,
+    stage: &Path,
+    side: Side,
+    map: &mut HashMap<String, String>,
+) -> Result<(), String> {
+    let scripts = stage.join("scripts");
+    if scripts.exists() {
+        std::fs::remove_dir_all(&scripts).map_err(|e| e.to_string())?;
+    }
+    std::fs::create_dir_all(&scripts).map_err(|e| e.to_string())?;
+    let source = root.join("scripts");
+    // The side's folder is over the shared one: a same-named file wins.
+    flatten_tree(
+        &source.join("shared"),
+        &scripts,
+        "scripts",
+        "scripts/shared",
+        map,
+    )?;
+    flatten_tree(
+        &source.join(side.folder()),
+        &scripts,
+        "scripts",
+        &format!("scripts/{}", side.folder()),
+        map,
+    )?;
+    // The registry is the data stage: it keeps its own paths (`@registry`),
+    // so it is not in the view map (`is_view_require` resolves only the
+    // flatten) and its files are not a side's modules.
+    forget_flat(map, "scripts/registry.lua");
+    forget_flat(map, "scripts/registry");
+    let registry = source.join("registry.lua");
+    if registry.is_file() {
+        std::fs::copy(&registry, scripts.join("registry.lua"))
+            .map_err(|e| format!("{}: {e}", registry.display()))?;
+    }
+    let mut data = HashMap::new();
+    flatten_tree(
+        &source.join("registry"),
+        &scripts.join("registry"),
+        "scripts/registry",
+        "scripts/registry",
+        &mut data,
+    )?;
+    // Anything else at the top of scripts/ (an alias target, the old
+    // single entry) stays where it is.
+    if source.is_dir() {
+        let entries =
+            std::fs::read_dir(&source).map_err(|e| format!("{}: {e}", source.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("{}: {e}", source.display()))?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if matches!(
+                name.as_str(),
+                "shared" | "server" | "client" | "registry" | "registry.lua"
+            ) {
+                continue;
+            }
+            let kind = entry
+                .file_type()
+                .map_err(|e| format!("{}: {e}", entry.path().display()))?;
+            let flat = format!("scripts/{name}");
+            if kind.is_dir() {
+                flatten_tree(&entry.path(), &scripts.join(&name), &flat, &flat, map)?;
+            } else if kind.is_file() {
+                std::fs::copy(entry.path(), scripts.join(&name))
+                    .map_err(|e| format!("{}: {e}", entry.path().display()))?;
+                map.insert(flat.clone(), flat);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Copies the files under `from` into `to`, flattening `flat` to the mod's
+/// real `real`: `shared/util.lua` copied with `flat` `scripts` and `real`
+/// `scripts/shared` becomes `scripts/util.lua` and maps to
+/// `scripts/shared/util.lua`. A missing `from` is nothing to flatten. A
+/// failed read, create or copy fails the check, naming the path: a truncated
+/// view must not pass or fail for the wrong reason. The side's file wins a
+/// same-named shared directory and the reverse, and the map drops the paths
+/// the loser left behind.
+fn flatten_tree(
+    from: &Path,
+    to: &Path,
+    flat: &str,
+    real: &str,
+    map: &mut HashMap<String, String>,
+) -> Result<(), String> {
+    if !from.is_dir() {
+        return Ok(());
+    }
+    let entries = std::fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))?;
+    if to.is_file() {
+        std::fs::remove_file(to).map_err(|e| format!("{}: {e}", to.display()))?;
+        forget_flat(map, flat);
+    }
+    std::fs::create_dir_all(to).map_err(|e| format!("{}: {e}", to.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("{}: {e}", from.display()))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let kind = entry
+            .file_type()
+            .map_err(|e| format!("{}: {e}", entry.path().display()))?;
+        let dest = to.join(&name);
+        let flat_name = format!("{flat}/{name}");
+        if kind.is_dir() {
+            if dest.is_file() {
+                std::fs::remove_file(&dest).map_err(|e| format!("{}: {e}", dest.display()))?;
+                forget_flat(map, &flat_name);
+            }
+            flatten_tree(
+                &entry.path(),
+                &dest,
+                &flat_name,
+                &format!("{real}/{name}"),
+                map,
+            )?;
+        } else if kind.is_file() {
+            if dest.is_dir() {
+                std::fs::remove_dir_all(&dest).map_err(|e| format!("{}: {e}", dest.display()))?;
+                forget_flat(map, &flat_name);
+            }
+            std::fs::copy(entry.path(), &dest)
+                .map_err(|e| format!("{}: {e}", entry.path().display()))?;
+            map.insert(flat_name, format!("{real}/{name}"));
+        }
+    }
+    Ok(())
+}
+
+/// Drops `flat` and every path under it from the view map.
+fn forget_flat(map: &mut HashMap<String, String>, flat: &str) {
+    map.remove(flat);
+    let prefix = format!("{flat}/");
+    map.retain(|key, _| !key.starts_with(&prefix));
+}
+
+/// Rewrites the flattened paths of a staged view's diagnostics back to the
+/// mod's real files, line and column unchanged (`scripts/util.lua(1,1)`
+/// becomes `scripts/shared/util.lua(1,1)`).
+fn rewrite_paths(text: &str, staged: &StagedDir) -> String {
+    let mut roots = vec![staged.path().display().to_string()];
+    let canonical = canonical(staged.path()).display().to_string();
+    if !roots.contains(&canonical) {
+        roots.push(canonical);
+    }
+    let roots: Vec<String> = roots.into_iter().map(|r| r.replace('\\', "/")).collect();
+    text.lines()
+        .map(|line| {
+            let mut line = line.to_string();
+            for (flat, real) in &staged.map {
+                for root in &roots {
+                    line = replace_path(&line, &format!("{root}/{flat}"), real);
+                }
+                line = replace_path(&line, flat, real);
+            }
+            line
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Replaces every whole `from` path in `line` with `to`: the match must not
+/// continue a path before it or a name after it, so `scripts/a.lua` changes
+/// neither `scripts/a.lua.bak` nor `x/scripts/a.lua`.
+fn replace_path(line: &str, from: &str, to: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(at) = rest.find(from) {
+        out.push_str(&rest[..at]);
+        let before_ok =
+            !out.ends_with(|c: char| c.is_alphanumeric() || matches!(c, '_' | '.' | '/'));
+        let after = &rest[at + from.len()..];
+        let after_ok = !after.starts_with(|c: char| c.is_alphanumeric() || matches!(c, '_' | '.'));
+        out.push_str(if before_ok && after_ok { to } else { from });
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
 
 /// A staged analysis directory, removed when its guard is dropped: when the
 /// run ends, pass or fail, and when it returns early (a luau-lsp that cannot
 /// be spawned, a staging step that fails) or panics.
-struct StagedDir(PathBuf);
+struct StagedDir {
+    path: PathBuf,
+    /// Flattened side/shared files: `scripts/<name>` to the mod's real
+    /// `scripts/...` (the registry, the data stage, is not in it).
+    map: HashMap<String, String>,
+}
 
 impl StagedDir {
     fn path(&self) -> &Path {
-        &self.0
+        &self.path
     }
 }
 
 impl Drop for StagedDir {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        let _ = std::fs::remove_dir_all(&self.path);
     }
 }
 
-/// The staged `.luaurc`: the mod's own, with every setting kept and its
-/// `modkit` alias pointing at the reserved folder (an `aliases` object is
-/// added when the mod has none). A mod without a `.luaurc` gets only the
-/// alias.
-fn staged_luaurc_text(root: &Path) -> Result<String, String> {
+/// The staged `.luaurc`: the mod's own, with every setting kept and, when
+/// `alias` is given, its `modkit` alias pointing at that target (an
+/// `aliases` object is added when the mod has none). A mod without a
+/// `.luaurc` gets only the alias. A mod without the alias keeps its own file.
+///
+/// With a `side`, every alias that points into this side's or the shared
+/// folder is rewritten to where the flatten moved it: `scripts/server/x`
+/// becomes `scripts/x`, `scripts/shared/x` becomes `scripts/x`. An alias into
+/// the other side stays, and so does anything else (`scripts/registry`, the
+/// modkit alias): those are not paths this view holds.
+fn staged_luaurc_text(
+    root: &Path,
+    alias: Option<&str>,
+    side: Option<Side>,
+) -> Result<String, String> {
     let mut value = read_luaurc(root)?.unwrap_or_else(|| serde_json::json!({}));
-    let not_an_object = || format!("{}: expected a JSON object", root.join(".luaurc").display());
-    let object = value.as_object_mut().ok_or_else(not_an_object)?;
-    let aliases = object
-        .entry("aliases")
-        .or_insert_with(|| serde_json::json!({}))
-        .as_object_mut()
-        .ok_or_else(not_an_object)?;
-    aliases.insert("modkit".into(), RESERVED_MODKIT.into());
+    if let Some(alias) = alias {
+        let not_an_object =
+            || format!("{}: expected a JSON object", root.join(".luaurc").display());
+        let object = value.as_object_mut().ok_or_else(not_an_object)?;
+        let aliases = object
+            .entry("aliases")
+            .or_insert_with(|| serde_json::json!({}))
+            .as_object_mut()
+            .ok_or_else(not_an_object)?;
+        aliases.insert("modkit".into(), alias.into());
+    }
+    if let Some(side) = side
+        && let Some(aliases) = value.get_mut("aliases").and_then(|a| a.as_object_mut())
+    {
+        for target in aliases.values_mut() {
+            if let Some(text) = target.as_str() {
+                let flat = flatten_alias(text, side);
+                if flat != text {
+                    *target = serde_json::Value::String(flat);
+                }
+            }
+        }
+    }
     let text = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
     Ok(text + "\n")
+}
+
+/// Where an alias target points once `side`'s view is flattened: a target
+/// into `scripts/<side>/` or `scripts/shared/` loses that folder (a leading
+/// `./` and a trailing `/` are kept out of the way). Anything else is
+/// returned unchanged.
+fn flatten_alias(target: &str, side: Side) -> String {
+    let rest = target.strip_prefix("./").unwrap_or(target);
+    for folder in [side.folder(), "shared"] {
+        let prefix = format!("scripts/{folder}");
+        if let Some(tail) = rest.strip_prefix(&prefix)
+            && (tail.is_empty() || tail.starts_with('/'))
+        {
+            return format!("scripts{tail}");
+        }
+    }
+    target.to_string()
 }
 
 /// Folders a copy of a mod leaves out: build output, VCS and dependency and
@@ -915,6 +1375,65 @@ mod tests {
         (dir, cache)
     }
 
+    /// A mod with both sides and a shared module both entries require, and a
+    /// registry script. Its own directory, no `scripts/init.lua`.
+    fn per_side_mod(dir: &Path) {
+        for (name, text) in [
+            (
+                "scripts/server/init.lua",
+                "-- server entry\nlocal util = require(\"util\")\nreturn util\n",
+            ),
+            (
+                "scripts/client/init.lua",
+                "-- client entry\nlocal util = require(\"util\")\nreturn util\n",
+            ),
+            (
+                "scripts/shared/util.lua",
+                "-- shared util\nlocal M = {}\nreturn M\n",
+            ),
+            ("scripts/registry.lua", "return {}\n"),
+        ] {
+            let file = dir.join(name);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, text).unwrap();
+        }
+    }
+
+    fn per_side_case(test: &str) -> (PathBuf, PathBuf) {
+        let dir =
+            std::env::temp_dir().join(format!("horizon-mod-sides-{test}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        per_side_mod(&dir);
+        let cache = dir.join("cache");
+        (dir, cache)
+    }
+
+    /// Every file under `dir`, named from `prefix` with `/` separators.
+    fn files_under(dir: &Path, prefix: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return out;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let path = format!("{prefix}/{name}");
+            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                out.extend(files_under(&entry.path(), &path));
+            } else {
+                out.push(path);
+            }
+        }
+        out.sort();
+        out
+    }
+
+    fn fake_script(dir: &Path, body: &str) -> PathBuf {
+        let path = dir.join("fake-luau-lsp");
+        std::fs::write(&path, format!("#!/bin/sh\n{body}")).unwrap();
+        make_executable(&path);
+        path
+    }
+
     /// A matching SHA-256 is accepted: the fake binary is fetched from a
     /// local path, cached under the cache dir (never the repo), and run with
     /// the horizon definitions.
@@ -929,6 +1448,7 @@ mod tests {
             &text,
             &dir,
             &["scripts/init.lua".into()],
+            &[],
             None,
             &cache,
             false,
@@ -967,7 +1487,7 @@ mod tests {
         let text = manifest(&binary.display().to_string(), &sha256(&bytes));
         let scripts = vec!["scripts/init.lua".to_string()];
         assert!(matches!(
-            analyze_with(&text, &dir, &scripts, None, &cache, false, None).unwrap(),
+            analyze_with(&text, &dir, &scripts, &[], None, &cache, false, None).unwrap(),
             Outcome::Pass
         ));
         let cached = cache
@@ -986,7 +1506,7 @@ mod tests {
         let _ = std::fs::remove_file(cached.with_extension("args"));
         // Offline, a bad cache is a skip with a notice (the same as no cache):
         // it is never run, and an online run fetches it again.
-        match analyze_with(&text, &dir, &scripts, None, &cache, true, None).unwrap() {
+        match analyze_with(&text, &dir, &scripts, &[], None, &cache, true, None).unwrap() {
             Outcome::Skip(why) => {
                 assert!(why.contains("unusable") && why.contains("SHA-256"), "{why}")
             }
@@ -1000,7 +1520,7 @@ mod tests {
         );
         // Online the bad copy is fetched again and the step passes.
         assert!(matches!(
-            analyze_with(&text, &dir, &scripts, None, &cache, false, None).unwrap(),
+            analyze_with(&text, &dir, &scripts, &[], None, &cache, false, None).unwrap(),
             Outcome::Pass
         ));
         assert!(cached.with_extension("args").exists());
@@ -1033,8 +1553,8 @@ mod tests {
         // Sequential stages do not overwrite each other.
         let root_a = root("alpha");
         let root_b = root("beta");
-        let dir_a = stage_analysis(&root_a, &cache, &kit).unwrap();
-        let dir_b = stage_analysis(&root_b, &cache, &kit).unwrap();
+        let dir_a = stage_analysis(&root_a, &cache, Some(&kit), None).unwrap();
+        let dir_b = stage_analysis(&root_b, &cache, Some(&kit), None).unwrap();
         assert_ne!(dir_a.path(), dir_b.path(), "staged runs share a directory");
         let staged = |dir: &Path| std::fs::read_to_string(dir.join("scripts/init.lua")).unwrap();
         assert!(
@@ -1076,6 +1596,7 @@ mod tests {
                         &manifest("unused", &"0".repeat(64)),
                         &root,
                         &scripts,
+                        &[],
                         Some(&binary),
                         &cache,
                         false,
@@ -1113,7 +1634,18 @@ mod tests {
         let binary = dir.join("not-a-binary");
         std::fs::write(&binary, b"these bytes are never run").unwrap();
         let text = manifest(&binary.display().to_string(), &"f".repeat(64));
-        match analyze_with(&text, &dir, &[] as &[String], None, &cache, false, None).unwrap() {
+        match analyze_with(
+            &text,
+            &dir,
+            &[] as &[String],
+            &[],
+            None,
+            &cache,
+            false,
+            None,
+        )
+        .unwrap()
+        {
             Outcome::Fail(why) => {
                 assert!(why.contains("SHA-256 mismatch"), "{why}");
             }
@@ -1140,24 +1672,35 @@ mod tests {
         let base =
             std::env::temp_dir().join(format!("horizon-mod-deep-ignore-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
-        // The mod: the Lua template's init script with a fixed id, and a
-        // `.luaurc` whose sibling `@modkit` alias is missing, so the check
-        // stages the analysis through the `--modkit` checkout below.
+        // The mod: the Lua template's server entry and shared module with a
+        // fixed id, and a `.luaurc` whose sibling `@modkit` alias is missing,
+        // so the check stages the analysis through the `--modkit` checkout
+        // below.
         let root = base.join("mod");
-        std::fs::create_dir_all(root.join("scripts")).unwrap();
-        let template = std::fs::read_to_string(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("template/lua/init.lua"),
+        let template = |name: &str| {
+            std::fs::read_to_string(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("template/lua")
+                    .join(name),
+            )
+            .unwrap()
+        };
+        std::fs::create_dir_all(root.join("scripts/server")).unwrap();
+        std::fs::create_dir_all(root.join("scripts/shared")).unwrap();
+        std::fs::write(
+            root.join("scripts/server/init.lua"),
+            template("server_init.lua").replace("{id}", "deep_probe"),
         )
         .unwrap();
         std::fs::write(
-            root.join("scripts/init.lua"),
-            template.replace("{id}", "deep_probe"),
+            root.join("scripts/shared/util.lua"),
+            template("shared_util.lua"),
         )
         .unwrap();
         std::fs::write(
             root.join(".luaurc"),
             "{\"languageMode\": \"nonstrict\", \"aliases\": \
-             {\"modkit\": \"../horizon-modkit/scripts/modkit\", \
+             {\"modkit\": \"../horizon-modkit/scripts/server/modkit\", \
              \"registry\": \"scripts/registry\"}}",
         )
         .unwrap();
@@ -1166,23 +1709,46 @@ mod tests {
         std::fs::create_dir_all(deep.parent().unwrap()).unwrap();
         copy_mod(&modkit, &deep, Path::new("/nonexistent-cache"));
         let cache = base.join("u/src/a/cache");
-        let scripts = vec!["scripts/init.lua".to_string()];
-        match analyze(&root, &scripts, None, &cache, false, Some(&deep)).unwrap() {
+        let scripts = vec![
+            "scripts/server/init.lua".to_string(),
+            "scripts/shared/util.lua".to_string(),
+        ];
+        match analyze(
+            &root,
+            &scripts,
+            &[Side::Server],
+            None,
+            &cache,
+            false,
+            Some(&deep),
+        )
+        .unwrap()
+        {
             Outcome::Pass => {}
             other => panic!("a clean mod with a deep modkit passes, got {other:?}"),
         }
         // A real error in the mod still fails, naming the mod's file and
         // none of the modkit's.
-        let init = root.join("scripts/init.lua");
+        let init = root.join("scripts/server/init.lua");
         let source = std::fs::read_to_string(&init).unwrap();
         std::fs::write(&init, format!("horizon.set_block(\"a\")\n{source}")).unwrap();
-        match analyze(&root, &scripts, None, &cache, false, Some(&deep)).unwrap() {
+        match analyze(
+            &root,
+            &scripts,
+            &[Side::Server],
+            None,
+            &cache,
+            false,
+            Some(&deep),
+        )
+        .unwrap()
+        {
             Outcome::Fail(why) => {
                 // `[INFO]` lines name files luau-lsp merely read (including
                 // the checkout); only diagnostic lines count.
                 let diags: Vec<&str> = why.lines().filter(|l| !l.starts_with("[INFO]")).collect();
                 assert!(
-                    diags.iter().any(|l| l.contains("scripts/init.lua")),
+                    diags.iter().any(|l| l.contains("scripts/server/init.lua")),
                     "{why}"
                 );
                 assert!(!diags.iter().any(|l| l.contains("horizon-modkit")), "{why}");
@@ -1202,7 +1768,7 @@ mod tests {
         std::fs::create_dir_all(&kit).unwrap();
         let staged_luaurc = |text: &str| {
             std::fs::write(dir.join(".luaurc"), text).unwrap();
-            let staged = stage_analysis(&dir, &cache, &kit).unwrap();
+            let staged = stage_analysis(&dir, &cache, Some(&kit), None).unwrap();
             let text = std::fs::read_to_string(staged.path().join(".luaurc")).unwrap();
             serde_json::from_str::<serde_json::Value>(&text).unwrap()
         };
@@ -1235,6 +1801,7 @@ mod tests {
             &manifest("unused", &"0".repeat(64)),
             &dir,
             &["scripts/init.lua".into()],
+            &[],
             Some(Path::new("/no/such/binary")),
             &cache,
             false,
@@ -1329,6 +1896,7 @@ mod tests {
             &manifest("unused", &"0".repeat(64)),
             &dir,
             &["scripts/init.lua".into()],
+            &[],
             Some(&binary),
             &cache,
             false,
@@ -1338,6 +1906,37 @@ mod tests {
         {
             Outcome::Fail(why) => assert!(why.contains("Cannot get"), "{why}"),
             other => panic!("a missing-path failure fails, got {other:?}"),
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A luau-lsp that fails with only `[INFO]` lines still fails the step:
+    /// the failure names its exit code and keeps the output.
+    #[cfg(unix)]
+    #[test]
+    fn an_info_only_luau_lsp_failure_names_its_exit_code() {
+        let (dir, cache) = case("info-only-failure");
+        let binary = fake_script(
+            &dir,
+            "printf '%s\\n' '[INFO] read scripts/init.lua'\nexit 3\n",
+        );
+        match analyze_with(
+            &manifest("unused", &"0".repeat(64)),
+            &dir,
+            &["scripts/init.lua".into()],
+            &[],
+            Some(&binary),
+            &cache,
+            false,
+            None,
+        )
+        .unwrap()
+        {
+            Outcome::Fail(why) => {
+                assert!(why.contains("luau-lsp analyze failed (exit 3)"), "{why}");
+                assert!(why.contains("[INFO] read scripts/init.lua"), "{why}");
+            }
+            other => panic!("an INFO-only failure fails the step, got {other:?}"),
         }
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -1363,7 +1962,17 @@ mod tests {
             &sha256(&std::fs::read(&archive_path).unwrap()),
         );
         assert!(matches!(
-            analyze_with(&text, &dir, &[] as &[String], None, &cache, false, None).unwrap(),
+            analyze_with(
+                &text,
+                &dir,
+                &[] as &[String],
+                &[],
+                None,
+                &cache,
+                false,
+                None
+            )
+            .unwrap(),
             Outcome::Pass
         ));
         std::fs::remove_dir_all(&dir).unwrap();
@@ -1382,7 +1991,7 @@ mod tests {
             let kit = dir.join("kits").join(name);
             std::fs::create_dir_all(&kit).unwrap();
             std::fs::write(kit.join("init.lua"), "return {}\n").unwrap();
-            let staged = stage_analysis(&dir, &cache, &kit).unwrap();
+            let staged = stage_analysis(&dir, &cache, Some(&kit), None).unwrap();
             assert!(
                 staged
                     .path()
@@ -1396,6 +2005,7 @@ mod tests {
                 &manifest("unused", &"0".repeat(64)),
                 &dir,
                 &scripts,
+                &[],
                 Some(&binary),
                 &cache,
                 false,
@@ -1422,6 +2032,7 @@ mod tests {
             &manifest("unused", &"0".repeat(64)),
             &dir,
             &[] as &[String],
+            &[],
             Some(&binary),
             &cache,
             false,
@@ -1439,7 +2050,7 @@ mod tests {
     fn a_placeholder_pin_and_offline_skip_instead_of_failing() {
         let (dir, cache) = case("offline-skip");
         // The checked-in manifest is a real pin: offline with nothing cached skips.
-        match analyze(&dir, &[] as &[String], None, &cache, true, None).unwrap() {
+        match analyze(&dir, &[] as &[String], &[], None, &cache, true, None).unwrap() {
             Outcome::Skip(why) => assert!(why.contains("offline"), "{why}"),
             other => panic!("expected a skip, got {other:?}"),
         }
@@ -1454,6 +2065,7 @@ mod tests {
             &placeholder,
             &dir,
             &[] as &[String],
+            &[],
             None,
             &cache,
             false,
@@ -1466,7 +2078,7 @@ mod tests {
         }
         // A real pin, but offline and not cached.
         let text = manifest("https://example.invalid/luau-lsp.zip", &"0".repeat(64));
-        match analyze_with(&text, &dir, &[] as &[String], None, &cache, true, None).unwrap() {
+        match analyze_with(&text, &dir, &[] as &[String], &[], None, &cache, true, None).unwrap() {
             Outcome::Skip(why) => assert!(why.contains("offline"), "{why}"),
             other => panic!("expected a skip, got {other:?}"),
         }
@@ -1485,6 +2097,7 @@ mod tests {
             &manifest("unused", &"0".repeat(64)),
             &dir,
             &["scripts/init.lua".into()],
+            &[],
             Some(Path::new("/no/such/binary")),
             &cache,
             false,
@@ -1561,7 +2174,9 @@ mod tests {
             std::thread::scope(|s| {
                 let runs: Vec<_> = (0..2)
                     .map(|_| {
-                        s.spawn(|| analyze_with(&text, &dir, &scripts, None, &cache, false, None))
+                        s.spawn(|| {
+                            analyze_with(&text, &dir, &scripts, &[], None, &cache, false, None)
+                        })
                     })
                     .collect();
                 for run in runs {
@@ -1671,6 +2286,7 @@ mod tests {
             &manifest("unused", &"0".repeat(64)),
             &dir,
             &["scripts/init.lua".into()],
+            &[],
             Some(&fake),
             &cache,
             false,
@@ -1681,6 +2297,519 @@ mod tests {
             other => panic!("a staged mod with an alias to shared/ passes, got {other:?}"),
         }
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A side's staged view holds the shared files flattened in and the
+    /// side's own files over them: a same-named side file wins, and only the
+    /// mod's real layout is left in the map.
+    #[test]
+    fn a_side_view_flattens_shared_under_the_side_files() {
+        let (dir, cache) = per_side_case("view");
+        std::fs::write(
+            dir.join("scripts/server/util.lua"),
+            "-- server utility\nreturn { server = true }\n",
+        )
+        .unwrap();
+        let kit = dir.join("kit");
+        std::fs::create_dir_all(&kit).unwrap();
+        let expected = [
+            "scripts/init.lua",
+            "scripts/registry.lua",
+            "scripts/util.lua",
+        ];
+        let server = stage_analysis(&dir, &cache, Some(&kit), Some(Side::Server)).unwrap();
+        assert_eq!(
+            files_under(&server.path().join("scripts"), "scripts"),
+            expected
+        );
+        let util = std::fs::read_to_string(server.path().join("scripts/util.lua")).unwrap();
+        assert!(util.contains("server utility"), "{util}");
+        assert_eq!(
+            server.map["scripts/util.lua"], "scripts/server/util.lua",
+            "a side file must win the shared one"
+        );
+        assert_eq!(server.map["scripts/init.lua"], "scripts/server/init.lua");
+        drop(server);
+        let client = stage_analysis(&dir, &cache, Some(&kit), Some(Side::Client)).unwrap();
+        assert_eq!(
+            files_under(&client.path().join("scripts"), "scripts"),
+            expected
+        );
+        let util = std::fs::read_to_string(client.path().join("scripts/util.lua")).unwrap();
+        assert!(util.contains("shared util"), "{util}");
+        assert_eq!(client.map["scripts/util.lua"], "scripts/shared/util.lua");
+        assert_eq!(client.map["scripts/init.lua"], "scripts/client/init.lua");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A side's file wins a shared folder of the same name, and a side's
+    /// folder wins a shared file: the flatten removes what is in the way and
+    /// the map drops the loser's paths.
+    #[cfg(unix)]
+    #[test]
+    fn a_side_file_wins_a_shared_directory_and_the_reverse() {
+        let (dir, cache) = per_side_case("file-vs-dir");
+        // Shared has the folder `thing/`; the server has the file `thing`.
+        std::fs::create_dir_all(dir.join("scripts/shared/thing")).unwrap();
+        std::fs::write(dir.join("scripts/shared/thing/old.lua"), "return {}\n").unwrap();
+        std::fs::write(dir.join("scripts/server/thing"), "-- the side file\n").unwrap();
+        let server = stage_analysis(&dir, &cache, None, Some(Side::Server)).unwrap();
+        assert!(server.path().join("scripts/thing").is_file());
+        assert!(!server.path().join("scripts/thing/old.lua").exists());
+        assert_eq!(server.map["scripts/thing"], "scripts/server/thing");
+        assert!(!server.map.contains_key("scripts/thing/old.lua"));
+        drop(server);
+        // Shared has the file `other`; the server has the folder `other/`.
+        std::fs::write(dir.join("scripts/shared/other"), "-- the shared file\n").unwrap();
+        std::fs::create_dir_all(dir.join("scripts/server/other")).unwrap();
+        std::fs::write(dir.join("scripts/server/other/new.lua"), "return {}\n").unwrap();
+        let server = stage_analysis(&dir, &cache, None, Some(Side::Server)).unwrap();
+        assert!(server.path().join("scripts/other").is_dir());
+        assert!(server.path().join("scripts/other/new.lua").is_file());
+        assert_eq!(
+            server.map["scripts/other/new.lua"],
+            "scripts/server/other/new.lua"
+        );
+        assert!(!server.map.contains_key("scripts/other"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A flatten that cannot read a folder fails the check, naming the path:
+    /// a truncated view must not pass or fail for the wrong reason.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_flatten_names_the_path() {
+        use std::os::unix::fs::PermissionsExt;
+        let (dir, cache) = per_side_case("flatten-error");
+        let locked = dir.join("scripts/shared/locked");
+        std::fs::create_dir_all(&locked).unwrap();
+        std::fs::write(locked.join("x.lua"), "return {}\n").unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        // A root user reads it anyway: nothing to prove there.
+        if std::fs::read_dir(&locked).is_ok() {
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+            std::fs::remove_dir_all(&dir).unwrap();
+            return;
+        }
+        let result = stage_analysis(&dir, &cache, None, Some(Side::Server));
+        // Restore before the guard's cleanup walks the tree.
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        match result {
+            Err(e) => assert!(e.contains("locked"), "{e}"),
+            Ok(_) => panic!("an unreadable folder must fail the flatten"),
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The staged `.luaurc` of a side points its aliases where the flatten
+    /// moved them: this side's and the shared folder lose their folder, the
+    /// other side's and everything else stay. The fake analyzer records the
+    /// staged `.luaurc` of each run.
+    #[cfg(unix)]
+    #[test]
+    fn a_side_staged_luaurc_rewrites_aliases_into_the_view() {
+        let (dir, cache) = per_side_case("alias-rewrite");
+        std::fs::write(
+            dir.join(".luaurc"),
+            r#"{"aliases": {
+                "own": "scripts/server/example",
+                "dot": "./scripts/server/dot",
+                "trail": "scripts/shared/trail/",
+                "shared": "scripts/shared/x",
+                "other": "scripts/client/other",
+                "registry": "scripts/registry"
+            }}"#,
+        )
+        .unwrap();
+        let binary = fake_script(
+            &dir,
+            "tr '\\n' ' ' < .luaurc >> \"$0.luaurc\"\nprintf '\\n--\\n' >> \"$0.luaurc\"\nexit 0\n",
+        );
+        let outcome = analyze_with(
+            &manifest("unused", &"0".repeat(64)),
+            &dir,
+            &["scripts/server/init.lua".into()],
+            &[Side::Server, Side::Client],
+            Some(&binary),
+            &cache,
+            false,
+            None,
+        )
+        .unwrap();
+        assert!(matches!(outcome, Outcome::Pass), "{outcome:?}");
+        let seen = std::fs::read_to_string(binary.with_extension("luaurc")).unwrap();
+        let docs: Vec<serde_json::Value> = seen
+            .split("\n--\n")
+            .filter(|doc| !doc.trim().is_empty())
+            .map(|doc| serde_json::from_str(doc.trim()).unwrap())
+            .collect();
+        assert_eq!(docs.len(), 2, "{seen}");
+        let server = &docs[0]["aliases"];
+        assert_eq!(server["own"], "scripts/example", "{server}");
+        assert_eq!(server["dot"], "scripts/dot", "{server}");
+        assert_eq!(server["trail"], "scripts/trail/", "{server}");
+        assert_eq!(server["shared"], "scripts/x", "{server}");
+        assert_eq!(server["other"], "scripts/client/other", "{server}");
+        assert_eq!(server["registry"], "scripts/registry", "{server}");
+        let client = &docs[1]["aliases"];
+        assert_eq!(client["own"], "scripts/server/example", "{client}");
+        assert_eq!(client["other"], "scripts/other", "{client}");
+        assert_eq!(client["trail"], "scripts/trail/", "{client}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The analyzer runs once per side, in that side's own staged directory,
+    /// on the flattened `scripts/` the runtime's requires resolve in.
+    #[cfg(unix)]
+    #[test]
+    fn the_analyzer_runs_once_per_side_in_its_own_view() {
+        let (dir, cache) = per_side_case("runs");
+        let binary = fake_script(
+            &dir,
+            "pwd >> \"$0.pwd\"\nprintf '%s\\n' \"$@\" > \"$0.args\"\n\
+             cat scripts/init.lua >> \"$0.content\"\nprintf '\\n--\\n' >> \"$0.content\"\n\
+             exit 0\n",
+        );
+        let scripts = vec![
+            "scripts/server/init.lua".to_string(),
+            "scripts/client/init.lua".to_string(),
+            "scripts/shared/util.lua".to_string(),
+        ];
+        let outcome = analyze_with(
+            &manifest("unused", &"0".repeat(64)),
+            &dir,
+            &scripts,
+            &[Side::Server, Side::Client],
+            Some(&binary),
+            &cache,
+            false,
+            None,
+        )
+        .unwrap();
+        assert!(matches!(outcome, Outcome::Pass), "{outcome:?}");
+        let dirs = std::fs::read_to_string(binary.with_extension("pwd")).unwrap();
+        let dirs: Vec<&str> = dirs.lines().collect();
+        assert_eq!(dirs.len(), 2, "one run per side: {dirs:?}");
+        assert_ne!(dirs[0], dirs[1], "both sides share a view");
+        assert!(
+            dirs.iter().all(|d| d.contains("analysis-")),
+            "a run left the staged views: {dirs:?}"
+        );
+        let seen = std::fs::read_to_string(binary.with_extension("content")).unwrap();
+        let seen: Vec<&str> = seen.split("\n--\n").collect();
+        assert!(seen[0].contains("server entry"), "{seen:?}");
+        assert!(seen[1].contains("client entry"), "{seen:?}");
+        let args = std::fs::read_to_string(binary.with_extension("args")).unwrap();
+        assert!(args.lines().any(|l| l == "scripts"), "{args}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A require the side's view resolves is not a missing file: luau-lsp
+    /// looks for an entry's requires one folder up and takes a dotted name as
+    /// a literal file name, the runtime resolves both from the state root.
+    /// A require that is really absent still fails.
+    #[cfg(unix)]
+    #[test]
+    fn a_require_the_view_resolves_is_not_a_missing_file() {
+        let (dir, cache) = per_side_case("resolved-requires");
+        let module = dir.join("scripts/shared/example/command.lua");
+        std::fs::create_dir_all(module.parent().unwrap()).unwrap();
+        std::fs::write(&module, "return {}\n").unwrap();
+        let binary = fake_script(
+            &dir,
+            "echo \"scripts/init.lua(2,1): TypeError: Unknown require: $PWD/util.lua\"\n\
+             echo \"scripts/init.lua(3,1): TypeError: Unknown require: $PWD/example.command.lua\"\n\
+             exit 1\n",
+        );
+        let scripts = vec!["scripts/server/init.lua".to_string()];
+        let outcome = analyze_with(
+            &manifest("unused", &"0".repeat(64)),
+            &dir,
+            &scripts,
+            &[Side::Server],
+            Some(&binary),
+            &cache,
+            false,
+            None,
+        )
+        .unwrap();
+        assert!(matches!(outcome, Outcome::Pass), "{outcome:?}");
+        let missing = fake_script(
+            &dir,
+            "echo \"scripts/init.lua(4,1): TypeError: Unknown require: $PWD/nope.lua\"\nexit 1\n",
+        );
+        match analyze_with(
+            &manifest("unused", &"0".repeat(64)),
+            &dir,
+            &scripts,
+            &[Side::Server],
+            Some(&missing),
+            &cache,
+            false,
+            None,
+        )
+        .unwrap()
+        {
+            Outcome::Fail(why) => {
+                assert!(why.contains("nope.lua"), "{why}");
+                assert!(
+                    why.contains("[server] scripts/server/init.lua(4,1)"),
+                    "{why}"
+                );
+            }
+            other => panic!("a missing require still fails, got {other:?}"),
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The registry is copied into the view as the separate data stage, not
+    /// by the side/shared flatten: a `require("registry")` from a side script
+    /// is still unknown, even though the file sits in the view.
+    #[cfg(unix)]
+    #[test]
+    fn a_registry_require_is_not_resolved_by_the_view() {
+        let (dir, cache) = per_side_case("registry-require");
+        let binary = fake_script(
+            &dir,
+            "printf '%s\\n' \"scripts/init.lua(1,1): TypeError: Unknown require: $PWD/registry.lua\"\nexit 1\n",
+        );
+        match analyze_with(
+            &manifest("unused", &"0".repeat(64)),
+            &dir,
+            &["scripts/server/init.lua".into()],
+            &[Side::Server],
+            Some(&binary),
+            &cache,
+            false,
+            None,
+        )
+        .unwrap()
+        {
+            Outcome::Fail(why) => assert!(why.contains("registry.lua"), "{why}"),
+            other => panic!("the registry is not a side module, got {other:?}"),
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Diagnostics from a staged view name the mod's real files: the shared
+    /// module, and each side's entry, with line and column kept.
+    #[cfg(unix)]
+    #[test]
+    fn a_failing_side_names_its_real_files() {
+        let (dir, cache) = per_side_case("paths");
+        let binary = fake_script(
+            &dir,
+            "echo 'scripts/util.lua(1,1): TypeError: shared'\n\
+             echo 'scripts/init.lua(2,1): TypeError: entry'\nexit 1\n",
+        );
+        let scripts = vec!["scripts/shared/util.lua".to_string()];
+        let outcome = analyze_with(
+            &manifest("unused", &"0".repeat(64)),
+            &dir,
+            &scripts,
+            &[Side::Server, Side::Client],
+            Some(&binary),
+            &cache,
+            false,
+            None,
+        )
+        .unwrap();
+        let Outcome::Fail(why) = outcome else {
+            panic!("a type error fails the step, got {outcome:?}");
+        };
+        for line in [
+            "[server] scripts/shared/util.lua(1,1)",
+            "[server] scripts/server/init.lua(2,1)",
+            "[client] scripts/shared/util.lua(1,1)",
+            "[client] scripts/client/init.lua(2,1)",
+        ] {
+            assert!(why.contains(line), "missing {line:?} in:\n{why}");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// luau-lsp on Windows prints backslashes: the path before `(line,col)`
+    /// and after `Unknown require: ` are normalised, so the type error is
+    /// remapped to the real file and the resolvable require is dropped. A
+    /// backslash in the message itself is text and is left alone.
+    #[cfg(unix)]
+    #[test]
+    fn windows_diagnostic_paths_are_normalised() {
+        let (dir, cache) = per_side_case("windows-paths");
+        std::fs::write(
+            dir.join("scripts/server/util.lua"),
+            "-- server utility\nreturn {}\n",
+        )
+        .unwrap();
+        let binary = fake_script(
+            &dir,
+            "root=$(printf '%s' \"$PWD\" | tr '/' '\\\\')\n\
+             printf '%s\\n' \"scripts\\\\util.lua(1,1): TypeError: bad escape \\\\q\"\n\
+             printf '%s\\n' \"scripts\\\\init.lua(2,1): TypeError: Unknown require: ${root}\\\\util.lua\"\n\
+             exit 1\n",
+        );
+        match analyze_with(
+            &manifest("unused", &"0".repeat(64)),
+            &dir,
+            &["scripts/server/init.lua".into()],
+            &[Side::Server],
+            Some(&binary),
+            &cache,
+            false,
+            None,
+        )
+        .unwrap()
+        {
+            Outcome::Fail(why) => {
+                assert!(
+                    why.contains(
+                        "[server] scripts/server/util.lua(1,1): TypeError: bad escape \\q"
+                    ),
+                    "{why}"
+                );
+                assert!(
+                    !why.contains("Unknown require"),
+                    "the resolvable require was kept:\n{why}"
+                );
+            }
+            other => panic!("the type error fails the step, got {other:?}"),
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A failure only one side has is reported under that side alone.
+    #[cfg(unix)]
+    #[test]
+    fn an_error_only_one_side_has_is_reported_only_for_that_side() {
+        let (dir, cache) = per_side_case("one-side");
+        let binary = fake_script(
+            &dir,
+            "if grep -q 'client entry' scripts/init.lua; then\n\
+               echo 'scripts/init.lua(1,1): TypeError: client only'\n  exit 1\nfi\n\
+             exit 0\n",
+        );
+        let scripts = vec!["scripts/client/init.lua".to_string()];
+        let outcome = analyze_with(
+            &manifest("unused", &"0".repeat(64)),
+            &dir,
+            &scripts,
+            &[Side::Server, Side::Client],
+            Some(&binary),
+            &cache,
+            false,
+            None,
+        )
+        .unwrap();
+        let Outcome::Fail(why) = outcome else {
+            panic!("the client's error fails the step, got {outcome:?}");
+        };
+        assert!(
+            why.contains("[client] scripts/client/init.lua(1,1)"),
+            "{why}"
+        );
+        assert!(
+            !why.contains("[server]"),
+            "reported on the server too:\n{why}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A mod with no per-side layout is not given an invented side: it keeps
+    /// the single analysis in the mod's own folder.
+    #[cfg(unix)]
+    #[test]
+    fn a_mod_without_sides_is_analysed_once_at_its_root() {
+        let (dir, cache) = case("no-sides");
+        let binary = fake_script(&dir, "pwd > \"$0.pwd\"\nexit 0\n");
+        let outcome = analyze_with(
+            &manifest("unused", &"0".repeat(64)),
+            &dir,
+            &["scripts/init.lua".into()],
+            &[],
+            Some(&binary),
+            &cache,
+            false,
+            None,
+        )
+        .unwrap();
+        assert!(matches!(outcome, Outcome::Pass), "{outcome:?}");
+        let ran = std::fs::read_to_string(binary.with_extension("pwd")).unwrap();
+        assert_eq!(
+            canonical(Path::new(ran.trim())),
+            canonical(&dir),
+            "the analysis should run in the mod, not a staged view"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The types step with the real luau-lsp: both sides resolve the shared
+    /// module as the runtime does, a type error in it is reported for both
+    /// sides under its real path, and a client-only error under `[client]`.
+    /// `cargo nextest run -p cargo-horizon-mod --run-ignored only` (needs the
+    /// network once for the pinned binary, or a cached one).
+    #[test]
+    #[ignore]
+    fn the_types_step_analyses_each_side_as_the_runtime_resolves_requires() {
+        let base =
+            std::env::temp_dir().join(format!("horizon-mod-real-sides-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let dir = base.join("mod");
+        per_side_mod(&dir);
+        let cache = tools_cache(None).unwrap();
+        let scripts = vec![
+            "scripts/server/init.lua".to_string(),
+            "scripts/client/init.lua".to_string(),
+            "scripts/shared/util.lua".to_string(),
+        ];
+        let run = || {
+            analyze(
+                &dir,
+                &scripts,
+                &[Side::Server, Side::Client],
+                None,
+                &cache,
+                false,
+                None,
+            )
+            .unwrap()
+        };
+        match run() {
+            Outcome::Pass => {}
+            other => panic!("a shared require resolves on both sides, got {other:?}"),
+        }
+        std::fs::write(
+            dir.join("scripts/shared/util.lua"),
+            "local x: number = \"a\"\nreturn {}\n",
+        )
+        .unwrap();
+        match run() {
+            Outcome::Fail(why) => {
+                assert!(why.contains("[server] scripts/shared/util.lua"), "{why}");
+                assert!(why.contains("[client] scripts/shared/util.lua"), "{why}");
+            }
+            other => panic!("a shared type error fails both sides, got {other:?}"),
+        }
+        std::fs::write(
+            dir.join("scripts/shared/util.lua"),
+            "local M = {}\nreturn M\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("scripts/client/init.lua"),
+            "local x: number = \"a\"\nreturn x\n",
+        )
+        .unwrap();
+        match run() {
+            Outcome::Fail(why) => {
+                assert!(why.contains("[client] scripts/client/init.lua"), "{why}");
+                assert!(
+                    !why.contains("[server]"),
+                    "reported for the server too:\n{why}"
+                );
+            }
+            other => panic!("a client type error fails the client alone, got {other:?}"),
+        }
+        std::fs::remove_dir_all(&base).unwrap();
     }
 
     /// A mod that already has the reserved folder name would be hidden by the
@@ -1697,6 +2826,7 @@ mod tests {
             &manifest("unused", &"0".repeat(64)),
             &dir,
             &["scripts/init.lua".into()],
+            &[],
             Some(Path::new("/no/such/binary")),
             &cache,
             false,
@@ -1844,6 +2974,62 @@ mod tests {
         assert!(!dropped(
             "/w/horizon-modkit/scripts/modkit.lua:1: Type error"
         ));
+    }
+
+    /// With no modkit checkout, the dropped `@modkit` requires are the ones
+    /// the mod's own `.luaurc` alias names, in the layout it names (the
+    /// template's `../horizon-modkit/scripts/server/modkit`): a path the
+    /// alias does not name is still a failure.
+    #[cfg(unix)]
+    #[test]
+    fn the_unresolvable_modkit_drop_follows_the_mods_alias() {
+        let (dir, cache) = case("alias-drop");
+        let write_alias = |path: &str| {
+            std::fs::write(
+                dir.join(".luaurc"),
+                format!("{{\"aliases\": {{\"modkit\": \"{path}\"}}}}"),
+            )
+            .unwrap();
+        };
+        write_alias("../horizon-modkit/scripts/server/modkit");
+        let alias = dir
+            .parent()
+            .unwrap()
+            .join("horizon-modkit/scripts/server/modkit");
+        let binary = fake_script(
+            &dir,
+            &format!(
+                "echo 'scripts/init.lua(1,1): TypeError: Unknown require: {}.lua'\nexit 1\n",
+                alias.display()
+            ),
+        );
+        let run = || {
+            analyze_with(
+                &manifest("unused", &"0".repeat(64)),
+                &dir,
+                &["scripts/init.lua".into()],
+                &[],
+                Some(&binary),
+                &cache,
+                false,
+                None,
+            )
+            .unwrap()
+        };
+        match run() {
+            Outcome::Unchecked(why) => {
+                assert!(why.contains("@modkit requires are unchecked"), "{why}");
+            }
+            other => panic!("the alias's unresolvable require is dropped, got {other:?}"),
+        }
+        // The same diagnostic under another alias is not dropped: the path
+        // comes from the mod's `.luaurc`, not from a fixed layout.
+        write_alias("../elsewhere/scripts/server/modkit");
+        match run() {
+            Outcome::Fail(why) => assert!(why.contains("Unknown require"), "{why}"),
+            other => panic!("a path the alias does not name still fails, got {other:?}"),
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// Selene over the horizon std: an unused local and an undefined global

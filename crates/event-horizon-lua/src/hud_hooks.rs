@@ -263,13 +263,12 @@ pub(crate) fn finish(mod_: &LuaMod, host: &mut dyn Host, hook: &str, outcome: Qu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lua_mods::LuaMod;
+    use crate::lua_mods::{LuaMod, LuaSide};
     use horizon_client::dev_input::mods::{ModStatus, set_status, status};
     use horizon_client::mobs::{Mob, MobType};
     use horizon_client::mod_api::{
         BlockStateId, EntityRef, Hooks, HudEvent, ItemStack, MobView, NativeHeightmap, NativeHit,
         NativeServerPlayer, NativeWorldEpoch, Text, dispatch_gui_layer_post, dispatch_hud,
-        dispatch_mob_spawned,
     };
     use horizon_client::test_events;
     use horizon_core::geometry::Vec3;
@@ -450,12 +449,18 @@ mod tests {
         let manifest = MANIFEST_TEXT.replacen("ruby_hud", id, 1);
         std::fs::write(
             &path,
-            Package::write_files(&manifest, None, &[("scripts/init.lua", lua.as_bytes())]).unwrap(),
+            Package::write_files(
+                &manifest,
+                None,
+                &[("scripts/client/init.lua", lua.as_bytes())],
+            )
+            .unwrap(),
         )
         .unwrap();
-        let m = LuaMod::load(&path, &[]).unwrap();
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
         set_status(ModStatus {
             id: id.to_owned(),
+            side: m.side().as_str().to_owned(),
             ..Default::default()
         });
         (m, id.to_owned(), dir)
@@ -734,7 +739,7 @@ mod tests {
             "ruby_hud_cross",
             r#"
             horizon.on("hud", function(event) SAVED = event.batch end)
-            horizon.on("mob_spawned", function() SAVED.fill(0, 0, 1, 1, 4278190080) end)
+            horizon.on("gui_layer_post", function() SAVED.fill(0, 0, 1, 1, 4278190080) end)
             "#,
         );
         let mods = boxed(m);
@@ -743,14 +748,7 @@ mod tests {
         let mut corners = Corners::new(800.0, 600.0, 0.0);
         dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
         no_error(&id);
-        dispatch_mob_spawned(
-            &mut host,
-            &mods,
-            "minecraft:overworld",
-            "minecraft:zombie",
-            [0.0, 64.0, 0.0],
-            true,
-        );
+        dispatch_gui_layer_post(&mut host, &mods, "test:layer", &mut batch);
         let e = last_error(&id).expect("the kept batch failed");
         assert!(e.contains("destructed"), "{e}");
         assert!(
@@ -953,14 +951,14 @@ mod tests {
                 &manifest,
                 None,
                 &[(
-                    "scripts/init.lua",
+                    "scripts/client/init.lua",
                     b"horizon.on(\"hud\", function() end, \"minecraft:cow\")" as &[u8],
                 )],
             )
             .unwrap(),
         )
         .unwrap();
-        let e = LuaMod::load(&path, &[]).expect_err("a kind must be refused");
+        let e = LuaMod::load(&path, LuaSide::Client, &[]).expect_err("a kind must be refused");
         assert!(e.contains("takes no kind"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -970,7 +968,7 @@ mod tests {
         let (m, _id, dir) = hmod(
             "idle",
             "ruby_hud_idle",
-            "horizon.on(\"server_tick\", function() end)",
+            "horizon.on(\"gui_layer_post\", function() end)",
         );
         let mods = boxed(m);
         let mut host = RecordingHost::default();
@@ -1014,17 +1012,23 @@ mod tests {
         let mut corners = Corners::new(800.0, 600.0, 0.0);
         dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
         no_error(&id);
-        let started = Instant::now();
+        // Take the minimum over 5 repetitions: a single timing is inflated
+        // by scheduler noise under parallel build load; the minimum is the
+        // quiet-machine cost.
         let n: usize = 200;
-        for _ in 0..n {
-            dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+        let mut minimum = Duration::MAX;
+        for _ in 0..5 {
+            let started = Instant::now();
+            for _ in 0..n {
+                dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+            }
+            minimum = minimum.min(started.elapsed() / n as u32);
         }
-        let per_call = started.elapsed() / n as u32;
-        println!("hud with a handler drawing 50 fills: {per_call:?} per call");
-        assert_eq!(host.draws.lock().unwrap().len(), 50 * (n + 1));
+        println!("hud with a handler drawing 50 fills: {minimum:?} per call (minimum of 5)");
+        assert_eq!(host.draws.lock().unwrap().len(), 50 * (n * 5 + 1));
         assert!(
-            per_call < Duration::from_millis(50),
-            "50 fills cost {per_call:?} a frame"
+            minimum < Duration::from_millis(50),
+            "50 fills cost {minimum:?} a frame"
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -1144,6 +1148,54 @@ mod tests {
             *host.draws.lock().unwrap(),
             ["fill [0.0, 0.0, 1.0, 1.0] 0xff000000"]
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_draw_hook_refuses_server_only_actions_and_declarations() {
+        // In a client draw hook only the reads and `tell`/`broadcast` may
+        // run: every other server-only call raises the server-only error,
+        // and queues nothing (`run_action` on a queued `set_block` would
+        // panic here: `RecordingHost` implements no `state_named`).
+        let (m, id, dir) = hmod(
+            "drawapi",
+            "ruby_hud_drawapi",
+            r#"
+            horizon.on("hud", function(event)
+              local t = horizon.time()
+              assert(t.day == 1, "time read")
+              horizon.tell("draw_steve", "hello from hud")
+              horizon.broadcast("hi")
+              local function expect_server_only(name, f)
+                local ok, err = pcall(f)
+                assert(not ok, name .. " should fail in a draw hook")
+                assert(
+                  string.find(tostring(err), "is only available in scripts/server/", 1, true),
+                  name .. ": " .. tostring(err)
+                )
+              end
+              expect_server_only("set_block", function() horizon.set_block(0, 64, 0, "minecraft:stone") end)
+              expect_server_only("kill_mob", function() horizon.kill_mob("minecraft:overworld", 7) end)
+              expect_server_only("run_command", function() horizon.run_command("say hi") end)
+              expect_server_only("command", function() horizon.command("ruby hi", 0, function() end) end)
+              expect_server_only("goal", function() horizon.goal("ruby_g", {}) end)
+            end)
+            "#,
+        );
+        let mods = boxed(m);
+        let mut host = RecordingHost {
+            players: vec![draw_player()],
+            ..Default::default()
+        };
+        host.day_time = 30001;
+        let mut batch = HudBatch::new([800, 600]);
+        let mut corners = Corners::new(800.0, 600.0, 0.0);
+        dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+        no_error(&id);
+        // The read answered and both queued chat actions ran after the
+        // call; nothing else executed.
+        assert_eq!(host.tells.lock().unwrap().len(), 1);
+        assert_eq!(*host.broadcasts.lock().unwrap(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

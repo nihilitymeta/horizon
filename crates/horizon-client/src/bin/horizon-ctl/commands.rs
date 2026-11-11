@@ -634,9 +634,9 @@ pub const COMMANDS: &[Cmd] = &[
     cmd!("repro-export", Scripting, "repro-export [NAME] [PATH] [--no-world]", "zip a recording with the logs, crash report and status",
         "Writes repro/<stamp>-NAME.zip: the recording, logs/latest.log, the newest crash report, a status.json and a README. The player attaches it to the bug report; nothing is uploaded. Stops a running recording first.",
         ["horizon-ctl repro-export", "horizon-ctl repro-export repro-bug out.zip"], &[opt("name", Ty::Str, "recording from record-list (default the newest)"), opt("path", Ty::Str, "where to write the zip"), flag("no-world", Ty::Bool, "leave the world out")], mcp: true, local: false),
-    cmd!("reload-mods", Scripting, "reload-mods [ID]", "reload scripted mods, waiting until the reload is applied",
-        "Reloads one mod by id, or every scripted mod without an id, as /reload does: the game reads its scripts again at the next server tick. Waits up to 10 s for the reload to apply, then replies with one short status per mod (id, ok, reloads, and the error text when a reload fails). A registry.lua change still needs a restart: reloaded registry mods say so in their note. Unknown id is an error.",
-        ["horizon-ctl reload-mods", "horizon-ctl reload-mods my_mod"], &[opt("id", Ty::Str, "mod id to reload (default: every scripted mod)")], mcp: true, local: false),
+    cmd!("reload-mods", Scripting, "reload-mods [ID] [--side client|server|both]", "reload scripted mods, waiting until the reload is applied",
+        "Reloads one mod by id, or every scripted mod without an id, as /reload does: the game reads its scripts again at the next server tick. Without --side every state reloads (both sides in single player); with --side client or --side server only that side. Waits up to 10 s for the reload to apply, then replies with one short status per (mod, side) (id, side, ok, reloads, and the error text when a reload fails). A registry.lua change still needs a restart: reloaded registry mods say so in their note. Unknown id is an error, as is an id with no state of the asked side.",
+        ["horizon-ctl reload-mods", "horizon-ctl reload-mods my_mod", "horizon-ctl reload-mods my_mod --side client"], &[opt("id", Ty::Str, "mod id to reload (default: every scripted mod)"), flag("side", Ty::Enum(&["client", "server", "both"]), "which side(s) to reload (default: both)")], mcp: true, local: false),
     cmd!("lua", Scripting, "lua CHUNK", "run a Lua chunk as /lua does, waiting until it runs (needs --dev-tools)",
         "Runs CHUNK on the server thread in the /lua console's Luau state and limits (2 s, 64 MiB): the printed output comes back as output, a failing chunk as an error with its traceback. Needs the dev tools (--dev-tools); without them it is an error. One run at a time.",
         ["horizon-ctl lua print(1)", "horizon-ctl lua print(mc.snbt(\"@p\", \"Pos\"))"], &[p("chunk", Ty::Rest, "Lua code, as one /lua line")], mcp: true, local: false),
@@ -1048,6 +1048,32 @@ mod tests {
             line_for(open, &json!({ "world": "A", "mode": "creative" }))
                 .unwrap_err()
                 .contains("seed")
+        );
+    }
+
+    #[test]
+    fn reload_mods_side_becomes_a_flag_and_rejects_bad_values() {
+        let reload = find("reload-mods").unwrap();
+        assert_eq!(
+            line_for(reload, &json!({ "id": "my_mod", "side": "client" })).unwrap(),
+            ["reload-mods", "my_mod", "--side", "client"]
+        );
+        assert_eq!(
+            line_for(reload, &json!({ "id": "my_mod", "side": "server" })).unwrap(),
+            ["reload-mods", "my_mod", "--side", "server"]
+        );
+        assert_eq!(
+            line_for(reload, &json!({ "side": "client" })).unwrap(),
+            ["reload-mods", "--side", "client"]
+        );
+        assert_eq!(
+            line_for(reload, &json!({ "id": "my_mod" })).unwrap(),
+            ["reload-mods", "my_mod"]
+        );
+        assert!(
+            line_for(reload, &json!({ "id": "my_mod", "side": "sideways" }))
+                .unwrap_err()
+                .contains("one of")
         );
     }
 

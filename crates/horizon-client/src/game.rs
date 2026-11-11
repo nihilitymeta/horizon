@@ -16916,6 +16916,12 @@ impl<'a> Game<'a> {
         prepared: Option<GameCpuResources>,
     ) -> Result<Self> {
         let root = options.resources.clone();
+        // The thread running this game answers `caller_side` for the mods' both-side hooks.
+        horizon_client::mod_api::set_caller_side(Some(if options.execution_role.is_client() {
+            horizon_client::mod_api::ModSide::Client
+        } else {
+            horizon_client::mod_api::ModSide::Server
+        }));
         // This game reads its registries from `root`: the content mods'
         // declarations in it are the process's until restart.
         mods::fix_declarations();

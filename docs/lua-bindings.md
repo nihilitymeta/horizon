@@ -36,7 +36,9 @@ scripted mod, in the same list and order as trait mods. A hook the generator cov
 name; a hook it cannot cover is listed with its reason in [hook-exposure.md](api/hook-exposure.md).
 
 - The language is Luau, through `mlua` with the `luau` feature. It is built from source: no system library and no
-  dynamic loading, the same on Metal and Vulkan. Each mod has its own Lua state. `Lua` is `Send`, so it lives in the
+  dynamic loading, the same on Metal and Vulkan. Each mod has one Lua state per side, each started from its entry
+  point (`scripts/server/init.lua` on the server, `scripts/client/init.lua` on the client; `scripts/shared/` holds
+  the modules either side may `require`). `Lua` is `Send`, so it lives in the
   `Hooks` object.
 - Scripts never hold the host. Calls such as `horizon.broadcast(...)`, `horizon.summon(...)` and
   `horizon.kill_mob(...)` are queued. The runtime runs them in order when the handler returns, with the host that the
@@ -49,7 +51,9 @@ name; a hook it cannot cover is listed with its reason in [hook-exposure.md](api
 
 - a manifest
 - `scripts/registry.lua`, with one item
-- `scripts/init.lua`, with the item's `on_use`
+- `scripts/server/init.lua`, with the item's `on_use`
+- `scripts/client/init.lua`, with a client example (`client_tick_post`)
+- `scripts/shared/util.lua`, a shared module required by both entries
 - a `.luaurc` for an editor
 - a README
 
@@ -59,15 +63,19 @@ To play a mod, install its `.hmod` and turn it on, or start the game with `horiz
 The game gathers scripted mods when it starts, as it does trait mods, so turning one on or off on the Mods page takes
 effect at the next start. A mod without capability `scripts` is content only, as before.
 
-A mod's entry point is `scripts/init.lua`. The mod needs capability `scripts` and `experimental = ["scripts"]` in
-its manifest, and its id comes from its `horizon-mod.toml`. `cargo horizon-mod build` packs `scripts/` next to
-`assets/` and `data/`; `horizon_mods::Content` lists the scripts, checks their paths, and checks that
-`scripts/init.lua` is there. The Mods page says "May run its own scripts in your worlds".
+A mod runs one Lua state per side, each started from its entry point: `scripts/server/init.lua` on the
+server, `scripts/client/init.lua` in the player's game (a mod needs one or both, or none as a shared-only library with only `scripts/shared/`). `scripts/shared/` holds the
+modules either side may `require`. `horizon.side` says which side a state is, and a dedicated server runs no client
+state. A mod with only the old `scripts/init.lua` is not loaded. The mod needs
+capability `scripts` and `experimental = ["scripts"]` in its manifest, and its id comes from its
+`horizon-mod.toml`. The folders decide what the mod runs on; its `side` line does not. `cargo horizon-mod build`
+packs `scripts/` next to `assets/` and `data/`; `horizon_mods::Content` lists the scripts, checks their paths,
+and checks the entry points. The Mods page says "May run its own scripts in your worlds".
 
 This script counts natural zombie spawns:
 
 ```lua
--- scripts/init.lua
+-- scripts/server/init.lua
 local spawns = 0
 horizon.on("mob_spawned", function(event)
   if event.kind == "minecraft:zombie" and event.natural then
@@ -215,6 +223,8 @@ and it would otherwise wait in the queue for the life of the state.
 
 Some functions take a *player*. A player is a `player` table that a hook handed out, a name or a UUID.
 
+A client state (`scripts/client/`) keeps only a small `horizon` table: `horizon.mod_id`, `horizon.mod_version`, `horizon.side`, `horizon.libraries`, `horizon.log`, `horizon.on`, `horizon.after`, `horizon.every`, `horizon.ticks`, `horizon.config`, `horizon.save_config`, `horizon.dev`, `horizon.distance`, `horizon.handled`, `horizon.cancel` and `horizon.require`. Every other `horizon.*` entry present on a server state (including `horizon.set_block`, `horizon.summon`, `horizon.players`, `horizon.world_data`, `horizon.player_data` and `horizon.entity_data`) is replaced by a stub that raises `horizon.<name> is only available in scripts/server/ (this is the client state of mod <id>)`. The exception is a draw-hook handler (`hud`, `gui_layer_post`), which may still call the read functions (`horizon.time`, `block`, `block_property`, `light`, `surface_height`, `raycast`, `player`, `players`, `acting_player`, `mob`, `mobs`, `inventory`, `count_items`, `carried_items`, `data`) and the two queued chat actions `horizon.tell` and `horizon.broadcast`; every other server-only call — queued actions such as `horizon.set_block` or `horizon.run_command`, and declarations such as `horizon.command`, `horizon.goal` and `horizon.block_entity` — raises the same server-only error even inside a draw hook. (`horizon.world_data`, `horizon.player_data`, `horizon.entity_data` and `horizon.summon` are refused in a draw hook as before, with the draw-hook error.)
+
 ### The mod
 
 | Function | Description |
@@ -223,8 +233,8 @@ Some functions take a *player*. A player is a `player` table that a hook handed 
 | `horizon.log(msg)` | Writes a line to the game log, tagged `[lua:<id>]` |
 | `horizon.mod_id`, `horizon.mod_version` | the mod's id and version, from its manifest |
 | `horizon.libraries` | the versions of the mods it depends on, by id, such as `horizon.libraries.horizon_modkit` |
-| `require(name)` | Runs `scripts/<name>.lua` of the same mod, or of a library, once, and returns its value |
-| `horizon.ticks()` | Gets the number of server ticks seen since the scripts loaded |
+| `require(name)` | Looks in the state's side folder (`scripts/server/<name>.lua` in a server state, `scripts/client/<name>.lua` in a client state) then `scripts/shared/<name>.lua`, then each library's `scripts/`, once, and returns its value |
+| `horizon.ticks()` | Gets the number of ticks of the state's own side (server ticks in a server state, client ticks in a client state) seen since the scripts loaded |
 | `horizon.distance(a, b)` | Gets the distance between two `{x, y, z}` tables |
 
 ### Mob goals
@@ -374,16 +384,19 @@ commands, which is what `horizon.command` declares and `perform_command` hears.
 
 | Function | Description |
 |---|---|
-| `horizon.after(ticks, fn)` | Runs *fn* once after *ticks* server ticks (a finite number, zero or more; anything else fails the load) |
-| `horizon.every(ticks, fn)` | Runs *fn* every *ticks* server ticks (a finite number, one or more; anything else fails the load) |
+| `horizon.after(ticks, fn)` | Runs *fn* once after *ticks* of the state's own side (server ticks in a server state, client ticks in a client state) (a finite number, zero or more; anything else fails the load) |
+| `horizon.every(ticks, fn)` | Runs *fn* every *ticks* of the state's own side (server ticks in a server state, client ticks in a client state) (a finite number, one or more; anything else fails the load) |
+
+Timers count ticks of the state's own side: server ticks in a server state and client ticks in a client state.
 | `horizon.world_data()` | Gets the mod's saved table on the world |
 | `horizon.player_data(player)` | Gets the mod's saved table on a player, by name or UUID; nil for a player the server does not hold, such as a player on the hub or the acting one |
 | `horizon.entity_data(id)` | Gets the mod's saved table on an entity, by id. Nil on a server when the entity is not in the level, or on an attachment error. On a client copy the id is not checked: an unknown id reads as an empty table, recorded for writeback, but the attachment is not synced, so a write stays on the client copy — a table is no proof the entity exists there. Written back after the call, exactly like `horizon.world_data()` |
-| `horizon.config()` | Gets the mod's settings, `config/<id>.json` in the game folder, as a table; empty when there is no file yet. Every mod's settings share that folder, as on NeoForge |
+| `horizon.config()` | Gets the mod's settings, `config/<id>.json` in the game folder for the server state and `config/<id>.client.json` for the client state, as a table; empty when there is no file yet. Every mod's settings share that folder, as on NeoForge |
 | `horizon.save_config(t)` | Writes a table to the mod's settings file, as JSON that a person can edit |
 
-Timers run at the end of a tick while the world runs, as a `server_tick` handler of the mod's own, so reads and
-actions work in them. A timer that fails is logged, a repeating one is kept, and the timers after it run as usual.
+Timers run at the end of a tick of the state's own side while the world runs, as a `server_tick` handler in a
+server state and as a `client_tick_post` handler in a client state, so reads and actions work in them. A timer
+that fails is logged, a repeating one is kept, and the timers after it run as usual.
 `/reload` drops the timers with the handlers.
 
 The saved tables start empty. They are written back after the call and kept through saves as
@@ -418,6 +431,15 @@ Lua hears the engine's native hooks under the native names: `horizon.on("mob_spa
 `HorizonOn` overloads in [horizon.d.lua](api/horizon.d.lua) are the authoritative handler signatures, and
 [hook-exposure.md](api/hook-exposure.md) lists the hooks Lua does not hear and why. A mod written against the old
 hand-written hooks migrates with [lua-hook-migration.md](lua-hook-migration.md).
+
+Each hook runs on one side, and a state registers only the hooks of its own side and the ones of both. A
+`scripts/server/` state that calls `horizon.on` for a client hook (`hud`, say) fails to load with `hook 'hud' runs on
+the client: register it from scripts/client/`, and the client state refuses a server hook the same way. The check
+runs when the entry point runs, so `cargo horizon-mod check` shows it with the side. A module in `scripts/shared/`
+runs once in each state that requires it, so one that registers a hook of one side must guard it with `horizon.side`
+(`if horizon.side == "client" then ... end`), or only the matching state may require it.
+
+A both-sides hook reaches only the state of the side that fired it, because each state reports its side to the engine's filter (`Hooks::mod_side`).
 
 A handler takes one event table, the hook's fields by name:
 
@@ -552,7 +574,11 @@ The draw hooks run on the frame's 8 ms budget and take no kind. Their reads are 
 `surface_height` need a server and read empty on a client window, with `held` nil and `horizon.acting_player()`
 nil there too; `world_data`, `player_data`, `entity_data` and `summon`
 raise an error there. The acting player's inventory reads raise an error in a draw hook that has an acting
-player; on a client window, which has none, those reads are empty too, like `player`.
+player; on a client window, which has none, those reads are empty too, like `player`. The only
+actions a draw handler may queue are `horizon.tell` and `horizon.broadcast`; any other
+server-only call raises the server-only error (`horizon.<name> is only available in scripts/server/`)
+even there. A draw hook never waits for its state: when another hook holds the state (for example
+`log_line` on `Log writer`), the frame is skipped silently, with no error line.
 
 ### Hooks Lua does not hear
 
@@ -653,7 +679,11 @@ own (issue 53):
 or `--tools-cache <dir>` override it)
    and its SHA-256 verified against `crates/cargo-horizon-mod/tools/luau-lsp.toml` before it runs. `--offline`
    (or `HORIZON_MOD_OFFLINE`) skips the step with a notice when the binary is not cached; `--luau-lsp <binary>`
-   runs a binary of your choosing instead of the pinned one. The modkit's own scripts are a dependency, not the
+   runs a binary of your choosing instead of the pinned one. Each side the mod has (`scripts/server/init.lua`,
+   `scripts/client/init.lua`) is analysed as the runtime resolves its requires: that side's `scripts/<side>/` and
+   `scripts/shared/` are flattened into one view, so `require("util")` and `require("example.command")` find
+   their files, and a failure names the real file (`scripts/shared/util.lua`) with the side it failed on
+   (`[server]`, `[client]`). The modkit's own scripts are a dependency, not the
    mod's code, so their diagnostics are not reported. The mod's `.luaurc` aliases `@modkit` to a sibling
    `horizon-modkit` checkout: when that sibling is missing, `--modkit <dir>` (or `$MODKIT`) points the analysis
    at the real checkout through a staged `.luaurc` in the cache — the mod's own `.luaurc` is never edited — and
@@ -666,8 +696,8 @@ luau-lsp in the cache (downloaded once) or the binary that `--luau-lsp <path>` n
 
 ## Reloading
 
-`/reload`, and any data load after the first, reads the mod's scripts again and runs `scripts/init.lua` from the
-start. Handlers, timers, goals, commands, block entity declarations and `require`d modules are dropped. The Lua state
+`/reload`, and any data load after the first, reads the mod's scripts again and runs each side's entry
+(`scripts/server/init.lua`, `scripts/client/init.lua`) from the start. Handlers, timers, goals, commands, block entity declarations and `require`d modules are dropped. The Lua state
 and its globals stay.
 
 The new script registers into fresh tables, which replace the old ones only when the script ran to the end. A script
@@ -683,6 +713,8 @@ for a new spawn or a chunk coming back. `horizon.goal` changes only what later `
 The mod's content (`scripts/registry.lua`, `data/` and `assets/`) is a separate matter. The block, item, mob effect,
 entity type and menu type registries are read once, when the game starts, and stay until a restart.
 
+`horizon-ctl reload-mods` reloads every state by default (both sides in single player) and `--side client` or `--side server` reloads one side only.
+
 Some builds layer the content again on `/reload`: the server starts from the content root it plays on, which stands
 for the base it was built from. Such a build takes the mod's data and assets as they are now, and its declarations
 as they were at start:
@@ -696,14 +728,15 @@ declares what it declared at start is layered without a message.
 
 ## Limits and errors
 
-A handler, or a goal function, that runs longer than 250 ms is stopped by Luau's interrupt. A hook's handlers share
-one budget: 250 ms of wall-clock time for each handler registered, as one call. The interrupt raises an error that
+A handler, or a goal function, that runs longer than 250 ms is stopped by Luau's interrupt (per state). A hook's
+handlers share one budget per state: 250 ms of wall-clock time for each handler registered in that state, as one
+call (frame hooks get 8 ms per handler in that state, as above). The interrupt raises an error that
 behaves like any other error of the handler: it goes to the log and the dev tools' console, and a goal reads it as
 "no". A `pcall` around the slow code catches that error, but the next loop iteration or call raises it again, so
 nothing of the handler runs past its deadline, and the actions it queued are dropped. This holds for the timers' own
-call too.
+call too. A state is used by one thread at a time; hooks from worker threads wait for their turn.
 
-`init.lua`, with the modules it requires, has five seconds at load and at reload. A state may use up to 64 MiB. Names the scripts hand over where the engine needs them for the whole session (command words) are interned once each: at most 4096 distinct names of at most 256 bytes each, and anything past either limit is refused with a Lua error instead of leaking without bound.
+`init.lua`, with the modules it requires, has five seconds at load and at reload (per state). A state may use up to 64 MiB (per state, so a mod with both side folders can use 128 MiB in single player). Names the scripts hand over where the engine needs them for the whole session (command words) are interned once each: at most 4096 distinct names of at most 256 bytes each, and anything past either limit is refused with a Lua error instead of leaking without bound.
 
 A script reads nothing but its own mod (`lua_mods::Budget`, in `event-horizon-lua`):
 
@@ -735,7 +768,7 @@ table when its step lands, with the tests and the game check that show it.
 | A mob's attributes, equipment and name at runtime | Host helpers over a mob by id (`set_attribute(dimension, id, name, value)`, `equip(dimension, id, slot, stack)`, `set_name(dimension, id, text)`), then `horizon.set_attribute(id, "max_health", 40)`, `horizon.equip(id, "mainhand", "minecraft:iron_sword")` and `horizon.set_name(id, "Old One")` from any hook with a host, and `mob:set_attribute`, `mob:equip` and `mob:set_name` in the modkit. Until then, a mod declares attributes and equipment in its entity type (`registry.entity_type`), and names mobs through `run_command` |
 | Custom projectiles and other entities that are not mobs | A thrown mod item already flies as its template does (a snowball's `template` in `registry.item`). The planned shape is an entity type of the mod's own over a projectile template (`registry.entity_type("spore", { template = "minecraft:snowball", ... })`), with `projectile_impact` by that kind, and `horizon.shoot(dimension, kind, x, y, z, vx, vy, vz)` to launch one. Vehicles, displays and markers stay the engine's own |
 | Screens | Content mods have menu types (`data/<id>/horizon/menu/`), but a screen that draws them is native only (`native_screen`). Scripts get no screens: titles, subtitles, the action bar, chat lines and commands are their user interface. A later `horizon.open_menu(player, menu, pos)` would show a content mod's menu |
-| Client-side scripts | Scripts hear the server side of the game: the window's own server in single player, the host's in LAN. `side` in the manifest is the content's. There is no key binding or sound of the client's own; a server script reaches the client through the engine's packets, such as titles, sounds and particles. Drawing runs through the `hud` and `gui_layer_post` hooks, which hear the client's frames, and `key` hears its key and mouse presses. A fuller client script would be a second state, with its own hooks, kept apart |
+| Client-side scripts | A client state exists when `scripts/client/` does and runs the client hooks (those tagged `client` or `both` in [docs/api/hook-points.md](api/hook-points.md)). A server state runs the server hooks. A mod that registers the other side's hook is refused at load with an error that names the folder to use. Saved data (`horizon.world_data()`, `horizon.player_data`) is server state; the client reads server data only through messages (client-to-server messages are planned, saved data on the client is planned) |
 | Configuration | `horizon.config()` and `horizon.save_config(t)` are all of it: one JSON file that a person edits. There is no options screen and no setting per world; a mod that wants values per world keeps them in `horizon.world_data()`, and sets them with a command of its own |
 
 ## Working on a script
@@ -743,21 +776,20 @@ table when its step lands, with the tests and the game check that show it.
 The developer tools are made for this ([dev-tools.md](dev-tools.md)). Start the game with `--dev-tools --dev-mod /path/to/mod`, then:
 
 - Type `/lua` to open the console. Its first section lists the scripted mods, with their scripts, handlers, goals
-  and last error. Its **reload** button reads a mod's scripts again and runs `init.lua` from the start at the next
-  server tick, as `/reload` does, and shows the result. The mod's `horizon.log` and `print` lines, and its errors,
+  and last error. Its **reload** button reads a mod's scripts again and runs `init.lua` from the start at the next tick of that side (the server tick for a server row, the client tick for a client row), as `/reload` does, and shows the result. The mod's `horizon.log` and `print` lines, and its errors,
   appear there too, tagged `[mod_id]`, so you see a failing handler at once instead of finding it in the log.
 - Type `/goals @e[type=zombie,sort=nearest,limit=1]` to see a mob's goal selectors. A Lua goal is named
   `mod_id:name`, marked running or idle, with a history of when it ran. `/senses` and `/nav` show what the goal's
   view sees (the target, the nearest player, navigation) and the path that the game walks for `out.navigate_to`.
 - Type `/inspect <targets>` to see an entity's data as `/data get entity` prints it, and
   `/watch <targets> <path>` to chart one number of it over time.
-- In the console, `mc.mods()` and `mc.reload_mods([id])` do what the console's mod section does, for a script of
+- In the console, `mc.mods()` and `mc.reload_mods([id[, side]])` do what the console's mod section does, for a script of
   the tools' own.
-- In the console, `mc.profile()` reports each mod's hook cost since the last reset, keyed by mod id then hook
-  name: each hook's table carries `calls` (hook firings: one per firing, however many handlers the mod has for
+- In the console, `mc.profile()` reports each mod's hook cost since the last reset, keyed by mod id and side then hook
+  name (a server state by `"<id>"` and a client state by `"<id>/client"`): each hook's table carries `calls` (hook firings: one per firing, however many handlers the mod has for
   the hook), `total_ms` (all firings), `max_ms` (the slowest hook firing) and `overruns` (firings the time budget
   stopped). The times are fractional milliseconds. `mc.profile_rows()` gives the same numbers as an array of
-  `{mod=, hook=, calls=, total_ms=, max_ms=, overruns=}` sorted by mod id then hook name, for a listing whose order
+  `{mod=, side=, hook=, calls=, total_ms=, max_ms=, overruns=}` sorted by mod id, side, then hook name, for a listing whose order
   matters. `mc.profile_reset()` zeroes every counter.
 - In the console, `mc.mod_state(id)` reads a loaded scripted mod's saved data on the server thread, read only: a table
   with `world_data` (the `horizon.world_data()` table) and `players`, each online player's `horizon.player_data()` table

@@ -404,7 +404,33 @@ pub enum Class {
 
 pub struct HookClass {
     pub name: String,
+    pub side: Side,
     pub class: Class,
+}
+
+/// Which game side runs a native hook, from the catalog's `side` tag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Side {
+    Client,
+    Server,
+    Both,
+}
+
+/// The `side` tag of one catalog hook. A missing or unknown tag is an error
+/// naming the hook, so a new hook cannot be added without its side.
+pub fn side_of(hook: &serde_json::Value) -> Result<Side, String> {
+    let name = hook["name"].as_str().unwrap_or("?");
+    match hook["side"].as_str() {
+        Some("client") => Ok(Side::Client),
+        Some("server") => Ok(Side::Server),
+        Some("both") => Ok(Side::Both),
+        Some(other) => Err(format!(
+            "hook {name}: unknown side `{other}` (use \"client\", \"server\" or \"both\")"
+        )),
+        None => Err(format!(
+            "hook {name} has no side tag (add \"side\": \"client\", \"server\" or \"both\")"
+        )),
+    }
 }
 
 /// Whether a type is the path `name` (any lifetimes, no other arguments).
@@ -4623,12 +4649,14 @@ pub fn classify(root: &Path) -> Result<Vec<HookClass>, String> {
     let mut out = Vec::new();
     for hook in &hooks {
         let name = hook["name"].as_str().ok_or("hook name missing")?.to_owned();
+        let side = side_of(hook)?;
         match model_of(root, hook, &game, &mut frees) {
             Ok(model) => out.push(HookClass {
                 name,
+                side,
                 class: Class::Generated(model),
             }),
-            Err(class) => out.push(HookClass { name, class }),
+            Err(class) => out.push(HookClass { name, side, class }),
         }
     }
     Ok(out)

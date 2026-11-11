@@ -40,6 +40,15 @@ pub fn run_file(path: &Path) {
     }
 }
 
+/// The mods-section label of one status row: the id, with its side beside it.
+fn mod_label(id: &str, side: &str) -> String {
+    if side.is_empty() {
+        id.to_owned()
+    } else {
+        format!("{id} ({side})")
+    }
+}
+
 /// The scripted mods (docs/lua-bindings.md): each with its source, scripts,
 /// handlers and goals, its last error in red, and a reload button that
 /// reads its scripts again at the next server tick.
@@ -56,9 +65,9 @@ fn mods_fold(ui: &mut egui::Ui) {
             for m in &mods {
                 ui.horizontal(|ui| {
                     if m.scripts > 0 && ui.small_button("reload").clicked() {
-                        horizon_client::dev_input::mods::request_reload(Some(&m.id));
+                        horizon_client::dev_input::mods::request_reload(Some(&m.id), Some(&m.side));
                     }
-                    ui.strong(&m.id);
+                    ui.strong(mod_label(&m.id, &m.side));
                     ui.weak(&m.source);
                 });
                 if m.scripts > 0 {
@@ -82,7 +91,7 @@ fn mods_fold(ui: &mut egui::Ui) {
                 }
             }
             if mods.len() > 1 && ui.small_button("reload all").clicked() {
-                horizon_client::dev_input::mods::request_reload(None);
+                horizon_client::dev_input::mods::request_reload(None, None);
             }
             ui.weak("a reload runs at the next server tick, as /reload does; the mods' log and print lines show below");
         });
@@ -346,5 +355,17 @@ pub fn window(ctx: &egui::Context) {
         });
     if !open {
         OPEN.store(false, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_row_label_names_the_side_beside_the_id() {
+        assert_eq!(mod_label("dual", "server"), "dual (server)");
+        assert_eq!(mod_label("dual", "client"), "dual (client)");
+        assert_eq!(mod_label("plain", ""), "plain");
     }
 }

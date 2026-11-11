@@ -232,7 +232,18 @@ fn new_lua(dir: &Path, path: &str, id: &str, fill: impl Fn(&str) -> String) -> R
             "scripts/registry.lua",
             include_str!("../template/lua/registry.lua"),
         ),
-        ("scripts/init.lua", include_str!("../template/lua/init.lua")),
+        (
+            "scripts/server/init.lua",
+            include_str!("../template/lua/server_init.lua"),
+        ),
+        (
+            "scripts/client/init.lua",
+            include_str!("../template/lua/client_init.lua"),
+        ),
+        (
+            "scripts/shared/util.lua",
+            include_str!("../template/lua/shared_util.lua"),
+        ),
         (
             "assets/{id}/lang/en_us.json",
             include_str!("../template/lua/lang.json"),
@@ -531,6 +542,15 @@ fn check_inner(args: &[String], verbose: bool) -> (serde_json::Value, Result<(),
             }
         };
         if !content.scripts.is_empty() {
+            // Each side the runtime runs is analysed as it resolves requires;
+            // a mod with neither folder keeps the single analysis as it was.
+            let mut sides = Vec::new();
+            if content.has_server() {
+                sides.push(scripts::Side::Server);
+            }
+            if content.has_client() {
+                sides.push(scripts::Side::Client);
+            }
             let cache = match scripts::tools_cache(flag(args, "--tools-cache").map(Path::new)) {
                 Ok(c) => c,
                 Err(e) => return (check_value(report_json, &[], Some(&e), false), Err(e)),
@@ -538,6 +558,7 @@ fn check_inner(args: &[String], verbose: bool) -> (serde_json::Value, Result<(),
             match script_steps(
                 folder,
                 &content.scripts,
+                &sides,
                 &cache,
                 offline(args),
                 modkit_dir(args).as_deref(),
@@ -588,6 +609,7 @@ struct ScriptStep {
 fn script_steps(
     folder: &Path,
     scripts: &[String],
+    sides: &[scripts::Side],
     cache: &Path,
     offline: bool,
     modkit: Option<&Path>,
@@ -631,7 +653,7 @@ fn script_steps(
     // A pass with part unchecked (no modkit: its `@modkit` requires) keeps
     // status `pass`, and its detail carries the notice for a parser.
     let (ok, status, detail, lines, notes) =
-        match scripts::analyze(folder, scripts, explicit, cache, offline, modkit)? {
+        match scripts::analyze(folder, scripts, sides, explicit, cache, offline, modkit)? {
             scripts::Outcome::Pass => (
                 true,
                 "pass",
@@ -875,6 +897,46 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A content-only mod has no scripts, so the check runs no type analysis:
+    /// it reports no `types` step, and a fake luau-lsp is never spawned.
+    #[test]
+    fn a_content_only_mod_runs_no_script_analysis() {
+        let dir = scratch("content-only-steps");
+        let path = dir.join("gems");
+        new(&[
+            path.display().to_string(),
+            "--template".into(),
+            "content".into(),
+        ])
+        .unwrap();
+        let fake = dir.join("fake-luau-lsp");
+        std::fs::write(&fake, "#!/bin/sh\ntouch \"$0.ran\"\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let (value, result) = check_inner(
+            &[
+                path.display().to_string(),
+                "--offline".into(),
+                "--tools-cache".into(),
+                dir.join("cache").display().to_string(),
+                "--luau-lsp".into(),
+                fake.display().to_string(),
+            ],
+            false,
+        );
+        assert!(result.is_ok(), "{result:?}");
+        let names: Vec<&str> = value["steps"]
+            .as_array()
+            .map(|steps| steps.iter().filter_map(|s| s["name"].as_str()).collect())
+            .unwrap_or_default();
+        assert!(!names.contains(&"types"), "a types step ran: {value}");
+        assert!(!fake.with_extension("ran").exists(), "luau-lsp ran");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// The Lua template is a scripted mod the modkit runs: its manifest
     /// depends on the modkit, its scripts are packed and read, the registry's
     /// check accepts the `.hmod`, and the scripts are the ones the template
@@ -900,12 +962,12 @@ mod tests {
                 .capabilities
                 .contains(&horizon_mods::Capability::Scripts)
         );
-        let init = std::fs::read_to_string(path.join("scripts/init.lua")).unwrap();
+        let init = std::fs::read_to_string(path.join("scripts/server/init.lua")).unwrap();
         assert!(init.contains("modkit.mod(\"my_wand\")") && init.contains("function Wand:on_use"));
         assert!(
             std::fs::read_to_string(path.join(".luaurc"))
                 .unwrap()
-                .contains("horizon-modkit/scripts/modkit")
+                .contains("horizon-modkit/scripts/server/modkit")
         );
         assert!(
             std::fs::read_to_string(path.join("README.md"))
@@ -917,7 +979,12 @@ mod tests {
         let content = Content::read(&hmod, &package.manifest).unwrap();
         assert_eq!(
             content.scripts,
-            ["scripts/init.lua", "scripts/registry.lua"]
+            [
+                "scripts/client/init.lua",
+                "scripts/registry.lua",
+                "scripts/server/init.lua",
+                "scripts/shared/util.lua"
+            ]
         );
         assert!(
             content
@@ -937,6 +1004,49 @@ mod tests {
         .unwrap();
         let e = check(&[path.display().to_string()]).unwrap_err();
         assert!(e.contains("--game"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The template creates the per-side layout: server, client and shared
+    /// entries, both sides require the shared module, Content lists them, and
+    /// the offline check (format and lint in-process) passes.
+    #[test]
+    fn the_lua_template_creates_per_side_layout_with_shared_util() {
+        let dir = scratch("lua-template-per-side");
+        let path = dir.join("per-side-mod");
+        new(&[
+            path.display().to_string(),
+            "--template".into(),
+            "lua".into(),
+        ])
+        .unwrap();
+        for f in [
+            "scripts/server/init.lua",
+            "scripts/client/init.lua",
+            "scripts/shared/util.lua",
+        ] {
+            assert!(path.join(f).exists(), "missing {f}");
+        }
+        let server = std::fs::read_to_string(path.join("scripts/server/init.lua")).unwrap();
+        assert!(server.contains("require(\"util\")"), "{server}");
+        let client = std::fs::read_to_string(path.join("scripts/client/init.lua")).unwrap();
+        assert!(client.contains("require(\"util\")"), "{client}");
+        let shared = std::fs::read_to_string(path.join("scripts/shared/util.lua")).unwrap();
+        assert!(shared.contains("function M.greeting"), "{shared}");
+        let manifest =
+            Manifest::parse(&std::fs::read_to_string(path.join(MANIFEST)).unwrap()).unwrap();
+        let content = Content::read(&path, &manifest).unwrap();
+        assert_eq!(content.server_scripts, ["scripts/server/init.lua"]);
+        assert_eq!(content.client_scripts, ["scripts/client/init.lua"]);
+        assert_eq!(content.shared_scripts, ["scripts/shared/util.lua"]);
+        check(&[
+            path.display().to_string(),
+            "--no-scripts".into(),
+            "--offline".into(),
+            "--tools-cache".into(),
+            dir.join("cache").display().to_string(),
+        ])
+        .unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -977,7 +1087,7 @@ mod tests {
             "lua".into(),
         ])
         .unwrap();
-        let init = path.join("scripts/init.lua");
+        let init = path.join("scripts/server/init.lua");
         let source = std::fs::read_to_string(&init).unwrap();
         std::fs::write(
             &init,
@@ -1010,7 +1120,7 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|b| b == "scripts/init.lua"),
+                .any(|b| b == "scripts/server/init.lua"),
             "{value}"
         );
         for step in steps {
@@ -1079,7 +1189,7 @@ mod tests {
             "lua".into(),
         ])
         .unwrap();
-        let init = path.join("scripts/init.lua");
+        let init = path.join("scripts/server/init.lua");
         let source = std::fs::read_to_string(&init).unwrap();
         let messy = source.replace(
             "local p = player.position",
@@ -1146,7 +1256,7 @@ mod tests {
             "lua".into(),
         ])
         .unwrap();
-        let init = path.join("scripts/init.lua");
+        let init = path.join("scripts/server/init.lua");
         let source = std::fs::read_to_string(&init).unwrap();
         std::fs::write(
             &init,
@@ -1189,7 +1299,7 @@ mod tests {
             "lua".into(),
         ])
         .unwrap();
-        let init = path.join("scripts/init.lua");
+        let init = path.join("scripts/server/init.lua");
         let source = std::fs::read_to_string(&init).unwrap();
         std::fs::write(
             &init,
@@ -1237,7 +1347,7 @@ mod tests {
         ])
         .unwrap();
         // A type error the definitions catch: set_block takes numbers.
-        let init = path.join("scripts/init.lua");
+        let init = path.join("scripts/server/init.lua");
         let source = std::fs::read_to_string(&init).unwrap();
         std::fs::write(
             &init,

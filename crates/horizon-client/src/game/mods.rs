@@ -280,7 +280,7 @@ fn announced_entry(
     m: &horizon_mods::Manifest,
     path: &std::path::Path,
 ) -> horizon_protocol::mod_list::Entry {
-    use horizon_mods::Side;
+    use horizon_mods::{Capability, Side};
     use horizon_protocol::mod_list;
     use sha2::{Digest, Sha256};
     let sha256 = if path.is_file() {
@@ -290,15 +290,32 @@ fn announced_entry(
     } else {
         None
     };
+    let side = match m.side {
+        Side::Both => mod_list::Side::Both,
+        Side::Server => mod_list::Side::Server,
+        Side::Client => mod_list::Side::Client,
+    };
+    // For a scripted mod the folders decide the join side (issue 50), not
+    // the manifest's `side` line: a server-only or client-only join must be
+    // invisible to the join comparison, which checks only `Both` mods.
+    let side = if m.capabilities.contains(&Capability::Scripts) {
+        match horizon_mods::Content::read(path, m) {
+            Ok(content) => match (content.has_server(), content.has_client()) {
+                (true, true) => mod_list::Side::Both,
+                (true, false) => mod_list::Side::Server,
+                (false, true) => mod_list::Side::Client,
+                (false, false) => side,
+            },
+            Err(_) => side,
+        }
+    } else {
+        side
+    };
     mod_list::Entry {
         id: m.id.clone(),
         version: m.version.clone(),
         sha256,
-        side: match m.side {
-            Side::Both => mod_list::Side::Both,
-            Side::Server => mod_list::Side::Server,
-            Side::Client => mod_list::Side::Client,
-        },
+        side,
     }
 }
 
@@ -1093,5 +1110,83 @@ mod tests {
         assert!(ghoul.ai.goals.has("RandomLookAround") && !ghoul.ai.goals.has("ToPost"));
         assert!(ghoul.ai.targets.has("NearestTarget"));
         assert!(!ghoul.ai.nav.can_float, "a zombie has no FloatGoal");
+    }
+
+    /// A mod folder with `manifest` and `files` by path, as the content
+    /// loader reads it: `horizon-mod.toml` plus the script files.
+    fn folder_mod(
+        name: &str,
+        manifest: &str,
+        files: &[(&str, &str)],
+    ) -> (std::path::PathBuf, horizon_mods::Manifest) {
+        let dir =
+            std::env::temp_dir().join(format!("horizon-announced-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(horizon_mods::manifest::MANIFEST), manifest).unwrap();
+        for (rel, text) in files {
+            let p = dir.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, text).unwrap();
+        }
+        let m = horizon_mods::Manifest::parse(manifest).unwrap();
+        (dir, m)
+    }
+
+    const SCRIPTED_MANIFEST: &str = r#"
+id = "ruby"
+name = "Ruby"
+version = "0.1.0"
+api = "0.2"
+side = "both"
+capabilities = ["registries", "scripts"]
+experimental = ["scripts"]
+"#;
+
+    /// A scripted mod's join side comes from its folders, not its manifest's
+    /// `side` line: both entries is `Both`, server-only is `Server`,
+    /// client-only is `Client` (issue 50). A mod without scripts keeps its
+    /// manifest side.
+    #[test]
+    fn announced_side_for_scripted_mods_comes_from_folders() {
+        use horizon_protocol::mod_list::Side;
+        let (dir, m) = folder_mod(
+            "both",
+            SCRIPTED_MANIFEST,
+            &[
+                ("scripts/server/init.lua", ""),
+                ("scripts/client/init.lua", ""),
+            ],
+        );
+        assert_eq!(announced_entry(&m, &dir).side, Side::Both);
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        let (dir, m) = folder_mod(
+            "server",
+            SCRIPTED_MANIFEST,
+            &[("scripts/server/init.lua", "")],
+        );
+        assert_eq!(announced_entry(&m, &dir).side, Side::Server);
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        let (dir, m) = folder_mod(
+            "client",
+            SCRIPTED_MANIFEST,
+            &[("scripts/client/init.lua", "")],
+        );
+        assert_eq!(announced_entry(&m, &dir).side, Side::Client);
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        const SERVER_MANIFEST: &str = r#"
+id = "ruby_server"
+name = "Ruby Server"
+version = "0.1.0"
+api = "0.3"
+side = "server"
+capabilities = ["storage"]
+"#;
+        let (dir, m) = folder_mod("content-server", SERVER_MANIFEST, &[]);
+        assert_eq!(announced_entry(&m, &dir).side, Side::Server);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

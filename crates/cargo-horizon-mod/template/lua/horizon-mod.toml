@@ -3,8 +3,17 @@ name = "{name}"
 version = "0.1.0"
 description = ""
 authors = []
-# A scripted mod: what it adds in scripts/registry.lua (or data/ and assets/),
-# what it does in scripts/init.lua, written with Horizon Modkit (API 0.2).
+# A scripted mod. The mod's Lua is one state per side per mod:
+# - `scripts/server/init.lua` (runs on the server) and
+#   `scripts/client/init.lua` (runs on the client) are the entries;
+# - `scripts/shared/` holds modules either side may `require`
+#   (a side looks in its own folder first, then `scripts/shared/`);
+# - `scripts/registry.lua` (and `scripts/registry/`) is the data stage.
+# `scripts/init.lua` is the old single entry and is no longer loaded.
+# Written with Horizon Modkit (API 0.2). horizon.side is "server" or "client".
+# Registering the other side's hook is refused at load; saved data
+# (`horizon.world_data()`, `player_data`) is server state and the client reads
+# server data only through messages (planned).
 api = "0.2"
 side = "both"
 # registries: "May add blocks, items, mob effects and entity types to your worlds";

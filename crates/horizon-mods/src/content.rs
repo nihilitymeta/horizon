@@ -26,8 +26,16 @@ pub const MAX_FILES: usize = 65_536;
 pub const MAX_FILE: u64 = 16 << 20;
 pub const MAX_TOTAL: u64 = 512 << 20;
 
-/// The script a scripted mod starts from (capability `scripts`).
+/// deprecated: the old single entry, refused; kept only to emit the migration refusal.
 pub const SCRIPT_ENTRY: &str = "scripts/init.lua";
+/// The server side's entry script (capability `scripts`): its own Lua state on the server.
+pub const SERVER_ENTRY: &str = "scripts/server/init.lua";
+/// The client side's entry script: its own Lua state in the player's game.
+pub const CLIENT_ENTRY: &str = "scripts/client/init.lua";
+/// The folders of the per-side scripts; `scripts/shared/` holds the modules either side may require.
+const SERVER_DIR: &str = "scripts/server/";
+const CLIENT_DIR: &str = "scripts/client/";
+const SHARED_DIR: &str = "scripts/shared/";
 /// The script whose declarations join the content files (feature `lua`).
 pub const REGISTRY_SCRIPT: &str = "scripts/registry.lua";
 
@@ -61,6 +69,27 @@ pub fn check_path(name: &str) -> Result<(), String> {
         return Err(bad());
     }
     Ok(())
+}
+
+/// The scripts under one of the per-side folders, sorted.
+fn under(scripts: &[String], dir: &str) -> Vec<String> {
+    scripts
+        .iter()
+        .filter(|s| s.starts_with(dir))
+        .cloned()
+        .collect()
+}
+
+/// Where a script under `scripts/` is not allowed to be, as the place to name in the error: a
+/// file directly in `scripts/` other than the registry script, or a folder other than the
+/// per-side ones and the data stage's `registry/`.
+fn stray_place(name: &str) -> Option<String> {
+    let rest = name.strip_prefix("scripts/")?;
+    match rest.split_once('/') {
+        None => (name != REGISTRY_SCRIPT).then(|| name.to_owned()),
+        Some((dir, _)) => (!matches!(dir, "server" | "client" | "shared" | "registry"))
+            .then(|| format!("scripts/{dir}/")),
+    }
 }
 
 /// A vanilla identifier, `minecraft:path`.
@@ -819,9 +848,14 @@ pub struct Content {
     source: Source,
     /// Every content file (`assets/...`, `data/...`), sorted.
     pub files: Vec<String>,
-    /// Every script (`scripts/...`), sorted: [`SCRIPT_ENTRY`] among them when
-    /// the mod has capability `scripts`.
+    /// Every script (`scripts/...`), sorted: [`SERVER_ENTRY`] or [`CLIENT_ENTRY`] among
+    /// them when the mod has capability `scripts`.
     pub scripts: Vec<String>,
+    /// The scripts under `scripts/server/`, `scripts/client/` and `scripts/shared/`, sorted
+    /// (each is also in `scripts`).
+    pub server_scripts: Vec<String>,
+    pub client_scripts: Vec<String>,
+    pub shared_scripts: Vec<String>,
     pub blocks: Vec<Block>,
     pub items: Vec<Item>,
     pub effects: Vec<MobEffect>,
@@ -838,6 +872,16 @@ pub struct Content {
 
 /// Reads a mod's content files ([`Content::reader`]).
 impl Content {
+    /// Whether the mod runs a server state: it has [`SERVER_ENTRY`]. The folders decide what a
+    /// scripted mod runs on, not the manifest's `side` line (the older WASM join-protocol concept).
+    pub fn has_server(&self) -> bool {
+        self.server_scripts.iter().any(|s| s == SERVER_ENTRY)
+    }
+    /// Whether the mod runs a client state: it has [`CLIENT_ENTRY`]. The folders decide, not the
+    /// manifest's `side` line (see [`Content::has_server`]).
+    pub fn has_client(&self) -> bool {
+        self.client_scripts.iter().any(|s| s == CLIENT_ENTRY)
+    }
     /// Whether `name` is a file `scripts/registry.lua` registered rather than one of the
     /// mod's own: the game makes it again when it reads the mod, so a package carries only
     /// the mod's own files.
@@ -953,6 +997,11 @@ impl Content {
         }
         scripts.sort();
         scripts.dedup();
+        let (server_scripts, client_scripts, shared_scripts) = (
+            under(&scripts, SERVER_DIR),
+            under(&scripts, CLIENT_DIR),
+            under(&scripts, SHARED_DIR),
+        );
         // The registry script's declarations join the files, in memory.
         #[cfg_attr(not(feature = "lua"), allow(unused_mut))]
         let mut registered = BTreeMap::new();
@@ -1009,6 +1058,9 @@ impl Content {
             source,
             files,
             scripts,
+            server_scripts,
+            client_scripts,
+            shared_scripts,
             blocks: Vec::new(),
             items: Vec::new(),
             effects: Vec::new(),
@@ -1029,6 +1081,9 @@ impl Content {
             source: Source::Code,
             files: Vec::new(),
             scripts: Vec::new(),
+            server_scripts: Vec::new(),
+            client_scripts: Vec::new(),
+            shared_scripts: Vec::new(),
             blocks: Vec::new(),
             items: Vec::new(),
             effects: Vec::new(),
@@ -1154,9 +1209,39 @@ impl Content {
                 "has scripts/ but not capability scripts in {MANIFEST}"
             ));
         }
-        if scripted && !self.scripts.iter().any(|s| s == SCRIPT_ENTRY) {
+        if self.scripts.iter().any(|s| s == SCRIPT_ENTRY) {
             return Err(format!(
-                "capability scripts in {MANIFEST} but no {SCRIPT_ENTRY}"
+                "{id}: {SCRIPT_ENTRY} is no longer loaded: move it to {SERVER_ENTRY} (or {CLIENT_ENTRY} for client code); shared modules go in {SHARED_DIR}"
+            ));
+        }
+        if let Some(stray) = self.scripts.iter().find_map(|s| stray_place(s)) {
+            return Err(format!(
+                "{id}: {stray} must live under scripts/server/, scripts/client/ or scripts/shared/"
+            ));
+        }
+        if scripted
+            && self.server_scripts.is_empty()
+            && self.client_scripts.is_empty()
+            && self.shared_scripts.is_empty()
+        {
+            if self.scripts.is_empty() {
+                return Err(
+                    "capability scripts but no scripts (put code in scripts/server/, scripts/client/ or scripts/shared/)".to_owned(),
+                );
+            }
+            return Err(format!(
+                "capability scripts in {MANIFEST} but no {SERVER_ENTRY} or {CLIENT_ENTRY}"
+            ));
+        }
+        // Each side's folder runs from its own entry: files there with no entry are refused.
+        if !self.server_scripts.is_empty() && !self.has_server() {
+            return Err(format!(
+                "{id}: scripts/server/ has files but no {SERVER_ENTRY} (the entry the server state runs)"
+            ));
+        }
+        if !self.client_scripts.is_empty() && !self.has_client() {
+            return Err(format!(
+                "{id}: scripts/client/ has files but no {CLIENT_ENTRY} (the entry the client state runs)"
             ));
         }
         let mut blocks = Vec::new();
@@ -1920,7 +2005,7 @@ experimental = ["scripts"]
             "registry",
             MANIFEST_SCRIPTED,
             &[
-                ("scripts/init.lua", b""),
+                ("scripts/server/init.lua", b""),
                 ("scripts/registry.lua", registry),
                 ("data/ruby/horizon/item/ruby.json", ITEM),
             ],
@@ -1963,7 +2048,7 @@ experimental = ["scripts"]
             "registry-clash",
             MANIFEST_SCRIPTED,
             &[
-                ("scripts/init.lua", b""),
+                ("scripts/server/init.lua", b""),
                 (
                     "scripts/registry.lua",
                     b"registry.item('ruby', { template = 'minecraft:diamond' })",
@@ -1977,7 +2062,7 @@ experimental = ["scripts"]
             "registry-bad",
             MANIFEST_SCRIPTED,
             &[
-                ("scripts/init.lua", b""),
+                ("scripts/server/init.lua", b""),
                 (
                     "scripts/registry.lua",
                     b"registry.block('hive', { template = 'minecraft:sculk', connects_to = 'x' })",
@@ -1993,7 +2078,7 @@ experimental = ["scripts"]
             "registry-fail",
             MANIFEST_SCRIPTED,
             &[
-                ("scripts/init.lua", b""),
+                ("scripts/server/init.lua", b""),
                 ("scripts/registry.lua", b"error('no')"),
             ],
         )
@@ -2005,7 +2090,7 @@ experimental = ["scripts"]
         // The script's modules come from the mod, in a folder and a .hmod
         // alike, and registry.lang meets the mod's own lang file: use one.
         let modules: &[(&str, &[u8])] = &[
-            ("scripts/init.lua", b""),
+            ("scripts/server/init.lua", b""),
             ("scripts/registry.lua", b"require('@registry/blocks')"),
             (
                 "scripts/registry/blocks.lua",
@@ -3378,24 +3463,224 @@ experimental = ["scripts"]
     fn scripts_travel_in_the_hmod_with_the_capability() {
         let lang: &[(&str, &[u8])] = &[
             ("assets/ruby/lang/en_us.json", b"{}"),
-            ("scripts/init.lua", b"require('grow')"),
-            ("scripts/grow.lua", b"return 1"),
+            ("scripts/server/init.lua", b"require('grow')"),
+            ("scripts/server/grow.lua", b"return 1"),
+            ("scripts/client/init.lua", b""),
         ];
         let content = hmod("scripted", SCRIPTED, lang).unwrap();
         assert_eq!(content.files, ["assets/ruby/lang/en_us.json"]);
-        assert_eq!(content.scripts, ["scripts/grow.lua", "scripts/init.lua"]);
+        assert_eq!(
+            content.scripts,
+            [
+                "scripts/client/init.lua",
+                "scripts/server/grow.lua",
+                "scripts/server/init.lua"
+            ]
+        );
 
-        // Scripts without the capability, and the capability without its entry script.
+        // Scripts without the capability, and the capability without an entry script.
         let e = hmod("scripts-no-cap", MANIFEST_TEXT, &lang[1..]).unwrap_err();
         assert!(e.contains("not capability scripts"), "{e}");
-        let e = hmod("scripts-no-init", SCRIPTED, &lang[..1]).unwrap_err();
-        assert!(e.contains("no scripts/init.lua"), "{e}");
+        let e = hmod(
+            "scripts-no-init",
+            SCRIPTED,
+            &[("scripts/server/grow.lua", b"")],
+        )
+        .unwrap_err();
+        assert!(e.contains("no scripts/server/init.lua"), "{e}");
+        // No scripts at all with the capability: the new refusal names where
+        // code goes, instead of the side entries.
+        let e = hmod("scripts-no-scripts", SCRIPTED, &[]).unwrap_err();
+        assert!(
+            e.contains(
+                "capability scripts but no scripts (put code in scripts/server/, scripts/client/ or scripts/shared/)"
+            ),
+            "{e}"
+        );
 
         // Scripts alone are a mod: no code, no registries.
         let alone = SCRIPTED.replace("[\"registries\", \"scripts\"]", "[\"scripts\"]");
         let content = hmod("scripts-only", &alone, &lang[1..]).unwrap();
         assert!(content.files.is_empty());
-        assert_eq!(content.scripts.len(), 2);
+        assert_eq!(content.scripts.len(), 3);
+    }
+
+    /// The per-side layout: `scripts/server/` and `scripts/client/` each run in a state of
+    /// their own, `scripts/shared/` holds the modules either side may require.
+    #[test]
+    fn per_side_scripts_are_classified_and_packed() {
+        let files: &[(&str, &[u8])] = &[
+            ("scripts/server/init.lua", b"return 1"),
+            ("scripts/server/rules/tick.lua", b"return 2"),
+            ("scripts/client/init.lua", b"return 3"),
+            ("scripts/shared/util.lua", b"return 4"),
+        ];
+        let content = hmod("per-side", SCRIPTED, files).unwrap();
+        assert_eq!(
+            content.server_scripts,
+            ["scripts/server/init.lua", "scripts/server/rules/tick.lua"]
+        );
+        assert_eq!(content.client_scripts, ["scripts/client/init.lua"]);
+        assert_eq!(content.shared_scripts, ["scripts/shared/util.lua"]);
+        assert_eq!(content.scripts.len(), 4);
+        assert!(content.has_server() && content.has_client());
+
+        // A server-only mod has no client state, and declares side = "server".
+        let server_mod = SCRIPTED
+            .replace("api = \"0.2\"", "api = \"0.3\"")
+            .replace("side = \"both\"", "side = \"server\"")
+            .replace("[\"registries\", \"scripts\"]", "[\"scripts\"]");
+        let server_only: &[(&str, &[u8])] = &[("scripts/server/init.lua", b"")];
+        let content = hmod("server-only", &server_mod, server_only).unwrap();
+        assert!(content.has_server() && !content.has_client());
+    }
+
+    #[test]
+    fn legacy_and_stray_scripts_are_refused_by_name() {
+        let e = hmod("legacy-entry", SCRIPTED, &[("scripts/init.lua", b"")]).unwrap_err();
+        assert!(
+            e.contains("ruby: scripts/init.lua is no longer loaded: move it to scripts/server/init.lua (or scripts/client/init.lua for client code); shared modules go in scripts/shared/"),
+            "{e}"
+        );
+        let e = hmod(
+            "stray-script",
+            SCRIPTED,
+            &[("scripts/server/init.lua", b""), ("scripts/util.lua", b"")],
+        )
+        .unwrap_err();
+        assert!(
+            e.contains("scripts/util.lua must live under scripts/server/, scripts/client/ or scripts/shared/"),
+            "{e}"
+        );
+    }
+
+    /// The folders decide what a scripted mod runs on, not the manifest's `side` line: a mod
+    /// with its folder's entry is accepted whatever `side` says, and with no `side` line at all.
+    #[test]
+    fn the_folders_decide_the_side_not_the_side_line() {
+        let no_side = SCRIPTED.replace("side = \"both\"\n", "");
+        for (name, text, file) in [
+            ("no-side-server", &no_side, "scripts/server/init.lua"),
+            ("no-side-client", &no_side, "scripts/client/init.lua"),
+            (
+                "both-server-only",
+                &SCRIPTED.to_owned(),
+                "scripts/server/init.lua",
+            ),
+            (
+                "both-client-only",
+                &SCRIPTED.to_owned(),
+                "scripts/client/init.lua",
+            ),
+        ] {
+            let content = hmod(name, text, &[(file, b"")]);
+            assert!(content.is_ok(), "{name}: {content:?}");
+        }
+
+        // A server mod has no registries (a client capability): scripts alone.
+        let server_mod = SCRIPTED
+            .replace("api = \"0.2\"", "api = \"0.3\"")
+            .replace("side = \"both\"", "side = \"server\"")
+            .replace("[\"registries\", \"scripts\"]", "[\"scripts\"]");
+        let content = hmod(
+            "server-side-server",
+            &server_mod,
+            &[("scripts/server/init.lua", b"")],
+        );
+        assert!(content.is_ok(), "{content:?}");
+
+        // A content-only mod has no scripts, so any declared side (or none) works.
+        for side in ["client", "both", "none"] {
+            let text = if side == "none" {
+                MANIFEST_TEXT.replace("side = \"both\"\n", "")
+            } else {
+                MANIFEST_TEXT.replace("side = \"both\"", &format!("side = \"{side}\""))
+            };
+            let content = hmod(
+                &format!("content-side-{side}"),
+                &text,
+                &[("assets/ruby/lang/en_us.json", b"{}")],
+            );
+            assert!(content.is_ok(), "{side}: {content:?}");
+        }
+    }
+
+    #[test]
+    fn a_side_folder_with_files_needs_its_own_entry() {
+        let e = hmod(
+            "server-no-init",
+            SCRIPTED,
+            &[
+                ("scripts/server/grow.lua", b""),
+                ("scripts/client/init.lua", b""),
+            ],
+        )
+        .unwrap_err();
+        assert!(
+            e.contains(
+                "scripts/server/ has files but no scripts/server/init.lua (the entry the server state runs)"
+            ),
+            "{e}"
+        );
+        let e = hmod(
+            "client-no-init",
+            SCRIPTED,
+            &[
+                ("scripts/server/init.lua", b""),
+                ("scripts/client/grow.lua", b""),
+            ],
+        )
+        .unwrap_err();
+        assert!(
+            e.contains("scripts/client/ has files but no scripts/client/init.lua"),
+            "{e}"
+        );
+        // A shared-only library: no state of its own, only modules to require.
+        let content = hmod("shared-only", SCRIPTED, &[("scripts/shared/util.lua", b"")]).unwrap();
+        assert!(!content.has_server() && !content.has_client());
+        assert_eq!(content.shared_scripts, ["scripts/shared/util.lua"]);
+        // Shared plus a side file without its entry is still refused.
+        let e = hmod(
+            "shared-server-no-init",
+            SCRIPTED,
+            &[
+                ("scripts/shared/util.lua", b""),
+                ("scripts/server/grow.lua", b""),
+            ],
+        )
+        .unwrap_err();
+        assert!(
+            e.contains(
+                "scripts/server/ has files but no scripts/server/init.lua (the entry the server state runs)"
+            ),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn scripts_outside_the_side_folders_are_refused() {
+        let e = hmod(
+            "stray-dir",
+            SCRIPTED,
+            &[("scripts/server/init.lua", b""), ("scripts/ai/x.lua", b"")],
+        )
+        .unwrap_err();
+        assert!(
+            e.contains(
+                "scripts/ai/ must live under scripts/server/, scripts/client/ or scripts/shared/"
+            ),
+            "{e}"
+        );
+        // The data stage's folder is not stray.
+        let ok = hmod(
+            "registry-dir",
+            SCRIPTED,
+            &[
+                ("scripts/server/init.lua", b""),
+                ("scripts/registry/blocks.lua", b""),
+            ],
+        );
+        assert!(ok.is_ok(), "{ok:?}");
     }
 }
 

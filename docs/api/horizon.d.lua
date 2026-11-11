@@ -952,6 +952,7 @@ declare horizon: {
     on: HorizonOn,
     mod_id: string,
     mod_version: string,
+    side: "server" | "client",
     libraries: { [string]: string },
     log: (msg: string) -> (),
     command: (usage: string, level: number?, fn: (player: CommandPlayer, args: CommandArgs) -> ()) -> (),

@@ -3,7 +3,8 @@
 //! model tests (`mod.rs`) and the hand-specified spike tests
 //! (`spike_tests.rs`) alike.
 
-use crate::lua_mods::LuaMod;
+use super::{HookSide, hook_side};
+use crate::lua_mods::{LuaMod, LuaSide};
 use horizon_client::dev_input::mods::{ModStatus, set_status, status};
 use horizon_client::mobs::{Mob, MobType};
 use horizon_client::mod_api::{
@@ -26,17 +27,39 @@ fn manifest_text(name: &str) -> String {
     )
 }
 
+/// The side a test script runs in: the client's when it registers a client
+/// hook (`horizon.on('<hook>'`, read against the generated table), the
+/// server's otherwise. The gate refuses a hook of the other side.
+pub fn side_of(lua: &str) -> LuaSide {
+    const CALL: &str = "horizon.on(";
+    let client = lua.match_indices(CALL).any(|(at, _)| {
+        let quoted = lua[at + CALL.len()..].trim_start();
+        let name: String = quoted
+            .trim_start_matches(['\'', '"'])
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        hook_side(&name) == Some(HookSide::Client)
+    });
+    if client {
+        LuaSide::Client
+    } else {
+        LuaSide::Server
+    }
+}
+
 pub fn hmod(name: &str, lua: &str) -> (PathBuf, PathBuf) {
     let dir = std::env::temp_dir().join(format!("horizon-lua-gen-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("ruby.hmod");
+    let entry = format!("scripts/{}/init.lua", side_of(lua).as_str());
     std::fs::write(
         &path,
         Package::write_files(
             &manifest_text(name),
             None,
-            &[("scripts/init.lua", lua.as_bytes())],
+            &[(entry.as_str(), lua.as_bytes())],
         )
         .unwrap(),
     )
@@ -48,10 +71,11 @@ pub fn hmod(name: &str, lua: &str) -> (PathBuf, PathBuf) {
 /// a handler's `assert` from silence.
 pub fn loaded(name: &str, lua: &str) -> (LuaMod, String, PathBuf) {
     let (dir, path) = hmod(name, lua);
-    let m = LuaMod::load(&path, &[]).unwrap();
+    let m = LuaMod::load(&path, side_of(lua), &[]).unwrap();
     let id = m.id().to_owned();
     set_status(ModStatus {
         id: id.clone(),
+        side: m.side().as_str().to_owned(),
         ..Default::default()
     });
     (m, id, dir)

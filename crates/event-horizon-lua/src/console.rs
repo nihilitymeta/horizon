@@ -570,6 +570,7 @@ fn lua_run(host: &mut dyn Host, lua: &Lua, label: &str, code: &str) {
                 for m in horizon_client::dev_input::mods::status() {
                     let t = lua.create_table()?;
                     t.set("id", m.id)?;
+                    t.set("side", m.side)?;
                     t.set("source", m.source)?;
                     t.set("scripts", m.scripts)?;
                     t.set("reloads", m.reloads)?;
@@ -628,25 +629,59 @@ fn lua_run(host: &mut dyn Host, lua: &Lua, label: &str, code: &str) {
         )?;
         mc.set(
             "reload_mods",
-            lua.create_function(|_, id: Option<String>| {
-                horizon_client::dev_input::mods::request_reload(id.as_deref());
+            lua.create_function(|_, (id, side): (Option<String>, Option<String>)| {
+                let targets = match horizon_client::dev_input::mods::reload_targets(
+                    id.as_deref(),
+                    side.as_deref(),
+                ) {
+                    Ok(v) => v,
+                    Err(e) => return Err(mlua::Error::runtime(e)),
+                };
+                if targets.is_empty() {
+                    // A side with no loaded state at all (a dedicated
+                    // server has no client states): an error, not silence.
+                    if let Some(s) = side.as_deref()
+                        && !s.is_empty()
+                        && s != "both"
+                    {
+                        let has = horizon_client::dev_input::mods::status()
+                            .iter()
+                            .any(|m| m.side == s);
+                        if !has {
+                            return Err(mlua::Error::runtime(format!("no {s} state is loaded")));
+                        }
+                    }
+                    // No targets for a side-less request: behave as before
+                    // (request_reload(None, None) just bumps the generation).
+                    horizon_client::dev_input::mods::request_reload(id.as_deref(), side.as_deref());
+                    return Ok(());
+                }
+                horizon_client::dev_input::mods::request_reload(id.as_deref(), side.as_deref());
                 Ok(())
             })?,
         )?;
         mc.set(
             "profile",
             lua.create_function(|lua, ()| {
-                // The profiler's rows keyed by mod id then hook name, for
-                // lookups (`pairs` over it has no order: see `profile_rows`).
-                // Each hook's table carries `calls`, `total_ms`, `max_ms`
-                // and `overruns` since the last `mc.profile_reset()`.
+                // The profiler's rows keyed by mod id and side then hook name,
+                // for lookups (`pairs` over it has no order: see
+                // `profile_rows`). A server state keeps the bare `<id>` key
+                // (unchanged for existing scripts); a client state is
+                // `<id>/client`. Each hook's table carries `calls`,
+                // `total_ms`, `max_ms` and `overruns` since the last
+                // `mc.profile_reset()`.
                 let out = lua.create_table()?;
                 for row in crate::profiler::profile_report() {
-                    let by_hook: Table = match out.get::<Value>(row.r#mod.as_str())? {
+                    let key = if row.side == "client" {
+                        format!("{}/client", row.r#mod)
+                    } else {
+                        row.r#mod.clone()
+                    };
+                    let by_hook: Table = match out.get::<Value>(key.as_str())? {
                         Value::Table(t) => t,
                         _ => {
                             let t = lua.create_table()?;
-                            out.set(row.r#mod.as_str(), t.clone())?;
+                            out.set(key.as_str(), t.clone())?;
                             t
                         }
                     };
@@ -658,12 +693,13 @@ fn lua_run(host: &mut dyn Host, lua: &Lua, label: &str, code: &str) {
         mc.set(
             "profile_rows",
             lua.create_function(|lua, ()| {
-                // The same rows as an array sorted by mod id then hook name,
-                // each with `mod` and `hook` beside its numbers.
+                // The same rows as an array sorted by mod id, side, then hook
+                // name, each with `mod`, `side` and `hook` beside its numbers.
                 let list = lua.create_table()?;
                 for row in crate::profiler::profile_report() {
                     let stats = profile_stats(lua, &row)?;
                     stats.set("mod", row.r#mod.as_str())?;
+                    stats.set("side", row.side)?;
                     stats.set("hook", row.hook.as_str())?;
                     list.push(stats)?;
                 }
@@ -968,16 +1004,16 @@ mod tests {
         lua
     }
 
-    /// `mc.profile_rows()` is the report as an array sorted by mod then
-    /// hook (a `pairs` over `mc.profile()` has no order to test), and
+    /// `mc.profile_rows()` is the report as an array sorted by mod, side,
+    /// then hook (a `pairs` over `mc.profile()` has no order to test), and
     /// `mc.profile_reset()` clears the rows.
     #[test]
     fn profile_rows_are_sorted_and_reset_clears_them() {
         let _lock = crate::profiler::test_lock();
         let d = std::time::Duration::from_millis(1);
-        crate::profiler::note("console_order_b", "a_hook", d, false);
-        crate::profiler::note("console_order_a", "z_hook", d, false);
-        crate::profiler::note("console_order_a", "b_hook", d, false);
+        crate::profiler::note("console_order_b", "server", "a_hook", d, false);
+        crate::profiler::note("console_order_a", "server", "z_hook", d, false);
+        crate::profiler::note("console_order_a", "server", "b_hook", d, false);
         let lua = profile_in_lua(
             r#"
             local names = {}
@@ -1003,6 +1039,61 @@ mod tests {
         );
     }
 
+    /// The console splits the two states of one mod: `mc.profile_rows()`
+    /// sorts by side and carries it, and the nested `mc.profile()` keys a
+    /// client state as `<id>/client` while a server-only mod keeps the bare
+    /// `<id>` key.
+    #[test]
+    fn profile_splits_one_mod_by_side_and_keeps_server_key() {
+        let _lock = crate::profiler::test_lock();
+        let d = std::time::Duration::from_millis(1);
+        crate::profiler::note("console_side_both", "server", "can_eat", d, false);
+        crate::profiler::note("console_side_both", "client", "can_eat", d, false);
+        crate::profiler::note(
+            "console_side_server_only",
+            "server",
+            "mob_spawned",
+            d,
+            false,
+        );
+        let lua = profile_in_lua(
+            r#"
+            local seen = {}
+            for _, row in ipairs(mc.profile_rows()) do
+              if string.sub(row.mod, 1, 13) == "console_side_" then
+                seen[#seen + 1] = row.mod .. "/" .. row.side .. "/" .. row.hook
+              end
+            end
+            ORDER = table.concat(seen, ",")
+            local both = mc.profile()
+            HAS_SERVER = both["console_side_both"] ~= nil
+            HAS_CLIENT = both["console_side_both/client"] ~= nil
+            SERVER_ONLY = both["console_side_server_only"] ~= nil
+            SERVER_ONLY_CLIENT = both["console_side_server_only/client"] ~= nil
+            mc.profile_reset()
+            "#,
+        );
+        let order: String = lua.globals().get("ORDER").unwrap();
+        assert_eq!(
+            order,
+            "console_side_both/client/can_eat,console_side_both/server/can_eat,console_side_server_only/server/mob_spawned",
+            "rows sorted by mod, side, hook: {order}"
+        );
+        assert!(lua.globals().get::<bool>("HAS_SERVER").unwrap());
+        assert!(lua.globals().get::<bool>("HAS_CLIENT").unwrap());
+        assert!(lua.globals().get::<bool>("SERVER_ONLY").unwrap());
+        assert!(
+            !lua.globals().get::<bool>("SERVER_ONLY_CLIENT").unwrap(),
+            "a server-only mod keeps the bare key and has no /client sibling"
+        );
+        assert!(
+            crate::profiler::profile_report()
+                .iter()
+                .all(|r| !r.r#mod.starts_with("console_side_")),
+            "reset clears the per-side rows"
+        );
+    }
+
     /// `mc.profile()` and `mc.profile_rows()` report the numbers of
     /// `profile_report()`, and times are fractional milliseconds: a handler
     /// under 1 ms is not shown as 0. The spin is real work of at least 12
@@ -1014,9 +1105,16 @@ mod tests {
         while started.elapsed() < std::time::Duration::from_millis(12) {
             std::hint::spin_loop();
         }
-        crate::profiler::note("console_fraction", "mob_spawned", started.elapsed(), false);
         crate::profiler::note(
             "console_fraction",
+            "server",
+            "mob_spawned",
+            started.elapsed(),
+            false,
+        );
+        crate::profiler::note(
+            "console_fraction",
+            "server",
             "mob_spawned",
             std::time::Duration::from_micros(400),
             true,
@@ -1109,6 +1207,75 @@ mod tests {
         assert_eq!(
             mod_state_json(&Compound::default(), &[]).unwrap(),
             serde_json::json!({"world_data": {}, "players": {}})
+        );
+    }
+
+    /// `mc.reload_mods(name)` for a mod with no status row is a Lua error
+    /// naming it, not a queued request nobody drains.
+    #[test]
+    fn reload_mods_refuses_a_ghost() {
+        let mut host = TestHost::default();
+        let lua = vm().expect("a state");
+        console::clear();
+        lua_run(
+            &mut host,
+            &lua,
+            "the console's test",
+            r#"mc.reload_mods("ghost_ps7a")"#,
+        );
+        let text: Vec<String> = console::lines().into_iter().map(|(_, l)| l).collect();
+        assert!(
+            text.iter().any(|l| l.contains("unknown mod ghost_ps7a")),
+            "ghost is refused: {text:?}"
+        );
+    }
+
+    #[test]
+    fn reload_mods_names_the_missing_side() {
+        horizon_client::dev_input::mods::clear_all_for_test();
+        horizon_client::dev_input::mods::set_status(horizon_client::dev_input::mods::ModStatus {
+            id: "client_only".to_owned(),
+            side: "client".to_owned(),
+            ..Default::default()
+        });
+        let mut host = TestHost::default();
+        let lua = vm().expect("a state");
+        console::clear();
+        lua_run(
+            &mut host,
+            &lua,
+            "the console's test",
+            r#"mc.reload_mods("client_only", "server")"#,
+        );
+        let text: Vec<String> = console::lines().into_iter().map(|(_, l)| l).collect();
+        assert!(
+            text.iter()
+                .any(|l| l.contains("mod client_only has no server state")),
+            "missing side is named: {text:?}"
+        );
+    }
+
+    #[test]
+    fn reload_mods_no_side_state_is_an_error() {
+        horizon_client::dev_input::mods::clear_all_for_test();
+        horizon_client::dev_input::mods::set_status(horizon_client::dev_input::mods::ModStatus {
+            id: "dedicated_mod".to_owned(),
+            side: "server".to_owned(),
+            ..Default::default()
+        });
+        let mut host = TestHost::default();
+        let lua = vm().expect("a state");
+        console::clear();
+        lua_run(
+            &mut host,
+            &lua,
+            "the console's test",
+            r#"mc.reload_mods(nil, "client")"#,
+        );
+        let text: Vec<String> = console::lines().into_iter().map(|(_, l)| l).collect();
+        assert!(
+            text.iter().any(|l| l.contains("no client state is loaded")),
+            "no client state error: {text:?}"
         );
     }
 

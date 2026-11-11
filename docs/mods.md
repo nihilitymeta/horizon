@@ -103,7 +103,9 @@ Unknown keys are refused, so a typo is an error, not a silently ignored permissi
 ### Content mods (API 0.2)
 
 A content mod has capability `registries` and carries `assets/` and `data/` in the `.hmod`. With capability `scripts`
-(experimental), it also carries `scripts/`: Lua that the game runs on its hook points. Such a mod can declare its
+(experimental), it also carries `scripts/`: Lua that the game runs on its hook points, one Lua state per side per mod.
+The server state starts from `scripts/server/init.lua`, the client state from `scripts/client/init.lua` (a mod needs
+one or both, or none as a shared-only library with only `scripts/shared/`), and `scripts/shared/` holds the modules either side may `require`. Such a mod can declare its
 content in `scripts/registry.lua`, and the modules it requires from `scripts/registry/`, instead of files
 ([lua-bindings.md](lua-bindings.md)). It adds blocks and items by declaring them in `data/<id>/horizon/block/*.json`
 and `data/<id>/horizon/item/*.json`, each copying a vanilla template

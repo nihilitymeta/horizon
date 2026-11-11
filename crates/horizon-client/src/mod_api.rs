@@ -3,6 +3,7 @@
 //! Trait mods are process-wide, like mixin module statics.
 //! Hooks use `&self + Send + Sync` for shared and reentrant calls; see `docs/native-mods.md`.
 //! Cargo generates the trait and dispatch from the catalog and source signatures into OUT_DIR.
+use std::cell::Cell;
 use std::sync::{
     Arc, OnceLock,
     atomic::{AtomicBool, Ordering},
@@ -920,14 +921,69 @@ fn is_off(index: usize) -> bool {
         .is_some_and(|flag| flag.load(Ordering::Relaxed))
 }
 
+/// The game a hook fires in, from its catalog `side` tag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HookSide {
+    Client,
+    Server,
+    Both,
+}
+
+/// The game a trait mod runs in, from [`Hooks::mod_side`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModSide {
+    Client,
+    Server,
+}
+
+thread_local! {
+    /// The side of the game that runs on this thread (`Game::new` sets it); None on a thread
+    /// that runs no game (loaders, worldgen and helper threads).
+    static CALLER_SIDE: Cell<Option<ModSide>> = const { Cell::new(None) };
+}
+
+/// Sets the side of the game this thread runs.
+#[doc(hidden)]
+pub fn set_caller_side(side: Option<ModSide>) {
+    CALLER_SIDE.with(|cell| cell.set(side));
+}
+
+/// The side of the game running on this thread, None when it runs no game.
+pub fn caller_side() -> Option<ModSide> {
+    CALLER_SIDE.with(Cell::get)
+}
+
+/// Sets the caller side for `f` and restores the previous one afterwards, so
+/// tests of another crate can drive the side filter without touching this
+/// thread's other state.
+pub fn with_caller_side<R>(side: Option<ModSide>, f: impl FnOnce() -> R) -> R {
+    struct Restore(Option<ModSide>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            set_caller_side(self.0);
+        }
+    }
+    let old = caller_side();
+    set_caller_side(side);
+    let _restore = Restore(old);
+    f()
+}
+
 /// `mods` in order, each marked as running `hook` until the next one is (or the loop ends), so a
 /// panic in it names the mod. The generated dispatch loops over it.
 /// A part of [`mods`] (one mod, dispatched on its own) keeps its entries' places in it.
-fn entered<'a>(mods: &'a [Box<dyn Hooks>], hook: &'static str) -> Entered<'a> {
+/// `hook_side` is the hook's catalog side: a mod of the other side is skipped (see `other_side`).
+#[doc(hidden)]
+pub fn entered<'a>(
+    mods: &'a [Box<dyn Hooks>],
+    hook: &'static str,
+    hook_side: HookSide,
+) -> Entered<'a> {
     Entered {
         first: place_in(self::mods(), mods),
         mods: mods.iter().enumerate(),
         hook,
+        hook_side,
         guard: None,
     }
 }
@@ -941,12 +997,28 @@ fn place_in<T>(all: &[T], part: &[T]) -> Option<usize> {
         .then(|| (part.as_ptr().addr() - range.start.addr()) / size_of::<T>().max(1))
 }
 
-struct Entered<'a> {
+#[doc(hidden)]
+pub struct Entered<'a> {
     /// Where `mods` starts in [`mods`]; None for a list of its own.
     first: Option<usize>,
     mods: std::iter::Enumerate<std::slice::Iter<'a, Box<dyn Hooks>>>,
     hook: &'static str,
+    hook_side: HookSide,
     guard: Option<crate::crash::NativeModGuard>,
+}
+
+impl Entered<'_> {
+    /// Whether `hooks` is left out of this hook: it runs on the other side. A hook with no side
+    /// of its own (`Both`) takes the caller's side, and with no caller (no game on this thread)
+    /// nothing is left out.
+    fn other_side(&self, hooks: &dyn Hooks) -> bool {
+        let effective = match self.hook_side {
+            HookSide::Client => Some(ModSide::Client),
+            HookSide::Server => Some(ModSide::Server),
+            HookSide::Both => caller_side(),
+        };
+        matches!((hooks.mod_side(), effective), (Some(mod_side), Some(e)) if mod_side != e)
+    }
 }
 
 impl<'a> Iterator for Entered<'a> {
@@ -959,6 +1031,7 @@ impl<'a> Iterator for Entered<'a> {
             let (index, hooks) = self.mods.next()?;
             match self.first {
                 Some(first) if is_off(first + index) => continue,
+                _ if self.other_side(&**hooks) => continue,
                 Some(first) => break (first + index, hooks),
                 None => break (index, hooks),
             }
@@ -1120,17 +1193,127 @@ mod tests {
             Box::new(Quiet),
         ]));
         let ids = mod_ids().to_vec();
-        let called = || entered(mods(), "test").count();
+        let called = || entered(mods(), "test", HookSide::Both).count();
         assert_eq!(called(), 2);
         assert!(set_mod_on(ids[1], false));
         assert_eq!(called(), 1);
         // Dispatched alone, it is still off.
-        assert_eq!(entered(&mods()[1..], "test").count(), 0);
+        assert_eq!(entered(&mods()[1..], "test", HookSide::Both).count(), 0);
         let own: Vec<Box<dyn Hooks>> = vec![Box::new(Quiet), Box::new(Quiet)];
-        assert_eq!(entered(&own, "test").count(), 2);
+        assert_eq!(entered(&own, "test", HookSide::Both).count(), 2);
         assert!(set_mod_on(ids[1], true));
         assert_eq!(called(), 2);
         assert!(!set_mod_on("not_a_mod", false));
+    }
+
+    struct ServerOnly;
+    impl Hooks for ServerOnly {
+        fn mod_side(&self) -> Option<ModSide> {
+            Some(ModSide::Server)
+        }
+    }
+
+    struct ClientOnly;
+    impl Hooks for ClientOnly {
+        fn mod_side(&self) -> Option<ModSide> {
+            Some(ModSide::Client)
+        }
+    }
+
+    /// Sets this thread's caller side for one test and puts the old one back, since `cargo test`
+    /// runs tests on shared threads.
+    struct CallerSideGuard(Option<ModSide>);
+    impl CallerSideGuard {
+        fn set(side: Option<ModSide>) -> Self {
+            let old = caller_side();
+            set_caller_side(side);
+            Self(old)
+        }
+    }
+    impl Drop for CallerSideGuard {
+        fn drop(&mut self) {
+            set_caller_side(self.0);
+        }
+    }
+
+    /// The declared sides of the mods a hook of side `hook` reaches, in order (None is a native
+    /// mod).
+    fn reached(own: &[Box<dyn Hooks>], hook: HookSide) -> Vec<Option<ModSide>> {
+        entered(own, "test", hook).map(|m| m.mod_side()).collect()
+    }
+
+    /// A native mod (no `mod_side`) gets every hook, whatever its side tag and the caller's side.
+    #[test]
+    fn a_native_mod_gets_every_hook_whatever_the_callers_side() {
+        let own: Vec<Box<dyn Hooks>> = vec![Box::new(Quiet)];
+        assert_eq!(own[0].mod_side(), None);
+        for caller in [None, Some(ModSide::Client), Some(ModSide::Server)] {
+            let _guard = CallerSideGuard::set(caller);
+            for side in [HookSide::Client, HookSide::Server, HookSide::Both] {
+                assert_eq!(reached(&own, side), vec![None]);
+            }
+        }
+    }
+
+    /// A client hook or a server hook reaches only the mods of its own side, whatever the caller.
+    #[test]
+    fn a_single_sided_hook_skips_the_other_sides_mod_whatever_the_caller() {
+        let own: Vec<Box<dyn Hooks>> =
+            vec![Box::new(Quiet), Box::new(ServerOnly), Box::new(ClientOnly)];
+        for caller in [None, Some(ModSide::Client), Some(ModSide::Server)] {
+            let _guard = CallerSideGuard::set(caller);
+            assert_eq!(
+                reached(&own, HookSide::Server),
+                vec![None, Some(ModSide::Server)]
+            );
+            assert_eq!(
+                reached(&own, HookSide::Client),
+                vec![None, Some(ModSide::Client)]
+            );
+        }
+    }
+
+    /// A both-sides hook reaches the mods of the side its caller runs on.
+    #[test]
+    fn a_both_hook_reaches_the_callers_side() {
+        let own: Vec<Box<dyn Hooks>> =
+            vec![Box::new(Quiet), Box::new(ServerOnly), Box::new(ClientOnly)];
+        {
+            let _guard = CallerSideGuard::set(Some(ModSide::Server));
+            assert_eq!(
+                reached(&own, HookSide::Both),
+                vec![None, Some(ModSide::Server)]
+            );
+        }
+        {
+            let _guard = CallerSideGuard::set(Some(ModSide::Client));
+            assert_eq!(
+                reached(&own, HookSide::Both),
+                vec![None, Some(ModSide::Client)]
+            );
+        }
+    }
+
+    /// A both-sides hook fired on a thread that runs no game (data loading, logging, worldgen
+    /// workers) reaches every mod, each under its own lock.
+    #[test]
+    fn a_both_hook_with_no_game_reaches_every_mod() {
+        let own: Vec<Box<dyn Hooks>> =
+            vec![Box::new(Quiet), Box::new(ServerOnly), Box::new(ClientOnly)];
+        let _guard = CallerSideGuard::set(None);
+        assert_eq!(
+            reached(&own, HookSide::Both),
+            vec![None, Some(ModSide::Server), Some(ModSide::Client)]
+        );
+    }
+
+    /// The caller side is set per thread: another thread sees no game.
+    #[test]
+    fn the_caller_side_is_per_thread() {
+        let _guard = CallerSideGuard::set(Some(ModSide::Server));
+        let other = std::thread::spawn(caller_side).join().unwrap();
+        assert_eq!(other, None);
+        assert_eq!(caller_side(), Some(ModSide::Server));
     }
 
     #[test]

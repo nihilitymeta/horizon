@@ -39,6 +39,42 @@ fn lua_refusal(runs_mods: bool) -> Option<&'static str> {
     )
 }
 
+/// `reload-mods [ID] [--side client|server|both]`: the words after the command.
+/// No `--side` (or `both`) means every side; any other value, a missing
+/// `--side` value or an extra word is a usage error.
+fn parse_reload_mods_args<'a>(
+    args: &'a [&'a str],
+) -> std::result::Result<(Option<&'a str>, Option<&'a str>), &'static str> {
+    const USAGE: &str = "usage: reload-mods [ID] [--side client|server|both]";
+    let mut id: Option<&str> = None;
+    let mut side: Option<&str> = None;
+    let mut seen_side = false;
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--side" {
+            if seen_side {
+                return Err(USAGE);
+            }
+            seen_side = true;
+            let value = args.get(i + 1).copied().ok_or(USAGE)?;
+            match value {
+                "client" | "server" | "both" => side = (value != "both").then_some(value),
+                _ => return Err(USAGE),
+            }
+            i += 2;
+        } else if args[i].starts_with("--") {
+            return Err(USAGE);
+        } else {
+            if id.is_some() {
+                return Err(USAGE);
+            }
+            id = Some(args[i]);
+            i += 1;
+        }
+    }
+    Ok((id, side))
+}
+
 fn hello() -> Value {
     json!({
         "protocol": PROTOCOL,
@@ -87,7 +123,7 @@ const HELP: &[&str] = &[
     "disconnect                     leave the server for the server list",
     "respawn                        respawn after death on a server",
     "credits [poem] [SCROLL]        roll the credits (with the end poem), or hold them SCROLL pixels in",
-    "reload-mods [ID]               reload scripted mods (one mod or all), waiting until applied",
+    "reload-mods [ID] [--side client|server|both]  reload scripted mods (one mod or all), waiting until applied",
     "lua CHUNK                      run a Lua chunk as /lua does, waiting until it runs",
     "mod-state ID                   the mod's saved data as JSON",
     "quit                           save and exit",
@@ -1323,15 +1359,12 @@ impl Game<'_> {
                 ok()
             }
             "reload-mods" => {
-                if words.len() > 2 {
-                    return Err("usage: reload-mods [ID]".into());
-                }
+                let (id, side) = parse_reload_mods_args(&words[1..])?;
                 self.require_world()?;
                 if let Some(refusal) = reload_mods_refusal(self.runs_server_here()) {
                     return Err(refusal.into());
                 }
-                let id = words.get(1).copied();
-                match horizon_client::dev_input::mods::start_reload_wait(id, reply.clone()) {
+                match horizon_client::dev_input::mods::start_reload_wait(id, side, reply.clone()) {
                     Ok(value) => Ok(value),
                     Err(e) => Err(e.into()),
                 }
@@ -1851,6 +1884,44 @@ mod tests {
         let refusal = reload_mods_refusal(false).unwrap();
         assert!(refusal.starts_with("reload-mods reloads"), "{refusal}");
         assert!(refusal.contains("remote server"), "{refusal}");
+    }
+
+    #[test]
+    fn reload_mods_side_parsing_defaults_to_both_and_rejects_gaps() {
+        assert_eq!(parse_reload_mods_args(&[]), Ok((None, None)));
+        assert_eq!(
+            parse_reload_mods_args(&["my_mod"]),
+            Ok((Some("my_mod"), None))
+        );
+        assert_eq!(
+            parse_reload_mods_args(&["my_mod", "--side", "client"]),
+            Ok((Some("my_mod"), Some("client")))
+        );
+        assert_eq!(
+            parse_reload_mods_args(&["--side", "server"]),
+            Ok((None, Some("server")))
+        );
+        assert_eq!(
+            parse_reload_mods_args(&["my_mod", "--side", "both"]),
+            Ok((Some("my_mod"), None))
+        );
+        assert_eq!(
+            parse_reload_mods_args(&["--side", "client", "my_mod"]),
+            Ok((Some("my_mod"), Some("client")))
+        );
+        let bad_cases: &[&[&str]] = &[
+            &["my_mod", "--side"],
+            &["--side"],
+            &["my_mod", "--side", "sideways"],
+            &["my_mod", "--side", "client", "--side", "server"],
+            &["my_mod", "--foo"],
+            &["a", "b"],
+            &["my_mod", "--side", "client", "extra"],
+        ];
+        for &bad in bad_cases {
+            let err = parse_reload_mods_args(bad).unwrap_err();
+            assert!(err.starts_with("usage: reload-mods"), "{bad:?}: {err}");
+        }
     }
 
     #[test]

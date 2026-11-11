@@ -368,6 +368,7 @@ fn generated_hooks() -> Result<Vec<GeneratedHook>, String> {
 const FUNCTIONS: &[(&str, &str)] = &[
     ("mod_id", "string"),
     ("mod_version", "string"),
+    ("side", "\"server\" | \"client\""),
     ("libraries", "{ [string]: string }"),
     ("log", "(msg: string) -> ()"),
     (
