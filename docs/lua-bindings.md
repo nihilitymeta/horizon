@@ -804,6 +804,37 @@ horizon.on("menu_clicked", function(event)
 end)
 ```
 
+## Permissions and moderation
+
+A script can ask what a player may do, and can kick or teleport a player. All four helpers are server state only: like `horizon.broadcast` the two actions queue and run after the handler, and like `horizon.time` the two reads answer at once; they are not in `CLIENT_API` or `DRAW_API`.
+
+Reads (answer now):
+
+* `horizon.has_permission(player, node, default_level)` returns whether `player` has the permission node `node` (a string). `default_level` is an integer; it saturates into `u8` (below 0 arrives as 0, above 255 as 255) instead of wrapping. When no mod's `permission_check` handler answers, the answer is the player's operator level against `default_level` (`ops.json`; 0 lets everyone).
+* `horizon.player_permission(player)` returns the player's permission level, an integer 0 to 4, or `nil` when the player is not on the server.
+
+Actions (queued, run after the handler like `give_items`):
+
+* `horizon.kick(player, reason)` disconnects `player` with `reason` (a Lua string, as `horizon.broadcast`) shown whole, as `/kick` does, at the tick's end.
+* `horizon.teleport_player(player, dimension, pos, yaw, pitch)` teleports `player` as `/tp` does: `dimension` is one of `minecraft:overworld`, `minecraft:the_nether`, `minecraft:the_end`; `pos` is `{ x = ..., y = ..., z = ... }`; `yaw` and `pitch` are degrees, with `pitch` clamped to −90..90. The position must be finite and inside `/tp`'s bounds (x and z within ±30M, y within ±20M).
+
+`player` is the uuid text a hook event gives, or a player table, exactly as the net-send helpers accept it (`string | ReadPlayer`). Both actions return nothing to the script: the native's `bool` (for a player not on the server, a bad dimension, an out-of-bounds position, or a dead player) is dropped, and a refusal is a silent no-op, never a script error. A non-finite number (NaN or infinity) is a script error naming the argument (`teleport_player.pos.x`, `teleport_player.yaw`, `teleport_player.pitch`).
+
+A player who cannot be resolved (an unknown name, a bad uuid): `player_permission` is `nil`; `has_permission` counts the player as level 0 — `true` when `default_level == 0`, `false` otherwise — without asking the host; a parseable uuid does reach the host. `kick` and `teleport_player` are silent no-ops.
+
+`has_permission` asks every mod's `permission_check` handler first: a permissions mod answers by setting `event.result`, and the first handler that sets it decides. Inside a `permission_check` handler itself, `horizon.has_permission` raises like every read does there (`reads work inside a hook with a host`), since that hook has no host to read from.
+
+```lua
+-- One command: an operator sends a name to the nether; anyone else is kicked.
+horizon.command("send", 2, function(player, args)
+  if not horizon.has_permission(player.uuid, "ruby:send", 2) then
+    horizon.kick(player.uuid, "You may not use this command")
+    return
+  end
+  horizon.teleport_player(player.uuid, "minecraft:the_nether", { x = 0, y = 70, z = 0 }, 0, 0)
+end)
+```
+
 ## Not built yet
 
 These are what a gameplay mod asks for next, with the API each is planned to get, so that a mod can be written

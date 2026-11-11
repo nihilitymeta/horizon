@@ -401,6 +401,11 @@ const FUNCTIONS: &[(&str, &str)] = &[
     ("menu_contents", "(who: string | ReadPlayer) -> { Item? }?"),
     ("menu_cursor", "(who: string | ReadPlayer) -> Item?"),
     (
+        "has_permission",
+        "(who: string | ReadPlayer, node: string, default_level: number) -> boolean",
+    ),
+    ("player_permission", "(who: string | ReadPlayer) -> number?"),
+    (
         "dev",
         "{ inspect: (who: ReadPlayer | string, what: number | { x: number, y: number, z: number, face: Vec3?, dimension: string? }) -> boolean }",
     ),
@@ -529,6 +534,11 @@ const FUNCTIONS: &[(&str, &str)] = &[
         "(who: string | ReadPlayer, items: { (Item | false)? }) -> ()",
     ),
     ("close_menu", "(who: string | ReadPlayer) -> ()"),
+    ("kick", "(who: string | ReadPlayer, reason: string) -> ()"),
+    (
+        "teleport_player",
+        "(who: string | ReadPlayer, dimension: string, pos: Vec3, yaw: number, pitch: number) -> ()",
+    ),
 ];
 
 /// The `registry` global of `scripts/registry.lua`.

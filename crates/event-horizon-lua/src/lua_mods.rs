@@ -339,6 +339,8 @@ return function(slot, horizon, base)
   horizon.data = function(path) return read("data", path) end
   horizon.menu_contents = function(who) return read("menu_contents", who) end
   horizon.menu_cursor = function(who) return read("menu_cursor", who) end
+  horizon.has_permission = function(player, node, default_level) return read("has_permission", player, node, default_level) end
+  horizon.player_permission = function(player) return read("player_permission", player) end
   horizon.dev = { inspect = function(who, what) return read("dev_inspect", who, what) end }
   -- A refused registration (a hook name the runtime does not know) is
   -- raised from the script's own line, as any Lua error is.
@@ -982,6 +984,29 @@ impl LuaMod {
                         };
                         match h.menu_cursor(uuid) {
                             Some(stack) => Value::Table(item_table_of(lua, &stack)?),
+                            None => Value::Nil,
+                        }
+                    }
+                    "has_permission" => {
+                        let (who, node, level): (Value, String, i64) =
+                            FromLuaMulti::from_lua_multi(rest, lua)?;
+                        let level =
+                            u8::try_from(level).unwrap_or(if level < 0 { 0 } else { u8::MAX });
+                        // A player who cannot be resolved counts as level 0,
+                        // as the native counts a player not on the server:
+                        // `0 >= level` without asking the host.
+                        let Some(uuid) = uuid_of(h, &who) else {
+                            return Ok(Value::Boolean(level == 0));
+                        };
+                        Value::Boolean(h.has_permission(uuid, &node, level))
+                    }
+                    "player_permission" => {
+                        let who: Value = FromLuaMulti::from_lua_multi(rest, lua)?;
+                        let Some(uuid) = uuid_of(h, &who) else {
+                            return Ok(Value::Nil);
+                        };
+                        match h.player_permission(uuid) {
+                            Some(level) => Value::Integer(i64::from(level)),
                             None => Value::Nil,
                         }
                     }
@@ -2292,6 +2317,8 @@ impl LuaMod {
             "open_menu_with_input",
             "set_menu_items",
             "close_menu",
+            "kick",
+            "teleport_player",
         ] {
             let slot = slot.clone();
             api.set(
@@ -3377,6 +3404,64 @@ impl LuaMod {
                 if let Some(uuid) = uuid_of(host, &who) {
                     host.close_menu(uuid);
                 }
+            }
+            "kick" => {
+                let (who, reason): (Value, String) = (args.get(1)?, args.get(2)?);
+                let Some(uuid) = uuid_of(host, &who) else {
+                    log::debug!("[lua:{}] kick: no such player", self.id);
+                    return Ok(());
+                };
+                // A refused kick (a client, a player not on) is ordinary:
+                // drop the return value, so later queued actions still run.
+                let _ = host.kick(uuid, &horizon_client::mod_api::Text::literal(reason));
+            }
+            "teleport_player" => {
+                let (who, dimension): (Value, String) = (args.get(1)?, args.get(2)?);
+                let pos: Table = args.get(3).map_err(|_| {
+                    mlua::Error::runtime("teleport_player: pos is a table {x, y, z}")
+                })?;
+                // Non-finite coordinates are a script error, naming the
+                // component, as the write-back refused them; a string that
+                // coerces ("nan") is caught the same way.
+                let pos = [
+                    crate::generated_runtime::req_finite::<f64>(&pos, "x", "teleport_player.pos")?,
+                    crate::generated_runtime::req_finite::<f64>(&pos, "y", "teleport_player.pos")?,
+                    crate::generated_runtime::req_finite::<f64>(&pos, "z", "teleport_player.pos")?,
+                ];
+                let yaw: f64 = args
+                    .get(4)
+                    .map_err(|_| mlua::Error::runtime("teleport_player: yaw is a number"))?;
+                let pitch: f64 = args
+                    .get(5)
+                    .map_err(|_| mlua::Error::runtime("teleport_player: pitch is a number"))?;
+                crate::generated_runtime::WritebackFinite::check_writeback_finite(
+                    &yaw,
+                    "teleport_player.yaw",
+                )?;
+                crate::generated_runtime::WritebackFinite::check_writeback_finite(
+                    &pitch,
+                    "teleport_player.pitch",
+                )?;
+                // A finite f64 past f32's range would hand the native an
+                // infinite angle: refuse it the same way, never silently.
+                let yaw = yaw as f32;
+                crate::generated_runtime::WritebackFinite::check_writeback_finite(
+                    &yaw,
+                    "teleport_player.yaw",
+                )?;
+                let pitch = pitch as f32;
+                crate::generated_runtime::WritebackFinite::check_writeback_finite(
+                    &pitch,
+                    "teleport_player.pitch",
+                )?;
+                let Some(uuid) = uuid_of(host, &who) else {
+                    log::debug!("[lua:{}] teleport_player: no such player", self.id);
+                    return Ok(());
+                };
+                // A native refusal (a bad dimension, out of bounds, the
+                // player dead) is ordinary: drop the return value, so
+                // later queued actions still run.
+                let _ = host.teleport_player(uuid, &dimension, pos, yaw, pitch);
             }
             other => self.warn(format!("unknown action {other}")),
         }
@@ -11015,6 +11100,603 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
             state.globals().get::<String>("__UUID").unwrap(),
             "123e4567-e89b-12d3-a456-426614174000"
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The four permission/moderation helpers, end to end through the real
+    /// drain: reads answer now with what the host serves, actions queue and
+    /// land with the arguments exactly as written.
+    #[test]
+    fn perm_helpers_reach_the_host() {
+        use std::sync::Mutex as M;
+        struct PermHost {
+            lines: M<Vec<String>>,
+            perms: M<Vec<(u128, String, u8)>>,
+            perm_answer: bool,
+            levels: M<Vec<u128>>,
+            kicks: M<Vec<(u128, String)>>,
+            teleports: M<Vec<(u128, String, [f64; 3], f32, f32)>>,
+        }
+        impl Host for PermHost {
+            fn dimension(&self) -> &'static str {
+                "minecraft:overworld"
+            }
+            fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
+                vec![test_events::native_server_player(
+                    0x123e4567_e89b_12d3_a456_426614174000,
+                    "steve".into(),
+                    0,
+                    "minecraft:overworld".into(),
+                    [0.0, 64.0, 0.0],
+                    0,
+                    20.0,
+                    0.0,
+                    0.0,
+                    0,
+                    String::new(),
+                )]
+            }
+            fn broadcast(&self, t: horizon_client::mod_api::Text) {
+                self.lines.lock().unwrap().push(t.plain());
+            }
+            fn has_permission(&self, player: u128, node: &str, level: u8) -> bool {
+                self.perms
+                    .lock()
+                    .unwrap()
+                    .push((player, node.to_owned(), level));
+                self.perm_answer
+            }
+            fn player_permission(&self, player: u128) -> Option<u8> {
+                self.levels.lock().unwrap().push(player);
+                Some(2)
+            }
+            fn kick(&mut self, player: u128, reason: &horizon_client::mod_api::Text) -> bool {
+                self.kicks.lock().unwrap().push((player, reason.plain()));
+                true
+            }
+            fn teleport_player(
+                &mut self,
+                uuid: u128,
+                dimension: &str,
+                pos: [f64; 3],
+                yaw: f32,
+                pitch: f32,
+            ) -> bool {
+                self.teleports
+                    .lock()
+                    .unwrap()
+                    .push((uuid, dimension.to_owned(), pos, yaw, pitch));
+                true
+            }
+        }
+        let (dir, path) = hmod(
+            "perm_helpers",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("net_from_client", function(event)
+                  __HP = horizon.has_permission(event.player, "ruby:test", 2)
+                  __HPN = horizon.has_permission("steve", "ruby:other", 0)
+                  __PP = horizon.player_permission(event.player)
+                  horizon.kick("steve", "bye now")
+                  horizon.teleport_player(event.player, "minecraft:the_nether", { x = 1.5, y = 70.0, z = -2.5 }, 180.0, -30.0)
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let state = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = PermHost {
+            lines: M::new(Vec::new()),
+            perms: M::new(Vec::new()),
+            perm_answer: true,
+            levels: M::new(Vec::new()),
+            kicks: M::new(Vec::new()),
+            teleports: M::new(Vec::new()),
+        };
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            0x123e4567_e89b_12d3_a456_426614174000,
+            "ruby:from",
+            b"",
+        );
+        assert!(state.globals().get::<bool>("__HP").unwrap());
+        assert!(state.globals().get::<bool>("__HPN").unwrap());
+        assert_eq!(state.globals().get::<i64>("__PP").unwrap(), 2);
+        let perms = host.perms.lock().unwrap();
+        assert_eq!(perms.len(), 2);
+        assert_eq!(
+            perms[0],
+            (
+                0x123e4567_e89b_12d3_a456_426614174000,
+                "ruby:test".to_owned(),
+                2
+            )
+        );
+        assert_eq!(
+            perms[1],
+            (
+                0x123e4567_e89b_12d3_a456_426614174000,
+                "ruby:other".to_owned(),
+                0
+            )
+        );
+        assert_eq!(
+            *host.levels.lock().unwrap(),
+            vec![0x123e4567_e89b_12d3_a456_426614174000]
+        );
+        assert_eq!(
+            *host.kicks.lock().unwrap(),
+            vec![(0x123e4567_e89b_12d3_a456_426614174000, "bye now".to_owned())]
+        );
+        let tps = host.teleports.lock().unwrap();
+        assert_eq!(tps.len(), 1);
+        assert_eq!(
+            tps[0],
+            (
+                0x123e4567_e89b_12d3_a456_426614174000,
+                "minecraft:the_nether".to_owned(),
+                [1.5, 70.0, -2.5],
+                180.0,
+                -30.0
+            )
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// `player_permission` answers nil where the host has no level, and the
+    /// reads of an unresolvable player never reach the host: `has_permission`
+    /// answers the level-0 rule (`0 >= default_level`), `kick`/`teleport_player`
+    /// are silent no-ops, so a later `broadcast` still runs.
+    #[test]
+    fn perm_reads_of_unknown_players_do_not_reach_the_host() {
+        use std::sync::Mutex as M;
+        struct NoLevelHost {
+            perms: M<Vec<(u128, String, u8)>>,
+            levels: M<Vec<u128>>,
+            kicks: M<Vec<u128>>,
+            teleports: M<Vec<u128>>,
+            lines: M<Vec<String>>,
+        }
+        impl Host for NoLevelHost {
+            fn dimension(&self) -> &'static str {
+                "minecraft:overworld"
+            }
+            fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
+                vec![]
+            }
+            fn broadcast(&self, t: horizon_client::mod_api::Text) {
+                self.lines.lock().unwrap().push(t.plain());
+            }
+            fn has_permission(&self, player: u128, node: &str, level: u8) -> bool {
+                self.perms
+                    .lock()
+                    .unwrap()
+                    .push((player, node.to_owned(), level));
+                // No one is on this server: level 0, as the native answers.
+                level == 0
+            }
+            fn player_permission(&self, player: u128) -> Option<u8> {
+                self.levels.lock().unwrap().push(player);
+                None
+            }
+            fn kick(&mut self, player: u128, _reason: &horizon_client::mod_api::Text) -> bool {
+                self.kicks.lock().unwrap().push(player);
+                true
+            }
+            fn teleport_player(
+                &mut self,
+                uuid: u128,
+                _dimension: &str,
+                _pos: [f64; 3],
+                _yaw: f32,
+                _pitch: f32,
+            ) -> bool {
+                self.teleports.lock().unwrap().push(uuid);
+                true
+            }
+        }
+        let (dir, path) = hmod(
+            "perm_unknown",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("net_from_client", function(event)
+                  -- An online uuid the host has no level for: nil.
+                  __PP = horizon.player_permission(event.player)
+                  -- A player no lookup knows: level 0, no host call.
+                  __HP_POS = horizon.has_permission("00000000-0000-0000-0000-000000000099", "ruby:x", 1)
+                  __HP_ZERO = horizon.has_permission("nobody", "ruby:x", 0)
+                  __PP_NIL = horizon.player_permission("nobody") == nil
+                  horizon.kick("nobody", "bye")
+                  horizon.teleport_player("nobody", "minecraft:overworld", { x = 0, y = 64, z = 0 }, 0, 0)
+                  horizon.broadcast("after")
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let state = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = NoLevelHost {
+            perms: M::new(Vec::new()),
+            levels: M::new(Vec::new()),
+            kicks: M::new(Vec::new()),
+            teleports: M::new(Vec::new()),
+            lines: M::new(Vec::new()),
+        };
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            0x123e4567_e89b_12d3_a456_426614174000,
+            "ruby:from",
+            b"",
+        );
+        // The host's level for the online player is None: nil, and the
+        // host was asked exactly once (for that player).
+        assert!(state.globals().get::<Value>("__PP").unwrap().is_nil());
+        assert_eq!(
+            *host.levels.lock().unwrap(),
+            vec![0x123e4567_e89b_12d3_a456_426614174000]
+        );
+        // The parseable uuid reaches the host, which answers level 0
+        // (false against default 1). The unresolvable name never reaches
+        // the host: level 0 against 0 is true, and its level read is nil.
+        assert!(!state.globals().get::<bool>("__HP_POS").unwrap());
+        assert!(state.globals().get::<bool>("__HP_ZERO").unwrap());
+        assert!(state.globals().get::<bool>("__PP_NIL").unwrap());
+        assert_eq!(
+            *host.perms.lock().unwrap(),
+            vec![(
+                0x00000000_0000_0000_0000_000000000099u128,
+                "ruby:x".to_owned(),
+                1
+            )]
+        );
+        assert!(host.kicks.lock().unwrap().is_empty());
+        assert!(host.teleports.lock().unwrap().is_empty());
+        assert_eq!(*host.lines.lock().unwrap(), ["after"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The default level saturates into u8 before it reaches the host:
+    /// -1 arrives as 0, 300 as 255 (an `as u8` would wrap both).
+    #[test]
+    fn perm_default_level_saturates() {
+        use std::sync::Mutex as M;
+        struct SatHost {
+            seen: M<Vec<u8>>,
+        }
+        impl Host for SatHost {
+            fn dimension(&self) -> &'static str {
+                "minecraft:overworld"
+            }
+            fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
+                vec![test_events::native_server_player(
+                    0x123e4567_e89b_12d3_a456_426614174000,
+                    "steve".into(),
+                    0,
+                    "minecraft:overworld".into(),
+                    [0.0, 64.0, 0.0],
+                    0,
+                    20.0,
+                    0.0,
+                    0.0,
+                    0,
+                    String::new(),
+                )]
+            }
+            fn has_permission(&self, _player: u128, _node: &str, level: u8) -> bool {
+                self.seen.lock().unwrap().push(level);
+                false
+            }
+        }
+        let (dir, path) = hmod(
+            "perm_sat",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("net_from_client", function(event)
+                  __F1 = horizon.has_permission("steve", "ruby:x", -1)
+                  __F2 = horizon.has_permission("steve", "ruby:x", 300)
+                  __F3 = horizon.has_permission("steve", "ruby:x", 2)
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let state = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = SatHost {
+            seen: M::new(Vec::new()),
+        };
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            0x123e4567_e89b_12d3_a456_426614174000,
+            "ruby:from",
+            b"",
+        );
+        assert!(!state.globals().get::<bool>("__F1").unwrap());
+        assert!(!state.globals().get::<bool>("__F2").unwrap());
+        assert!(!state.globals().get::<bool>("__F3").unwrap());
+        assert_eq!(*host.seen.lock().unwrap(), [0, 255, 2]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A native refusal is not a script error and does not stop the rest of
+    /// the handler's queue; a non-finite number is, and names its argument.
+    #[test]
+    fn perm_refusals_continue_and_bad_numbers_raise() {
+        use std::sync::Mutex as M;
+        struct RefuseHost {
+            lines: M<Vec<String>>,
+            teleports: M<Vec<u128>>,
+        }
+        impl Host for RefuseHost {
+            fn dimension(&self) -> &'static str {
+                "minecraft:overworld"
+            }
+            fn broadcast(&self, t: horizon_client::mod_api::Text) {
+                self.lines.lock().unwrap().push(t.plain());
+            }
+            fn kick(&mut self, _player: u128, _reason: &horizon_client::mod_api::Text) -> bool {
+                false
+            }
+            fn teleport_player(
+                &mut self,
+                uuid: u128,
+                _dimension: &str,
+                _pos: [f64; 3],
+                _yaw: f32,
+                _pitch: f32,
+            ) -> bool {
+                self.teleports.lock().unwrap().push(uuid);
+                false
+            }
+        }
+        let (dir, path) = hmod(
+            "perm_refuse",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("net_from_client", function(event)
+                  horizon.kick(event.player, "bye")
+                  horizon.teleport_player(event.player, "minecraft:nowhere", { x = 0, y = 64, z = 0 }, 0, 0)
+                  horizon.broadcast("after")
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = RefuseHost {
+            lines: M::new(Vec::new()),
+            teleports: M::new(Vec::new()),
+        };
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            0x123e4567_e89b_12d3_a456_426614174000,
+            "ruby:from",
+            b"",
+        );
+        assert_eq!(*host.lines.lock().unwrap(), ["after"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        // Non-finite pos/yaw/pitch: a script error naming the argument,
+        // reported from the drain; no teleport lands.
+        for (mode, needle) in [
+            ("pos_x", "teleport_player.pos.x"),
+            ("pos", "teleport_player.pos"),
+            ("yaw", "teleport_player.yaw"),
+            ("pitch", "teleport_player.pitch"),
+        ] {
+            // Own manifest id, so the hook error is this test's alone.
+            let name = format!("perm_finite_{mode}");
+            let dir =
+                std::env::temp_dir().join(format!("horizon-lua-{}-{name}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let path = dir.join("ruby.hmod");
+            let manifest = MANIFEST_TEXT.replacen("id = \"ruby\"", &format!("id = \"{name}\""), 1);
+            let script: &[u8] = br#"
+                horizon.on("net_from_client", function(event)
+                  local P, Y, I = { x = 0, y = 64, z = 0 }, 0, 0
+                  if MODE == "pos_x" then P.x = 0/0 end
+                  if MODE == "pos" then P = { x = "nan", y = 64, z = 0 } end
+                  if MODE == "yaw" then Y = 1/0 end
+                  if MODE == "pitch" then I = 0/0 end
+                  horizon.teleport_player(event.player, "minecraft:overworld", P, Y, I)
+                end)
+                "#;
+            std::fs::write(
+                &path,
+                Package::write_files(&manifest, None, &[("scripts/server/init.lua", script)])
+                    .unwrap(),
+            )
+            .unwrap();
+            let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+            let id = m.id().to_owned();
+            set_status(horizon_client::dev_input::mods::ModStatus {
+                id: id.clone(),
+                side: m.side().as_str().to_owned(),
+                ..Default::default()
+            });
+            m.lua.globals().set("MODE", mode).unwrap();
+            let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+            let mut host = RefuseHost {
+                lines: M::new(Vec::new()),
+                teleports: M::new(Vec::new()),
+            };
+            horizon_client::mod_api::dispatch_net_from_client(
+                &mut host,
+                &mods,
+                0x123e4567_e89b_12d3_a456_426614174000,
+                "ruby:from",
+                b"",
+            );
+            let e = horizon_client::dev_input::mods::status()
+                .into_iter()
+                .find(|s| s.id == id)
+                .and_then(|s| s.error)
+                .unwrap_or_default();
+            assert!(e.contains(needle), "{mode}: {e}");
+            assert!(host.teleports.lock().unwrap().is_empty());
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+    }
+
+    /// The four helpers are server state only: like the chest-menu helpers
+    /// they raise the server-only error in a client state and in a draw hook.
+    #[test]
+    fn perm_helpers_raise_in_client_and_draw() {
+        let (dir, path) = hmod(
+            "perm_client_stubs",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                local function expect(name, f)
+                  local ok, err = pcall(f)
+                  assert(not ok, name.." should fail")
+                  assert(string.find(tostring(err), "horizon."..name.." is only available in scripts/server/", 1, true), name..": "..tostring(err))
+                end
+                expect("has_permission", function() horizon.has_permission("steve", "ruby:x", 2) end)
+                expect("player_permission", function() horizon.player_permission("steve") end)
+                expect("kick", function() horizon.kick("steve", "bye") end)
+                expect("teleport_player", function() horizon.teleport_player("steve", "minecraft:overworld", { x = 0, y = 64, z = 0 }, 0, 0) end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        assert_eq!(m.side(), LuaSide::Client);
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        // Draw hook (client): all four raise the server-only error.
+        let (dir2, path2) = hmod(
+            "perm_draw",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("hud", function(event)
+                  local function tryit(name, f)
+                    local ok, e = pcall(f)
+                    if not ok then _G["E_"..name] = tostring(e) else _G["E_"..name] = "ran" end
+                  end
+                  tryit("has_permission", function() horizon.has_permission("steve", "ruby:x", 2) end)
+                  tryit("player_permission", function() horizon.player_permission("steve") end)
+                  tryit("kick", function() horizon.kick("steve", "bye") end)
+                  tryit("teleport_player", function() horizon.teleport_player("steve", "minecraft:overworld", { x = 0, y = 64, z = 0 }, 0, 0) end)
+                end)
+                "#,
+            )],
+        );
+        let m2 = LuaMod::load(&path2, LuaSide::Client, &[]).unwrap();
+        let state = m2.lua.clone();
+        let mods2: Vec<Box<dyn Hooks>> = vec![Box::new(m2)];
+        struct DHost;
+        impl Host for DHost {
+            fn dimension(&self) -> &'static str {
+                "minecraft:overworld"
+            }
+            fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
+                vec![]
+            }
+        }
+        let mut host = DHost;
+        let mut batch = horizon_client::mod_api::HudBatch::new([800, 600]);
+        let mut corners = horizon_client::mod_api::Corners::new(800.0, 600.0, 0.0);
+        horizon_client::mod_api::dispatch_hud(&mut host, &mods2, &mut batch, &mut corners);
+        for name in [
+            "has_permission",
+            "player_permission",
+            "kick",
+            "teleport_player",
+        ] {
+            let v: String = state.globals().get(format!("E_{name}")).unwrap();
+            assert!(
+                v.contains(&format!(
+                    "horizon.{name} is only available in scripts/server/"
+                ),),
+                "{name}: {v}"
+            );
+        }
+        std::fs::remove_dir_all(&dir2).unwrap();
+    }
+
+    /// Re-entrancy (issue 52, item a): a `permission_check` handler that
+    /// asks `horizon.has_permission` does not re-enter the host and does not
+    /// recurse: the hook is hostless (`call_bare`, `Reader::None`), so the
+    /// read raises the hostless error and the host is never touched.
+    #[test]
+    fn has_permission_inside_permission_check_is_the_hostless_error() {
+        use std::sync::Mutex as M;
+        struct NoTouchHost {
+            calls: M<Vec<u128>>,
+        }
+        impl Host for NoTouchHost {
+            fn dimension(&self) -> &'static str {
+                "minecraft:overworld"
+            }
+            fn has_permission(&self, player: u128, _node: &str, _level: u8) -> bool {
+                self.calls.lock().unwrap().push(player);
+                true
+            }
+            fn player_permission(&self, player: u128) -> Option<u8> {
+                self.calls.lock().unwrap().push(player);
+                Some(4)
+            }
+        }
+        let (dir, path) = hmod(
+            "perm_reentrant",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("permission_check", function(event)
+                  local ok, e = pcall(function()
+                    return horizon.has_permission(event.player, "ruby:x", 2)
+                  end)
+                  _G["E"] = ok and "answered" or tostring(e)
+                  local ok2, e2 = pcall(function()
+                    return horizon.player_permission(event.player)
+                  end)
+                  _G["E2"] = ok2 and "answered" or tostring(e2)
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let state = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut result: Option<bool> = None;
+        let host = NoTouchHost {
+            calls: M::new(Vec::new()),
+        };
+        horizon_client::mod_api::dispatch_permission_check(
+            &host,
+            &mods,
+            0x123e4567_e89b_12d3_a456_426614174000,
+            "test:node",
+            9,
+            &mut result,
+        );
+        let e: String = state.globals().get("E").unwrap();
+        assert!(
+            e.contains("horizon.has_permission: reads work inside a hook with a host"),
+            "{e}"
+        );
+        let e2: String = state.globals().get("E2").unwrap();
+        assert!(
+            e2.contains("horizon.player_permission: reads work inside a hook with a host"),
+            "{e2}"
+        );
+        assert!(
+            host.calls.lock().unwrap().is_empty(),
+            "the host was not re-entered"
+        );
+        drop(host);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

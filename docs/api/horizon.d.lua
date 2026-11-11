@@ -982,6 +982,8 @@ declare horizon: {
     data: (path: string) -> any,
     menu_contents: (who: string | ReadPlayer) -> { Item? }?,
     menu_cursor: (who: string | ReadPlayer) -> Item?,
+    has_permission: (who: string | ReadPlayer, node: string, default_level: number) -> boolean,
+    player_permission: (who: string | ReadPlayer) -> number?,
     dev: { inspect: (who: ReadPlayer | string, what: number | { x: number, y: number, z: number, face: Vec3?, dimension: string? }) -> boolean },
     summon: (dimension: string, kind: string, x: number, y: number, z: number) -> number?,
     after: (ticks: number, fn: () -> ()) -> (),
@@ -1028,6 +1030,8 @@ declare horizon: {
     open_menu_with_input: (who: string | ReadPlayer, rows: number, title: string, items: { (Item | false)? }, input: { start: number, ["end"]: number }) -> (),
     set_menu_items: (who: string | ReadPlayer, items: { (Item | false)? }) -> (),
     close_menu: (who: string | ReadPlayer) -> (),
+    kick: (who: string | ReadPlayer, reason: string) -> (),
+    teleport_player: (who: string | ReadPlayer, dimension: string, pos: Vec3, yaw: number, pitch: number) -> (),
 }
 
 -- `scripts/registry.lua` and its modules (`scripts/registry/`) run with this instead of `horizon`.

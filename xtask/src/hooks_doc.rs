@@ -429,6 +429,10 @@ const LUA_HELPERS: &[(&str, &str)] = &[
     ("give_levels", "`horizon.give_levels(player, levels)`"),
     ("give_stack", "`horizon.give_items(player, id, count)`"),
     (
+        "has_permission",
+        "`horizon.has_permission(player, node, default_level)`",
+    ),
+    (
         "held",
         "`player.held` in the command handler's player table (`perform_command`), in the `{item, count, plain}` hand shape",
     ),
@@ -436,6 +440,7 @@ const LUA_HELPERS: &[(&str, &str)] = &[
         "held_stack",
         "`held` on the `horizon.player(s)` tables and `horizon.acting_player()`, as a full `Item` table",
     ),
+    ("kick", "`horizon.kick(player, reason)`"),
     ("kill_mob", "`horizon.kill_mob(dimension, id)`"),
     (
         "level_players",
@@ -481,6 +486,7 @@ const LUA_HELPERS: &[(&str, &str)] = &[
         "player_effect",
         "`horizon.effect(player, name, ticks[, amplifier])`",
     ),
+    ("player_permission", "`horizon.player_permission(player)`"),
     ("player_raycast", "`horizon.raycast(player, distance)`"),
     (
         "player_stacks",
@@ -532,6 +538,10 @@ const LUA_HELPERS: &[(&str, &str)] = &[
     (
         "teleport_mob",
         "`horizon.teleport_mob(dimension, id, x, y, z)`",
+    ),
+    (
+        "teleport_player",
+        "`horizon.teleport_player(player, dimension, pos, yaw, pitch)`",
     ),
     ("tell", "`horizon.tell(player, text)`"),
     (
