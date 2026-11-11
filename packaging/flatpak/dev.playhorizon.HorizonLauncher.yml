@@ -50,13 +50,19 @@ modules:
         HORIZON_LAUNCHER_VERSION: '@LAUNCHER_VERSION@'
         HORIZON_LAUNCHER_BUILT: '@LAUNCHER_BUILT@'
     build-commands:
-      # Rust from rustup's stable channel, the toolchain the release workflow builds with: the SDK's rust extension lags
-      # behind it, and crates in this workspace already need a newer one. One shell, since `buildsystem: simple` runs
-      # each command in its own.
+      # Rust is pinned at two levels, and nothing is a script downloaded at build time. `rustup-init` is one of the
+      # `sources` below: flatpak-builder fetches it and checks its sha256, per architecture (to bump it, take the new
+      # hashes from https://static.rust-lang.org/rustup/dist/<target>/rustup-init.sha256). It then installs toolchain
+      # 1.99.1, the version this tree builds with (the SDK's rust extension lags behind it), and rustup checks that
+      # toolchain against its own published manifest hashes. Bump the toolchain together with the rustup-init hashes
+      # when the workspace needs a newer one. The cargo crates still come from the network while the launcher builds
+      # (`--share=network` above); vendoring them with flatpak-cargo-generator would make the build fully offline, left
+      # for later. One shell, since `buildsystem: simple` runs each command in its own.
       - |
         set -eu
         export RUSTUP_HOME=/run/build/horizon-launcher/rustup CARGO_HOME=/run/build/horizon-launcher/cargo
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+        chmod +x rustup-init
+        ./rustup-init -y --profile minimal --default-toolchain 1.99.1 --no-modify-path
         export PATH="$CARGO_HOME/bin:$PATH"
         cd launcher
         cargo build --release --locked
@@ -72,3 +78,16 @@ modules:
     sources:
       - type: archive
         path: horizon-source.tar.gz
+      # rustup-init for each architecture the bundle builds, pinned by sha256 (see the build-commands above).
+      - type: file
+        url: https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init
+        sha256: b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55
+        dest-filename: rustup-init
+        only-arches:
+          - x86_64
+      - type: file
+        url: https://static.rust-lang.org/rustup/dist/aarch64-unknown-linux-gnu/rustup-init
+        sha256: 9f608c142e0e38a78957d0661ba1dfaf0b6fb37184cfaa4b9a0aa57af6184282
+        dest-filename: rustup-init
+        only-arches:
+          - aarch64
