@@ -96,6 +96,11 @@ Repeat passes 3 and 4 until both are clean. With `--dev-tools`, the in-game `/lu
 handlers, goals and last error, and its reload button does what `reload-mods` does
 ([lua-bindings.md](lua-bindings.md#working-on-a-script)).
 
+When both are clean, pin the hook surface the mod was built for: add `lua_hook_surface = 1` to its
+`horizon-mod.toml`. A later engine that changes the hook surface bumps its number, and the mod then fails at load with
+`mod <id> was built for Lua hook surface <N>, this engine has <M>` instead of on a missing hook name. The line is
+optional; a mod without it loads as before ([lua-bindings.md](lua-bindings.md#getting-started)).
+
 ## Per-hook rows
 
 Old name | New hook | New event shape | Old positional arguments become | Fields lost | Fields gained | How to filter
