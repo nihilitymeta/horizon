@@ -232,6 +232,16 @@ pub const SIGNATURES: &[(&str, &str, &str)] = &[
         "for _, m in ipairs(mc.mods()) do print(m.id, m.error) end",
     ),
     (
+        "mc.mod_state",
+        "mc.mod_state(id) -> {world_data, players = {uuid = data}}  a loaded mod's saved data",
+        "for uuid, d in pairs(mc.mod_state(\"my_mod\").players) do print(uuid, d.coins) end",
+    ),
+    (
+        "mc.mod_state_json",
+        "mc.mod_state_json(id) -> JSON text of the same data, numbers exact",
+        "print(mc.mod_state_json(\"my_mod\"))",
+    ),
+    (
         "mc.reload_mods",
         "mc.reload_mods([id])  the scripted mods read their scripts again next tick",
         "mc.reload_mods(\"horizon_parasite_mod\")",
@@ -630,8 +640,17 @@ struct LuaPending {
     label: String,
     deadline: Instant,
     reply: Sender<String>,
+    shape: Shape,
 }
 static LUA_PENDING: Mutex<Option<LuaPending>> = Mutex::new(None);
+
+/// What a queued run's reply is made of: the `lua` output, or the saved data
+/// of one mod (`mod-state`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Shape {
+    Lua,
+    ModState(String),
+}
 
 /// Queue `chunk` for the server thread's Lua console — the same queue `/lua
 /// <code>` and the window use, so the same VM and limits (2 s, 64 MiB) apply
@@ -646,6 +665,67 @@ pub fn start_lua_run(chunk: &str, reply: Sender<String>) -> Result<Option<Value>
     if chunk.contains(['\n', '\r']) {
         return Err("lua CHUNK is one line".to_owned());
     }
+    queue_run(format!("> {chunk}"), chunk.to_owned(), Shape::Lua, reply)
+}
+
+/// Queue `horizon-ctl mod-state ID` on the same console queue: the server
+/// thread prints the mod's saved data as JSON (`mc.mod_state_json`), and the
+/// reply is that data with `ok` and `id`. Unknown ids are refused here.
+pub fn start_mod_state_run(id: &str, reply: Sender<String>) -> Result<Option<Value>, String> {
+    if !super::enabled() {
+        return Err("dev tools are off; start the game with --dev-tools to use lua".to_owned());
+    }
+    let chunk = mod_state_chunk(id)?;
+    queue_run(
+        format!("> mod-state {id}"),
+        chunk,
+        Shape::ModState(id.to_owned()),
+        reply,
+    )
+}
+
+/// The first thing on a line the console prints for `mod-state`: the
+/// server thread's `mc.emit_mod_state` pushes its JSON after this marker, so
+/// the reply is that line and no other of the run's.
+pub const MOD_STATE_MARK: &str = "\u{1}MODSTATE ";
+
+/// The chunk that emits mod `id`'s saved data. The id goes into the chunk
+/// only once it names a loaded scripted mod, and then as a quoted Lua string.
+pub fn mod_state_chunk(id: &str) -> Result<String, String> {
+    if !super::mods::status().iter().any(|m| m.id == id) {
+        return Err(format!("unknown mod {id}"));
+    }
+    Ok(format!("mc.emit_mod_state({})", lua_quote(id)))
+}
+
+/// `text` as a Lua string literal in double quotes, valid for any text:
+/// `\` and `"` are escaped, and every other control character (and DEL)
+/// as a decimal `\ddd`, three digits so the next character cannot join it.
+fn lua_quote(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '\\' | '"' => {
+                out.push('\\');
+                out.push(c);
+            }
+            // ASCII only: a `\ddd` is a byte, and a non-ASCII character is
+            // already its UTF-8 bytes in the literal.
+            c if c.is_ascii_control() => out.push_str(&format!("\\{:03}", u32::from(c))),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn queue_run(
+    label: String,
+    chunk: String,
+    shape: Shape,
+    reply: Sender<String>,
+) -> Result<Option<Value>, String> {
     let mut pending = LUA_PENDING.lock().unwrap_or_else(|e| e.into_inner());
     if pending.is_some() {
         return Err("a lua run is already running".to_owned());
@@ -653,16 +733,44 @@ pub fn start_lua_run(chunk: &str, reply: Sender<String>) -> Result<Option<Value>
     // The id is set before the request is queued: the take that finds the
     // request must find the run it belongs to.
     let id = next_id();
-    let label = format!("> {chunk}");
     *pending = Some(LuaPending {
         id,
         label: label.clone(),
         deadline: Instant::now() + Duration::from_secs(LUA_WAIT_SECS),
         reply,
+        shape,
     });
     drop(pending);
-    push_request(id, label, chunk.to_owned());
+    push_request(id, label, chunk);
     Ok(None)
+}
+
+/// The reply for a finished run's new lines, by what the run asked for.
+fn run_reply(shape: &Shape, new: &[(Kind, String)]) -> Value {
+    match shape {
+        Shape::Lua => lua_reply(new),
+        Shape::ModState(id) => mod_state_run_reply(id, new),
+    }
+}
+
+/// The `mod-state` reply: the JSON on the run's marked line, with `ok` and
+/// `id`. Every other line of the run is ignored. Without the marked line the
+/// run failed: its first error is the reply.
+fn mod_state_run_reply(id: &str, new: &[(Kind, String)]) -> Value {
+    let marked = new
+        .iter()
+        .filter(|(k, _)| *k == Kind::Out)
+        .find_map(|(_, l)| l.strip_prefix(MOD_STATE_MARK));
+    if let Some(json) = marked {
+        return match serde_json::from_str::<Value>(json) {
+            Ok(Value::Object(data)) => super::mods::mod_state_reply(id, data),
+            _ => serde_json::json!({ "error": format!("mod {id} printed no saved data") }),
+        };
+    }
+    match new.iter().find(|(k, _)| *k == Kind::Err) {
+        Some((_, first)) => serde_json::json!({ "error": first }),
+        None => serde_json::json!({ "error": format!("mod {id} printed no saved data") }),
+    }
 }
 
 /// The `lua` reply for the run's new lines: the printed output, or the error
@@ -707,8 +815,9 @@ fn poll_lua_run_at(now: Instant) {
             None
         }
     };
+    let shape = pending.as_ref().map_or(Shape::Lua, |p| p.shape.clone());
     let reply = match finished {
-        Some(Some(lines)) => lua_reply(&lines),
+        Some(Some(lines)) => run_reply(&shape, &lines),
         Some(None) => serde_json::json!({"error": "the chunk did not run"}),
         None if now >= deadline => serde_json::json!({
             "error": format!("timed out after {LUA_WAIT_SECS} s waiting for the chunk to run"),
@@ -982,5 +1091,92 @@ mod tests {
         // Nothing to complete without a name, and an exact name is not offered again.
         assert!(lua_completions("x = ", 4).items.is_empty());
         assert!(lua_completions("end", 3).items.is_empty());
+    }
+
+    fn mod_entry(id: &str) -> super::super::mods::ModStatus {
+        super::super::mods::ModStatus {
+            id: id.to_owned(),
+            ..Default::default()
+        }
+    }
+
+    /// Only a loaded mod's id reaches the chunk, quoted; anything else is
+    /// refused before a chunk exists, so user text never becomes Lua.
+    #[test]
+    fn mod_state_chunk_takes_only_a_loaded_mod_id() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        super::super::mods::set_status(mod_entry("state_mod"));
+        assert_eq!(
+            mod_state_chunk("state_mod").unwrap(),
+            r#"mc.emit_mod_state("state_mod")"#
+        );
+        for hostile in ["nosuch", "state_mod\")) os.exit(1) print(\"", ""] {
+            assert_eq!(
+                mod_state_chunk(hostile).unwrap_err(),
+                format!("unknown mod {hostile}")
+            );
+        }
+        super::super::mods::set_status(mod_entry("q\"uote\\id"));
+        assert_eq!(
+            mod_state_chunk("q\"uote\\id").unwrap(),
+            r#"mc.emit_mod_state("q\"uote\\id")"#
+        );
+        super::super::mods::clear_for_tests();
+    }
+
+    /// Every byte of the id is quoted so the chunk parses for any string:
+    /// quotes, backslashes, control characters (decimal `\ddd`, always
+    /// three digits so a digit after it cannot join it), and `]]`.
+    #[test]
+    fn lua_quote_makes_a_string_literal_for_any_text() {
+        assert_eq!(lua_quote("plain_id"), r#""plain_id""#);
+        assert_eq!(lua_quote(r#"a"b\c"#), r#""a\"b\\c""#);
+        assert_eq!(lua_quote("a\nb"), r#""a\010b""#);
+        assert_eq!(lua_quote("a\rb"), r#""a\013b""#);
+        assert_eq!(lua_quote("a\0b"), r#""a\000b""#);
+        assert_eq!(lua_quote("a\u{1}1"), r#""a\0011""#);
+        assert_eq!(lua_quote("a\x7fb"), r#""a\127b""#);
+        assert_eq!(lua_quote("]]x"), r#""]]x""#);
+    }
+
+    /// The reply is the marked line alone: unrelated lines from other writers
+    /// (an Out and an Err) in the same capture do not change it.
+    #[test]
+    fn mod_state_reply_reads_only_the_marked_line() {
+        let json = r#"{"world_data":{"counter":42},"players":{}}"#;
+        let capture = vec![
+            (Kind::Echo, "> mod-state my_mod".to_string()),
+            (Kind::Out, "a client hook logged this".to_string()),
+            (Kind::Err, "an unrelated error".to_string()),
+            (Kind::Out, format!("\u{1}MODSTATE {json}")),
+        ];
+        assert_eq!(
+            run_reply(&Shape::ModState("my_mod".into()), &capture),
+            serde_json::json!({
+                "ok": true,
+                "id": "my_mod",
+                "world_data": {"counter": 42},
+                "players": {},
+            })
+        );
+    }
+
+    /// Without the marked line the run failed: its first error is the reply.
+    #[test]
+    fn mod_state_reply_without_the_marked_line_reports_the_first_error() {
+        let failed = vec![
+            (Kind::Out, "unrelated".to_string()),
+            (Kind::Err, "unknown mod my_mod".to_string()),
+            (Kind::Err, "a second line".to_string()),
+        ];
+        assert_eq!(
+            run_reply(&Shape::ModState("my_mod".into()), &failed),
+            serde_json::json!({"error": "unknown mod my_mod"})
+        );
+        let silent = vec![(Kind::Out, "not json".to_string())];
+        assert_eq!(
+            run_reply(&Shape::ModState("my_mod".into()), &silent),
+            serde_json::json!({"error": "mod my_mod printed no saved data"})
+        );
     }
 }

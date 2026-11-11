@@ -155,7 +155,7 @@ Every command `horizon-ctl` takes, its MCP tool in `horizon-ctl mcp` (the launch
 | `repro-export [NAME] [PATH] [--no-world]` | `repro_export` | Zip a recording with the logs, crash report and status | `name` (string): recording from record-list (default the newest)<br>`path` (string): where to write the zip<br>`--no-world` (boolean): leave the world out |
 | `reload-mods [ID]` | `reload_mods` | Reload scripted mods, waiting until the reload is applied | `id` (string): mod id to reload (default: every scripted mod) |
 | `lua CHUNK` | `lua` (destructive) | Run a Lua chunk as /lua does, waiting until it runs (needs --dev-tools) | `chunk` (text, required): Lua code, as one /lua line |
-| `mod-state ID` | `mod_state` | The mod's saved world data as JSON | `id` (string, required): mod id of a scripted mod |
+| `mod-state ID` | `mod_state` | The mod's saved data as JSON | `id` (string, required): mod id of a scripted mod |
 
 ## Replies
 
@@ -200,3 +200,12 @@ The reply fields of the commands described so far (more follow, a group at a tim
 | `protocol` | string | the control protocol, MAJOR.MINOR.PATCH (docs/api/stability.md) |
 | `release` | string | the game's version (MCP serverInfo carries the same string) |
 | `features` | array | the command groups the game answers, each a string |
+
+### `mod-state`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `ok` | boolean | true: the reply carries the data (a failure is {"error": ...}) |
+| `id` | string | the mod id asked for |
+| `world_data` | object | the mod's horizon.world_data() table; {} when nothing is saved |
+| `players` | object | each online player's uuid to its horizon.player_data() table; {} when nothing is saved |

@@ -116,6 +116,12 @@ pub fn set_status(status: ModStatus) {
     }
 }
 
+/// Forget every status (a test's own mods, so the next test starts empty).
+#[cfg(test)]
+pub(crate) fn clear_for_tests() {
+    STATUS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+}
+
 /// The last error of the mod `id`, kept in its status.
 pub fn set_error(id: &str, error: String) {
     if let Some(s) = STATUS
@@ -156,14 +162,13 @@ pub fn reload_targets(id: Option<&str>) -> Result<Vec<String>, String> {
     }
 }
 
-/// The `mod-state` reply for the mod `id`: its `world_data` table as JSON
-/// (null when the game in place holds none), and `missing` naming the saved
-/// tables this chunk does not read from the window thread.
-pub fn mod_state_reply(id: &str, world_data: Option<Value>, missing: &[String]) -> Value {
-    let mut reply = serde_json::json!({"ok": true, "id": id});
-    reply["world_data"] = world_data.unwrap_or(Value::Null);
-    reply["missing"] = Value::Array(missing.iter().map(|m| Value::String(m.clone())).collect());
-    reply
+/// The `mod-state` reply for the mod `id`: the saved data the server thread
+/// printed (`world_data`, `players`), beside `ok` and `id`.
+pub fn mod_state_reply(id: &str, data: serde_json::Map<String, Value>) -> Value {
+    let mut reply = data;
+    reply.insert("ok".to_owned(), Value::Bool(true));
+    reply.insert("id".to_owned(), Value::String(id.to_owned()));
+    Value::Object(reply)
 }
 
 /// The `reload-mods` reply for these statuses, in load order.
@@ -266,23 +271,18 @@ mod tests {
         }
     }
     #[test]
-    fn mod_state_reply_carries_world_data_and_missing() {
-        let reply = mod_state_reply("my_mod", Some(serde_json::json!({"count": 1})), &[]);
+    fn mod_state_reply_is_the_saved_data_beside_ok_and_id() {
+        let data =
+            serde_json::json!({"world_data": {"counter": 42}, "players": {"u": {"coins": 3}}});
+        let reply = mod_state_reply("my_mod", data.as_object().unwrap().clone());
         assert_eq!(
             reply,
-            serde_json::json!({"ok": true, "id": "my_mod", "world_data": {"count": 1}, "missing": []})
-        );
-        let reply = mod_state_reply(
-            "my_mod",
-            None,
-            &["world_data is not synced to this window".to_owned()],
-        );
-        assert_eq!(reply["ok"], true);
-        assert_eq!(reply["id"], "my_mod");
-        assert!(reply["world_data"].is_null());
-        assert_eq!(
-            reply["missing"],
-            serde_json::json!(["world_data is not synced to this window"])
+            serde_json::json!({
+                "ok": true,
+                "id": "my_mod",
+                "world_data": {"counter": 42},
+                "players": {"u": {"coins": 3}},
+            })
         );
     }
 

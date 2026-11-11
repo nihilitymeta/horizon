@@ -1106,6 +1106,31 @@ fn mod_attachment_named(id: &str, name: &'static str) -> AttachmentType<Compound
     }
 }
 
+/// A scripted mod's saved data as the server thread holds it now, for the
+/// console's `mc.mod_state`: the world's table, and each online player's,
+/// keyed by uuid text. Read only; a holder with nothing saved reads empty.
+/// The attachment names are private to this module, so the console asks here.
+pub(crate) fn saved_data(
+    host: &mut dyn Host,
+    id: &str,
+) -> Result<(Compound, Vec<(String, Compound)>), String> {
+    let world = mod_attachment_named(id, "world");
+    let player = mod_attachment_named(id, "player");
+    let world_data = world
+        .get_existing(&mut *host, Holder::Level)
+        .map_err(|e| format!("{id}: the world data cannot be read ({e:?})"))?
+        .unwrap_or_default();
+    let mut players = Vec::new();
+    for p in host.level_players() {
+        let data = player
+            .get_existing(&mut *host, Holder::Player(p.uuid))
+            .map_err(|e| format!("{id}: a player's data cannot be read ({e:?})"))?
+            .unwrap_or_default();
+        players.push((uuid_text(p.uuid), data));
+    }
+    Ok((world_data, players))
+}
+
 /// `text` as a UUID is written: `8-4-4-4-12` hex digits.
 fn uuid_text(uuid: u128) -> String {
     let hex = format!("{uuid:032x}");

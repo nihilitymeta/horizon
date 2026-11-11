@@ -89,7 +89,7 @@ const HELP: &[&str] = &[
     "credits [poem] [SCROLL]        roll the credits (with the end poem), or hold them SCROLL pixels in",
     "reload-mods [ID]               reload scripted mods (one mod or all), waiting until applied",
     "lua CHUNK                      run a Lua chunk as /lua does, waiting until it runs",
-    "mod-state ID                   the mod's saved world data as JSON",
+    "mod-state ID                   the mod's saved data as JSON",
     "quit                           save and exit",
 ];
 
@@ -1356,34 +1356,27 @@ impl Game<'_> {
                 }
             }
             "mod-state" => {
+                // Queued on the server thread's console, as `lua` is: the
+                // saved data lives there, not in this window.
                 if words.len() != 2 {
                     return Err("usage: mod-state ID".into());
                 }
-                let id = words[1];
-                if !horizon_client::dev_input::mods::status()
-                    .iter()
-                    .any(|m| m.id == id)
-                {
-                    return Err(format!("unknown mod {id}").into());
-                }
-                self.require_world()?;
-                let world_data = self.mod_world_data(id);
-                let mut missing = vec![
-                    "player_data is not read by this chunk; per-player tables need the server thread"
-                        .to_owned(),
-                    "entity_data is not read by this chunk; per-entity tables need the server thread"
-                        .to_owned(),
-                ];
-                if world_data.is_none() && !self.native_authoritative() {
-                    missing.insert(
-                        0,
-                        "world_data is not synced to this window; only the server thread reads it"
-                            .to_owned(),
+                if !horizon_client::dev_input::enabled() {
+                    return Err(
+                        "dev tools are off; start the game with --dev-tools to use lua".into(),
                     );
                 }
-                Ok(Some(horizon_client::dev_input::mods::mod_state_reply(
-                    id, world_data, &missing,
-                )))
+                self.require_world()?;
+                if let Some(refusal) = lua_refusal(self.runs_server_here()) {
+                    return Err(refusal.into());
+                }
+                match horizon_client::dev_input::console::start_mod_state_run(
+                    words[1],
+                    reply.clone(),
+                ) {
+                    Ok(value) => Ok(value),
+                    Err(e) => Err(e.into()),
+                }
             }
             // A splitscreen player leaves splitscreen; only P1's game ends the process.
             "quit" if self.options.split_guest => {
@@ -1425,30 +1418,6 @@ impl Game<'_> {
             return Err("no world open; use: open WORLD [SEED] [creative]".into());
         }
         Ok(())
-    }
-
-    /// The Lua mod `id`'s `horizon.world_data()` table as JSON, when the game
-    /// in place holds its level attachment: the attachment the Lua API stores
-    /// under the mod's id (`mod_attachment_named` in event-horizon-lua). A
-    /// server thread's game reads its own level; a window reads the copy its
-    /// server synced (Lua attachments never sync, so that copy stays empty).
-    fn mod_world_data(&mut self, id: &str) -> Option<Value> {
-        use horizon_client::mod_api::Holder;
-        use horizon_world::nbt::Tag;
-        let map = if self.native_authoritative() {
-            // The quiet read: listing data must not mark the level for a sync.
-            self.attachment_map_quiet(Holder::Level).ok()
-        } else {
-            self.attachment_map(Holder::Level).ok()
-        }?;
-        let saved = Tag::Compound(map.to_nbt());
-        let world = saved.get(id)?.get("world")?.get("value")?;
-        match world {
-            Tag::Compound(data) => Some(horizon_client::scoreboard::tag_to_json(&Tag::Compound(
-                data.clone(),
-            ))),
-            _ => None,
-        }
     }
 
     fn control_key_down(&mut self, key: KeyCode, raw: KeyCode) -> Result<()> {

@@ -759,6 +759,15 @@ The developer tools are made for this ([dev-tools.md](dev-tools.md)). Start the 
   stopped). The times are fractional milliseconds. `mc.profile_rows()` gives the same numbers as an array of
   `{mod=, hook=, calls=, total_ms=, max_ms=, overruns=}` sorted by mod id then hook name, for a listing whose order
   matters. `mc.profile_reset()` zeroes every counter.
+- In the console, `mc.mod_state(id)` reads a loaded scripted mod's saved data on the server thread, read only: a table
+  with `world_data` (the `horizon.world_data()` table) and `players`, each online player's `horizon.player_data()` table
+  keyed by uuid text. An id that names no loaded mod is a Lua error, `unknown mod <id>`. A Lua number is a double, so a
+  long past 2^53 loses digits here. `mc.mod_state_json(id)` returns the same data as JSON text: integers are exact (a
+  long past 2^53 too); a float is its value widened to a double (a float 0.1 prints as 0.10000000149011612), and NaN
+  and the infinities are `null`; a table nested past 64 levels is an error. `mc.emit_mod_state(id)` prints that JSON
+  as one marked line, which `horizon-ctl mod-state ID` queues on this console and reads (the reply is that line, plus
+  `ok` and `id`; a `print` the script or a `/lua` snippet rebound does not matter). Entity data
+  (`horizon.entity_data`) is not read by either: no per-entity enumeration.
 
 ## Plan
 

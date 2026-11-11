@@ -12,6 +12,7 @@
 //! reads and writes the world through the engine's generic host helpers
 //! (`select_ids`, `entity_data_in_place`, `set_entity_data`,
 //! `entity_name_in_place`, `run_command_as_owner`, `level_dimension`).
+use crate::lua_mods;
 use event_horizon_observe::{self as observe, View};
 use horizon_client::data_cmd::{self, Op};
 use horizon_client::dev_input::console::{self, Kind, SCRIPTS_DIR, STOP_TICKS, TICKING};
@@ -260,6 +261,95 @@ fn tag_of(data: &Tag, path: Option<String>) -> Result<Tag, String> {
     }
 }
 
+/// Containers nested deeper than this are refused: a reply a reader can parse,
+/// and a recursion that cannot overflow the stack.
+const MAX_LEVELS: usize = 64;
+
+/// A saved tag as JSON, exactly: a byte, short, int or long is its number
+/// (a byte is not a flag here). A float or double is its number widened to
+/// f64 (a float 0.1 prints as 0.10000000149011612); NaN and the infinities
+/// have no JSON form and become null. Arrays and lists are arrays, compounds
+/// objects. Nesting past `MAX_LEVELS` is an error.
+/// `tag` at `level`: the top-level tag is level 1, its children level 2.
+fn tag_at(tag: &Tag, level: usize) -> Result<serde_json::Value, String> {
+    use serde_json::{Number, Value as Json};
+    let float = |x: f64| Number::from_f64(x).map_or(Json::Null, Json::Number);
+    Ok(match tag {
+        Tag::End => Json::Null,
+        Tag::Byte(v) => Json::from(*v),
+        Tag::Short(v) => Json::from(*v),
+        Tag::Int(v) => Json::from(*v),
+        Tag::Long(v) => Json::from(*v),
+        Tag::Float(bits) => float(f64::from(f32::from_bits(*bits))),
+        Tag::Double(bits) => float(f64::from_bits(*bits)),
+        Tag::String(s) => Json::String(s.to_string_lossy()),
+        Tag::ByteArray(v) => Json::Array(v.iter().map(|b| Json::from(*b as i8)).collect()),
+        Tag::IntArray(v) => Json::Array(v.iter().map(|n| Json::from(*n)).collect()),
+        Tag::LongArray(v) => Json::Array(v.iter().map(|n| Json::from(*n)).collect()),
+        Tag::List(items) => {
+            check_level(level)?;
+            Json::Array(
+                items
+                    .iter()
+                    .map(|t| tag_at(t, level + 1))
+                    .collect::<Result<_, _>>()?,
+            )
+        }
+        Tag::Compound(c) => compound_at(c, level)?,
+    })
+}
+
+fn check_level(level: usize) -> Result<(), String> {
+    if level > MAX_LEVELS {
+        Err(format!("nests deeper than {MAX_LEVELS} levels"))
+    } else {
+        Ok(())
+    }
+}
+
+fn compound_at(c: &Compound, level: usize) -> Result<serde_json::Value, String> {
+    check_level(level)?;
+    let mut object = serde_json::Map::new();
+    for (k, v) in c.iter() {
+        object.insert(k.to_string_lossy(), tag_at(v, level + 1)?);
+    }
+    Ok(serde_json::Value::Object(object))
+}
+
+fn compound_json(c: &Compound) -> Result<serde_json::Value, String> {
+    compound_at(c, 1)
+}
+
+/// What `mc.mod_state_json` prints: `{"world_data": ..., "players": {uuid: ...}}`.
+/// A table too deep is an error that names it.
+fn mod_state_json(
+    world: &Compound,
+    players: &[(String, Compound)],
+) -> Result<serde_json::Value, String> {
+    let world_data = compound_json(world).map_err(|e| format!("world_data {e}"))?;
+    let mut by_uuid = serde_json::Map::new();
+    for (uuid, data) in players {
+        let data = compound_json(data).map_err(|e| format!("a player's data {e}"))?;
+        by_uuid.insert(uuid.clone(), data);
+    }
+    Ok(serde_json::json!({
+        "world_data": world_data,
+        "players": by_uuid,
+    }))
+}
+
+/// A loaded scripted mod's saved data (`lua_mods::saved_data`). An id that
+/// names no loaded mod is refused before anything is read.
+fn mod_saved(host: &mut dyn Host, id: &str) -> Result<(Compound, Vec<(String, Compound)>), String> {
+    if !horizon_client::dev_input::mods::status()
+        .iter()
+        .any(|m| m.id == id)
+    {
+        return Err(format!("unknown mod {id}"));
+    }
+    lua_mods::saved_data(host, id)
+}
+
 /// Run `code` with `mc` bound to the host. Errors go to the window.
 /// One profiler row's numbers as a Lua table: `calls`, `total_ms`,
 /// `max_ms` (fractional milliseconds) and `overruns`.
@@ -493,6 +583,47 @@ fn lua_run(host: &mut dyn Host, lua: &Lua, label: &str, code: &str) {
                     list.push(t)?;
                 }
                 Ok(list)
+            })?,
+        )?;
+        mc.set(
+            "mod_state",
+            scope.create_function_mut(|lua, id: String| {
+                // The saved tables as Lua tables: `world_data`, and `players`
+                // keyed by uuid text. A Lua number is a double, so a long past
+                // 2^53 loses digits here; `mc.mod_state_json` keeps them.
+                let mut h = host.borrow_mut();
+                let (world, players) = mod_saved(&mut **h, &id).map_err(lua_err)?;
+                let t = lua.create_table()?;
+                t.set("world_data", tag_to_lua(lua, &Tag::Compound(world))?)?;
+                let by_uuid = lua.create_table()?;
+                for (uuid, data) in players {
+                    by_uuid.set(uuid, tag_to_lua(lua, &Tag::Compound(data))?)?;
+                }
+                t.set("players", by_uuid)?;
+                Ok(t)
+            })?,
+        )?;
+        mc.set(
+            "mod_state_json",
+            scope.create_function_mut(|_, id: String| {
+                // What `horizon-ctl mod-state` prints: the same data as JSON text.
+                let mut h = host.borrow_mut();
+                let (world, players) = mod_saved(&mut **h, &id).map_err(lua_err)?;
+                Ok(mod_state_json(&world, &players)
+                    .map_err(lua_err)?
+                    .to_string())
+            })?,
+        )?;
+        mc.set(
+            "emit_mod_state",
+            scope.create_function_mut(|_, id: String| {
+                // The one line `horizon-ctl mod-state` reads: marked, so the
+                // run's other lines (a prints, a hook's log) are not taken for it.
+                let mut h = host.borrow_mut();
+                let (world, players) = mod_saved(&mut **h, &id).map_err(lua_err)?;
+                let json = mod_state_json(&world, &players).map_err(lua_err)?;
+                console::push(Kind::Out, format!("{}{json}", console::MOD_STATE_MARK));
+                Ok(())
             })?,
         )?;
         mc.set(
@@ -916,6 +1047,253 @@ mod tests {
         assert!(
             flat[2] < flat[1],
             "the second call adds to the total: {flat:?}"
+        );
+    }
+
+    fn compound(snbt: &str) -> Compound {
+        match parse_snbt(snbt).expect("valid SNBT").0 {
+            Tag::Compound(c) => c,
+            _ => panic!("{snbt} is not a compound"),
+        }
+    }
+
+    /// Numbers stay numbers and longs stay exact (2^53 + 1 has no double);
+    /// a byte is its number, not a flag; empty lists are arrays.
+    #[test]
+    fn saved_data_prints_as_json_with_its_numbers_exact() {
+        let data = compound(
+            "{count:9007199254740993L,flag:1b,ratio:0.5f,items:[I;1,2],\
+             names:[\"a\"],empty:[],nested:{level:-7s},lists:[{x:3b}]}",
+        );
+        assert_eq!(
+            compound_json(&data).unwrap(),
+            serde_json::json!({
+                "count": 9007199254740993_i64,
+                "flag": 1,
+                "ratio": 0.5,
+                "items": [1, 2],
+                "names": ["a"],
+                "empty": [],
+                "nested": {"level": -7},
+                "lists": [{"x": 3}],
+            })
+        );
+    }
+
+    #[test]
+    fn a_double_with_no_json_form_is_null() {
+        let inf = Tag::Double(f64::INFINITY.to_bits());
+        assert_eq!(tag_at(&inf, 1).unwrap(), serde_json::Value::Null);
+        assert_eq!(
+            tag_at(&Tag::Double(2.5f64.to_bits()), 1).unwrap(),
+            serde_json::json!(2.5)
+        );
+    }
+
+    /// The reply body: the world's table, and each online player's by uuid;
+    /// nothing saved reads as empty objects.
+    #[test]
+    fn mod_state_json_is_the_world_then_each_player_by_uuid() {
+        let uuid = "00000000-0000-0000-0000-000000000001";
+        assert_eq!(
+            mod_state_json(
+                &compound("{counter:42}"),
+                &[(uuid.to_owned(), compound("{coins:3b}"))]
+            )
+            .unwrap(),
+            serde_json::json!({
+                "world_data": {"counter": 42},
+                "players": {uuid: {"coins": 3}},
+            })
+        );
+        assert_eq!(
+            mod_state_json(&Compound::default(), &[]).unwrap(),
+            serde_json::json!({"world_data": {}, "players": {}})
+        );
+    }
+
+    /// An id that names no loaded mod is refused before any read: the test
+    /// host panics on every read it has not been given.
+    #[test]
+    fn mod_state_refuses_an_id_no_loaded_mod_has() {
+        let mut host = TestHost::default();
+        assert_eq!(
+            mod_saved(&mut host, "no_such_mod_here").unwrap_err(),
+            "unknown mod no_such_mod_here"
+        );
+    }
+
+    /// A world nested past 64 containers is refused, not a stack overflow
+    /// or a reply no reader parses; 64 is still fine.
+    #[test]
+    fn a_table_nested_past_64_levels_is_refused() {
+        let mut deep = "{x:1}".to_owned();
+        for _ in 0..99 {
+            deep = format!("{{a:{deep}}}");
+        }
+        assert_eq!(
+            mod_state_json(&compound(&deep), &[]).unwrap_err(),
+            "world_data nests deeper than 64 levels"
+        );
+        let mut at_limit = "{x:1}".to_owned();
+        for _ in 0..63 {
+            at_limit = format!("{{a:{at_limit}}}");
+        }
+        assert!(mod_state_json(&compound(&at_limit), &[]).is_ok());
+    }
+
+    /// A host that holds saved data for the console's `mc.mod_state`: the
+    /// world's attachment, one attachment per player, and the roster (one
+    /// player in the Overworld, one in the Nether, both listed).
+    struct SavedHost {
+        world: horizon_client::mod_api::Attachments,
+        players: Vec<(u128, horizon_client::mod_api::Attachments)>,
+        roster: Vec<horizon_client::mod_api::NativeServerPlayer>,
+    }
+
+    impl Host for SavedHost {
+        fn attachments(
+            &mut self,
+            holder: horizon_client::mod_api::Holder,
+        ) -> horizon_client::mod_api::AttachmentResult<&mut horizon_client::mod_api::Attachments>
+        {
+            use horizon_client::mod_api::{AttachmentError, Holder};
+            match holder {
+                Holder::Level => Ok(&mut self.world),
+                Holder::Player(uuid) => self
+                    .players
+                    .iter_mut()
+                    .find(|(u, _)| *u == uuid)
+                    .map(|(_, a)| a)
+                    .ok_or(AttachmentError::MissingHolder),
+                _ => Err(AttachmentError::MissingHolder),
+            }
+        }
+        fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
+            self.roster.clone()
+        }
+    }
+
+    /// `data` saved under the mod `id`'s attachment `name`, as the Lua API
+    /// stores it.
+    fn saved(id: &str, name: &'static str, data: Compound) -> horizon_client::mod_api::Attachments {
+        let ty = horizon_client::mod_api::AttachmentType {
+            namespace: horizon_client::mobs::native_goal::intern(id),
+            name,
+            default: Compound::default,
+            codec: Some(horizon_client::mod_api::AttachmentCodec {
+                encode: |c| Ok(c.clone()),
+                decode: |c| Ok(c.clone()),
+            }),
+            copy_on_death: false,
+            sync: false,
+        };
+        let mut attachments = horizon_client::mod_api::Attachments::default();
+        attachments.set(&ty, data).expect("the value is stored");
+        attachments
+    }
+
+    const PROBE: &str = "console_probe_mod";
+    const OWNER: &str = "00000000-0000-0000-0000-000000000001";
+    const NETHER: &str = "00000000-0000-0000-0000-000000000002";
+
+    fn saved_host() -> SavedHost {
+        let mut world = Compound::new();
+        world.insert(JavaString::from("counter"), Tag::Int(42));
+        world.insert(JavaString::from("bytes"), Tag::ByteArray(vec![0xFF, 0x01]));
+        world.insert(JavaString::from("big"), Tag::Long(9_007_199_254_740_993));
+        world.insert(JavaString::from("nan"), Tag::Double(f64::NAN.to_bits()));
+        world.insert(JavaString::from("tenth"), Tag::Float(0.1f32.to_bits()));
+        let player = |dimension: &str, uuid: u128, name: &str| {
+            horizon_client::test_events::native_server_player(
+                uuid,
+                name.to_owned(),
+                4,
+                dimension.to_owned(),
+                [0.0; 3],
+                0,
+                20.0,
+                0.0,
+                0.0,
+                uuid as i32,
+                String::new(),
+            )
+        };
+        SavedHost {
+            world: saved(PROBE, "world", world),
+            players: vec![
+                (1, saved(PROBE, "player", compound("{coins:3b}"))),
+                (2, horizon_client::mod_api::Attachments::default()),
+            ],
+            roster: vec![
+                player("minecraft:overworld", 1, "Owner"),
+                player("minecraft:the_nether", 2, "Guest"),
+            ],
+        }
+    }
+
+    fn console_lines() -> Vec<String> {
+        console::lines().into_iter().map(|(_, l)| l).collect()
+    }
+
+    /// The Lua functions run in the console VM against populated attachments:
+    /// the table a script reads, then the marked JSON line after `print` is
+    /// gone (a previous `/lua` snippet may have rebound it).
+    #[test]
+    fn mod_state_runs_in_the_console_vm_against_saved_data() {
+        horizon_client::dev_input::mods::set_status(horizon_client::dev_input::mods::ModStatus {
+            id: PROBE.to_owned(),
+            ..Default::default()
+        });
+        let mut host = saved_host();
+        let lua = vm().expect("a state");
+        console::clear();
+        lua_run(
+            &mut host,
+            &lua,
+            "the table",
+            &format!(
+                r#"
+                local s = mc.mod_state("{PROBE}")
+                print(s.world_data.counter, s.world_data.bytes[1], s.players["{OWNER}"].coins, next(s.players["{NETHER}"]) == nil)
+                "#
+            ),
+        );
+        assert!(
+            console_lines().contains(&"42\t-1\t3\ttrue".to_owned()),
+            "the table's values: {:?}",
+            console_lines()
+        );
+        lua_run(&mut host, &lua, "silence print", "print = nil");
+        console::clear();
+        lua_run(
+            &mut host,
+            &lua,
+            "emit",
+            &format!(r#"mc.emit_mod_state("{PROBE}")"#),
+        );
+        let marked: Vec<String> = console::lines()
+            .into_iter()
+            .filter_map(|(k, l)| {
+                (k == Kind::Out)
+                    .then(|| l.strip_prefix("\u{1}MODSTATE ").map(str::to_owned))
+                    .flatten()
+            })
+            .collect();
+        assert_eq!(marked.len(), 1, "{:?}", console_lines());
+        let got: serde_json::Value = serde_json::from_str(&marked[0]).expect("JSON");
+        assert_eq!(
+            got,
+            serde_json::json!({
+                "world_data": {
+                    "counter": 42,
+                    "bytes": [-1, 1],
+                    "big": 9007199254740993_i64,
+                    "nan": null,
+                    "tenth": 0.10000000149011612_f64,
+                },
+                "players": {OWNER: {"coins": 3}, NETHER: {}},
+            })
         );
     }
 }

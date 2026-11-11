@@ -93,6 +93,26 @@ const HELLO_REPLY: &[Field] = &[
     ),
 ];
 
+/// `mod-state`: the saved data of one scripted mod, read on the server thread.
+const MOD_STATE_REPLY: &[Field] = &[
+    f(
+        "ok",
+        "boolean",
+        "true: the reply carries the data (a failure is {\"error\": ...})",
+    ),
+    f("id", "string", "the mod id asked for"),
+    f(
+        "world_data",
+        "object",
+        "the mod's horizon.world_data() table; {} when nothing is saved",
+    ),
+    f(
+        "players",
+        "object",
+        "each online player's uuid to its horizon.player_data() table; {} when nothing is saved",
+    ),
+];
+
 /// `status`: the top-level fields the reply always carries. It holds more (sounds,
 /// projectiles, maps and the like), so a reader must ignore the keys it does not know.
 const STATUS_REPLY: &[Field] = &[
@@ -620,9 +640,9 @@ pub const COMMANDS: &[Cmd] = &[
     cmd!("lua", Scripting, "lua CHUNK", "run a Lua chunk as /lua does, waiting until it runs (needs --dev-tools)",
         "Runs CHUNK on the server thread in the /lua console's Luau state and limits (2 s, 64 MiB): the printed output comes back as output, a failing chunk as an error with its traceback. Needs the dev tools (--dev-tools); without them it is an error. One run at a time.",
         ["horizon-ctl lua print(1)", "horizon-ctl lua print(mc.snbt(\"@p\", \"Pos\"))"], &[p("chunk", Ty::Rest, "Lua code, as one /lua line")], mcp: true, local: false),
-    cmd!("mod-state", Scripting, "mod-state ID", "the mod's saved world data as JSON",
-        "Replies with the scripted mod's horizon.world_data() table as world_data (null when the game in place holds none), plus missing naming the saved tables this chunk does not read: player_data and entity_data need the server thread, and a client window is not synced world_data either. Unknown id is an error.",
-        ["horizon-ctl mod-state my_mod"], &[p("id", Ty::Str, "mod id of a scripted mod")], mcp: true, local: false),
+    cmd!("mod-state", Scripting, "mod-state ID", "the mod's saved data as JSON",
+        "Replies with the scripted mod's saved data read on the server thread's console (as lua does, so it needs the dev tools, --dev-tools, and a game that runs its own server): world_data is its horizon.world_data() table, and players maps each online player's uuid to its horizon.player_data() table. Integers are exact; a float is its value as a double (a float 0.1 prints as 0.10000000149011612), and NaN and the infinities are null. Unknown id is an error.",
+        ["horizon-ctl mod-state my_mod"], &[p("id", Ty::Str, "mod id of a scripted mod")], mcp: true, local: false, reply: MOD_STATE_REPLY),
 ];
 
 pub fn find(name: &str) -> Option<&'static Cmd> {
@@ -685,7 +705,7 @@ pub fn detail(c: &Cmd) -> String {
 /// The commands whose replies are described so far, one group at a time: the test
 /// requires each to name its fields.
 #[cfg(test)]
-pub const REPLY_GROUP: &[&str] = &["hello", "status"];
+pub const REPLY_GROUP: &[&str] = &["hello", "status", "mod-state"];
 
 /// The JSON schema of a command's reply, or none while its reply is undescribed.
 pub fn reply_schema(c: &Cmd) -> Option<Value> {
@@ -1086,6 +1106,18 @@ mod tests {
         assert_eq!(s["required"], json!(["x", "y", "z"]));
         assert_eq!(s["properties"]["timeout"]["type"], "number");
         assert_eq!(tool_name(find("look-at-entity").unwrap()), "look_at_entity");
+    }
+
+    /// The MCP outputSchema of `mod-state` is its reply: `players` and
+    /// `world_data` are declared, and no `missing` survives from the old reply.
+    #[test]
+    fn mod_state_reply_declares_players_and_no_missing() {
+        let schema =
+            reply_schema(find("mod-state").unwrap()).expect("mod-state declares its reply fields");
+        let props = schema["properties"].as_object().unwrap();
+        assert!(props.contains_key("players"), "{props:?}");
+        assert_eq!(schema["properties"]["world_data"]["type"], "object");
+        assert!(!props.contains_key("missing"), "{props:?}");
     }
 
     #[test]
