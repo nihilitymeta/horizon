@@ -823,6 +823,119 @@ mod tests {
         assert!(!m.ai.goals.is_running("Counting"));
     }
 
+    /// A goal whose `can_use` despawns the mob and returns true: its own
+    /// `start` must not run (no Hurt/Summon), no later goal runs, and nothing
+    /// is left running. A goal that never started must not be stopped either.
+    #[test]
+    fn a_goal_that_removes_the_mob_in_can_use_does_not_start() {
+        let ran = crate::mobs::world::with_test_world(&[], |w, _| {
+            use std::sync::atomic::{AtomicUsize, Ordering};
+
+            #[derive(Debug)]
+            struct VanishInCanUse {
+                starts: Arc<AtomicUsize>,
+                stops: Arc<AtomicUsize>,
+            }
+            impl NativeBehaviour for VanishInCanUse {
+                type State = u32;
+                fn can_use(&self, _state: &mut u32, _mob: &MobView, out: &mut Actions) -> bool {
+                    out.despawn();
+                    true
+                }
+                fn start(&self, _state: &mut u32, _mob: &MobView, out: &mut Actions) {
+                    self.starts.fetch_add(1, Ordering::Relaxed);
+                    out.hurt(Who::Player, 1.0);
+                    out.summon("zombie", [0.5, 64.0, 0.5]);
+                }
+                fn stop(&self, _state: &mut u32, _mob: &MobView, _out: &mut Actions) {
+                    self.stops.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            #[derive(Debug)]
+            struct Late {
+                starts: Arc<AtomicUsize>,
+            }
+            impl NativeBehaviour for Late {
+                type State = u32;
+                fn can_use(&self, _state: &mut u32, _mob: &MobView, _out: &mut Actions) -> bool {
+                    true
+                }
+                fn start(&self, _state: &mut u32, _mob: &MobView, out: &mut Actions) {
+                    self.starts.fetch_add(1, Ordering::Relaxed);
+                    out.hurt(Who::Player, 1.0);
+                }
+                fn tick(&self, _state: &mut u32, _mob: &MobView, out: &mut Actions) {
+                    out.hurt(Who::Player, 1.0);
+                }
+            }
+
+            let vanish_starts = Arc::new(AtomicUsize::new(0));
+            let vanish_stops = Arc::new(AtomicUsize::new(0));
+            let late_starts = Arc::new(AtomicUsize::new(0));
+            let mut m = mob();
+            m.ai.goals.add(
+                0,
+                NativeGoal::new(
+                    "Vanish",
+                    MOVE,
+                    VanishInCanUse {
+                        starts: Arc::clone(&vanish_starts),
+                        stops: Arc::clone(&vanish_stops),
+                    },
+                ),
+            );
+            m.ai.goals.add(
+                1,
+                NativeGoal::new(
+                    "Late",
+                    LOOK,
+                    Late {
+                        starts: Arc::clone(&late_starts),
+                    },
+                ),
+            );
+            let mut events = Vec::new();
+            let mut lr = horizon_core::random::LegacyRandom::new(1);
+            let mut cx = crate::mobs::goals::Cx {
+                w,
+                lr: &mut lr,
+                events: &mut events,
+            };
+            let mut goals = std::mem::take(&mut m.ai.goals);
+            goals.tick(&mut m, &mut cx);
+            assert!(m.removed, "can_use despawned the mob");
+            assert_eq!(
+                vanish_starts.load(Ordering::Relaxed),
+                0,
+                "its own start must not run after can_use removed the mob"
+            );
+            assert_eq!(
+                late_starts.load(Ordering::Relaxed),
+                0,
+                "no later goal runs after removal"
+            );
+            assert!(
+                cx.events.is_empty(),
+                "no Hurt/Summon from start or later goals: {:?}",
+                cx.events
+            );
+            assert!(
+                goals.running_names().is_empty(),
+                "nothing is left running: {:?}",
+                goals.running_names()
+            );
+            assert_eq!(
+                vanish_stops.load(Ordering::Relaxed),
+                0,
+                "a goal that never started must not be stopped"
+            );
+            m.ai.goals = goals;
+        });
+        if !ran {
+            eprintln!("skipped: no vanilla data");
+        }
+    }
+
     /// A first goal despawns the mob (a convert or a despawn): the goals
     /// after it in the same pass must not run (no Hurt, no Summon).
     #[test]

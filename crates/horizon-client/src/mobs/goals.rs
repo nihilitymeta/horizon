@@ -171,7 +171,15 @@ impl GoalSelector {
                                 && self.goals[i].priority < self.goals[j].priority
                         }
                     });
-            if !replaceable || !self.goals[i].goal.can_use(m, cx) {
+            if !replaceable {
+                continue;
+            }
+            let usable = self.goals[i].goal.can_use(m, cx);
+            if m.removed {
+                self.stop_all(m, cx);
+                return;
+            }
+            if !usable {
                 continue;
             }
             for b in 0..4 {
