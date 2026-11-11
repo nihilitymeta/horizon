@@ -98,6 +98,14 @@ const TYPES: &[(&str, &str)] = &[
     ("CommandArgs", "{ raw: string, [string]: any }"),
     ("Inventory", "{ [number]: Item }"),
     ("Carried", "{ [string]: number }"),
+    // What `horizon.run_command_as`'s callback receives: whether the
+    // command ran, vanilla's integer result, and one `output` line per
+    // chat line with its matching component table in `output_components`
+    // (the rich-text convention: a string plus a `_component` table).
+    (
+        "CommandResult",
+        "{ ran: boolean, result: number, output: { string }, output_components: { Component } }",
+    ),
     // The draw hooks' handles (`hud_hooks`): tables of plain functions
     // over the call's batch and corners, dot-called (`batch.fill(...)`).
     // Every method draws at once; the tables expire with the call. The
@@ -538,6 +546,10 @@ const FUNCTIONS: &[(&str, &str)] = &[
     (
         "teleport_player",
         "(who: string | ReadPlayer, dimension: string, pos: Vec3, yaw: number, pitch: number) -> ()",
+    ),
+    (
+        "run_command_as",
+        "(who: string | ReadPlayer, line: string, callback: ((result: CommandResult) -> ())?) -> ()",
     ),
 ];
 

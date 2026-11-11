@@ -31,6 +31,7 @@ export type Light = { block: number, sky: number }
 export type CommandArgs = { raw: string, [string]: any }
 export type Inventory = { [number]: Item }
 export type Carried = { [string]: number }
+export type CommandResult = { ran: boolean, result: number, output: { string }, output_components: { Component } }
 export type HudBatch = { fill: (x: number, y: number, w: number, h: number, argb: number) -> (), text: (text: string, x: number, y: number, rgb: number, shadow: boolean) -> (), sprite: (name: string, sx: number, sy: number, sw: number, sh: number, dx: number, dy: number, dw: number, dh: number) -> boolean, item: (id: string, x: number, y: number, size: number) -> boolean, item_stack: (stack: Item, x: number, y: number, size: number) -> boolean, item_model: (item: string, model: string, x: number, y: number, size: number) -> boolean, quad: (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, x4: number, y4: number, argb: number) -> (), text_width: (text: string) -> number }
 export type HudCorners = { place: (corner: string, w: number, h: number) -> (number, number), shown: (corner: string) -> boolean }
 
@@ -1032,6 +1033,7 @@ declare horizon: {
     close_menu: (who: string | ReadPlayer) -> (),
     kick: (who: string | ReadPlayer, reason: string) -> (),
     teleport_player: (who: string | ReadPlayer, dimension: string, pos: Vec3, yaw: number, pitch: number) -> (),
+    run_command_as: (who: string | ReadPlayer, line: string, callback: ((result: CommandResult) -> ())?) -> (),
 }
 
 -- `scripts/registry.lua` and its modules (`scripts/registry/`) run with this instead of `horizon`.

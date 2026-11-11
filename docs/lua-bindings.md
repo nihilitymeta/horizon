@@ -341,6 +341,7 @@ but that player.
 | `horizon.drop_item(x, y, z, id[, count])` | Drops an item entity of *count* (1) of a plain item at the point |
 | `horizon.falling_block(x, y, z, id[, vx, vy, vz])` | Throws a falling block from the point (its bottom centre) at that velocity, in blocks per tick. It lands and places itself as sand does |
 | `horizon.run_command(line)` | Runs a command as the server console does: permission level 4, from the overworld's spawn, with no output. A leading slash is dropped. See below for where it works |
+| `horizon.run_command_as(player, line[, callback])` | Runs a command as the player typing it would (their source, operator level and position), and calls `callback(result)` with what it did. A leading slash is dropped. See below |
 | `horizon.sound(name, x, y, z[, volume, pitch])` | Plays a sound event for the players in range, 16 blocks or more with a volume above 1, as `/playsound` does |
 | `horizon.particles(name, x, y, z[, count, spread, speed])` | Shows *count* particles of a simple type (`minecraft:flame`, `minecraft:happy_villager`) spread by *spread* blocks, for the players within 32 blocks, as `/particle` does |
 
@@ -349,6 +350,38 @@ but that player.
 nothing runs, and the log says so at debug level. Queue the call there with
 `horizon.after(1, function() horizon.run_command(...) end)`. `run_command` is the way to reach what the API has no
 function for yet, such as the time, the weather, `/tp` of a player and game rules.
+
+### Running a command as a player
+
+`horizon.run_command_as(player, line[, callback])` (server state) runs `line` as the player typing it would:
+*player* is the uuid text or `player` table the other player actions take, and a leading `/` is dropped.
+The command runs in queue order when its turn comes, like every other action; `callback` is an optional
+function. With no callback the result is dropped and the action is `horizon.run_command` for one player.
+
+With a callback, its result is collected and the callback runs after the whole queue of that firing has
+been applied, in the order the commands ran, as `callback(result)` where `result` is
+`{ ran = boolean, result = integer, output = { string, ... }, output_components = { component, ... } }`:
+`ran` says whether it ran without failing, `result` is vanilla's command result, `output` holds one plain
+string per chat line the command printed and `output_components` the matching component table per line
+(the rich-text convention: a string plus a component table). A player who is not on the server runs
+nothing: the callback still gets `ran = false` with empty output. A callback that is not a function is a
+script error naming the argument.
+
+Actions a callback queues run in a follow-up drain of the same firing, which may collect more callbacks.
+The chain is capped at 8 follow-up drains: past it the remaining callbacks are dropped with one logged
+error naming the mod. The same cap of 8 also bounds a Lua-handled command that queues `run_command_as`
+of itself: the nested commands run synchronously inside the draining call, so the 9th nested ask does not
+run, its callback is delivered the empty result, and the same one-line error is logged. A callback that
+raises is reported (`run_command_as callback`) and stops neither the other callbacks nor the rest of the
+firing.
+
+```lua
+horizon.run_command_as(event.player, "/say hello", function(result)
+  if result.ran and result.output[1] then
+    horizon.tell(event.player, "The command said: " .. result.output[1])
+  end
+end)
+```
 
 ### Mod messages
 

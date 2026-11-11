@@ -112,6 +112,19 @@ impl Budget {
     }
 }
 
+/// One synchronous `run_command_as` nesting on a state: the guard drops
+/// the state's nesting counter on every exit, error included, so the
+/// counter never leaks past the call it counts.
+struct SyncDepthGuard<'a> {
+    slot: &'a AtomicU32,
+}
+
+impl Drop for SyncDepthGuard<'_> {
+    fn drop(&mut self) {
+        self.slot.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 /// The game a mod's Lua state runs in. A scripted mod has one state per side
 /// it has an entry for: `scripts/server/init.lua` (the server's state) and
 /// `scripts/client/init.lua` (the window's). Both read `scripts/shared/`.
@@ -209,6 +222,12 @@ const DRAW_API: &[&str] = &[
     "tell",
     "broadcast",
 ];
+/// The registry key of the `run_command_as` callbacks awaiting the drain:
+/// `{ fn = item, result = ... }` tables, in the order their commands ran.
+/// `run_action` appends as commands run; `finish_callbacks` takes the batch
+/// once the whole queue is applied and calls them in that order.
+const CALLBACKS: &str = "horizon_run_command_as_callbacks";
+
 /// The registry key of the handlers table: `name -> { fn, fn, ... }`.
 const HANDLERS: &str = "horizon_handlers";
 /// The registry key of the handlers that watch one kind of event
@@ -523,6 +542,29 @@ fn uuid_of(h: &dyn Host, who: &Value) -> Option<u128> {
             .find(|p| p.name == text)
             .map(|p| p.uuid)
     })
+}
+
+/// What `run_command_as` did, as the callback receives it (`ran`, the
+/// command's integer `result`, one `output` line per chat line and its
+/// matching component table in `output_components`, the rich-text
+/// convention `generated_runtime::text_parts` settles).
+fn command_result_table(
+    lua: &Lua,
+    out: horizon_client::mod_api::NativeCommandResult,
+) -> mlua::Result<Table> {
+    let table = lua.create_table()?;
+    table.set("ran", out.ran)?;
+    table.set("result", i64::from(out.result))?;
+    let lines = lua.create_table()?;
+    let components = lua.create_table()?;
+    for text in &out.output {
+        let (plain, component) = crate::generated_runtime::text_parts(lua, text)?;
+        lines.push(plain)?;
+        components.push(component)?;
+    }
+    table.set("output", lines)?;
+    table.set("output_components", components)?;
+    Ok(table)
 }
 
 /// A block state as a command names it: `id[key=value,...]` from a block id
@@ -1238,6 +1280,11 @@ pub struct LuaMod {
     reload_seen: AtomicU32,
     /// One thread at a time runs Lua for this state.
     turn: turn::ReentrantTurn,
+    /// Synchronous `run_command_as` nesting in progress on this state: a
+    /// Lua-handled command that queues `run_command_as` of itself runs
+    /// back into Lua inside the host call, and the depth is capped at
+    /// [`CALLBACK_DEPTH`] so the stack does not grow without bound.
+    sync_nesting: AtomicU32,
 }
 
 /// A mod's goal definitions, shared with the `horizon.goal` function.
@@ -1764,6 +1811,7 @@ impl LuaMod {
             reloads: AtomicU32::new(0),
             reload_seen: AtomicU32::new(reload_generation()),
             turn: turn::ReentrantTurn::new(),
+            sync_nesting: AtomicU32::new(0),
         };
         m.install_api().map_err(|e| e.to_string())?;
         m.run(side.entry()).map_err(|e| e.to_string())?;
@@ -2066,6 +2114,7 @@ impl LuaMod {
         lua.set_named_registry_value(HANDLERS, lua.create_table()?)?;
         lua.set_named_registry_value(KIND_HANDLERS, lua.create_table()?)?;
         lua.set_named_registry_value(QUEUE, lua.create_table()?)?;
+        lua.set_named_registry_value(CALLBACKS, lua.create_table()?)?;
         lua.set_named_registry_value(LOADED, lua.create_table()?)?;
         let slot = lua.create_table()?;
         // Entry 4 is the draw-hook flag for the client filter below.
@@ -2304,6 +2353,7 @@ impl LuaMod {
             "set_block",
             "fill",
             "run_command",
+            "run_command_as",
             "give_experience",
             "give_levels",
             "falling_block",
@@ -2779,11 +2829,114 @@ impl LuaMod {
         args: impl mlua::IntoLuaMulti,
         apply: &mut dyn FnMut(&mut dyn Host, &str, &Table) -> mlua::Result<()>,
     ) -> mlua::Result<()> {
+        // Each firing runs against its own callbacks table, installed
+        // here and restored on every exit: a nested `call_kind` (a
+        // Lua-handled command routed back during apply) neither sees
+        // nor drains the outer firing's collected entries, and the
+        // firing's table is dropped, unflushed, on an error path too, so
+        // a failed apply never leaks its callbacks into a later firing.
+        let saved: Value = self.lua.named_registry_value(CALLBACKS)?;
+        self.lua
+            .set_named_registry_value(CALLBACKS, self.lua.create_table()?)?;
+        let outcome = self.call_firing(hook, kind, host, args, apply);
+        self.lua.set_named_registry_value(CALLBACKS, saved)?;
+        outcome
+    }
+
+    /// One `call_kind` firing on a freshly installed callbacks table:
+    /// the handlers, the apply of what they queued, and the drain of
+    /// the results their `run_command_as` actions collected.
+    fn call_firing(
+        &self,
+        hook: &str,
+        kind: Option<&str>,
+        host: &mut dyn Host,
+        args: impl mlua::IntoLuaMulti,
+        apply: &mut dyn FnMut(&mut dyn Host, &str, &Table) -> mlua::Result<()>,
+    ) -> mlua::Result<()> {
         let actions = self.run_handlers(hook, kind, Reader::Host(&mut *host), args)?;
         for (action, args) in actions {
             apply(host, &action, &args)?;
         }
+        // The whole queue is applied: the `run_command_as` results
+        // collected as it ran get their callbacks now (and anything the
+        // callbacks queue runs in a follow-up drain of this firing).
+        self.finish_callbacks(host, apply)?;
         Ok(())
+    }
+
+    /// After a `call_kind` drain applied its queue: call the
+    /// `run_command_as` callbacks collected as it ran, in the order their
+    /// commands ran, each with its result table. A raising callback is
+    /// reported as `run_command_as callback` and stops nothing else.
+    ///
+    /// Actions a callback queues are applied in a follow-up drain of the
+    /// same firing through the drain's own `apply` (so a command handler's
+    /// drain answers `feedback` as its first drain did), which may collect
+    /// more callbacks. The chain is capped at [`CALLBACK_DEPTH`] follow-up
+    /// drains; past it the rest is dropped with one logged error naming
+    /// the mod and the cap.
+    fn finish_callbacks(
+        &self,
+        host: &mut dyn Host,
+        apply: &mut dyn FnMut(&mut dyn Host, &str, &Table) -> mlua::Result<()>,
+    ) -> mlua::Result<()> {
+        let lua = &self.lua;
+        let pending: Table = lua.named_registry_value(CALLBACKS)?;
+        let queue: Table = lua.named_registry_value(QUEUE)?;
+        let slot: Table = lua.named_registry_value(HOST_SLOT)?;
+        // The callbacks queue as if they were the firing's handlers: one
+        // depth more than `run_handlers` restored the slot to.
+        let outer = slot.get::<Option<i64>>(3)?.unwrap_or(0);
+        let outcome = (|| -> mlua::Result<()> {
+            let mut depth = 0u32;
+            loop {
+                let mut batch = Vec::new();
+                for i in 1..=pending.raw_len() {
+                    let entry: Table = pending.raw_get(i)?;
+                    pending.raw_set(i, Value::Nil)?;
+                    batch.push((entry.get::<Function>("fn")?, entry.get::<Table>("result")?));
+                }
+                slot.set(3, outer + 1)?;
+                for (f, result) in batch {
+                    if let Err(e) = f.call::<()>(result) {
+                        self.error(handler_error_text("run_command_as callback", &e));
+                    }
+                }
+                if pending.raw_len() == 0 && queue.raw_len() == 0 {
+                    break;
+                }
+                depth += 1;
+                if depth > CALLBACK_DEPTH {
+                    pending.clear()?;
+                    queue.clear()?;
+                    self.error(format!(
+                        "run_command_as: callback chain deeper than {CALLBACK_DEPTH} in one \
+                         firing; dropping the rest"
+                    ));
+                    break;
+                }
+                // The follow-up drain: what the callbacks queued, in
+                // order, through the same `apply` as the firing's queue.
+                // The batch is taken out first: a nested firing applying
+                // its own queue cannot clear or consume entries this
+                // loop still owns.
+                let mut follow: Vec<(String, Table)> = Vec::new();
+                for i in 1..=queue.raw_len() {
+                    let entry: Table = queue.raw_get(i)?;
+                    queue.raw_set(i, Value::Nil)?;
+                    let action: String = entry.get("action")?;
+                    let args: Table = entry.get("args")?;
+                    follow.push((action, args));
+                }
+                for (action, args) in follow {
+                    apply(host, &action, &args)?;
+                }
+            }
+            Ok(())
+        })();
+        slot.set(3, outer)?;
+        outcome
     }
 
     /// `call_kind` on a level (`random_tick`, `tick_block`): the handlers read
@@ -3114,6 +3267,65 @@ impl LuaMod {
                 let line = line.trim_start_matches('/');
                 if !host.run_command(line) {
                     log::debug!("[lua:{}] run_command {line:?}: not run", self.id);
+                }
+            }
+            "run_command_as" => {
+                let (who, line, callback): (Value, String, Option<Value>) =
+                    (args.get(1)?, args.get(2)?, args.get(3)?);
+                // A callback that is not a function is a bad script
+                // argument, named; nil (or none) means the result is
+                // dropped, as `run_command` drops it.
+                let callback = match callback {
+                    None => None,
+                    Some(Value::Function(f)) => Some(f),
+                    Some(other) => {
+                        return Err(mlua::Error::runtime(format!(
+                            "run_command_as: callback must be a function, got {}",
+                            other.type_name()
+                        )));
+                    }
+                };
+                // As `run_command`, the slash is stripped here, and the
+                // native strips one more: the line is clean when it runs.
+                let line = line.trim_start_matches('/');
+                // A player the host has no record of runs nothing: the
+                // callback still hears it, with the empty result, and the
+                // host is never asked.
+                let out = match uuid_of(host, &who) {
+                    Some(uuid) => {
+                        // A Lua-handled command that queues `run_command_as`
+                        // of itself runs back into Lua synchronously, inside
+                        // the host call: count the nesting, and past the cap
+                        // do not call the host at all. The callback still
+                        // hears the call, with the empty result.
+                        self.sync_nesting.fetch_add(1, Ordering::Relaxed);
+                        let _guard = SyncDepthGuard {
+                            slot: &self.sync_nesting,
+                        };
+                        if self.sync_nesting.load(Ordering::Relaxed) > CALLBACK_DEPTH {
+                            self.error(format!(
+                                "run_command_as: callback chain deeper than {CALLBACK_DEPTH} in one \
+                                 firing; dropping the rest"
+                            ));
+                            command_result_table(
+                                &self.lua,
+                                horizon_client::mod_api::NativeCommandResult::default(),
+                            )?
+                        } else {
+                            command_result_table(&self.lua, host.run_command_as(uuid, line))?
+                        }
+                    }
+                    None => command_result_table(
+                        &self.lua,
+                        horizon_client::mod_api::NativeCommandResult::default(),
+                    )?,
+                };
+                if let Some(f) = callback {
+                    let pending: Table = self.lua.named_registry_value(CALLBACKS)?;
+                    let entry = self.lua.create_table()?;
+                    entry.set("fn", f)?;
+                    entry.set("result", out)?;
+                    pending.push(entry)?;
                 }
             }
             "set_block" => {
@@ -3496,6 +3708,14 @@ const UPDATE_CLIENTS: i32 = 2;
 const UPDATE_ALL: i32 = 3;
 /// The most columns one `horizon.fill` makes: 256 by 256 blocks.
 const FILL_COLUMNS: i64 = 65536;
+
+/// How deep a `run_command_as` chain may go in one firing: callbacks
+/// the callbacks queue run in a follow-up drain of the same firing, and
+/// a Lua-handled command that queues `run_command_as` of itself runs
+/// back into Lua synchronously, inside the host call; past this many
+/// follow-up drains or nested host calls the rest is dropped with one
+/// logged error (no infinite loop, no panic, no unbounded stack).
+const CALLBACK_DEPTH: u32 = 8;
 
 pub(crate) fn dimension_id(dimension: LevelDimension) -> &'static str {
     match dimension {
@@ -9948,6 +10168,792 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
             e.contains("net_send_to_player: past 32 messages this tick"),
             "{e}"
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A host whose `run_command_as` records what it was asked (player and
+    /// line) and answers a canned result, for the `run_command_as` drain
+    /// tests: `broadcast` and `run_command_as` join one `lines` log in the
+    /// order they apply, so a test sees commands, broadcasts and callback
+    /// effects (callbacks answer with `broadcast`) in a single sequence.
+    /// An optional route forwards a command back into Lua (the
+    /// re-entrancy test).
+    struct CommandAsHost {
+        lines: Mutex<Vec<String>>,
+        commands: Mutex<Vec<(u128, String)>>,
+        result: horizon_client::mod_api::NativeCommandResult,
+        // Shared so a route stays present across nested asks: a command
+        // a handler runs back into Lua asks again before the outer ask
+        // returns, and a taken-out route would refuse to forward it.
+        route: Option<std::rc::Rc<dyn Fn(&mut CommandAsHost, &str) -> bool>>,
+    }
+
+    impl Host for CommandAsHost {
+        fn broadcast(&self, line: horizon_client::mod_api::Text) {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("broadcast {}", line.plain()));
+        }
+        fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
+            vec![test_events::native_server_player(
+                0x123e4567_e89b_12d3_a456_426614174000,
+                "steve".into(),
+                2,
+                "minecraft:overworld".into(),
+                [0.0; 3],
+                0,
+                20.0,
+                0.0,
+                0.0,
+                0,
+                "127.0.0.1".into(),
+            )]
+        }
+        fn held(&self) -> Option<(String, u32, bool)> {
+            None
+        }
+        fn run_command_as(
+            &mut self,
+            uuid: u128,
+            line: &str,
+        ) -> horizon_client::mod_api::NativeCommandResult {
+            self.commands.lock().unwrap().push((uuid, line.to_owned()));
+            self.lines.lock().unwrap().push(format!("as {line}"));
+            if let Some(route) = self.route.clone() {
+                let ran = route(self, line);
+                let mut out = self.result.clone();
+                out.ran = ran;
+                out
+            } else {
+                self.result.clone()
+            }
+        }
+    }
+
+    fn command_as_host(result: horizon_client::mod_api::NativeCommandResult) -> CommandAsHost {
+        CommandAsHost {
+            lines: Mutex::new(Vec::new()),
+            commands: Mutex::new(Vec::new()),
+            result,
+            route: None,
+        }
+    }
+
+    const CMD_STEVE: u128 = 0x123e4567_e89b_12d3_a456_426614174000;
+
+    fn ran_result() -> horizon_client::mod_api::NativeCommandResult {
+        let mut r = horizon_client::mod_api::NativeCommandResult::default();
+        r.ran = true;
+        r.result = 1;
+        r
+    }
+
+    #[test]
+    fn run_command_as_callbacks_get_the_result() {
+        // The double answers ran, result 3 and two chat lines, one
+        // styled; the callback receives them exactly: the plain strings,
+        // the matching component tables, the player and line recorded.
+        let (m, _host, dir) = dead_mod(
+            "cmd_as_result",
+            br#"
+            horizon.on("net_from_client", function(event)
+              horizon.run_command_as(event.player, "/say hi", function(result)
+                GOT = result
+              end)
+            end)
+            "#,
+        );
+        let lua = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut result = horizon_client::mod_api::NativeCommandResult::default();
+        result.ran = true;
+        result.result = 3;
+        result.output = vec![
+            horizon_client::mod_api::Text::literal("first"),
+            horizon_client::mod_api::Text::literal("second").with_color(0xff5555),
+        ];
+        let mut host = command_as_host(result);
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            CMD_STEVE,
+            "ruby:from",
+            &[],
+        );
+        assert_eq!(
+            *host.commands.lock().unwrap(),
+            [(CMD_STEVE, "say hi".to_owned())],
+            "the slash is dropped before the command runs"
+        );
+        let got: Table = lua.globals().get("GOT").unwrap();
+        assert!(got.get::<bool>("ran").unwrap());
+        assert_eq!(got.get::<i64>("result").unwrap(), 3);
+        let output: Table = got.get("output").unwrap();
+        assert_eq!(
+            output
+                .sequence_values::<String>()
+                .map(|v| v.unwrap())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+        let components: Vec<Table> = got
+            .get::<Table>("output_components")
+            .unwrap()
+            .sequence_values()
+            .map(|v| v.unwrap())
+            .collect();
+        assert_eq!(components.len(), 2);
+        assert_eq!(components[0].get::<String>("text").unwrap(), "first");
+        assert_eq!(components[1].get::<String>("text").unwrap(), "second");
+        assert_eq!(components[1].get::<String>("color").unwrap(), "red");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn run_command_as_callbacks_run_after_the_queue() {
+        // Order: the two commands and the `broadcast` between them run in
+        // queue order, and both callbacks run after the `broadcast` (the
+        // callbacks answer with `broadcast`, into the same ordered log).
+        let (m, _host, dir) = dead_mod(
+            "cmd_as_order",
+            br#"
+            horizon.on("net_from_client", function(event)
+              horizon.run_command_as(event.player, "one", function(r)
+                horizon.broadcast("cb one")
+              end)
+              horizon.broadcast("middle")
+              horizon.run_command_as(event.player, "two", function(r)
+                horizon.broadcast("cb two")
+              end)
+            end)
+            "#,
+        );
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = command_as_host(ran_result());
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            CMD_STEVE,
+            "ruby:from",
+            &[],
+        );
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            [
+                "as one",
+                "broadcast middle",
+                "as two",
+                "broadcast cb one",
+                "broadcast cb two",
+            ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn run_command_as_callbacks_may_chain_in_a_follow_up_drain() {
+        // A callback queues the next command: it runs in the follow-up
+        // drain of the same firing, and the chain completes.
+        let (m, _host, dir) = dead_mod(
+            "cmd_as_chain",
+            br#"
+            horizon.on("net_from_client", function(event)
+              local function step(result)
+                N = (N or 0) + 1
+                if N < 3 then
+                  horizon.run_command_as(event.player, "chain", step)
+                end
+              end
+              horizon.run_command_as(event.player, "chain", step)
+            end)
+            "#,
+        );
+        let lua = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = command_as_host(ran_result());
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            CMD_STEVE,
+            "ruby:from",
+            &[],
+        );
+        assert_eq!(host.commands.lock().unwrap().len(), 3, "1 + 2 follow-ups");
+        assert_eq!(lua.globals().get::<i64>("N").unwrap(), 3);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn run_command_as_an_endless_callback_chain_is_capped() {
+        // A callback that always queues another command is stopped at
+        // the cap with one logged error naming the mod and the cap, and
+        // does not loop: 1 command in the firing plus 8 follow-up drains.
+        let (m, _host, dir) = dead_mod(
+            "cmd_as_cap",
+            br#"
+            horizon.on("net_from_client", function(event)
+              local function step(result)
+                horizon.run_command_as(event.player, "again", step)
+              end
+              horizon.run_command_as(event.player, "again", step)
+            end)
+            "#,
+        );
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = command_as_host(ran_result());
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            CMD_STEVE,
+            "ruby:from",
+            &[],
+        );
+        assert_eq!(
+            host.commands.lock().unwrap().len(),
+            1 + 8,
+            "the firing plus the 8 follow-up drains"
+        );
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == "cmd_as_cap")
+            .and_then(|s| s.error)
+            .expect("the cap is reported");
+        assert!(e.contains("callback chain deeper than 8"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn run_command_as_a_raising_callback_stops_nothing_else() {
+        // The first callback raises; the second still runs, and the
+        // failure is reported naming `run_command_as callback`.
+        let (m, _host, dir) = dead_mod(
+            "cmd_as_raises",
+            br#"
+            horizon.on("net_from_client", function(event)
+              horizon.run_command_as(event.player, "a", function(r)
+                error("boom")
+              end)
+              horizon.run_command_as(event.player, "b", function(r)
+                horizon.broadcast("second ok")
+              end)
+            end)
+            "#,
+        );
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = command_as_host(ran_result());
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            CMD_STEVE,
+            "ruby:from",
+            &[],
+        );
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            ["as a", "as b", "broadcast second ok"]
+        );
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == "cmd_as_raises")
+            .and_then(|s| s.error)
+            .expect("the raising callback is reported");
+        assert!(e.contains("run_command_as callback"), "{e}");
+        assert!(e.contains("boom"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn run_command_as_without_a_callback_drops_the_result() {
+        // No callback: the command runs, the result is dropped, and
+        // there is no error.
+        let (m, _host, dir) = dead_mod(
+            "cmd_as_bare",
+            br#"
+            horizon.on("net_from_client", function(event)
+              horizon.run_command_as(event.player, "bare")
+            end)
+            "#,
+        );
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = command_as_host(ran_result());
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            CMD_STEVE,
+            "ruby:from",
+            &[],
+        );
+        assert_eq!(
+            host.commands.lock().unwrap().as_slice(),
+            [(CMD_STEVE, "bare".to_owned())]
+        );
+        assert!(
+            horizon_client::dev_input::mods::status()
+                .into_iter()
+                .find(|s| s.id == "cmd_as_bare")
+                .and_then(|s| s.error)
+                .is_none(),
+            "no error without a callback"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn run_command_as_a_non_function_callback_is_a_script_error() {
+        // A callback that is not a function is a bad script argument,
+        // named; the command does not run.
+        let (m, _host, dir) = dead_mod(
+            "cmd_as_bad_cb",
+            br#"
+            horizon.on("net_from_client", function(event)
+              horizon.run_command_as(event.player, "x", "not a function")
+            end)
+            "#,
+        );
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = command_as_host(ran_result());
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            CMD_STEVE,
+            "ruby:from",
+            &[],
+        );
+        assert!(host.commands.lock().unwrap().is_empty(), "nothing runs");
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == "cmd_as_bad_cb")
+            .and_then(|s| s.error)
+            .expect("the bad argument is reported");
+        assert!(
+            e.contains("run_command_as: callback must be a function"),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn run_command_as_an_unknown_player_still_calls_back_without_asking() {
+        // A player the host has no record of runs nothing: the callback
+        // gets `ran = false` with empty output, and the host is never
+        // called. A host that answers `ran = false` is passed through.
+        let (m, _host, dir) = dead_mod(
+            "cmd_as_unknown",
+            br#"
+            horizon.on("net_from_client", function(event)
+              horizon.run_command_as("nobody", "x", function(r)
+                UNKNOWN = { ran = r.ran, result = r.result, n = #r.output, nc = #r.output_components }
+              end)
+              horizon.run_command_as("steve", "y", function(r)
+                NOT_ON = { ran = r.ran, result = r.result, n = #r.output, nc = #r.output_components }
+              end)
+            end)
+            "#,
+        );
+        let lua = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        // The host answers `ran = false` (the player is not on).
+        let mut host = command_as_host(horizon_client::mod_api::NativeCommandResult::default());
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            CMD_STEVE,
+            "ruby:from",
+            &[],
+        );
+        assert_eq!(
+            host.commands.lock().unwrap().as_slice(),
+            [(CMD_STEVE, "y".to_owned())],
+            "only the resolvable player reaches the host"
+        );
+        for name in ["UNKNOWN", "NOT_ON"] {
+            let got: Table = lua.globals().get(name).unwrap();
+            assert!(!got.get::<bool>("ran").unwrap(), "{name}");
+            assert_eq!(got.get::<i64>("result").unwrap(), 0, "{name}");
+            assert_eq!(got.get::<i64>("n").unwrap(), 0, "{name}");
+            assert_eq!(got.get::<i64>("nc").unwrap(), 0, "{name}");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn run_command_as_raises_in_a_client_state_and_a_draw_hook() {
+        let (dir, path) = hmod(
+            "cmd_as_client",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                local ok, e = pcall(horizon.run_command_as, "steve", "x", function() end)
+                assert(not ok, "the client state must refuse the call")
+                assert(
+                  string.find(tostring(e), "horizon.run_command_as is only available in scripts/server/", 1, true),
+                  tostring(e)
+                )
+                horizon.on("hud", function(event)
+                  local ok2, e2 = pcall(horizon.run_command_as, "steve", "x")
+                  PA = ok2 and "ran" or tostring(e2)
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let state = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        };
+        let mut batch = horizon_client::mod_api::HudBatch::new([800, 600]);
+        let mut corners = horizon_client::mod_api::Corners::new(800.0, 600.0, 0.0);
+        horizon_client::mod_api::dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+        let pa: String = state.globals().get("PA").unwrap();
+        assert!(
+            pa.contains("horizon.run_command_as is only available in scripts/server/"),
+            "{pa}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn run_command_as_reaches_a_lua_command_handler_inside_the_drain() {
+        // The command is itself handled by Lua (`shout`): the host
+        // routes back into the mod's `perform_command` while the outer
+        // drain is applying, runs the handler (whose own drain handles
+        // its `broadcast`), and the outer callback still fires after
+        // everything, as with the existing `run_command`.
+        let (m, _host, dir) = dead_mod(
+            "cmd_as_reentry",
+            br#"
+            horizon.command("shout <what:text>", 0, function(player, args)
+              horizon.broadcast("shouted " .. args.what)
+            end)
+            horizon.on("net_from_client", function(event)
+              horizon.run_command_as("steve", "shout hello", function(result)
+                GOT = result.ran
+                horizon.broadcast("cb")
+              end)
+              horizon.broadcast("after")
+            end)
+            "#,
+        );
+        let lua = m.lua.clone();
+        let m = std::rc::Rc::new(m);
+        let route_m = m.clone();
+        let mut host = command_as_host(ran_result());
+        host.route = Some(std::rc::Rc::new(
+            move |h: &mut CommandAsHost, line: &str| {
+                let steve = test_events::native_server_player(
+                    CMD_STEVE,
+                    "steve".into(),
+                    2,
+                    "minecraft:overworld".into(),
+                    [0.0; 3],
+                    0,
+                    20.0,
+                    0.0,
+                    0.0,
+                    0,
+                    "127.0.0.1".into(),
+                );
+                route_m.perform_command(h, &mut test_events::perform_command_event(&steve, line));
+                true
+            },
+        ));
+        m.call_kind(
+            "net_from_client",
+            None,
+            &mut host,
+            (),
+            &mut |host, action, args| m.run_action(host, action, args),
+        )
+        .unwrap();
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            [
+                "as shout hello",
+                "broadcast shouted hello",
+                "broadcast after",
+                "broadcast cb",
+            ],
+            "the nested handler drained inside the outer drain; the callback came last"
+        );
+        assert!(lua.globals().get::<bool>("GOT").unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn run_command_as_nested_lua_command_chains_are_capped() {
+        // A Lua command that queues `run_command_as` of itself recurses
+        // synchronously inside the apply loop, before any callback
+        // drain: the synchronous nesting is capped at 8 host calls, the
+        // callback of the capped call is delivered the empty result, and
+        // the cap error is logged. The route stops routing after 16
+        // asks, so old (uncapped) code fails on the count instead of
+        // overflowing the stack.
+        let (m, _host, dir) = dead_mod(
+            "cmd_as_boom",
+            br#"
+            horizon.command("boom <x:text>", 0, function(player, args)
+              horizon.run_command_as("steve", "boom again", function(result)
+                CAP = (CAP or 0) + ((result.ran == false) and 1 or 0)
+                horizon.broadcast("cb boom")
+              end)
+            end)
+            horizon.on("net_from_client", function(event)
+              horizon.run_command_as("steve", "boom start", function(result)
+              end)
+            end)
+            "#,
+        );
+        let lua = m.lua.clone();
+        let m = std::rc::Rc::new(m);
+        let route_m = m.clone();
+        let mut host = command_as_host(ran_result());
+        host.route = Some(std::rc::Rc::new(
+            move |h: &mut CommandAsHost, line: &str| {
+                if h.commands.lock().unwrap().len() > 16 {
+                    return false;
+                }
+                let steve = test_events::native_server_player(
+                    CMD_STEVE,
+                    "steve".into(),
+                    2,
+                    "minecraft:overworld".into(),
+                    [0.0; 3],
+                    0,
+                    20.0,
+                    0.0,
+                    0.0,
+                    0,
+                    "127.0.0.1".into(),
+                );
+                route_m.perform_command(h, &mut test_events::perform_command_event(&steve, line));
+                true
+            },
+        ));
+        m.call_kind(
+            "net_from_client",
+            None,
+            &mut host,
+            (),
+            &mut |host, action, args| m.run_action(host, action, args),
+        )
+        .unwrap();
+        assert_eq!(
+            host.commands.lock().unwrap().len(),
+            8,
+            "the synchronous nesting is capped at 8"
+        );
+        assert_eq!(
+            lua.globals().get::<i64>("CAP").unwrap_or(0),
+            1,
+            "the capped call's callback got the empty result"
+        );
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == "cmd_as_boom")
+            .and_then(|s| s.error)
+            .expect("the cap is reported");
+        assert!(e.contains("callback chain deeper than 8"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn run_command_as_a_nested_drain_keeps_outer_callbacks_in_command_order() {
+        // `say first` and `shout hello` are queued and `shout` routes
+        // back into Lua during the outer apply; the nested firing drains
+        // only its own callbacks, so both outer callbacks run after the
+        // outer queue's `broadcast after`, in command order.
+        let (m, _host, dir) = dead_mod(
+            "cmd_as_order2",
+            br#"
+            horizon.command("shout <what:text>", 0, function(player, args)
+              horizon.broadcast("shouted " .. args.what)
+            end)
+            horizon.on("net_from_client", function(event)
+              horizon.run_command_as("steve", "say first", function(result)
+                horizon.broadcast("cb first")
+              end)
+              horizon.run_command_as("steve", "shout hello", function(result)
+                horizon.broadcast("cb shout")
+              end)
+              horizon.broadcast("after")
+            end)
+            "#,
+        );
+        let m = std::rc::Rc::new(m);
+        let route_m = m.clone();
+        let mut host = command_as_host(ran_result());
+        host.route = Some(std::rc::Rc::new(
+            move |h: &mut CommandAsHost, line: &str| {
+                let steve = test_events::native_server_player(
+                    CMD_STEVE,
+                    "steve".into(),
+                    2,
+                    "minecraft:overworld".into(),
+                    [0.0; 3],
+                    0,
+                    20.0,
+                    0.0,
+                    0.0,
+                    0,
+                    "127.0.0.1".into(),
+                );
+                route_m.perform_command(h, &mut test_events::perform_command_event(&steve, line));
+                true
+            },
+        ));
+        m.call_kind(
+            "net_from_client",
+            None,
+            &mut host,
+            (),
+            &mut |host, action, args| m.run_action(host, action, args),
+        )
+        .unwrap();
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            [
+                "as say first",
+                "as shout hello",
+                "broadcast shouted hello",
+                "broadcast after",
+                "broadcast cb first",
+                "broadcast cb shout",
+            ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn run_command_as_an_apply_error_does_not_leak_callbacks_into_the_next_firing() {
+        // The second command's bad callback fails the apply: the first
+        // command's collected callback is dropped with the firing, so a
+        // later firing that only broadcasts does not run it, and the
+        // registry table is left empty.
+        let (m, _host, dir) = dead_mod(
+            "cmd_as_leak",
+            br#"
+            horizon.on("net_from_client", function(event)
+              if LEAKED == nil then
+                LEAKED = true
+                horizon.run_command_as(event.player, "one", function(r)
+                  horizon.broadcast("cb one")
+                end)
+                horizon.run_command_as(event.player, "two", "not a function")
+              else
+                horizon.broadcast("second")
+              end
+            end)
+            "#,
+        );
+        let lua = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = command_as_host(ran_result());
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            CMD_STEVE,
+            "ruby:from",
+            &[],
+        );
+        horizon_client::mod_api::dispatch_net_from_client(
+            &mut host,
+            &mods,
+            CMD_STEVE,
+            "ruby:from",
+            &[],
+        );
+        assert_eq!(
+            *host.lines.lock().unwrap(),
+            ["as one", "broadcast second"],
+            "the first firing's callback does not run in the second"
+        );
+        let pending: Table = lua.named_registry_value(CALLBACKS).unwrap();
+        assert_eq!(
+            pending.raw_len(),
+            0,
+            "nothing is left in the callbacks registry"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn run_command_as_a_nested_cap_does_not_delete_the_outer_follow_up() {
+        // The outer callback queues a follow-up broadcast, a Lua
+        // command whose callback chain runs into its own cap, and
+        // another follow-up broadcast: the capped nested drain clears
+        // only its own leftovers, so the tail broadcast still runs.
+        let (m, _host, dir) = dead_mod(
+            "cmd_as_nested_cap",
+            br#"
+            horizon.command("looper <x:text>", 0, function(player, args)
+              local function step(result)
+                horizon.run_command_as("steve", "chain", step)
+              end
+              horizon.run_command_as("steve", "chain", step)
+            end)
+            horizon.on("net_from_client", function(event)
+              horizon.run_command_as("steve", "go", function(result)
+                horizon.broadcast("followup first")
+                horizon.run_command_as("steve", "looper start", function(r)
+                  horizon.broadcast("looper cb")
+                end)
+                horizon.broadcast("followup last")
+              end)
+            end)
+            "#,
+        );
+        let m = std::rc::Rc::new(m);
+        let route_m = m.clone();
+        let mut host = command_as_host(ran_result());
+        host.route = Some(std::rc::Rc::new(
+            move |h: &mut CommandAsHost, line: &str| {
+                if !line.starts_with("looper") {
+                    return false;
+                }
+                let steve = test_events::native_server_player(
+                    CMD_STEVE,
+                    "steve".into(),
+                    2,
+                    "minecraft:overworld".into(),
+                    [0.0; 3],
+                    0,
+                    20.0,
+                    0.0,
+                    0.0,
+                    0,
+                    "127.0.0.1".into(),
+                );
+                route_m.perform_command(h, &mut test_events::perform_command_event(&steve, line));
+                true
+            },
+        ));
+        m.call_kind(
+            "net_from_client",
+            None,
+            &mut host,
+            (),
+            &mut |host, action, args| m.run_action(host, action, args),
+        )
+        .unwrap();
+        let mut expected = vec![
+            "as go".to_owned(),
+            "broadcast followup first".to_owned(),
+            "as looper start".to_owned(),
+        ];
+        expected.extend(std::iter::repeat_n("as chain".to_owned(), 9));
+        expected.extend([
+            "broadcast followup last".to_owned(),
+            "broadcast looper cb".to_owned(),
+        ]);
+        assert_eq!(*host.lines.lock().unwrap(), expected);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

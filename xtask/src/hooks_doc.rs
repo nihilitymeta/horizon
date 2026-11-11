@@ -496,6 +496,10 @@ const LUA_HELPERS: &[(&str, &str)] = &[
     ("remove_mob", "`horizon.remove_mob(dimension, id)`"),
     ("run_command", "`horizon.run_command(line)`"),
     (
+        "run_command_as",
+        "`horizon.run_command_as(player, line, callback)`",
+    ),
+    (
         "send_custom_payload_to_player",
         "`horizon.send_custom_payload_to_player(player, channel, data)`",
     ),
