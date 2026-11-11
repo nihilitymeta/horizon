@@ -464,7 +464,7 @@ write to it does nothing. The exact field list of each hook is its event type in
 the same in every hook:
 
 - an optional native value reads as the value, or nil when there is none
-- a list reads as a sequence (`{ Item }`); a hole reads as nil
+- a list reads as a sequence (`{ Item }`); a hole reads as nil; a sequence written back takes integer keys, so a float key errors naming the field instead of dropping the value
 - a position or motion vector reads as `{ x, y, z }`
 - a uuid reads as its lowercase text (`"6ba7b811-9dad-11d1-80b4-00c04fd430c8"`), never a number
 - an id reads as the qualified string (`"minecraft:zombie"`)

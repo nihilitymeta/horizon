@@ -245,8 +245,8 @@ pub(crate) fn int_seq(lua: &Lua, items: &[i32]) -> mlua::Result<Table> {
 }
 
 /// A string sequence table back into a vector.
-pub(crate) fn read_string_seq(t: &Table) -> mlua::Result<Vec<String>> {
-    t.sequence_values::<String>().collect()
+pub(crate) fn read_string_seq(t: &Table, field: &str) -> mlua::Result<Vec<String>> {
+    sequence_values::<String>(t, field)?.collect()
 }
 
 /// A uuid (or its absence) as the text the hand-written hooks use.
@@ -804,7 +804,8 @@ macro_rules! gen_writeback {
         match $table.get::<mlua::Value>(stringify!($field))? {
             mlua::Value::Nil => {}
             mlua::Value::Table(updated) => {
-                *$event.$field = crate::generated_runtime::read_string_seq(&updated)?
+                *$event.$field =
+                    crate::generated_runtime::read_string_seq(&updated, stringify!($field))?
             }
             v => {
                 return Err(mlua::Error::runtime(format!(
@@ -819,7 +820,8 @@ macro_rules! gen_writeback {
         match $table.get::<mlua::Value>(stringify!($field))? {
             mlua::Value::Nil => {}
             mlua::Value::Table(updated) => {
-                let owned = crate::generated_runtime::read_string_seq(&updated)?;
+                let owned =
+                    crate::generated_runtime::read_string_seq(&updated, stringify!($field))?;
                 *$event.$field = crate::generated_runtime::static_strs(&owned)?;
             }
             v => {
@@ -942,7 +944,12 @@ macro_rules! gen_writeback {
     // Loot's drops: an entry with the item of the stack at its place keeps
     // that stack (its components), others are plain.
     ($table:ident, $lua:ident, $event:ident, $level:expr, $field:ident, loot_write) => {
-        crate::generated_runtime::write_loot_drops_back($lua, &$table, &mut *$event.$field)?
+        crate::generated_runtime::write_loot_drops_back(
+            $lua,
+            &$table,
+            &mut *$event.$field,
+            stringify!($field),
+        )?
     };
 }
 
@@ -2482,7 +2489,34 @@ const SEQ_APPEND_CAP: usize = 65_536;
 /// replaced wholesale reads its own length. No script key is ever trusted:
 /// a `__len` the script sets is just another ignored key (only the hidden
 /// seed and the table's own integer keys count), and growth past the seed
-/// plus [`SEQ_APPEND_CAP`] errors instead of allocating.
+/// plus [`SEQ_APPEND_CAP`] errors instead of allocating. A float key is
+/// never a valid index (Lua normalises 3.0 to the integer 3, so a key that
+/// survives as a `Number` names no slot): it errors naming the field, like
+/// the non-finite and overflowing writes, instead of dropping the value.
+/// A sequence table's values in order, like `Table::sequence_values`, but
+/// refusing float keys with the same error `seq_len` returns, so no reader
+/// silently drops them. Every sequence reader goes through here (with its
+/// field name) instead of checking on its own. Lua normalises integral
+/// floats (3.0) to integer keys, so those still read as their slot.
+pub(crate) fn sequence_values<'a, T: mlua::FromLua + 'a>(
+    t: &'a Table,
+    field: &str,
+) -> mlua::Result<impl Iterator<Item = mlua::Result<T>> + 'a> {
+    reject_float_keys(t, field)?;
+    Ok(t.sequence_values::<T>())
+}
+
+fn reject_float_keys(t: &Table, field: &str) -> mlua::Result<()> {
+    for pair in t.pairs::<Value, Value>() {
+        if let (Value::Number(k), _) = pair? {
+            return Err(mlua::Error::runtime(format!(
+                "{field}: a sequence takes integer keys, got {k:?}"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn seq_len(lua: &Lua, t: &Table, field: &str) -> mlua::Result<usize> {
     let entry: Value = hidden_table(lua)?.get(t.clone())?;
     let (seeded, holes): (usize, Option<Table>) = match entry {
@@ -2490,7 +2524,10 @@ fn seq_len(lua: &Lua, t: &Table, field: &str) -> mlua::Result<usize> {
             entry.get::<i64>("len")?.max(0) as usize,
             entry.get::<Option<Table>>("holes")?,
         ),
-        _ => return Ok(t.raw_len()),
+        _ => {
+            reject_float_keys(t, field)?;
+            return Ok(t.raw_len());
+        }
     };
     // Appends past the seed are kept: the length starts at the seeded count
     // or the table's own length, whichever is larger. A sparse index the
@@ -2499,8 +2536,14 @@ fn seq_len(lua: &Lua, t: &Table, field: &str) -> mlua::Result<usize> {
     let mut top = seeded.max(t.raw_len());
     for pair in t.pairs::<Value, Value>() {
         let (k, _) = pair?;
-        if let Value::Integer(k) = k {
-            top = top.max(k.max(0) as usize);
+        match k {
+            Value::Integer(k) => top = top.max(k.max(0) as usize),
+            Value::Number(k) => {
+                return Err(mlua::Error::runtime(format!(
+                    "{field}: a sequence takes integer keys, got {k:?}"
+                )));
+            }
+            _ => {}
         }
     }
     if top.saturating_sub(seeded) > SEQ_APPEND_CAP {
@@ -2581,11 +2624,12 @@ pub(crate) fn write_loot_drops_back(
     _lua: &Lua,
     table: &Table,
     drops: &mut Vec<ItemStack>,
+    field: &str,
 ) -> mlua::Result<()> {
     use crate::lua_mods::qualify;
     let entries: Table = table.get("drops")?;
     let mut out = Vec::new();
-    for (i, entry) in entries.sequence_values::<Table>().enumerate() {
+    for (i, entry) in sequence_values::<Table>(&entries, field)?.enumerate() {
         let entry = entry?;
         let id = qualify(&entry.get::<String>("id")?);
         let count: u32 = entry.get::<Option<u32>>("count")?.unwrap_or(1);
@@ -3181,8 +3225,7 @@ fn faces_to_lua(lua: &Lua, faces: &[Vec<usize>; 6]) -> mlua::Result<Table> {
 fn faces_from_lua(_lua: &Lua, v: Value, field: &str) -> mlua::Result<[Vec<usize>; 6]> {
     match v {
         Value::Table(t) => {
-            let faces: Vec<Table> = t
-                .sequence_values::<Table>()
+            let faces: Vec<Table> = sequence_values::<Table>(&t, field)?
                 .collect::<mlua::Result<_>>()
                 .map_err(|_| {
                     mlua::Error::runtime(format!("{field}: expected six slot sequences"))
@@ -3197,7 +3240,7 @@ fn faces_from_lua(_lua: &Lua, v: Value, field: &str) -> mlua::Result<[Vec<usize>
             for (i, face) in faces.iter().enumerate() {
                 let at = format!("{field}[{}]", i + 1);
                 let mut slots = Vec::new();
-                for slot in face.sequence_values::<usize>() {
+                for slot in sequence_values::<usize>(face, &at)? {
                     slots.push(slot.map_err(|_| {
                         mlua::Error::runtime(format!("{at}: expected slot indices"))
                     })?);
@@ -3233,28 +3276,24 @@ impl LuaStruct for ModContainer {
         match v {
             Value::Table(t) => {
                 let (faces, at) = req_table(lua, &t, "faces", field)?;
+                let inputs_at = format!("{field}.inputs");
+                let inputs_table: Table = t.get::<Table>("inputs").map_err(|_| {
+                    mlua::Error::runtime(format!("{inputs_at}: expected a sequence"))
+                })?;
                 let mut inputs = Vec::new();
-                for slot in t
-                    .get::<Table>("inputs")
-                    .map_err(|_| {
-                        mlua::Error::runtime(format!("{field}.inputs: expected a sequence"))
-                    })?
-                    .sequence_values::<usize>()
-                {
+                for slot in sequence_values::<usize>(&inputs_table, &inputs_at)? {
                     inputs.push(slot.map_err(|_| {
-                        mlua::Error::runtime(format!("{field}.inputs: expected slot indices"))
+                        mlua::Error::runtime(format!("{inputs_at}: expected slot indices"))
                     })?);
                 }
+                let outputs_at = format!("{field}.outputs");
+                let outputs_table: Table = t.get::<Table>("outputs").map_err(|_| {
+                    mlua::Error::runtime(format!("{outputs_at}: expected a sequence"))
+                })?;
                 let mut outputs = Vec::new();
-                for slot in t
-                    .get::<Table>("outputs")
-                    .map_err(|_| {
-                        mlua::Error::runtime(format!("{field}.outputs: expected a sequence"))
-                    })?
-                    .sequence_values::<usize>()
-                {
+                for slot in sequence_values::<usize>(&outputs_table, &outputs_at)? {
                     outputs.push(slot.map_err(|_| {
-                        mlua::Error::runtime(format!("{field}.outputs: expected slot indices"))
+                        mlua::Error::runtime(format!("{outputs_at}: expected slot indices"))
                     })?);
                 }
                 Ok(ModContainer {
@@ -3294,40 +3333,34 @@ impl LuaStruct for ModFluidTanks {
         match v {
             Value::Table(t) => {
                 let (faces, at) = req_table(lua, &t, "faces", field)?;
+                let tanks_at = format!("{field}.tanks");
+                let tanks_table: Table = t.get::<Table>("tanks").map_err(|_| {
+                    mlua::Error::runtime(format!("{tanks_at}: expected a sequence"))
+                })?;
                 let mut tanks = Vec::new();
-                for cap in t
-                    .get::<Table>("tanks")
-                    .map_err(|_| {
-                        mlua::Error::runtime(format!("{field}.tanks: expected a sequence"))
-                    })?
-                    .sequence_values::<i32>()
-                {
+                for cap in sequence_values::<i32>(&tanks_table, &tanks_at)? {
                     tanks.push(cap.map_err(|_| {
-                        mlua::Error::runtime(format!("{field}.tanks: expected capacities"))
+                        mlua::Error::runtime(format!("{tanks_at}: expected capacities"))
                     })?);
                 }
+                let inputs_at = format!("{field}.inputs");
+                let inputs_table: Table = t.get::<Table>("inputs").map_err(|_| {
+                    mlua::Error::runtime(format!("{inputs_at}: expected a sequence"))
+                })?;
                 let mut inputs = Vec::new();
-                for slot in t
-                    .get::<Table>("inputs")
-                    .map_err(|_| {
-                        mlua::Error::runtime(format!("{field}.inputs: expected a sequence"))
-                    })?
-                    .sequence_values::<usize>()
-                {
+                for slot in sequence_values::<usize>(&inputs_table, &inputs_at)? {
                     inputs.push(slot.map_err(|_| {
-                        mlua::Error::runtime(format!("{field}.inputs: expected tank indices"))
+                        mlua::Error::runtime(format!("{inputs_at}: expected tank indices"))
                     })?);
                 }
+                let outputs_at = format!("{field}.outputs");
+                let outputs_table: Table = t.get::<Table>("outputs").map_err(|_| {
+                    mlua::Error::runtime(format!("{outputs_at}: expected a sequence"))
+                })?;
                 let mut outputs = Vec::new();
-                for slot in t
-                    .get::<Table>("outputs")
-                    .map_err(|_| {
-                        mlua::Error::runtime(format!("{field}.outputs: expected a sequence"))
-                    })?
-                    .sequence_values::<usize>()
-                {
+                for slot in sequence_values::<usize>(&outputs_table, &outputs_at)? {
                     outputs.push(slot.map_err(|_| {
-                        mlua::Error::runtime(format!("{field}.outputs: expected tank indices"))
+                        mlua::Error::runtime(format!("{outputs_at}: expected tank indices"))
                     })?);
                 }
                 Ok(ModFluidTanks {
@@ -3355,8 +3388,7 @@ fn face_flags_to_lua(lua: &Lua, faces: &[bool; 6]) -> mlua::Result<Table> {
 fn face_flags_from_lua(v: Value, field: &str) -> mlua::Result<[bool; 6]> {
     match v {
         Value::Table(t) => {
-            let flags: Vec<bool> = t
-                .sequence_values::<bool>()
+            let flags: Vec<bool> = sequence_values::<bool>(&t, field)?
                 .collect::<mlua::Result<_>>()
                 .map_err(|_| mlua::Error::runtime(format!("{field}: expected six booleans")))?;
             if flags.len() != 6 {
@@ -4501,8 +4533,7 @@ impl LuaStruct for [bool; 3] {
     fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
         match v {
             Value::Table(t) => {
-                let values: Vec<bool> = t
-                    .sequence_values::<bool>()
+                let values: Vec<bool> = sequence_values::<bool>(&t, field)?
                     .collect::<mlua::Result<_>>()
                     .map_err(|_| {
                         mlua::Error::runtime(format!("{field}: expected three booleans"))
@@ -4586,12 +4617,13 @@ impl LuaStruct for [[f32; 4]; 8] {
     fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
         match v {
             Value::Table(t) => {
-                let slots: Vec<Table> = t
-                    .sequence_values::<Table>()
+                let slots: Vec<Table> = sequence_values::<Table>(&t, field)?
                     .collect::<mlua::Result<_>>()
                     .map_err(|_| {
-                    mlua::Error::runtime(format!("{field}: expected eight {{x, y, z, w}} tables"))
-                })?;
+                        mlua::Error::runtime(format!(
+                            "{field}: expected eight {{x, y, z, w}} tables"
+                        ))
+                    })?;
                 if slots.len() != 8 {
                     return Err(mlua::Error::runtime(format!(
                         "{field}: expected eight {{x, y, z, w}} tables, got {}",

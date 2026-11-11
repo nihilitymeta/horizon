@@ -824,21 +824,30 @@ fn spike_lua(body: &str) -> Option<&str> {
 }
 
 /// The Lua tokens the spike-name gate reads: identifiers, single dots,
-/// and `==`. Everything else (strings, comments, numbers, other
-/// punctuation) is skipped, so the gate never sees text that is not code.
-/// A run of two or more dots (`..`, `...`) yields no `Dot`: only a lone
-/// `.` separates a table from its field.
+/// `==`, one token per string literal (short or long: the gate needs the
+/// literal the name is compared to, but never the text inside it),
+/// parentheses, and `#` and `:` as their own tokens, so nothing can sit
+/// unseen between `==` and the literal. Everything else (comments,
+/// numbers, other punctuation) is skipped, so the gate never sees text
+/// that is not code. A run of two or more dots (`..`, `...`) yields no
+/// `Dot`: only a lone `.` separates a table from its field.
 #[derive(Debug, PartialEq, Eq)]
 enum LuaTok {
     Ident(String),
     Dot,
     EqEq,
+    Str,
+    Open,
+    Close,
+    Hash,
+    Colon,
 }
 
-/// `src` as tokens, skipping strings and comments: short strings with
-/// `\` escapes (an unterminated one runs to the end), long strings and
-/// long comments of any `=` level, and `--` line comments. Identifiers
-/// follow Lua's ASCII rule (letters, digits after the first, `_`).
+/// `src` as tokens: short strings with `\` escapes (an unterminated one
+/// runs to the end) and long strings each lex as one string token, while
+/// long comments of any `=` level and `--` line comments are skipped.
+/// Identifiers follow Lua's ASCII rule (letters, digits after the first,
+/// `_`).
 fn lex_lua(src: &str) -> Vec<LuaTok> {
     let chars: Vec<char> = src.chars().collect();
     let mut toks = Vec::new();
@@ -868,6 +877,7 @@ fn lex_lua(src: &str) -> Vec<LuaTok> {
                     break;
                 }
             }
+            toks.push(LuaTok::Str);
         } else if c == '['
             && let Some(level) = long_level(i, '[', '[')
         {
@@ -876,6 +886,7 @@ fn lex_lua(src: &str) -> Vec<LuaTok> {
                 i += 1;
             }
             i += 2 + level;
+            toks.push(LuaTok::Str);
         } else if c == '-'
             && chars.get(i + 1) == Some(&'-')
             && let Some(level) = long_level(i + 2, '[', '[')
@@ -907,6 +918,18 @@ fn lex_lua(src: &str) -> Vec<LuaTok> {
         } else if c == '=' && chars.get(i + 1) == Some(&'=') {
             toks.push(LuaTok::EqEq);
             i += 2;
+        } else if c == '(' {
+            toks.push(LuaTok::Open);
+            i += 1;
+        } else if c == ')' {
+            toks.push(LuaTok::Close);
+            i += 1;
+        } else if c == '#' {
+            toks.push(LuaTok::Hash);
+            i += 1;
+        } else if c == ':' {
+            toks.push(LuaTok::Colon);
+            i += 1;
         } else if c.is_ascii_digit() {
             while i < chars.len()
                 && (chars[i] == '_' || chars[i] == '.' || chars[i].is_ascii_alphanumeric())
@@ -920,20 +943,29 @@ fn lex_lua(src: &str) -> Vec<LuaTok> {
     toks
 }
 
-/// Whether `lua` asserts the player's name as code: the token sequence
-/// `event` `.` <field> `.` `name` `==`. The token boundary is the whole
-/// gate: text inside a string or comment never lexes to these tokens, and
-/// a longer name (`not_the_event`, `names`) lexes to one identifier that
-/// is not `event` or `name`.
+/// Whether `lua` asserts the player's name as code: only the real form
+/// counts, `assert(event.<field>.name == "<literal>")`, as nine tokens in
+/// a row. The token boundary is the whole gate: text inside a string or
+/// comment never lexes to these tokens, and a longer name
+/// (`not_the_event`, `names`) lexes to one identifier that is not `event`
+/// or `name`. No blacklist of wrappers: `type((event.player.name ==
+/// "Alex"))` is `type(boolean)`, `tostring(...)` is always truthy, and
+/// `== #"Alex"` compares the name to a number, but all three end in a
+/// literal, so the gate demands the `assert(` in front and the literal
+/// immediately after `==` instead. Whitespace and comments between tokens
+/// stay invisible, as before.
 fn lua_asserts_player_name(lua: &str, field: &str) -> bool {
     let toks = lex_lua(lua);
-    toks.windows(6).any(|w| {
-        matches!(&w[0], LuaTok::Ident(a) if a == "event")
-            && w[1] == LuaTok::Dot
-            && matches!(&w[2], LuaTok::Ident(b) if b == field)
+    toks.windows(9).any(|w| {
+        matches!(&w[0], LuaTok::Ident(a) if a == "assert")
+            && w[1] == LuaTok::Open
+            && matches!(&w[2], LuaTok::Ident(a) if a == "event")
             && w[3] == LuaTok::Dot
-            && matches!(&w[4], LuaTok::Ident(c) if c == "name")
-            && w[5] == LuaTok::EqEq
+            && matches!(&w[4], LuaTok::Ident(b) if b == field)
+            && w[5] == LuaTok::Dot
+            && matches!(&w[6], LuaTok::Ident(c) if c == "name")
+            && w[7] == LuaTok::EqEq
+            && w[8] == LuaTok::Str
     })
 }
 
@@ -2443,10 +2475,11 @@ fn perform_command_no_cancel_test(_model: &Model, _tys: &BTreeMap<String, String
 }
 
 /// The cost test: an unheard dispatch builds no table and reads nothing;
-/// a heard one runs the handler and builds the player and args tables.
-/// There is no watched-away-kind part: a declared usage always watches its
-/// words, and a line no usage matches never reaches the kind check.
-fn perform_command_cost_test(_model: &Model, _tys: &BTreeMap<String, String>) -> String {
+/// a heard one runs the handler and builds its one counted table (the args
+/// table; the player table is not counted). There is no watched-away-kind
+/// part: a declared usage always watches its words, and a line no usage
+/// matches never reaches the kind check.
+fn perform_command_cost_test(model: &Model, _tys: &BTreeMap<String, String>) -> String {
     let player = perform_command_player();
     let mut out =
         "    #[test]\n    fn generated_perform_command_unregistered_costs_nothing() {\n".to_owned();
@@ -2460,8 +2493,9 @@ fn perform_command_cost_test(_model: &Model, _tys: &BTreeMap<String, String>) ->
         "            assert!(!ran, \"ran with no handler\");\n            assert_eq!(witness(&lua), 0, \"no handler ran\");\n            assert_eq!(\n                event_tables(),\n                0,\n                \"no event table was built with no handler\"\n            );\n            assert_eq!(\n                entity_reads(),\n                0,\n                \"perform_command read the host with no handler\"\n            );\n            assert_eq!(\n                host_reads(),\n                0,\n                \"perform_command read the host with no handler\"\n            );\n            assert_eq!(\n                level_reads(),\n                0,\n                \"perform_command read the level with no handler\"\n            );\n            no_error(&id);\n            drop_dir(dir);\n        }\n",
     );
     let live = "horizon.command(\"test:cost <n:integer>\", 0, function(player, args)\n    __witness = (__witness or 0) + 1\nend)";
+    let tables = cost_control_tables(model);
     out.push_str(&format!(
-        "        let (m, id, dir, lua) = loaded_tracked(\n            \"gen_perform_command_cost_live\",\n            {live:?}\n        );\n        let firing_mods = boxed(m);\n        {{\n            let player = {player};\n            let mut ran = false;\n            reset_entity_reads();\n            reset_host_reads();\n            reset_level_reads();\n            reset_event_tables();\n            dispatch_perform_command(&mut FakeHost::empty(), &firing_mods, player, \"test:cost 5\", &mut ran);\n            assert!(ran, \"ran not cancelled\");\n            assert_eq!(witness(&lua), 1, \"the control handler ran\");\n            assert!(\n                event_tables() >= 1,\n                \"perform_command built an event table for a heard dispatch\"\n            );\n            assert_eq!(\n                entity_reads(),\n                0,\n                \"perform_command read the entity for a heard dispatch\"\n            );\n            assert_eq!(\n                host_reads(),\n                0,\n                \"perform_command read the host for a heard dispatch\"\n            );\n            assert_eq!(\n                level_reads(),\n                0,\n                \"perform_command read the level for a heard dispatch\"\n            );\n            no_error(&id);\n            drop_dir(dir);\n        }}\n    }}\n"
+        "        let (m, id, dir, lua) = loaded_tracked(\n            \"gen_perform_command_cost_live\",\n            {live:?}\n        );\n        let firing_mods = boxed(m);\n        {{\n            let player = {player};\n            let mut ran = false;\n            reset_entity_reads();\n            reset_host_reads();\n            reset_level_reads();\n            reset_event_tables();\n            dispatch_perform_command(&mut FakeHost::empty(), &firing_mods, player, \"test:cost 5\", &mut ran);\n            assert!(ran, \"ran not cancelled\");\n            assert_eq!(witness(&lua), 1, \"the control handler ran\");\n            assert_eq!(\n                event_tables(),\n                {tables},\n                \"perform_command built an event table for a heard dispatch\"\n            );\n            assert_eq!(\n                entity_reads(),\n                0,\n                \"perform_command read the entity for a heard dispatch\"\n            );\n            assert_eq!(\n                host_reads(),\n                0,\n                \"perform_command read the host for a heard dispatch\"\n            );\n            assert_eq!(\n                level_reads(),\n                0,\n                \"perform_command read the level for a heard dispatch\"\n            );\n            no_error(&id);\n            drop_dir(dir);\n        }}\n    }}\n"
     ));
     out
 }
@@ -2476,9 +2510,10 @@ fn perform_command_cost_test(_model: &Model, _tys: &BTreeMap<String, String>) ->
 /// is built there either (a field kind reads nothing; an entity kind
 /// resolves the kind through the host first, pinned below). Every test ends
 /// with a control: the same hook fired with a handler registered, which must
-/// run the handler and build at least one table (so a dead counter fails the
-/// same test), and move the read counters when the hook's seeds or kind
-/// resolution read through them.
+/// run the handler and build exactly its pinned count of tables (one:
+/// `cost_control_tables`), so a dead counter fails the same test, and move
+/// the read counters when the hook's seeds or kind resolution read through
+/// them.
 fn cost_test_fn(model: &Model, tys: &BTreeMap<String, String>) -> String {
     let mut out = format!(
         "#[test]\nfn generated_{}_unregistered_costs_nothing() {{\n",
@@ -2624,6 +2659,17 @@ fn cost_part(
     out.push_str("    }\n");
 }
 
+/// How many event tables one heard dispatch of `model` builds: one. The
+/// control pins the exact count, so a dispatch that built its table twice
+/// fails the same test as a dead counter. Every arm counts exactly its own
+/// event table and nothing else: the frame hooks' `batch`/`corners`
+/// tables, `perform_command`'s player table and `server_tick`'s timers all
+/// ride the dispatch's one counted table (the timers run as handlers on
+/// it, like any script handler).
+fn cost_control_tables(_model: &Model) -> usize {
+    1
+}
+
 /// Whether a heard dispatch of `model` reads the host or the level while
 /// building its event table: the control pins the counters moving only for
 /// these hooks. A `player` seed asks the host for its players, a `state`
@@ -2661,8 +2707,9 @@ fn cost_control_reads(model: &Model) -> (bool, bool) {
 }
 
 /// The cost test's control: the same hook fired with a handler registered.
-/// The handler must run and at least one event table must be built, so a
-/// counter that is never wired fails the same test as the measurement; and
+/// The handler must run and exactly the pinned count of event tables must
+/// be built (one per heard dispatch to one registered mod), so a dispatch
+/// that built its table twice fails the same test as a dead counter; and
 /// when the hook's seeds or kind resolution read the host or level, those
 /// counters must move, so a dead read counter fails it too.
 fn cost_control(out: &mut String, model: &Model, tys: &BTreeMap<String, String>) {
@@ -2697,8 +2744,9 @@ fn cost_control(out: &mut String, model: &Model, tys: &BTreeMap<String, String>)
     out.push_str(&call.call);
     out.push('\n');
     out.push_str("    assert_eq!(witness(&lua), 1, \"the control handler ran\");\n");
+    let tables = cost_control_tables(model);
     out.push_str(&format!(
-        "    assert!(event_tables() >= 1, \"{} built an event table for a heard dispatch\");\n",
+        "    assert_eq!(event_tables(), {tables}, \"{} built an event table for a heard dispatch\");\n",
         model.name
     ));
     let (reads_host, reads_level) = cost_control_reads(model);
@@ -3818,8 +3866,8 @@ pub fn run(check: bool) -> Result<(), String> {
             // The registered Lua as tokens: a commented-out assert, an
             // assert on another table's `name`, or the text inside a
             // string, is not the player's name. The gate needs the full
-            // `event.<field>.name ==` sequence at a token boundary, outside
-            // any string or comment.
+            // `assert(event.<field>.name ==` string-literal sequence at a
+            // token boundary, outside any string or comment.
             let lua = spike_test_body(&spike_src, &model.name).and_then(spike_lua);
             for field in &model.fields {
                 if !matches!(field.conv, Conv::Player | Conv::PlayerOpt) {
@@ -4279,6 +4327,93 @@ mod tests {
         ));
         assert!(lua_asserts_player_name(
             "assert(event . player . name == \"Alex\")",
+            "player"
+        ));
+    }
+
+    #[test]
+    fn a_type_check_is_not_a_name_assert() {
+        // `type(...) == "string"` proves the value is a string, not which
+        // string it is; `~=` and a length check prove even less. None of
+        // them is the name compared to a literal, so the gate rejects all
+        // three.
+        assert!(!lua_asserts_player_name(
+            "assert(type(event.player.name) == \"string\")",
+            "player"
+        ));
+        assert!(!lua_asserts_player_name(
+            "assert(event.player.name ~= nil)",
+            "player"
+        ));
+        assert!(!lua_asserts_player_name(
+            "assert(#event.player.name > 0)",
+            "player"
+        ));
+    }
+
+    #[test]
+    fn wrappers_that_prove_nothing_are_not_name_asserts() {
+        // `type((event.player.name == "Alex"))` is `type(boolean)`: always
+        // a string. `tostring(...)` is always truthy. `== #"Alex"` compares
+        // the name to a number, so the assert can never pass.
+        assert!(!lua_asserts_player_name(
+            "assert(type((event.player.name == \"Alex\")))",
+            "player"
+        ));
+        assert!(!lua_asserts_player_name(
+            "assert(tostring(event.player.name == \"Alex\"))",
+            "player"
+        ));
+        assert!(!lua_asserts_player_name(
+            "assert(event.player.name == #\"Alex\")",
+            "player"
+        ));
+        // Every row that was already false stays false.
+        assert!(!lua_asserts_player_name(
+            "assert(type (event.player.name) == \"string\")",
+            "player"
+        ));
+        assert!(!lua_asserts_player_name(
+            "assert(event.player.name ~= nil)",
+            "player"
+        ));
+        assert!(!lua_asserts_player_name(
+            "assert(string.len(event.player.name) == \"Alex\")",
+            "player"
+        ));
+        assert!(!lua_asserts_player_name(
+            "local s = \"assert(event.player.name == \\\"Alex\\\")\"",
+            "player"
+        ));
+        assert!(!lua_asserts_player_name(
+            "-- assert(event.player.name == \"Alex\")",
+            "player"
+        ));
+        assert!(!lua_asserts_player_name(
+            "local s = [[assert(event.player.name == \"Alex\")]]",
+            "player"
+        ));
+    }
+
+    #[test]
+    fn real_name_forms_pass_the_gate() {
+        // The spike newline form with a message argument.
+        assert!(lua_asserts_player_name(
+            "horizon.on(\"x\", function(event)\n  assert(event.player.name == \"Alex\", \"name\")\nend)",
+            "player"
+        ));
+        // A long-string literal is a literal too.
+        assert!(lua_asserts_player_name(
+            "assert(event.player.name == [[Alex]])",
+            "player"
+        ));
+        // Spacing and comments between tokens do not matter: tokens do.
+        assert!(lua_asserts_player_name(
+            "assert(event --[[who]] . player . name == \"Alex\")",
+            "player"
+        ));
+        assert!(lua_asserts_player_name(
+            "assert(\n  event.player.name == \"Alex\",\n  \"name\"\n)",
             "player"
         ));
     }

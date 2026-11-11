@@ -2387,8 +2387,9 @@ mod generated_tests {
                 Duration::from_secs_f64(1.5),
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "frame built an event table for a heard dispatch"
             );
             assert_eq!(host_reads(), 0, "frame read the host for a heard dispatch");
@@ -2451,8 +2452,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_tick(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "tick built an event table for a heard dispatch"
             );
             assert_eq!(host_reads(), 0, "tick read the host for a heard dispatch");
@@ -2518,8 +2520,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_emissive(&FakeHost::empty(), &firing_mods, &mut layers);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "emissive built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -2703,8 +2706,9 @@ mod generated_tests {
                 "test:error_text",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "world_lifecycle built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -2783,8 +2787,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_server_about_to_start(&mut FakeHost::empty(), &firing_mods, true);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "server_about_to_start built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -2863,8 +2868,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_server_stopping(&mut FakeHost::empty(), &firing_mods, true);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "server_stopping built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -2972,8 +2978,9 @@ mod generated_tests {
                 },
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "server_tick built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -3040,8 +3047,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_level_tick_pre(&mut FakeHost::empty(), &firing_mods, "test:dimension");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "level_tick_pre built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -3120,8 +3128,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_level_tick_post(&mut FakeHost::empty(), &firing_mods, "test:dimension");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "level_tick_post built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -3221,8 +3230,9 @@ mod generated_tests {
                 BlockStateId(11),
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_changed built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -3937,8 +3947,9 @@ mod generated_tests {
                 &mut handled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "random_tick built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -4653,8 +4664,9 @@ mod generated_tests {
                 &mut handled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "tick_block built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -4739,8 +4751,9 @@ mod generated_tests {
                 &mut corners,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "hud built an event table for a heard dispatch"
             );
             assert_eq!(host_reads(), 0, "hud read the host for a heard dispatch");
@@ -4797,8 +4810,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_key(&mut FakeHost::empty(), &firing_mods, "test:key", false);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "key built an event table for a heard dispatch"
             );
             assert_eq!(host_reads(), 0, "key read the host for a heard dispatch");
@@ -4875,8 +4889,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_wheel(&mut FakeHost::empty(), &firing_mods, 1.5, &mut claimed);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "wheel built an event table for a heard dispatch"
             );
             assert_eq!(host_reads(), 0, "wheel read the host for a heard dispatch");
@@ -4977,8 +4992,9 @@ mod generated_tests {
                 &mut ran,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "command built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -5056,8 +5072,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "commands built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -5208,8 +5225,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_zoom(&FakeHost::empty(), &firing_mods, &mut zoom);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "zoom built an event table for a heard dispatch"
             );
             assert_eq!(host_reads(), 0, "zoom read the host for a heard dispatch");
@@ -5369,8 +5387,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_minimap(&FakeHost::empty(), &firing_mods, &mut minimap);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "minimap built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -5611,8 +5630,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_mods(&mut FakeHost::empty(), &firing_mods, &mut mods);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "mods built an event table for a heard dispatch"
             );
             assert_eq!(host_reads(), 0, "mods read the host for a heard dispatch");
@@ -5943,8 +5963,9 @@ mod generated_tests {
                 &mut buttons,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "settings built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -6113,8 +6134,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_settings_click(&mut FakeHost::empty(), &firing_mods, "test:mod_id", 8);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "settings_click built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -6986,8 +7008,9 @@ mod generated_tests {
                 &mut test_block_entity("minecraft:stone"),
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_entity_tick built an event table for a heard dispatch"
             );
             assert!(
@@ -7093,8 +7116,9 @@ mod generated_tests {
                 &mut container,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_entity_container built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -7285,8 +7309,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_screen(&FakeHost::empty(), &firing_mods, "test:block", &mut screen);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "screen built an event table for a heard dispatch"
             );
             assert_eq!(host_reads(), 0, "screen read the host for a heard dispatch");
@@ -7467,8 +7492,9 @@ mod generated_tests {
                 &mut button,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "screen_click built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -7642,8 +7668,9 @@ mod generated_tests {
                 &mut lines,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "screen_tooltip built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -7840,8 +7867,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_register_commands(&mut FakeHost::empty(), &firing_mods, &mut commands);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "register_commands built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -8518,8 +8546,9 @@ mod generated_tests {
             );
             assert!(ran, "ran not cancelled");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "perform_command built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -8603,8 +8632,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_menu_clicked(&mut FakeHost::empty(), &firing_mods, 7, 8, 9, 10, 11);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "menu_clicked built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -8679,8 +8709,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_menu_closed(&mut FakeHost::empty(), &firing_mods, 7, 8);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "menu_closed built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -8799,8 +8830,9 @@ mod generated_tests {
                 &mut lines,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "tooltip built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -9090,8 +9122,9 @@ mod generated_tests {
                 &mut claimed,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "use_item_on built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -9216,8 +9249,9 @@ mod generated_tests {
                 &mut claimed,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "use_item built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -9338,8 +9372,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "destroy_block built an event table for a heard dispatch"
             );
             assert!(
@@ -9446,8 +9481,9 @@ mod generated_tests {
                 BlockStateId(10),
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "place_block built an event table for a heard dispatch"
             );
             assert!(
@@ -9567,8 +9603,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "right_click_block built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -9697,8 +9734,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_spread built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -9827,8 +9865,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "piston_move built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -9929,8 +9968,9 @@ mod generated_tests {
                 &mut blocks,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "explosion_detonate built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -10161,8 +10201,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "fill_bucket built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -10344,8 +10385,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "attack_entity built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -10442,8 +10484,9 @@ mod generated_tests {
                 &[116u8, 0u8, 159u8],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "net_from_client built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -10537,8 +10580,9 @@ mod generated_tests {
                 &[116u8, 0u8, 159u8],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "net_from_server built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -10613,8 +10657,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_died(&mut FakeHost::empty(), &firing_mods, 7, None);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_died built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -10765,8 +10810,9 @@ mod generated_tests {
                 false,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "mob_spawned built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -10906,8 +10952,9 @@ mod generated_tests {
                 "minecraft:zombie",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "mob_killed built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -10986,8 +11033,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_item_dropped(&mut FakeHost::empty(), &firing_mods, 7, "test:item", 9);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "item_dropped built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -11112,8 +11160,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "item_picked_up built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -11284,8 +11333,9 @@ mod generated_tests {
                 "minecraft:zombie",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "hurt_enemy built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -11364,8 +11414,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_inventory_tick(&mut FakeHost::empty(), &firing_mods, 7, false);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "inventory_tick built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -11454,8 +11505,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_on_equip(&mut FakeHost::empty(), &firing_mods, "test:slot", None);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "on_equip built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -11565,8 +11617,9 @@ mod generated_tests {
                 &mut signal,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_signal built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -11648,8 +11701,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_is_signal_source(&FakeLevel, &firing_mods, BlockStateId(8), &mut source);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "is_signal_source built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -11895,8 +11949,9 @@ mod generated_tests {
                 &mut claimed,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "interact_entity built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -12021,8 +12076,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "left_click_block built an event table for a heard dispatch"
             );
             assert!(
@@ -12096,8 +12152,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_tick(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_tick built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -12291,8 +12348,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_join_level built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -12493,8 +12551,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_incoming_damage built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -12644,8 +12703,9 @@ mod generated_tests {
                 "minecraft:zombie",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_leave_level built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -12746,8 +12806,9 @@ mod generated_tests {
                 &mut fluids,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_entity_fluids built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -12957,8 +13018,9 @@ mod generated_tests {
                 &mut apply,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "should_apply_effect_tick_this_tick built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -13139,8 +13201,9 @@ mod generated_tests {
                 &mut keep,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "apply_effect_tick built an event table for a heard dispatch"
             );
             assert!(
@@ -13293,8 +13356,9 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "on_effect_added built an event table for a heard dispatch"
             );
             assert!(
@@ -13447,8 +13511,9 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "mob_effect_added built an event table for a heard dispatch"
             );
             assert!(
@@ -13526,8 +13591,9 @@ mod generated_tests {
                 true,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "chunk_load built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -13621,8 +13687,9 @@ mod generated_tests {
                 [4, -6],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "chunk_unload built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -13701,8 +13768,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_logged_in(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_logged_in built an event table for a heard dispatch"
             );
             assert!(
@@ -13780,8 +13848,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_logged_out(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_logged_out built an event table for a heard dispatch"
             );
             assert!(
@@ -13881,8 +13950,9 @@ mod generated_tests {
                 &mut bar,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "item_bar built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -13965,8 +14035,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_has_analog_output(&FakeLevel, &firing_mods, BlockStateId(8), &mut output);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "has_analog_output built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -14139,8 +14210,9 @@ mod generated_tests {
                 &mut output,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "analog_output built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -14299,8 +14371,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_component_types(&firing_mods, &mut types);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "component_types built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -14508,8 +14581,9 @@ mod generated_tests {
                 &mut answer,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "dispense_item built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -14737,8 +14811,9 @@ mod generated_tests {
                 &mut size,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "tooltip_component built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -14935,8 +15010,9 @@ mod generated_tests {
                 &mut survives,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "can_survive built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -15130,8 +15206,9 @@ mod generated_tests {
                 &mut may,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "may_place_on built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -15325,8 +15402,9 @@ mod generated_tests {
                 &mut valid,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "is_valid_bonemeal_target built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -15496,8 +15574,9 @@ mod generated_tests {
                 &mut success,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "is_bonemeal_success built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -15678,8 +15757,9 @@ mod generated_tests {
                 &serde_json::json!({ "testkey": 8 }),
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "consume_effect built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -15762,8 +15842,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_loot_table_load(&firing_mods, "test:id", &mut table);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "loot_table_load built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -16214,8 +16295,9 @@ mod generated_tests {
                 &mut drops,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "loot_drops built an event table for a heard dispatch"
             );
             assert!(
@@ -16582,8 +16664,9 @@ mod generated_tests {
                 &mut answer,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "state_for_placement built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -16821,8 +16904,9 @@ mod generated_tests {
                 11,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "enchant_effect built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -16916,8 +17000,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_modify_default_components(&firing_mods, "test:item", &mut components);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "modify_default_components built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -17127,8 +17212,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_shader_params(&FakeHost::empty(), &firing_mods, 1.5, &mut params);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "shader_params built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -17253,8 +17339,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_highlight built an event table for a heard dispatch"
             );
             assert!(
@@ -17410,8 +17497,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "render_hand built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -17490,8 +17578,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_client_resources_reloaded(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "client_resources_reloaded built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -17604,8 +17693,9 @@ mod generated_tests {
                 &mut duration,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "use_duration built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -17718,8 +17808,9 @@ mod generated_tests {
                 &mut animation,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "use_animation built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -17820,8 +17911,9 @@ mod generated_tests {
                 &mut can_eat,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "can_eat built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -18067,8 +18159,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_entity_use_item_start built an event table for a heard dispatch"
             );
             assert!(
@@ -18330,8 +18423,9 @@ mod generated_tests {
                 &mut result,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_entity_use_item_finish built an event table for a heard dispatch"
             );
             assert!(
@@ -18474,8 +18568,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_command built an event table for a heard dispatch"
             );
             assert!(
@@ -18591,8 +18686,9 @@ mod generated_tests {
                 &mut ran,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "perform_console_command built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -18690,8 +18786,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_data_pack_files(&FakeHost::empty(), &firing_mods, &mut files);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "data_pack_files built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -18870,8 +18967,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_server_data_loaded(&mut FakeHost::empty(), &firing_mods, true);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "server_data_loaded built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -18968,8 +19066,9 @@ mod generated_tests {
                 &mut degrees,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "compute_fov built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -19094,8 +19193,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "mouse_button_pre built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -19174,8 +19274,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_mouse_button_post(&mut FakeHost::empty(), &firing_mods, 7, false, 9);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "mouse_button_post built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -19254,8 +19355,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_respawned(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_respawned built an event table for a heard dispatch"
             );
             assert!(
@@ -19344,8 +19446,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_music(&FakeHost::empty(), &firing_mods, &mut music, &mut volume);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "music built an event table for a heard dispatch"
             );
             assert_eq!(host_reads(), 0, "music read the host for a heard dispatch");
@@ -19460,8 +19563,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_music_layers(&FakeHost::empty(), &firing_mods, &mut layers);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "music_layers built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -19674,8 +19778,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_datapack_sync(&mut FakeHost::empty(), &firing_mods, &mut recipe_types);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "datapack_sync built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -19841,8 +19946,9 @@ mod generated_tests {
                 &["test:seed".to_owned(), "test:seed2".to_owned()],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "recipes_received built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -19975,8 +20081,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "mouse_scrolling built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -20076,8 +20183,9 @@ mod generated_tests {
                 10,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "mod_container_viewers built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -20304,8 +20412,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_knockback built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -20415,8 +20524,9 @@ mod generated_tests {
                 &mut can_merge,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "experience_orb_can_merge built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -20545,8 +20655,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "experience_orb_merge built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -20669,8 +20780,9 @@ mod generated_tests {
                 &mut max_stack,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "menu_slot_rules built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -20916,8 +21028,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_entity_use_item_tick built an event table for a heard dispatch"
             );
             assert!(
@@ -21108,8 +21221,9 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "on_use_tick built an event table for a heard dispatch"
             );
             assert!(
@@ -21350,8 +21464,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_entity_use_item_stop built an event table for a heard dispatch"
             );
             assert!(
@@ -21559,8 +21674,9 @@ mod generated_tests {
                 &mut used,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "release_using built an event table for a heard dispatch"
             );
             assert!(
@@ -21638,8 +21754,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_level_load(&mut FakeHost::empty(), &firing_mods, "test:dimension");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "level_load built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -21718,8 +21835,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_level_unload(&mut FakeHost::empty(), &firing_mods, "test:dimension");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "level_unload built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -21798,8 +21916,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_client_level_load(&mut FakeHost::empty(), &firing_mods, "test:dimension");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "client_level_load built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -21878,8 +21997,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_client_level_unload(&mut FakeHost::empty(), &firing_mods, "test:dimension");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "client_level_unload built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -22206,8 +22326,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "projectile_impact built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -22407,8 +22528,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_mount built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -22542,8 +22664,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "interaction_key built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -22640,8 +22763,9 @@ mod generated_tests {
                 &mut batch,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "gui_layer_post built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -22817,8 +22941,9 @@ mod generated_tests {
                 &mut decorations,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "map_decorations built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -23218,8 +23343,9 @@ mod generated_tests {
                 "minecraft:zombie",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_start_tracking built an event table for a heard dispatch"
             );
             assert!(
@@ -23378,8 +23504,9 @@ mod generated_tests {
                 "minecraft:zombie",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_stop_tracking built an event table for a heard dispatch"
             );
             assert!(
@@ -23480,8 +23607,9 @@ mod generated_tests {
                 &mut energy,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_entity_energy built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -23709,8 +23837,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_data_map_types(&FakeHost::empty(), &firing_mods, &mut types);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "data_map_types built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -24027,8 +24156,9 @@ mod generated_tests {
                 &mut refill,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_breathe built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -24210,8 +24340,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_tick_pre built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -24361,8 +24492,9 @@ mod generated_tests {
                 "minecraft:zombie",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_tick_post built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -24573,8 +24705,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_item_fluid_tank(&FakeHost::empty(), &firing_mods, "test:item", &mut capacity);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "item_fluid_tank built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -24870,8 +25003,9 @@ mod generated_tests {
                 }),
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_equipment_change built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -25063,8 +25197,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_render_listened(&FakeHost::empty(), &firing_mods, &mut listened);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_render_listened built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -25280,8 +25415,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "sign_changed built an event table for a heard dispatch"
             );
             assert!(
@@ -25370,8 +25506,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_standalone_models(&firing_mods, &mut models);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "standalone_models built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -25549,8 +25686,9 @@ mod generated_tests {
                 Some([5, 6, 7]),
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_container_open built an event table for a heard dispatch"
             );
             assert!(
@@ -25632,8 +25770,9 @@ mod generated_tests {
                 Some([5, 6, 7]),
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_container_close built an event table for a heard dispatch"
             );
             assert!(
@@ -25757,8 +25896,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_toggle_flight built an event table for a heard dispatch"
             );
             assert!(
@@ -25838,8 +25978,9 @@ mod generated_tests {
                 "test:to",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "anvil_damaged built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -25957,8 +26098,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "arrow_loose built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -26055,8 +26197,9 @@ mod generated_tests {
                 true,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "beacon_state_change built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -26148,8 +26291,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "bell_ring built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -26248,8 +26392,9 @@ mod generated_tests {
                 10,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_break_progress_update built an event table for a heard dispatch"
             );
             assert!(
@@ -26345,8 +26490,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_burn built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -26420,8 +26566,9 @@ mod generated_tests {
                 "test:result",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_cook built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -26518,8 +26665,9 @@ mod generated_tests {
                 [3, 4, 5],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_damage_abort built an event table for a heard dispatch"
             );
             assert!(
@@ -26618,8 +26766,9 @@ mod generated_tests {
                 "test:target",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_dispense_armor built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -26711,8 +26860,9 @@ mod generated_tests {
                 &mut experience,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_exp built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -26837,8 +26987,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_fade built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -26934,8 +27085,9 @@ mod generated_tests {
                 "test:item",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_failed_dispense built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -27060,8 +27212,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_form built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -27189,8 +27342,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_ignite built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -27294,8 +27448,9 @@ mod generated_tests {
                 &mut locked,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_lock_check built an event table for a heard dispatch"
             );
             assert!(
@@ -27423,8 +27578,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_receive_game built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -27579,8 +27735,9 @@ mod generated_tests {
                 "minecraft:zombie",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_shear_entity built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -27659,8 +27816,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_brewing_complete(&FakeHost::empty(), &firing_mods, [1, 2, 3]);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "brewing_complete built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -27739,8 +27897,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_brewing_fuel(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "brewing_fuel built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -27834,8 +27993,9 @@ mod generated_tests {
                 "test:ingredient",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "brewing_start built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -27937,8 +28097,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_broadcast_message(&FakeHost::empty(), &firing_mods, &mut line, &mut cancel);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "broadcast_message built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -28017,8 +28178,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_campfire_start(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "campfire_start built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -28155,8 +28317,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "cauldron_level_changed built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -28290,8 +28453,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "chorus_fruit_teleport built an event table for a heard dispatch"
             );
             assert!(
@@ -28369,8 +28533,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_compost_item(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "compost_item built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -28449,8 +28614,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_crafter_craft(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:recipe");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "crafter_craft built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -28576,8 +28742,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_creeper_ignite(&mut FakeHost::empty(), &firing_mods, 11, 8, "test:item");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "creeper_ignite built an event table for a heard dispatch"
             );
             assert!(
@@ -28706,8 +28873,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_creeper_power(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 3.0, 4.0]);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "creeper_power built an event table for a heard dispatch"
             );
             assert!(
@@ -28818,8 +28986,9 @@ mod generated_tests {
                 &mut damage_multiplier,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "critical_hit built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -28908,8 +29077,9 @@ mod generated_tests {
                 "test:to",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "difficulty_changed built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -29030,8 +29200,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "dragon_egg_form built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -29149,8 +29320,9 @@ mod generated_tests {
                 11,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "enchant_item built an event table for a heard dispatch"
             );
             assert!(
@@ -29296,8 +29468,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "ender_pearl_teleport built an event table for a heard dispatch"
             );
             assert!(
@@ -29393,8 +29566,9 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entities_load built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -29491,8 +29665,9 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entities_unload built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -29642,8 +29817,9 @@ mod generated_tests {
                 [3, 4, 5],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_break_door built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -29722,8 +29898,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_entity_breed(&mut FakeHost::empty(), &firing_mods, 7, 8, Some(9));
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_breed built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -29883,8 +30060,9 @@ mod generated_tests {
                 "test:to",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_change_block built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -30052,8 +30230,9 @@ mod generated_tests {
                 [4.0, 5.0, 6.0],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_drop_item built an event table for a heard dispatch"
             );
             assert!(
@@ -30211,8 +30390,9 @@ mod generated_tests {
                 "test:block",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_enter_block built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -30362,8 +30542,9 @@ mod generated_tests {
                 Some(9),
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_enter_love_mode built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -30525,8 +30706,9 @@ mod generated_tests {
                 [3, 4, 5],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_portal built an event table for a heard dispatch"
             );
             assert!(
@@ -30629,8 +30811,9 @@ mod generated_tests {
                 "test:to",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_pose_change built an event table for a heard dispatch"
             );
             assert!(
@@ -30790,8 +30973,9 @@ mod generated_tests {
                 4.5,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_shoot_bow built an event table for a heard dispatch"
             );
             assert!(
@@ -30940,8 +31124,9 @@ mod generated_tests {
                 Some(9),
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_tame built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -31109,8 +31294,9 @@ mod generated_tests {
                 [4.0, 5.0, 6.0],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_teleport built an event table for a heard dispatch"
             );
             assert!(
@@ -31204,8 +31390,9 @@ mod generated_tests {
                 true,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_toggle_glide built an event table for a heard dispatch"
             );
             assert!(
@@ -31359,8 +31546,9 @@ mod generated_tests {
                 "test:transformed_kind",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_transform built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -31485,8 +31673,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_entity_unleash(&mut FakeHost::empty(), &firing_mods, 7, "minecraft:zombie");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_unleash built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -31561,8 +31750,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_exp_bottle(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 8);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "exp_bottle built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -31653,8 +31843,9 @@ mod generated_tests {
                 &mut listened,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "experience_orb_pickup_listened built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -31876,8 +32067,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "experience_orb_pickup built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -31996,8 +32188,9 @@ mod generated_tests {
                 &mut repair,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "mending_repair built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -32076,8 +32269,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_explosion_prime(&mut FakeHost::empty(), &firing_mods, [1.0, 2.0, 3.0], 2.5);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "explosion_prime built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -32166,8 +32360,9 @@ mod generated_tests {
                 &mut odds,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "fire_odds built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -32352,8 +32547,9 @@ mod generated_tests {
                 &mut smoke,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "smoke_source built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -32563,8 +32759,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_firework_explode(&mut FakeHost::empty(), &firing_mods, 11, [2.0, 3.0, 4.0], 9);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "firework_explode built an event table for a heard dispatch"
             );
             assert!(
@@ -32700,8 +32897,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "fluid_level_change built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -32805,8 +33003,9 @@ mod generated_tests {
                 &mut limit,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "framerate_limit built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -32885,8 +33084,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_furnace_burn(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:fuel");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "furnace_burn built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -32989,8 +33189,9 @@ mod generated_tests {
                 11,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "furnace_extract built an event table for a heard dispatch"
             );
             assert!(
@@ -33086,8 +33287,9 @@ mod generated_tests {
                 "test:result",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "furnace_smelt built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -33166,8 +33368,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_furnace_start_smelt(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "furnace_start_smelt built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -33257,8 +33460,9 @@ mod generated_tests {
                 [2.0, 3.0, 4.0],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "game_event built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -33420,8 +33624,9 @@ mod generated_tests {
                 Some(11),
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "hopper_inventory_search built an event table for a heard dispatch"
             );
             assert!(
@@ -33553,8 +33758,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "hopper_pickup_item built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -33661,8 +33867,9 @@ mod generated_tests {
                 &mut items,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "ingredient built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -33883,8 +34090,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "inventory_block_start built an event table for a heard dispatch"
             );
             assert!(
@@ -34008,8 +34216,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "inventory_move_item built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -34121,8 +34330,9 @@ mod generated_tests {
                 },
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "item_crafted built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -34290,8 +34500,9 @@ mod generated_tests {
                 [4.0, 5.0, 6.0],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "item_despawn built an event table for a heard dispatch"
             );
             assert!(
@@ -34384,8 +34595,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_item_energy_buffer(&FakeHost::empty(), &firing_mods, "test:item", &mut buffer);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "item_energy_buffer built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -34668,8 +34880,9 @@ mod generated_tests {
                 &mut extra_life,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "item_expire built an event table for a heard dispatch"
             );
             assert!(
@@ -34836,8 +35049,9 @@ mod generated_tests {
                 [4.0, 5.0, 6.0],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "item_spawn built an event table for a heard dispatch"
             );
             assert!(
@@ -34961,8 +35175,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "leaves_decay built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -35087,8 +35302,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "lightning_strike built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -35217,8 +35433,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "moisture_change built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -35360,8 +35577,9 @@ mod generated_tests {
                 },
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "anvil_craft_post built an event table for a heard dispatch"
             );
             assert!(
@@ -35545,8 +35763,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "anvil_craft_pre built an event table for a heard dispatch"
             );
             assert!(
@@ -35674,8 +35893,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "armor_stand_manipulate built an event table for a heard dispatch"
             );
             assert!(
@@ -35803,8 +36023,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "bucket_empty built an event table for a heard dispatch"
             );
             assert!(
@@ -35932,8 +36153,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "container_opened built an event table for a heard dispatch"
             );
             assert!(
@@ -36065,8 +36287,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "creative_slot built an event table for a heard dispatch"
             );
             assert!(
@@ -36199,8 +36422,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "food_level_changed built an event table for a heard dispatch"
             );
             assert!(
@@ -36381,8 +36605,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "hanging_break built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -36570,8 +36795,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "hanging_place built an event table for a heard dispatch"
             );
             assert!(
@@ -36704,8 +36930,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "item_damaged built an event table for a heard dispatch"
             );
             assert!(
@@ -36804,8 +37031,9 @@ mod generated_tests {
                 "test:to",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_changed_dimension built an event table for a heard dispatch"
             );
             assert!(
@@ -36883,8 +37111,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_clone(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_clone built an event table for a heard dispatch"
             );
             assert!(
@@ -36991,8 +37220,9 @@ mod generated_tests {
                 &mut names,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_commands_sent built an event table for a heard dispatch"
             );
             assert!(
@@ -37184,8 +37414,9 @@ mod generated_tests {
                 "test:slot",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_destroy_item built an event table for a heard dispatch"
             );
             assert!(
@@ -37305,8 +37536,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_fish built an event table for a heard dispatch"
             );
             assert!(
@@ -37405,8 +37637,9 @@ mod generated_tests {
                 "test:plant",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_flower_pot_manipulate built an event table for a heard dispatch"
             );
             assert!(
@@ -37534,8 +37767,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_game_mode_changed built an event table for a heard dispatch"
             );
             assert!(
@@ -37634,8 +37868,9 @@ mod generated_tests {
                 "test:book",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_insert_lectern_book built an event table for a heard dispatch"
             );
             assert!(
@@ -37814,8 +38049,9 @@ mod generated_tests {
                 12,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_item_frame_change built an event table for a heard dispatch"
             );
             assert!(
@@ -37921,8 +38157,9 @@ mod generated_tests {
                 11,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_item_mend built an event table for a heard dispatch"
             );
             assert!(
@@ -38021,8 +38258,9 @@ mod generated_tests {
                 10,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_lectern_page_change built an event table for a heard dispatch"
             );
             assert!(
@@ -38118,8 +38356,9 @@ mod generated_tests {
                 std::path::Path::new("test:path"),
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_load_from_file built an event table for a heard dispatch"
             );
             assert!(
@@ -38248,8 +38487,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_login built an event table for a heard dispatch"
             );
             assert!(
@@ -38345,8 +38585,9 @@ mod generated_tests {
                 std::path::Path::new("test:path"),
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_save_to_file built an event table for a heard dispatch"
             );
             assert!(
@@ -38424,8 +38665,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_sprint(&mut FakeHost::empty(), &firing_mods, 7, "test:name", true);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_sprint built an event table for a heard dispatch"
             );
             assert!(
@@ -38545,8 +38787,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_swap_hands built an event table for a heard dispatch"
             );
             assert!(
@@ -38645,8 +38888,9 @@ mod generated_tests {
                 "test:book",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_take_lectern_book built an event table for a heard dispatch"
             );
             assert!(
@@ -38748,8 +38992,9 @@ mod generated_tests {
                 "test:dimension",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_teleported built an event table for a heard dispatch"
             );
             assert!(
@@ -38827,8 +39072,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_totem(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_totem built an event table for a heard dispatch"
             );
             assert!(
@@ -38906,8 +39152,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_resource_pack_status(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "resource_pack_status built an event table for a heard dispatch"
             );
             assert!(
@@ -38985,8 +39232,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_spawn_change(&mut FakeHost::empty(), &firing_mods, [1, 2, 3], [2.5, 3.5]);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "spawn_change built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -39103,8 +39351,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "tnt_primed built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -39249,8 +39498,9 @@ mod generated_tests {
                 [2.0, 3.0, 4.0],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "vehicle_create built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -39433,8 +39683,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "vehicle_damage built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -39579,8 +39830,9 @@ mod generated_tests {
                 [2.0, 3.0, 4.0],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "vehicle_destroy built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -39735,8 +39987,9 @@ mod generated_tests {
                 [4.0, 5.0, 6.0],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "vehicle_moved built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -39815,8 +40068,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_world_border_bounds_changed(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "world_border_bounds_changed built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -39895,8 +40149,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_world_border_center_changed(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "world_border_center_changed built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -39996,8 +40251,9 @@ mod generated_tests {
                 "test:value",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "world_game_rule_change built an event table for a heard dispatch"
             );
             assert!(
@@ -40117,8 +40373,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "note_play built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -40218,8 +40475,9 @@ mod generated_tests {
                 "test:criterion",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_advancement_criterion_grant built an event table for a heard dispatch"
             );
             assert!(
@@ -40315,8 +40573,9 @@ mod generated_tests {
                 "test:advancement",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_advancement_done built an event table for a heard dispatch"
             );
             assert!(
@@ -40418,8 +40677,9 @@ mod generated_tests {
                 true,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_advancement_progress built an event table for a heard dispatch"
             );
             assert!(
@@ -40515,8 +40775,9 @@ mod generated_tests {
                 "test:hand",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_arm_swing built an event table for a heard dispatch"
             );
             assert!(
@@ -40604,8 +40865,9 @@ mod generated_tests {
                 "test:name",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_attack_cooldown_reset built an event table for a heard dispatch"
             );
             assert!(
@@ -40729,8 +40991,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_bed_enter built an event table for a heard dispatch"
             );
             assert!(
@@ -40826,8 +41089,9 @@ mod generated_tests {
                 [3, 4, 5],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_bed_leave built an event table for a heard dispatch"
             );
             assert!(
@@ -40994,8 +41258,9 @@ mod generated_tests {
                 "test:entity",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_bucket_entity built an event table for a heard dispatch"
             );
             assert!(
@@ -41098,8 +41363,9 @@ mod generated_tests {
                 10,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_bundle_item_select built an event table for a heard dispatch"
             );
             assert!(
@@ -41201,8 +41467,9 @@ mod generated_tests {
                 "test:secondary",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_change_beacon_effect built an event table for a heard dispatch"
             );
             assert!(
@@ -41298,8 +41565,9 @@ mod generated_tests {
                 true,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_change_main_hand built an event table for a heard dispatch"
             );
             assert!(
@@ -41387,8 +41655,9 @@ mod generated_tests {
                 "test:name",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_client_loaded_world built an event table for a heard dispatch"
             );
             assert!(
@@ -41466,8 +41735,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_deep_sleep(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_deep_sleep built an event table for a heard dispatch"
             );
             assert!(
@@ -41595,8 +41865,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_edit_book built an event table for a heard dispatch"
             );
             assert!(
@@ -41674,8 +41945,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_egg_throw(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_egg_throw built an event table for a heard dispatch"
             );
             assert!(
@@ -41753,8 +42025,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_elytra_boost(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_elytra_boost built an event table for a heard dispatch"
             );
             assert!(
@@ -41854,8 +42127,9 @@ mod generated_tests {
                 &mut amount,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_exp_change built an event table for a heard dispatch"
             );
             assert!(
@@ -41951,8 +42225,9 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_exp_cooldown_change built an event table for a heard dispatch"
             );
             assert!(
@@ -42030,8 +42305,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_input(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_input built an event table for a heard dispatch"
             );
             assert!(
@@ -42159,8 +42435,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_item_cooldown built an event table for a heard dispatch"
             );
             assert!(
@@ -42288,8 +42565,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_item_held built an event table for a heard dispatch"
             );
             assert!(
@@ -42363,8 +42641,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_jump(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_jump built an event table for a heard dispatch"
             );
             assert!(
@@ -42460,8 +42739,9 @@ mod generated_tests {
                 "test:reason",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_kicked built an event table for a heard dispatch"
             );
             assert!(
@@ -42557,8 +42837,9 @@ mod generated_tests {
                 "test:item",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_launch_projectile built an event table for a heard dispatch"
             );
             assert!(
@@ -42650,8 +42931,9 @@ mod generated_tests {
                 10,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_level_change built an event table for a heard dispatch"
             );
             assert!(
@@ -42747,8 +43029,9 @@ mod generated_tests {
                 "test:locale",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_locale_change built an event table for a heard dispatch"
             );
             assert!(
@@ -42844,8 +43127,9 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_loom_pattern_select built an event table for a heard dispatch"
             );
             assert!(
@@ -42923,8 +43207,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_map_filled(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_map_filled built an event table for a heard dispatch"
             );
             assert!(
@@ -43091,8 +43376,9 @@ mod generated_tests {
                 "test:entity_name",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_name_entity built an event table for a heard dispatch"
             );
             assert!(
@@ -43195,8 +43481,9 @@ mod generated_tests {
                 false,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_open_sign built an event table for a heard dispatch"
             );
             assert!(
@@ -43405,8 +43692,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_pick_item built an event table for a heard dispatch"
             );
             assert!(
@@ -43577,8 +43865,9 @@ mod generated_tests {
                 "test:item",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_pickup_arrow built an event table for a heard dispatch"
             );
             assert!(
@@ -43714,8 +44003,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_portal built an event table for a heard dispatch"
             );
             assert!(
@@ -43811,8 +44101,9 @@ mod generated_tests {
                 "test:arrow",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_ready_arrow built an event table for a heard dispatch"
             );
             assert!(
@@ -43911,8 +44202,9 @@ mod generated_tests {
                 false,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_recipe_book_click built an event table for a heard dispatch"
             );
             assert!(
@@ -44014,8 +44306,9 @@ mod generated_tests {
                 true,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_recipe_book_settings_change built an event table for a heard dispatch"
             );
             assert!(
@@ -44139,8 +44432,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_recipe_discovered built an event table for a heard dispatch"
             );
             assert!(
@@ -44218,8 +44512,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_riptide(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_riptide built an event table for a heard dispatch"
             );
             assert!(
@@ -44421,8 +44716,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_shear_entity built an event table for a heard dispatch"
             );
             assert!(
@@ -44504,8 +44800,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_shield_disable(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 9);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_shield_disable built an event table for a heard dispatch"
             );
             assert!(
@@ -44637,8 +44934,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_spawn_point_set built an event table for a heard dispatch"
             );
             assert!(
@@ -44770,8 +45068,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_stat_award built an event table for a heard dispatch"
             );
             assert!(
@@ -44867,8 +45166,9 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_stonecutter_recipe_select built an event table for a heard dispatch"
             );
             assert!(
@@ -45029,8 +45329,9 @@ mod generated_tests {
                 11,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_stop_spectating_entity built an event table for a heard dispatch"
             );
             assert!(
@@ -45112,8 +45413,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_stop_using_item(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_stop_using_item built an event table for a heard dispatch"
             );
             assert!(
@@ -45209,8 +45511,9 @@ mod generated_tests {
                 "test:slot",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_swap_with_equipment_slot built an event table for a heard dispatch"
             );
             assert!(
@@ -45334,8 +45637,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_teleport_end_gateway built an event table for a heard dispatch"
             );
             assert!(
@@ -45502,8 +45806,9 @@ mod generated_tests {
                 false,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_toggle_entity_age_lock built an event table for a heard dispatch"
             );
             assert!(
@@ -45597,8 +45902,9 @@ mod generated_tests {
                 true,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_toggle_sneak built an event table for a heard dispatch"
             );
             assert!(
@@ -45723,8 +46029,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_trade(&mut FakeHost::empty(), &firing_mods, 7, "test:name", 11);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_trade built an event table for a heard dispatch"
             );
             assert!(
@@ -45877,8 +46184,9 @@ mod generated_tests {
                 11,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_unleash_entity built an event table for a heard dispatch"
             );
             assert!(
@@ -45978,8 +46286,9 @@ mod generated_tests {
                 [3.0, 4.0, 5.0],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_velocity built an event table for a heard dispatch"
             );
             assert!(
@@ -46072,8 +46381,9 @@ mod generated_tests {
                 [2, 3, 4],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "portal_create built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -46167,8 +46477,9 @@ mod generated_tests {
                 [2.0, 3.0, 4.0],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "potion_splash built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -46255,8 +46566,9 @@ mod generated_tests {
                 &mut result,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "prepare_anvil built an event table for a heard dispatch"
             );
             assert!(
@@ -46461,8 +46773,9 @@ mod generated_tests {
                 &mut result,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "prepare_grindstone built an event table for a heard dispatch"
             );
             assert!(
@@ -46634,8 +46947,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_prepare_hopper_transfer(&FakeHost::empty(), &firing_mods, [1, 2, 3]);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "prepare_hopper_transfer built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -46741,8 +47055,9 @@ mod generated_tests {
                 &mut result,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "prepare_item_craft built an event table for a heard dispatch"
             );
             assert!(
@@ -46939,8 +47254,9 @@ mod generated_tests {
                 &mut costs,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "prepare_item_enchant built an event table for a heard dispatch"
             );
             assert!(
@@ -47045,8 +47361,9 @@ mod generated_tests {
                 &mut result,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "prepare_smithing built an event table for a heard dispatch"
             );
             assert!(
@@ -47294,8 +47611,9 @@ mod generated_tests {
                 "minecraft:zombie",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "projectile_launch built an event table for a heard dispatch"
             );
             assert!(
@@ -47373,8 +47691,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_raid_spawn_wave(&mut FakeHost::empty(), &firing_mods, 7, [2, 3, 4], 9, 10);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "raid_spawn_wave built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -47471,8 +47790,9 @@ mod generated_tests {
                 "test:state",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "raid_state_change built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -47562,8 +47882,9 @@ mod generated_tests {
                 [2, 3, 4],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "sculk_bloom built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -47664,8 +47985,9 @@ mod generated_tests {
                 &mut new_time,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "sleep_finished_time built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -47759,8 +48081,9 @@ mod generated_tests {
                 BlockPos::new(2, 3, 4),
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "sponge_absorb built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -47917,8 +48240,9 @@ mod generated_tests {
                 &mut suggestions,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "tab_complete built an event table for a heard dispatch"
             );
             assert!(
@@ -48221,8 +48545,9 @@ mod generated_tests {
                 9,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "target_hit built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -48343,8 +48668,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "thunder_change built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -48461,8 +48787,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "time_skip built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -48562,8 +48889,9 @@ mod generated_tests {
                 10,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "trade_select built an event table for a heard dispatch"
             );
             assert!(
@@ -48827,8 +49155,9 @@ mod generated_tests {
                 },
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "trade_with_villager built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -48925,8 +49254,9 @@ mod generated_tests {
                 "test:state",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "vault_change_state built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -49001,8 +49331,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_vault_loot(&FakeHost::empty(), &firing_mods, [1, 2, 3], "test:item");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "vault_loot built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -49127,8 +49458,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "weather_change built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -49207,8 +49539,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_whitelist_state_update(&mut FakeHost::empty(), &firing_mods, true);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "whitelist_state_update built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -49287,8 +49620,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_world_border_bounds_change_finish(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "world_border_bounds_change_finish built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -49363,8 +49697,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_world_saved(&mut FakeHost::empty(), &firing_mods, true);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "world_saved built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -49566,8 +49901,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_drown built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -49759,8 +50095,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_fall built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -49858,8 +50195,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_living_heal(&firing_mods, 7, &mut amount, &mut cancel);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_heal built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -49975,8 +50313,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_living_jump(&firing_mods, 7, "minecraft:zombie");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_jump built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -50125,8 +50464,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "arrow_nock built an event table for a heard dispatch"
             );
             assert!(
@@ -50313,8 +50653,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "baby_entity_spawn built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -50418,8 +50759,9 @@ mod generated_tests {
                 &mut problem,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "can_player_sleep built an event table for a heard dispatch"
             );
             assert!(
@@ -50599,8 +50941,9 @@ mod generated_tests {
                 &mut knockback_velocity,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "explosion_knockback built an event table for a heard dispatch"
             );
             assert!(
@@ -50816,8 +51159,9 @@ mod generated_tests {
                 &mut accept,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "ingredient_test built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -50900,8 +51244,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_item_container(&FakeHost::empty(), &firing_mods, "test:item", &mut slots);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "item_container built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -51123,8 +51468,9 @@ mod generated_tests {
                 "test:converted_kind",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_conversion_post built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -51306,8 +51652,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_conversion_pre built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -51495,8 +51842,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_death built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -51732,8 +52080,9 @@ mod generated_tests {
                 &mut projectile,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_get_projectile built an event table for a heard dispatch"
             );
             assert!(
@@ -52156,8 +52505,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_incoming_damage_v2 built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -52476,8 +52826,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_knockback_v2 built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -52666,8 +53017,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "mob_split built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -52800,8 +53152,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_register_configs(&mut FakeHost::empty(), &firing_mods, &mut configs);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "register_configs built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -53095,8 +53448,9 @@ mod generated_tests {
                 &mut sneak,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "movement_input built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -53242,8 +53596,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "note_block_change built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -53449,8 +53804,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "potential_spawns built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -53575,8 +53931,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "village_siege built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -53708,8 +54065,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_chat built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -53839,8 +54197,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_xp_change built an event table for a heard dispatch"
             );
             assert!(
@@ -53965,8 +54324,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_recipe_book_categories(&FakeHost::empty(), &firing_mods, &mut categories);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "recipe_book_categories built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -54164,8 +54524,9 @@ mod generated_tests {
                 &mut scale,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "render_hand_pose built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -54396,8 +54757,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "render_item_in_frame built an event table for a heard dispatch"
             );
             assert!(
@@ -54572,8 +54934,9 @@ mod generated_tests {
                 &mut text,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "render_name_tag built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -54725,8 +55088,9 @@ mod generated_tests {
                 &mut border_bottom,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "tooltip_color built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -54834,8 +55198,9 @@ mod generated_tests {
                 &mut pitch,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "camera_pose built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -54973,8 +55338,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "client_chat_received built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -55081,8 +55447,9 @@ mod generated_tests {
                 &mut data,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "menu_extra_data built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -55470,8 +55837,9 @@ mod generated_tests {
                 &mut offer,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "merchant_offer_traded built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -55731,8 +56099,9 @@ mod generated_tests {
                 &mut listeners,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "add_server_reload_listeners built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -55949,8 +56318,9 @@ mod generated_tests {
                 ],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "server_reload_listener_apply built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -56029,8 +56399,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_client_start(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "client_start built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -56109,8 +56480,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_client_disconnecting(&FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "client_disconnecting built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -56189,8 +56561,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_client_stopping(&FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "client_stopping built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -56273,8 +56646,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_menu_background(&FakeHost::empty(), &firing_mods, &mut radius);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "menu_background built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -56556,8 +56930,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "anvil_update built an event table for a heard dispatch"
             );
             assert!(
@@ -56662,8 +57037,9 @@ mod generated_tests {
                 &mut stack,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_clone_item built an event table for a heard dispatch"
             );
             assert!(
@@ -56881,8 +57257,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_entity_accepts_fluid built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -57031,8 +57408,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_place built an event table for a heard dispatch"
             );
             assert!(
@@ -57135,8 +57513,9 @@ mod generated_tests {
                 &mut new,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_redstone built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -57236,8 +57615,9 @@ mod generated_tests {
                 &mut speed,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "break_speed built an event table for a heard dispatch"
             );
             assert!(
@@ -57339,8 +57719,9 @@ mod generated_tests {
                 "test:input",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "chat_suggestion_applied built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -57466,8 +57847,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_client_attack(&mut FakeHost::empty(), &firing_mods, 11, false);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "client_attack built an event table for a heard dispatch"
             );
             assert!(
@@ -57545,8 +57927,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_client_hurt(&mut FakeHost::empty(), &firing_mods, Some(7), false);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "client_hurt built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -57625,8 +58008,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_client_player_network_logging_in(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "client_player_network_logging_in built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -57705,8 +58089,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_client_tick_pre(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "client_tick_pre built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -57785,8 +58170,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_client_tick_post(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "client_tick_post built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -57922,8 +58308,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "console_line built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -58079,8 +58466,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "creative_slot_v2 built an event table for a heard dispatch"
             );
             assert!(
@@ -58172,8 +58560,9 @@ mod generated_tests {
                 &mut custom,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "custom_block_fluids built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -58287,8 +58676,9 @@ mod generated_tests {
                 &mut out,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "custom_fluid_tanks built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -58531,8 +58921,9 @@ mod generated_tests {
                 &mut out,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "custom_fluid_fill built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -58749,8 +59140,9 @@ mod generated_tests {
                 &mut out,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "custom_fluid_drain built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -58959,8 +59351,9 @@ mod generated_tests {
                 &[116u8, 0u8, 159u8],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "custom_payload_from_client built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -59160,8 +59553,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_change_block_v2 built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -59416,8 +59810,9 @@ mod generated_tests {
                 &mut claimed,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_interact_specific built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -59573,8 +59968,9 @@ mod generated_tests {
                 &mut outline,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "entity_outline built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -59677,8 +60073,9 @@ mod generated_tests {
                 [5, 6, 7],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "fishing_hook_landed built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -59800,8 +60197,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "handshake built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -60036,8 +60434,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "interact_entity_v2 built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -60174,8 +60573,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "inventory_click built an event table for a heard dispatch"
             );
             assert!(
@@ -60307,8 +60707,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "inventory_drag built an event table for a heard dispatch"
             );
             assert!(
@@ -60603,8 +61004,9 @@ mod generated_tests {
                 &mut discard,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "item_after_vertical_collision built an event table for a heard dispatch"
             );
             assert!(
@@ -60748,8 +61150,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "item_dropped_v2 built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -60970,8 +61373,9 @@ mod generated_tests {
                 &mut swing,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "item_interact_mob built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -61223,8 +61627,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "item_picked_up_v2 built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -61412,8 +61817,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_change_target built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -61579,8 +61985,9 @@ mod generated_tests {
                 &mut amount,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_damage_pre built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -61740,8 +62147,9 @@ mod generated_tests {
                 6.5,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_damage_post built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -61954,8 +62362,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "living_incoming_damage_v3 built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -62040,8 +62449,9 @@ mod generated_tests {
                 "test:line",
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "log_line built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -62195,8 +62605,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_menu_input_closed(&mut FakeHost::empty(), &firing_mods, 7, 8, &mut slots);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "menu_input_closed built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -62525,8 +62936,9 @@ mod generated_tests {
                 &mut links,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "menu_links built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -63095,8 +63507,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_mob_ai_register(&firing_mods, &mut test_mob("minecraft:cow"));
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "mob_ai_register built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -63249,8 +63662,9 @@ mod generated_tests {
                 None,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "mob_died built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -63354,8 +63768,9 @@ mod generated_tests {
                 &mut result,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "permission_check built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -63543,8 +63958,9 @@ mod generated_tests {
                 false,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_register_channels built an event table for a heard dispatch"
             );
             assert!(
@@ -63647,8 +64063,9 @@ mod generated_tests {
                 &mut level,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_command_level built an event table for a heard dispatch"
             );
             assert!(
@@ -63769,8 +64186,9 @@ mod generated_tests {
                 &mut names_hidden,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_commands_sent_v2 built an event table for a heard dispatch"
             );
             assert!(
@@ -64008,8 +64426,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_fish_v2 built an event table for a heard dispatch"
             );
             assert!(
@@ -64150,8 +64569,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_hurt_by_player built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -64296,8 +64716,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_launch_projectile_v2 built an event table for a heard dispatch"
             );
             assert!(
@@ -64375,8 +64796,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_logging_out(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_logging_out built an event table for a heard dispatch"
             );
             assert!(
@@ -64513,8 +64935,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_move built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -64615,8 +65038,9 @@ mod generated_tests {
                 &mut defer,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_pre_login built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -64843,8 +65267,9 @@ mod generated_tests {
                 &mut pitch,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_respawn_position built an event table for a heard dispatch"
             );
             assert!(
@@ -64958,8 +65383,9 @@ mod generated_tests {
                 &mut rotation,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_spawn_location built an event table for a heard dispatch"
             );
             assert!(
@@ -65109,8 +65535,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_teleport built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -65189,8 +65616,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_player_tick_pre(&mut FakeHost::empty(), &firing_mods);
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "player_tick_pre built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -65368,8 +65796,9 @@ mod generated_tests {
                 &mut collide,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "projectile_world_border built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -65476,8 +65905,9 @@ mod generated_tests {
                 &mut sources,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "recipe_sources built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -66046,8 +66476,9 @@ mod generated_tests {
             reset_event_tables();
             dispatch_register_goals(&firing_mods, &mut test_mob("minecraft:cow"));
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "register_goals built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -66147,8 +66578,9 @@ mod generated_tests {
                 10,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "resource_pack_status_v2 built an event table for a heard dispatch"
             );
             assert!(
@@ -66272,8 +66704,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "right_click_block_v2 built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -66406,8 +66839,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "screen_mouse_dragged_pre_v2 built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -66536,8 +66970,9 @@ mod generated_tests {
                 &mut canceled,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "screen_mouse_scrolled_pre_v2 built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -66673,8 +67108,9 @@ mod generated_tests {
                 ],
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "server_tick_timed built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -66772,8 +67208,9 @@ mod generated_tests {
                 &mut stateful,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "stateful_block_entity built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -66877,8 +67314,9 @@ mod generated_tests {
                 &mut entity,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "block_entity_from_state built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -67138,8 +67576,9 @@ mod generated_tests {
                 &mut suggestions,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "tab_complete_v2 built an event table for a heard dispatch"
             );
             assert!(
@@ -67461,8 +67900,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "toast_add built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -67638,8 +68078,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "trample built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -67846,8 +68287,9 @@ mod generated_tests {
                 &mut cancel,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "vehicle_moved_v2 built an event table for a heard dispatch"
             );
             assert_eq!(
@@ -67944,8 +68386,9 @@ mod generated_tests {
                 &mut blocks,
             );
             assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert!(
-                event_tables() >= 1,
+            assert_eq!(
+                event_tables(),
+                1,
                 "wind_burst built an event table for a heard dispatch"
             );
             assert_eq!(

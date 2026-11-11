@@ -9,8 +9,9 @@
 
 use super::test_support::{FakeHost, FakeLevel, boxed, drop_dir, loaded, no_error};
 use crate::generated_runtime::{
-    INTERNED_CAP, LuaStruct, StrInterner, placement_answer, props_of, split_state_name,
-    struct_vec_from_lua, struct_vec_to_lua, text_from_parts,
+    INTERNED_CAP, LuaStruct, StrInterner, placement_answer, props_of, read_string_seq,
+    split_state_name, struct_vec_from_lua, struct_vec_to_lua, text_from_parts,
+    write_loot_drops_back,
 };
 use horizon_client::item_data::StackData;
 use horizon_client::mod_api::{
@@ -754,6 +755,44 @@ fn fixed_sequences_reject_wrong_length() {
     assert!(err.to_string().contains("eight"), "names the count: {err}");
 }
 
+/// A float key on a written-back sequence is a lost write, not a skipped
+/// slot: 2^63, 1e20 and 1.5 error naming the field, while 3.0 (stored as
+/// integer 3) still reads as before. Both the replaced table (no hidden
+/// seed) and the seeded in-place table refuse the float key.
+#[test]
+fn sequences_reject_float_keys() {
+    let lua = lua();
+    let pair = || {
+        let e = lua.create_table().unwrap();
+        e.set("min", 1).unwrap();
+        e.set("max", 2).unwrap();
+        e
+    };
+    // A replaced table (no hidden seed) with a float key.
+    for key in [9223372036854775808.0_f64, 1e20, 1.5] {
+        let t = lua.create_table().unwrap();
+        t.set(1, pair()).unwrap();
+        t.set(2, pair()).unwrap();
+        t.set(key, true).unwrap();
+        let err = struct_vec_from_lua::<(i32, i32)>(&lua, &t, "pairs").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("pairs"), "names the field: {msg}");
+        assert!(msg.contains("integer keys"), "names the rule: {msg}");
+    }
+    // A seeded in-place table refuses the float key too.
+    let seeded = struct_vec_to_lua(&lua, &[(1, 2), (3, 4)]).unwrap();
+    seeded.set(1e20_f64, true).unwrap();
+    let err = struct_vec_from_lua::<(i32, i32)>(&lua, &seeded, "pairs").unwrap_err();
+    assert!(err.to_string().contains("pairs"), "names the field: {err}");
+    // 3.0 is the integer 3: it still reads as before.
+    let whole = lua.create_table().unwrap();
+    whole.set(1, pair()).unwrap();
+    whole.set(2, pair()).unwrap();
+    whole.set(3.0_f64, pair()).unwrap();
+    let back: Vec<(i32, i32)> = struct_vec_from_lua(&lua, &whole, "pairs").unwrap();
+    assert_eq!(back.len(), 3);
+}
+
 /// Setting a non-optional field to nil keeps the native value.
 #[test]
 fn nil_on_required_fields_keeps_native() {
@@ -1429,4 +1468,122 @@ fn placement_answer_nil_passes_through() {
     );
     assert_eq!(answer, None);
     no_error(&id);
+}
+
+/// Every sequence reader shares the float-key refusal, not just `seq_len`:
+/// a 1.5 key and a 2^63 key error naming the field on a string sequence.
+#[test]
+fn string_sequences_reject_float_keys() {
+    for key in [1.5_f64, 9223372036854775808.0_f64] {
+        let lua = lua();
+        let t = lua.create_table().unwrap();
+        t.set(1, "a").unwrap();
+        t.set(2, "b").unwrap();
+        t.set(key, "lost").unwrap();
+        let err = read_string_seq(&t, "lines").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("lines"), "names the field: {msg}");
+        assert!(msg.contains("integer keys"), "names the rule: {msg}");
+    }
+}
+
+/// A 1.5 key and a 2^63 key error naming the field on `[bool; 3]`.
+#[test]
+fn bool3_sequences_reject_float_keys() {
+    for key in [1.5_f64, 9223372036854775808.0_f64] {
+        let lua = lua();
+        let t = lua.create_table().unwrap();
+        t.set(1, true).unwrap();
+        t.set(2, false).unwrap();
+        t.set(3, true).unwrap();
+        t.set(key, true).unwrap();
+        let err = <[bool; 3]>::from_value(&lua, Value::Table(t), "toggles").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("toggles"), "names the field: {msg}");
+        assert!(msg.contains("integer keys"), "names the rule: {msg}");
+    }
+}
+
+/// A 1.5 key and a 2^63 key error naming the field on `[[f32; 4]; 8]`.
+#[test]
+fn shader_param_sequences_reject_float_keys() {
+    for key in [1.5_f64, 9223372036854775808.0_f64] {
+        let lua = lua();
+        let t = lua.create_table().unwrap();
+        for i in 1..=8 {
+            let slot = lua.create_table().unwrap();
+            slot.set("x", 1.0).unwrap();
+            slot.set("y", 2.0).unwrap();
+            slot.set("z", 3.0).unwrap();
+            slot.set("w", 4.0).unwrap();
+            t.set(i, slot).unwrap();
+        }
+        t.set(key, true).unwrap();
+        let err = <[[f32; 4]; 8]>::from_value(&lua, Value::Table(t), "params").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("params"), "names the field: {msg}");
+        assert!(msg.contains("integer keys"), "names the rule: {msg}");
+    }
+}
+
+/// A 1.5 key and a 2^63 key on a container's inputs error naming the field.
+#[test]
+fn container_sequences_reject_float_keys() {
+    for key in [1.5_f64, 9223372036854775808.0_f64] {
+        let lua = lua();
+        let t = lua.create_table().unwrap();
+        t.set("slots", 2).unwrap();
+        let faces = lua.create_table().unwrap();
+        for i in 1..=6 {
+            faces
+                .set(i, lua.create_sequence_from([0]).unwrap())
+                .unwrap();
+        }
+        t.set("faces", faces).unwrap();
+        let inputs = lua.create_table().unwrap();
+        inputs.set(1, 0).unwrap();
+        inputs.set(key, 1).unwrap();
+        t.set("inputs", inputs).unwrap();
+        let outputs = lua.create_table().unwrap();
+        outputs.set(1, 1).unwrap();
+        t.set("outputs", outputs).unwrap();
+        let err = ModContainer::from_value(&lua, Value::Table(t), "box").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("box.inputs"), "names the field: {msg}");
+        assert!(msg.contains("integer keys"), "names the rule: {msg}");
+    }
+}
+
+/// A 1.5 key and a 2^63 key on the loot drops error naming the field.
+#[test]
+fn loot_drops_reject_float_keys() {
+    for key in [1.5_f64, 9223372036854775808.0_f64] {
+        let lua = lua();
+        let entry = lua.create_table().unwrap();
+        entry.set("id", "minecraft:stone").unwrap();
+        let drops = lua.create_table().unwrap();
+        drops.set(1, entry).unwrap();
+        drops.set(key, true).unwrap();
+        let table = lua.create_table().unwrap();
+        table.set("drops", drops).unwrap();
+        let mut out = Vec::new();
+        let err = write_loot_drops_back(&lua, &table, &mut out, "drops").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("drops"), "names the field: {msg}");
+        assert!(msg.contains("integer keys"), "names the rule: {msg}");
+    }
+}
+
+/// 3.0 is the integer 3: it still reads as index 3 on a string sequence.
+#[test]
+fn string_sequences_keep_whole_float_indices() {
+    let lua = lua();
+    let t = lua.create_table().unwrap();
+    t.set(1, "a").unwrap();
+    t.set(2, "b").unwrap();
+    t.set(3.0_f64, "c").unwrap();
+    assert_eq!(
+        read_string_seq(&t, "lines").unwrap(),
+        vec!["a".to_owned(), "b".to_owned(), "c".to_owned()]
+    );
 }
