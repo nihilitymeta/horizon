@@ -281,7 +281,7 @@ const CONFIRM: Param = Param {
 };
 
 /// MCP tools that delete or overwrite the player's things (`destructiveHint`).
-pub const DESTRUCTIVE: &[&str] = &["world-delete", "fill", "setblock"];
+pub const DESTRUCTIVE: &[&str] = &["world-delete", "fill", "setblock", "lua"];
 /// MCP tools that reach other players or the network (`openWorldHint`): only when the player asks.
 pub const OPEN_WORLD: &[&str] = &["connect", "lan", "friends", "chat", "command"];
 
@@ -614,6 +614,15 @@ pub const COMMANDS: &[Cmd] = &[
     cmd!("repro-export", Scripting, "repro-export [NAME] [PATH] [--no-world]", "zip a recording with the logs, crash report and status",
         "Writes repro/<stamp>-NAME.zip: the recording, logs/latest.log, the newest crash report, a status.json and a README. The player attaches it to the bug report; nothing is uploaded. Stops a running recording first.",
         ["horizon-ctl repro-export", "horizon-ctl repro-export repro-bug out.zip"], &[opt("name", Ty::Str, "recording from record-list (default the newest)"), opt("path", Ty::Str, "where to write the zip"), flag("no-world", Ty::Bool, "leave the world out")], mcp: true, local: false),
+    cmd!("reload-mods", Scripting, "reload-mods [ID]", "reload scripted mods, waiting until the reload is applied",
+        "Reloads one mod by id, or every scripted mod without an id, as /reload does: the game reads its scripts again at the next server tick. Waits up to 10 s for the reload to apply, then replies with one short status per mod (id, ok, reloads, and the error text when a reload fails). A registry.lua change still needs a restart: reloaded registry mods say so in their note. Unknown id is an error.",
+        ["horizon-ctl reload-mods", "horizon-ctl reload-mods my_mod"], &[opt("id", Ty::Str, "mod id to reload (default: every scripted mod)")], mcp: true, local: false),
+    cmd!("lua", Scripting, "lua CHUNK", "run a Lua chunk as /lua does, waiting until it runs (needs --dev-tools)",
+        "Runs CHUNK on the server thread in the /lua console's Luau state and limits (2 s, 64 MiB): the printed output comes back as output, a failing chunk as an error with its traceback. Needs the dev tools (--dev-tools); without them it is an error. One run at a time.",
+        ["horizon-ctl lua print(1)", "horizon-ctl lua print(mc.snbt(\"@p\", \"Pos\"))"], &[p("chunk", Ty::Rest, "Lua code, as one /lua line")], mcp: true, local: false),
+    cmd!("mod-state", Scripting, "mod-state ID", "the mod's saved world data as JSON",
+        "Replies with the scripted mod's horizon.world_data() table as world_data (null when the game in place holds none), plus missing naming the saved tables this chunk does not read: player_data and entity_data need the server thread, and a client window is not synced world_data either. Unknown id is an error.",
+        ["horizon-ctl mod-state my_mod"], &[p("id", Ty::Str, "mod id of a scripted mod")], mcp: true, local: false),
 ];
 
 pub fn find(name: &str) -> Option<&'static Cmd> {
@@ -1019,6 +1028,36 @@ mod tests {
     }
 
     #[test]
+    fn mod_state_takes_one_required_id() {
+        let state = find("mod-state").unwrap();
+        assert_eq!(tool_name(state), "mod_state");
+        assert_eq!(
+            line_for(state, &json!({ "id": "my_mod" })).unwrap(),
+            ["mod-state", "my_mod"]
+        );
+        assert!(
+            line_for(state, &json!({}))
+                .unwrap_err()
+                .contains("id is required")
+        );
+    }
+
+    #[test]
+    fn lua_chunk_becomes_one_command_line() {
+        let lua = find("lua").unwrap();
+        assert_eq!(tool_name(lua), "lua");
+        assert_eq!(
+            line_for(lua, &json!({ "chunk": "print(mc.snbt(\"@p\", \"Pos\"))" })).unwrap(),
+            ["lua", "print(mc.snbt(\"@p\", \"Pos\"))"]
+        );
+        assert!(
+            line_for(lua, &json!({}))
+                .unwrap_err()
+                .contains("chunk is required")
+        );
+    }
+
+    #[test]
     fn schemas_list_required_parameters() {
         let s = schema(find("break").unwrap());
         assert_eq!(s["required"], json!(["x", "y", "z"]));
@@ -1090,6 +1129,19 @@ mod tests {
                 c.name
             );
         }
+    }
+
+    #[test]
+    fn lua_is_marked_destructive_and_says_it_needs_dev_tools() {
+        // Arbitrary Luau runs `mc.cmd`: it changes the world, as fill does.
+        assert!(DESTRUCTIVE.contains(&"lua"));
+        let md = markdown();
+        let row = md
+            .lines()
+            .find(|l| l.starts_with("| `lua CHUNK` |"))
+            .unwrap();
+        assert!(row.contains("(destructive)"), "{row}");
+        assert!(row.contains("--dev-tools"), "{row}");
     }
 
     #[test]

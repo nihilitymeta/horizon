@@ -22,6 +22,15 @@ const FEATURES: &[&str] = &[
 ];
 
 /// `hello`: the protocol the socket speaks, the game's release and the command groups it serves.
+/// `reload-mods` reloads the mods on the server that ticks them: this game's
+/// own (single player, a LAN host, a dedicated server). A window that only
+/// joins a remote server has none here, so its reload would never apply.
+fn reload_mods_refusal(runs_mods: bool) -> Option<&'static str> {
+    (!runs_mods).then_some(
+        "reload-mods reloads the mods on the server this game runs; this game is a client of a remote server, so reload there",
+    )
+}
+
 fn hello() -> Value {
     json!({
         "protocol": PROTOCOL,
@@ -70,6 +79,9 @@ const HELP: &[&str] = &[
     "disconnect                     leave the server for the server list",
     "respawn                        respawn after death on a server",
     "credits [poem] [SCROLL]        roll the credits (with the end poem), or hold them SCROLL pixels in",
+    "reload-mods [ID]               reload scripted mods (one mod or all), waiting until applied",
+    "lua CHUNK                      run a Lua chunk as /lua does, waiting until it runs",
+    "mod-state ID                   the mod's saved world data as JSON",
     "quit                           save and exit",
 ];
 
@@ -191,6 +203,8 @@ impl Game<'_> {
                 self.pending_bench = Some((deadline, reply));
             }
         }
+        horizon_client::dev_input::mods::poll_reload_wait();
+        horizon_client::dev_input::console::poll_lua_run();
         horizon_client::widgets::end_frame(self.frames);
         self.narrate_screen();
         self.poll_repro(event_loop);
@@ -1300,6 +1314,69 @@ impl Game<'_> {
                 );
                 ok()
             }
+            "reload-mods" => {
+                if words.len() > 2 {
+                    return Err("usage: reload-mods [ID]".into());
+                }
+                self.require_world()?;
+                let runs_mods = self.integrated.is_some()
+                    || self.serving.is_some()
+                    || self.options.dedicated.is_some();
+                if let Some(refusal) = reload_mods_refusal(runs_mods) {
+                    return Err(refusal.into());
+                }
+                let id = words.get(1).copied();
+                match horizon_client::dev_input::mods::start_reload_wait(id, reply.clone()) {
+                    Ok(value) => Ok(value),
+                    Err(e) => Err(e.into()),
+                }
+            }
+            "lua" => {
+                let chunk = line.trim_start().strip_prefix("lua").unwrap_or("").trim();
+                if chunk.is_empty() {
+                    return Err("usage: lua CHUNK".into());
+                }
+                if !horizon_client::dev_input::enabled() {
+                    return Err(
+                        "dev tools are off; start the game with --dev-tools to use lua".into(),
+                    );
+                }
+                self.require_world()?;
+                match horizon_client::dev_input::console::start_lua_run(chunk, reply.clone()) {
+                    Ok(value) => Ok(value),
+                    Err(e) => Err(e.into()),
+                }
+            }
+            "mod-state" => {
+                if words.len() != 2 {
+                    return Err("usage: mod-state ID".into());
+                }
+                let id = words[1];
+                if !horizon_client::dev_input::mods::status()
+                    .iter()
+                    .any(|m| m.id == id)
+                {
+                    return Err(format!("unknown mod {id}").into());
+                }
+                self.require_world()?;
+                let world_data = self.mod_world_data(id);
+                let mut missing = vec![
+                    "player_data is not read by this chunk; per-player tables need the server thread"
+                        .to_owned(),
+                    "entity_data is not read by this chunk; per-entity tables need the server thread"
+                        .to_owned(),
+                ];
+                if world_data.is_none() && !self.native_authoritative() {
+                    missing.insert(
+                        0,
+                        "world_data is not synced to this window; only the server thread reads it"
+                            .to_owned(),
+                    );
+                }
+                Ok(Some(horizon_client::dev_input::mods::mod_state_reply(
+                    id, world_data, &missing,
+                )))
+            }
             // A splitscreen player leaves splitscreen; only P1's game ends the process.
             "quit" if self.options.split_guest => {
                 if self.remote.is_some() {
@@ -1334,6 +1411,30 @@ impl Game<'_> {
             return Err("no world open; use: open WORLD [SEED] [creative]".into());
         }
         Ok(())
+    }
+
+    /// The Lua mod `id`'s `horizon.world_data()` table as JSON, when the game
+    /// in place holds its level attachment: the attachment the Lua API stores
+    /// under the mod's id (`mod_attachment_named` in event-horizon-lua). A
+    /// server thread's game reads its own level; a window reads the copy its
+    /// server synced (Lua attachments never sync, so that copy stays empty).
+    fn mod_world_data(&mut self, id: &str) -> Option<Value> {
+        use horizon_client::mod_api::Holder;
+        use horizon_world::nbt::Tag;
+        let map = if self.native_authoritative() {
+            // The quiet read: listing data must not mark the level for a sync.
+            self.attachment_map_quiet(Holder::Level).ok()
+        } else {
+            self.attachment_map(Holder::Level).ok()
+        }?;
+        let saved = Tag::Compound(map.to_nbt());
+        let world = saved.get(id)?.get("world")?.get("value")?;
+        match world {
+            Tag::Compound(data) => Some(horizon_client::scoreboard::tag_to_json(&Tag::Compound(
+                data.clone(),
+            ))),
+            _ => None,
+        }
     }
 
     fn control_key_down(&mut self, key: KeyCode, raw: KeyCode) -> Result<()> {
@@ -1760,6 +1861,14 @@ pub(super) fn title_owns_text(screen: &Screen, title_up: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reload_mods_needs_a_server_here_that_ticks_the_mods() {
+        assert_eq!(reload_mods_refusal(true), None);
+        let refusal = reload_mods_refusal(false).unwrap();
+        assert!(refusal.starts_with("reload-mods reloads"), "{refusal}");
+        assert!(refusal.contains("remote server"), "{refusal}");
+    }
 
     #[test]
     fn the_title_takes_text_only_on_its_own_screens() {

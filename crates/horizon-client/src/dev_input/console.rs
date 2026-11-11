@@ -4,10 +4,13 @@
 //! (`game/commands/inspect.rs`) answers its completion requests. Both
 //! read and write these queues; neither draws the other.
 
+use serde_json::Value;
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::Sender;
+use std::time::{Duration, Instant};
 
 /// Where scripts live, under the game folder (the working directory).
 pub const SCRIPTS_DIR: &str = "dev-tools/scripts";
@@ -39,6 +42,8 @@ pub static STOP_TICKS: AtomicBool = AtomicBool::new(false);
 /// A chunk to run: what the window shows for it, and the code.
 #[derive(Clone, Debug)]
 pub struct Request {
+    /// From 1 up, in the order `submit` queued them: a run finds its own.
+    pub id: u64,
     pub label: String,
     pub code: String,
 }
@@ -56,6 +61,21 @@ pub enum Kind {
 
 static INPUT: Mutex<Vec<Request>> = Mutex::new(Vec::new());
 static OUTPUT: Mutex<VecDeque<(Kind, String)>> = Mutex::new(VecDeque::new());
+/// The id the next request gets.
+static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+/// The lines of a watched run (a `lua` control run), from its echo to the
+/// next echo, collected while its batch runs.
+struct Capture {
+    id: u64,
+    label: String,
+    started: bool,
+    ended: bool,
+    lines: Vec<(Kind, String)>,
+}
+static CAPTURE: Mutex<Option<Capture>> = Mutex::new(None);
+/// The watched run's id once its batch has run, with its lines (`None`: the
+/// batch never ran it).
+static FINISHED: Mutex<Option<(u64, Option<Vec<(Kind, String)>>)>> = Mutex::new(None);
 /// Whether the server thread has a VM running tick callbacks (shown in the window).
 pub static TICKING: AtomicBool = AtomicBool::new(false);
 
@@ -511,25 +531,76 @@ pub fn history() -> Vec<String> {
 
 /// Queue `code` to run on the server thread.
 pub fn submit(label: impl Into<String>, code: impl Into<String>) {
+    push_request(next_id(), label.into(), code.into());
+}
+
+fn next_id() -> u64 {
+    NEXT_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+fn push_request(id: u64, label: String, code: String) {
     INPUT
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .push(Request {
-            label: label.into(),
-            code: code.into(),
-        });
+        .push(Request { id, label, code });
 }
 
-/// The requests queued since the last take (the server thread's).
+/// The requests queued since the last take (the server thread's). A take
+/// comes at the start of a tick, so the batch of the take before has run by
+/// now: that is when a watched `lua` run finishes.
 pub fn take_requests() -> Vec<Request> {
-    std::mem::take(&mut *INPUT.lock().unwrap_or_else(|e| e.into_inner()))
+    finish_capture();
+    let batch = std::mem::take(&mut *INPUT.lock().unwrap_or_else(|e| e.into_inner()));
+    let watched = LUA_PENDING
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .map(|p| (p.id, p.label.clone()));
+    let capture = watched
+        .filter(|(id, _)| batch.iter().any(|r| r.id == *id))
+        .map(|(id, label)| Capture {
+            id,
+            label,
+            started: false,
+            ended: false,
+            lines: Vec::new(),
+        });
+    *CAPTURE.lock().unwrap_or_else(|e| e.into_inner()) = capture;
+    batch
+}
+
+/// Hand the watched run's lines over, now that its batch has run.
+fn finish_capture() {
+    let taken = CAPTURE.lock().unwrap_or_else(|e| e.into_inner()).take();
+    let Some(c) = taken else { return };
+    let finished = (c.id, c.started.then_some(c.lines));
+    *FINISHED.lock().unwrap_or_else(|e| e.into_inner()) = Some(finished);
+}
+
+/// A run's lines from its echo up to the next echo: what the server thread
+/// printed for that chunk, whatever the ring has kept.
+fn capture_line(kind: Kind, text: &str) {
+    let mut watched = CAPTURE.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(c) = watched.as_mut() else { return };
+    if kind == Kind::Echo {
+        if c.started {
+            c.ended = true;
+        } else if text == c.label {
+            c.started = true;
+        }
+    }
+    if c.started && !c.ended {
+        c.lines.push((kind, text.to_string()));
+    }
 }
 
 /// A line for the window.
 pub fn push(kind: Kind, text: impl Into<String>) {
     let mut out = OUTPUT.lock().unwrap_or_else(|e| e.into_inner());
-    for line in text.into().lines() {
+    let text = text.into();
+    for line in text.lines() {
         out.push_back((kind, line.to_string()));
+        capture_line(kind, line);
     }
     while out.len() > KEEP {
         out.pop_front();
@@ -551,9 +622,122 @@ pub fn clear() {
     OUTPUT.lock().unwrap_or_else(|e| e.into_inner()).clear();
 }
 
+/// How long a `lua` control run waits for the server thread to run it.
+const LUA_WAIT_SECS: u64 = 10;
+
+struct LuaPending {
+    id: u64,
+    label: String,
+    deadline: Instant,
+    reply: Sender<String>,
+}
+static LUA_PENDING: Mutex<Option<LuaPending>> = Mutex::new(None);
+
+/// Queue `chunk` for the server thread's Lua console — the same queue `/lua
+/// <code>` and the window use, so the same VM and limits (2 s, 64 MiB) apply
+/// — and hold the reply until its output shows (`Ok(None)` deferred).
+pub fn start_lua_run(chunk: &str, reply: Sender<String>) -> Result<Option<Value>, String> {
+    if !super::enabled() {
+        return Err("dev tools are off; start the game with --dev-tools to use lua".to_owned());
+    }
+    if chunk.trim().is_empty() {
+        return Err("usage: lua CHUNK".to_owned());
+    }
+    if chunk.contains(['\n', '\r']) {
+        return Err("lua CHUNK is one line".to_owned());
+    }
+    let mut pending = LUA_PENDING.lock().unwrap_or_else(|e| e.into_inner());
+    if pending.is_some() {
+        return Err("a lua run is already running".to_owned());
+    }
+    // The id is set before the request is queued: the take that finds the
+    // request must find the run it belongs to.
+    let id = next_id();
+    let label = format!("> {chunk}");
+    *pending = Some(LuaPending {
+        id,
+        label: label.clone(),
+        deadline: Instant::now() + Duration::from_secs(LUA_WAIT_SECS),
+        reply,
+    });
+    drop(pending);
+    push_request(id, label, chunk.to_owned());
+    Ok(None)
+}
+
+/// The `lua` reply for the run's new lines: the printed output, or the error
+/// text when the chunk failed.
+fn lua_reply(new: &[(Kind, String)]) -> Value {
+    let errors: Vec<&str> = new
+        .iter()
+        .filter(|(k, _)| *k == Kind::Err)
+        .map(|(_, l)| l.as_str())
+        .collect();
+    if !errors.is_empty() {
+        return serde_json::json!({ "error": errors.join("\n") });
+    }
+    let out: Vec<&str> = new
+        .iter()
+        .filter(|(k, _)| *k == Kind::Out)
+        .map(|(_, l)| l.as_str())
+        .collect();
+    serde_json::json!({ "ok": true, "output": out.join("\n") })
+}
+
+/// Send the held `lua` reply once the run has finished (or after 10 s, a
+/// timeout). The window's game calls this once a frame, next to the mods'
+/// own wait.
+pub fn poll_lua_run() {
+    poll_lua_run_at(Instant::now());
+}
+
+/// `poll_lua_run` at the time `now`: the deadline is the pending run's, so a
+/// test can pass a later time instead of waiting.
+fn poll_lua_run_at(now: Instant) {
+    let mut pending = LUA_PENDING.lock().unwrap_or_else(|e| e.into_inner());
+    let Some((id, deadline)) = pending.as_ref().map(|p| (p.id, p.deadline)) else {
+        return;
+    };
+    let finished = {
+        let mut f = FINISHED.lock().unwrap_or_else(|e| e.into_inner());
+        let ours = matches!(f.as_ref(), Some((done, _)) if *done == id);
+        if ours {
+            f.take().map(|(_, lines)| lines)
+        } else {
+            None
+        }
+    };
+    let reply = match finished {
+        Some(Some(lines)) => lua_reply(&lines),
+        Some(None) => serde_json::json!({"error": "the chunk did not run"}),
+        None if now >= deadline => serde_json::json!({
+            "error": format!("timed out after {LUA_WAIT_SECS} s waiting for the chunk to run"),
+            "kind": "timeout",
+        }),
+        None => return,
+    };
+    if let Some(p) = pending.take() {
+        let _ = p.reply.send(reply.to_string());
+    }
+}
+
+/// Serialises the tests that touch the tools' process-wide state (the output,
+/// the lua run, the mods' store, the switch): the test threads share it.
+#[cfg(test)]
+pub(crate) static TEST_LOCK: Mutex<()> = Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Put the console's process-wide state back to nothing pending.
+    fn reset() {
+        clear();
+        *LUA_PENDING.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *CAPTURE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *FINISHED.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        let _ = take_requests();
+    }
 
     #[test]
     fn the_cursor_inside_an_mc_cmd_string_is_a_command_context() {
@@ -600,6 +784,193 @@ mod tests {
             ["Pos", "Pos[0]", "Pos[1]", "Pos[2]"]
         );
         assert!(c.hint.unwrap().starts_with("mc.get(entity[, path])"));
+    }
+
+    #[test]
+    fn a_lua_reply_carries_output_or_the_error() {
+        let out = vec![
+            (Kind::Echo, "> print(1)".to_string()),
+            (Kind::Out, "1".to_string()),
+        ];
+        assert_eq!(
+            super::lua_reply(&out),
+            serde_json::json!({"ok": true, "output": "1"})
+        );
+        // The echo is display chrome, not output; prints join with newlines.
+        let multi = vec![
+            (Kind::Echo, "> print(1, 2)".to_string()),
+            (Kind::Out, "a".to_string()),
+            (Kind::Out, "b".to_string()),
+        ];
+        assert_eq!(
+            super::lua_reply(&multi),
+            serde_json::json!({"ok": true, "output": "a\nb"})
+        );
+        // Nothing printed: empty output, still ok.
+        let bare = vec![(Kind::Echo, "> local x = 1".to_string())];
+        assert_eq!(
+            super::lua_reply(&bare),
+            serde_json::json!({"ok": true, "output": ""})
+        );
+        // A failure replies with the error text, not the prints.
+        let failed = vec![
+            (Kind::Echo, "> boom()".to_string()),
+            (Kind::Out, "before".to_string()),
+            (Kind::Err, "boom():1: attempt to call nil".to_string()),
+        ];
+        assert_eq!(
+            super::lua_reply(&failed),
+            serde_json::json!({"error": "boom():1: attempt to call nil"})
+        );
+    }
+
+    /// Start a `lua` run as the window does, then let the server thread's
+    /// tick take it and echo it, as `lua_run` does: the executor's side.
+    fn start_and_take(chunk: &str) -> std::sync::mpsc::Receiver<String> {
+        let (reply, got) = std::sync::mpsc::channel();
+        assert!(start_lua_run(chunk, reply).unwrap().is_none());
+        assert!(take_requests().iter().any(|r| r.code == chunk));
+        push(Kind::Echo, format!("> {chunk}"));
+        got
+    }
+
+    #[test]
+    fn a_silent_lua_run_replies_once_its_tick_is_over() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        super::super::enable();
+        let got = start_and_take("x = 1");
+        // The echo alone is not the end: the reply waits for the next take.
+        poll_lua_run();
+        assert!(got.try_recv().is_err());
+        take_requests();
+        poll_lua_run();
+        assert_eq!(got.try_recv().unwrap(), r#"{"ok":true,"output":""}"#);
+        reset();
+    }
+
+    #[test]
+    fn a_lua_run_gets_every_line_it_printed_even_past_the_ring() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        super::super::enable();
+        // The output ring is full before the run starts.
+        for i in 0..KEEP {
+            push(Kind::Out, format!("filler {i}"));
+        }
+        let got = start_and_take("for i=1,1200 do print(i) end");
+        for i in 1..=1200 {
+            push(Kind::Out, i.to_string());
+        }
+        take_requests();
+        poll_lua_run();
+        let v: Value = serde_json::from_str(&got.try_recv().unwrap()).unwrap();
+        let out: Vec<&str> = v["output"].as_str().unwrap().lines().collect();
+        assert_eq!(out.len(), 1200);
+        assert_eq!(out[0], "1");
+        assert_eq!(out[1199], "1200");
+        reset();
+    }
+
+    #[test]
+    fn a_lua_run_does_not_take_other_writers_lines() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        super::super::enable();
+        // A window run before ours, then ours, then one after it.
+        push(Kind::Echo, "> print(9)");
+        push(Kind::Out, "9");
+        let got = start_and_take("print(1)");
+        push(Kind::Out, "1");
+        push(Kind::Echo, "> print(7)");
+        push(Kind::Out, "7");
+        take_requests();
+        poll_lua_run();
+        assert_eq!(got.try_recv().unwrap(), r#"{"ok":true,"output":"1"}"#);
+        reset();
+    }
+
+    #[test]
+    fn a_lua_run_nobody_takes_times_out_after_ten_seconds() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        super::super::enable();
+        let (reply, got) = std::sync::mpsc::channel();
+        assert!(start_lua_run("print(1)", reply).unwrap().is_none());
+        poll_lua_run_at(Instant::now());
+        assert!(got.try_recv().is_err());
+        poll_lua_run_at(Instant::now() + Duration::from_secs(11));
+        let v: Value = serde_json::from_str(&got.try_recv().unwrap()).unwrap();
+        assert_eq!(v["kind"], "timeout");
+        assert!(v["error"].as_str().unwrap().contains("10 s"));
+        reset();
+    }
+
+    #[test]
+    fn a_timed_out_run_does_not_leak_into_the_next_reply() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        super::super::enable();
+        let (first, timed_out) = std::sync::mpsc::channel();
+        assert!(start_lua_run("print(1)", first).unwrap().is_none());
+        poll_lua_run_at(Instant::now() + Duration::from_secs(11));
+        assert!(timed_out.try_recv().unwrap().contains("timeout"));
+        // The stale run is still queued; the executor takes it with the new one.
+        let (second, got) = std::sync::mpsc::channel();
+        assert!(start_lua_run("print(2)", second).unwrap().is_none());
+        assert_eq!(take_requests().len(), 2);
+        push(Kind::Echo, "> print(1)");
+        push(Kind::Out, "1");
+        push(Kind::Echo, "> print(2)");
+        push(Kind::Out, "2");
+        take_requests();
+        poll_lua_run();
+        assert_eq!(got.try_recv().unwrap(), r#"{"ok":true,"output":"2"}"#);
+        reset();
+    }
+
+    #[test]
+    fn a_lua_run_that_never_ran_says_so() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        super::super::enable();
+        let (reply, got) = std::sync::mpsc::channel();
+        assert!(start_lua_run("print(1)", reply).unwrap().is_none());
+        // The executor drops the batch (no VM): the next take has no echo.
+        take_requests();
+        take_requests();
+        poll_lua_run();
+        assert_eq!(
+            got.try_recv().unwrap(),
+            r#"{"error":"the chunk did not run"}"#
+        );
+        reset();
+    }
+
+    #[test]
+    fn a_lua_control_run_queues_and_replies() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        // The pending reply, the output and the tools switch are process
+        // globals shared with the tests here.
+        super::super::enable();
+        let (dead, _) = std::sync::mpsc::channel();
+        assert_eq!(
+            start_lua_run("   ", dead.clone()).unwrap_err(),
+            "usage: lua CHUNK"
+        );
+        assert_eq!(
+            start_lua_run("print(1)\nprint(2)", dead.clone()).unwrap_err(),
+            "lua CHUNK is one line"
+        );
+        let (reply, _held) = std::sync::mpsc::channel();
+        assert!(start_lua_run("print(1)", reply).unwrap().is_none());
+        assert_eq!(
+            start_lua_run("print(2)", dead).unwrap_err(),
+            "a lua run is already running"
+        );
+        let _ = take_requests();
+        reset();
     }
 
     #[test]

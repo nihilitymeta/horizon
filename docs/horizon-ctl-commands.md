@@ -153,6 +153,9 @@ Every command `horizon-ctl` takes, its MCP tool in `horizon-ctl mcp` (the launch
 | `record-list` | `record_list` | The recordings and repro bundles on disk | none |
 | `record-replay NAME [--stop] [--in-place] [--keep-world] [--timeout S]` | `record_replay` | Replay a recording, best effort | `name` (string): recording from record-list<br>`--stop` (boolean): stop the running replay<br>`--in-place` (boolean): feed the open world instead of opening the copy<br>`--keep-world` (boolean): leave the copied world in saves/<br>`--timeout` (integer): give up after this many seconds (default 300) |
 | `repro-export [NAME] [PATH] [--no-world]` | `repro_export` | Zip a recording with the logs, crash report and status | `name` (string): recording from record-list (default the newest)<br>`path` (string): where to write the zip<br>`--no-world` (boolean): leave the world out |
+| `reload-mods [ID]` | `reload_mods` | Reload scripted mods, waiting until the reload is applied | `id` (string): mod id to reload (default: every scripted mod) |
+| `lua CHUNK` | `lua` (destructive) | Run a Lua chunk as /lua does, waiting until it runs (needs --dev-tools) | `chunk` (text, required): Lua code, as one /lua line |
+| `mod-state ID` | `mod_state` | The mod's saved world data as JSON | `id` (string, required): mod id of a scripted mod |
 
 ## Replies
 
