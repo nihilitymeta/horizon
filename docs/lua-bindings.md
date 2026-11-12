@@ -652,15 +652,49 @@ server-only call raises the server-only error (`horizon.<name> is only available
 even there. A draw hook never waits for its state: when another hook holds the state (for example
 `log_line` on `Log writer`), the frame is skipped silently, with no error line.
 
+### Screen and fog hooks
+
+The hooks about the world fog are client-side hooks: a client state hears them, a server state never
+(registering one from `scripts/server/` fails like any wrong-side hook). The screen hooks are
+client-side too, and all ten v1 hooks below are in Lua, alongside the fog hooks and the v2 twins.
+
+The fog hooks take `event.partial`, `event.camera` (`{ x, y, z }`), `event.fog_type` (the lowercase name:
+`"atmospheric"`, `"water"`, `"lava"`, `"powder_snow"`). `compute_fog_color` sets `event.rgb` (`{ x, y, z }`
+for red, green and blue, written back like `camera_pose`'s position); a non-finite component (a NaN) is a script
+error naming `rgb.x`, `rgb.y` or `rgb.z` and the write is dropped, and the native replaces the computed color only
+when all three are in 0..1, so a finite value outside that range keeps the original. `render_fog` sets `event.fog` (`color = { r, g, b, a }`
+and the six distances by their native names); a non-finite value is a script error naming the field, and the
+native keeps the whole original fog unless color and distances validate.
+
+The screen hooks take `event.screen`, the view of the open screen: `screen.id`
+is its stable id (`"inventory"`, `"creative"`, `"paused"`, `"options"`, the title's own ids),
+`screen.menu` the server-opened menu's type id or nil, `screen.title` the server title as its plain string
+with `screen.title_component` the vanilla JSON table (the rich-text pair, both nil without a server title),
+`screen.rect` the container panel as `{ x, y, width, height }` in GUI pixels (the whole window for a screen
+with no panel), `screen.slots` how many slots the menu has, `screen.mouse` the pointer in GUI pixels as
+`{ x, y }`, and `screen.partial_tick` the frame's partial tick. The lifecycle hooks (`screen_opening`,
+`screen_init_post`, `screen_closing`) only hear; with no screen open they never fire. The cancellable screen
+hooks (`..._pre`) add their input and take `horizon.cancel()`: `screen_key_pressed_pre` (`event.key` —
+vanilla's key name, `"key.keyboard.e"`, `event["repeat"]` — keyboard auto-repeat (`repeat` is a Luau keyword, so index it with brackets), `event.modifiers` — GLFW
+bits), `screen_key_released_pre` (`event.key`, `event.modifiers`), `screen_char_typed_pre` (`event.c` — a
+one-character string, `event.modifiers`), `screen_mouse_button_pressed_pre` /
+`screen_mouse_button_released_pre` (`event.button` — the GLFW button index, `event.modifiers`),
+`screen_mouse_dragged_pre` (`event.button`, `event.delta` — `{ x, y }` GUI-space movement,
+`event.modifiers`), `screen_mouse_scrolled_pre` (`event.scroll` — `{ x, y }` wheel movement as the game
+scales it, `event.modifiers`). Note the v1/v2 split: `screen_mouse_dragged_pre` and
+`screen_mouse_scrolled_pre` have v2 twins which also lend the game mutably and fire at the same point just
+before v1, for the same drags and wheel turns — hear the v2 hook, not both: a mod hearing both acts twice.
+
 ### Hooks Lua does not hear
 
-Lua hears 443 of the 516 hook points as event tables (`GENERATED_HOOK_NAMES`). The tables above spell out the hooks this page describes;
+Lua hears 460 of the 516 hook points as event tables (`GENERATED_HOOK_NAMES`). The tables above spell out the hooks this page describes;
 every other generated name is still an event table whose shape is its `HorizonOn` overload in
 [horizon.d.lua](api/horizon.d.lua). [hook-exposure.md](api/hook-exposure.md) lists only the hooks that are not
-generated, for one reason each: borrows of render state (38 hooks, among them the screens and the draw
-calls outside `hud`), of the generating chunk (2), of loot state (2), of client input (1); hooks that need a
+generated, for one reason each: borrows of render state (26 hooks, among them the draw calls outside `hud`
+and `screen_render_post`), of the generating chunk (2), of borrowed loot state (2), and of client input (1);
+hooks that need a
 converter the generator does not have (14 adapters), a live handle of their own design (6), or raw packets (3); and the
-level-tick host the runtime does not implement (2). Five of the 448 generated hooks take no `horizon.on`
+level-tick host the runtime does not implement (2). Five of the 460 generated hooks take no `horizon.on`
 registration: the two declaration-served hooks, `block_entity` and `block_entity_ticks`, which are served from the
 `horizon.block_entity` declarations, and the three listened queries, `entity_tick_listened`,
 `living_equipment_listened` and `hears_projectile_impacts`, which the game answers from the sibling hooks'

@@ -131,6 +131,7 @@ export type CommandEvent = { command: string }
 export type CommandsEvent = { commands: { string } }
 export type ComponentTypesEvent = { types: { string } }
 export type CompostItemEvent = { pos: Vec3, item: string }
+export type ComputeFogColorEvent = { partial: number, camera: Vec3, fog_type: "atmospheric" | "water" | "lava" | "powder_snow", rgb: Vec3 }
 export type ComputeFovEvent = { partial: number, camera: Vec3, degrees: number }
 export type ConsoleLineEvent = { source: string, line: string, replies: { { text: string, component: Component? } } }
 export type ConsumeEffectEvent = { kind: string, data: Data }
@@ -432,6 +433,7 @@ export type RegisterCommandsEvent = { commands: { { usage: string, level: number
 export type RegisterConfigsEvent = { configs: { { mod_id: string, kind: string, file: string, default: string } } }
 export type RegisterGoalsEvent = { mob: MobView }
 export type ReleaseUsingEvent = { stack: Item, entity: number?, time_left: number, used: boolean }
+export type RenderFogEvent = { partial: number, camera: Vec3, fog_type: "atmospheric" | "water" | "lava" | "powder_snow", fog: { color: { r: number, g: number, b: number, a: number }, ["environmental_start"]: number, ["environmental_end"]: number, ["render_distance_start"]: number, ["render_distance_end"]: number, ["sky_end"]: number, ["cloud_end"]: number } }
 export type RenderHandEvent = { hand: "main" | "off", stack: Item?, partial: number, swing: number, equip: number }
 export type RenderHandPoseEvent = { hand: "main" | "off", stack: Item?, partial: number, swing: number, equip: number, x: number, y: number, z: number, pitch: number, yaw: number, roll: number, scale: number }
 export type RenderItemInFrameEvent = { entity_id: number, pos: Vec3, stack: Item }
@@ -441,9 +443,19 @@ export type ResourcePackStatusV2Event = { player: PlayerRef, pack: string, statu
 export type RightClickBlockEvent = { pos: Vec3, face: Vec3 }
 export type RightClickBlockV2Event = { pos: Vec3, face: Vec3, hand: "main" | "off" }
 export type ScreenEvent = { block: string, screen: { width: number, height: number, slots: {{ x: number, y: number }?}, inventory_y: number, inventory_x: number, own_labels: boolean, own_background: boolean }?? }
+export type ScreenCharTypedPreEvent = { screen: { id: string, menu: string?, title: string?, title_component: Component?, rect: { x: number, y: number, width: number, height: number }, slots: number, mouse: Vec2, partial_tick: number }, c: string, modifiers: number }
 export type ScreenClickEvent = { block: string, data: { number }, at: Vec2, right: boolean, button: number? }
+export type ScreenClosingEvent = { screen: { id: string, menu: string?, title: string?, title_component: Component?, rect: { x: number, y: number, width: number, height: number }, slots: number, mouse: Vec2, partial_tick: number } }
+export type ScreenInitPostEvent = { screen: { id: string, menu: string?, title: string?, title_component: Component?, rect: { x: number, y: number, width: number, height: number }, slots: number, mouse: Vec2, partial_tick: number } }
+export type ScreenKeyPressedPreEvent = { screen: { id: string, menu: string?, title: string?, title_component: Component?, rect: { x: number, y: number, width: number, height: number }, slots: number, mouse: Vec2, partial_tick: number }, key: string, ["repeat"]: boolean, modifiers: number }
+export type ScreenKeyReleasedPreEvent = { screen: { id: string, menu: string?, title: string?, title_component: Component?, rect: { x: number, y: number, width: number, height: number }, slots: number, mouse: Vec2, partial_tick: number }, key: string, modifiers: number }
+export type ScreenMouseButtonPressedPreEvent = { screen: { id: string, menu: string?, title: string?, title_component: Component?, rect: { x: number, y: number, width: number, height: number }, slots: number, mouse: Vec2, partial_tick: number }, button: number, modifiers: number }
+export type ScreenMouseButtonReleasedPreEvent = { screen: { id: string, menu: string?, title: string?, title_component: Component?, rect: { x: number, y: number, width: number, height: number }, slots: number, mouse: Vec2, partial_tick: number }, button: number, modifiers: number }
+export type ScreenMouseDraggedPreEvent = { screen: { id: string, menu: string?, title: string?, title_component: Component?, rect: { x: number, y: number, width: number, height: number }, slots: number, mouse: Vec2, partial_tick: number }, button: number, delta: Vec2, modifiers: number }
 export type ScreenMouseDraggedPreV2Event = { screen: string, mouse: Vec2, button: number, delta: Vec2, modifiers: number }
+export type ScreenMouseScrolledPreEvent = { screen: { id: string, menu: string?, title: string?, title_component: Component?, rect: { x: number, y: number, width: number, height: number }, slots: number, mouse: Vec2, partial_tick: number }, scroll: Vec2, modifiers: number }
 export type ScreenMouseScrolledPreV2Event = { screen: string, mouse: Vec2, scroll: Vec2, modifiers: number }
+export type ScreenOpeningEvent = { screen: { id: string, menu: string?, title: string?, title_component: Component?, rect: { x: number, y: number, width: number, height: number }, slots: number, mouse: Vec2, partial_tick: number } }
 export type ScreenTooltipEvent = { block: string, data: { number }, at: Vec2, lines: { string } }
 export type SculkBloomEvent = { dimension: string, pos: Vec3 }
 export type ServerAboutToStartEvent = { dedicated: boolean }
@@ -577,6 +589,7 @@ export type HorizonOn =
     ((name: "commands", fn: (event: CommandsEvent) -> ()) -> ()) &
     ((name: "component_types", fn: (event: ComponentTypesEvent) -> ()) -> ()) &
     ((name: "compost_item", fn: (event: CompostItemEvent) -> ()) -> ()) &
+    ((name: "compute_fog_color", fn: (event: ComputeFogColorEvent) -> ()) -> ()) &
     ((name: "compute_fov", fn: (event: ComputeFovEvent) -> ()) -> ()) &
     ((name: "console_line", fn: (event: ConsoleLineEvent) -> ()) -> ()) &
     ((name: "consume_effect", fn: (event: ConsumeEffectEvent) -> ()) -> ()) &
@@ -878,6 +891,7 @@ export type HorizonOn =
     ((name: "register_configs", fn: (event: RegisterConfigsEvent) -> ()) -> ()) &
     ((name: "register_goals", fn: (event: RegisterGoalsEvent) -> (), kind: string?) -> ()) &
     ((name: "release_using", fn: (event: ReleaseUsingEvent) -> (), kind: string?) -> ()) &
+    ((name: "render_fog", fn: (event: RenderFogEvent) -> ()) -> ()) &
     ((name: "render_hand", fn: (event: RenderHandEvent) -> ()) -> ()) &
     ((name: "render_hand_pose", fn: (event: RenderHandPoseEvent) -> ()) -> ()) &
     ((name: "render_item_in_frame", fn: (event: RenderItemInFrameEvent) -> (), kind: string?) -> ()) &
@@ -887,9 +901,19 @@ export type HorizonOn =
     ((name: "right_click_block", fn: (event: RightClickBlockEvent) -> ()) -> ()) &
     ((name: "right_click_block_v2", fn: (event: RightClickBlockV2Event) -> ()) -> ()) &
     ((name: "screen", fn: (event: ScreenEvent) -> ()) -> ()) &
+    ((name: "screen_char_typed_pre", fn: (event: ScreenCharTypedPreEvent) -> ()) -> ()) &
     ((name: "screen_click", fn: (event: ScreenClickEvent) -> ()) -> ()) &
+    ((name: "screen_closing", fn: (event: ScreenClosingEvent) -> ()) -> ()) &
+    ((name: "screen_init_post", fn: (event: ScreenInitPostEvent) -> ()) -> ()) &
+    ((name: "screen_key_pressed_pre", fn: (event: ScreenKeyPressedPreEvent) -> ()) -> ()) &
+    ((name: "screen_key_released_pre", fn: (event: ScreenKeyReleasedPreEvent) -> ()) -> ()) &
+    ((name: "screen_mouse_button_pressed_pre", fn: (event: ScreenMouseButtonPressedPreEvent) -> ()) -> ()) &
+    ((name: "screen_mouse_button_released_pre", fn: (event: ScreenMouseButtonReleasedPreEvent) -> ()) -> ()) &
+    ((name: "screen_mouse_dragged_pre", fn: (event: ScreenMouseDraggedPreEvent) -> ()) -> ()) &
     ((name: "screen_mouse_dragged_pre_v2", fn: (event: ScreenMouseDraggedPreV2Event) -> ()) -> ()) &
+    ((name: "screen_mouse_scrolled_pre", fn: (event: ScreenMouseScrolledPreEvent) -> ()) -> ()) &
     ((name: "screen_mouse_scrolled_pre_v2", fn: (event: ScreenMouseScrolledPreV2Event) -> ()) -> ()) &
+    ((name: "screen_opening", fn: (event: ScreenOpeningEvent) -> ()) -> ()) &
     ((name: "screen_tooltip", fn: (event: ScreenTooltipEvent) -> ()) -> ()) &
     ((name: "sculk_bloom", fn: (event: SculkBloomEvent) -> ()) -> ()) &
     ((name: "server_about_to_start", fn: (event: ServerAboutToStartEvent) -> ()) -> ()) &

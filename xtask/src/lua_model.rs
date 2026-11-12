@@ -91,6 +91,8 @@ pub enum Kind {
 pub enum Conv {
     /// `&str` and owned numbers and bools: copied into the table as they are.
     Plain,
+    /// A `char`: copied in as a one-character string, read-only.
+    Char,
     /// `String`, `&String`: cloned into the table.
     PlainString,
     /// `Option` of a plain scalar or `&str`: nil or the value.
@@ -728,10 +730,13 @@ fn field_of(hook: &str, param: &str, ty: &syn::Type, host: Host, is_out: bool) -
     let cannot = |what: &str| FieldOutcome::Cannot(format!("{hook}: unsupported: {what}"));
     let (inner, borrowed) = deref(ty);
     let ident = last_ident(inner);
-    // A `char` has no Lua form (a `&mut char` the trait copies is not
-    // worth a converter either).
+    // A `char` reads as a one-character string. The byte-sized char is a
+    // by-value copy; a `&mut char` keeps its adapter (no one-char write-back).
+    if ident.as_deref() == Some("char") && !matches!(ty, syn::Type::Reference(_)) {
+        return FieldOutcome::Conv(Conv::Char, "string".into());
+    }
     if ident.as_deref() == Some("char") {
-        return adapter("a `char` needs its string form");
+        return adapter("a `&mut char` needs its string form");
     }
     // Rich text crosses as its plain string plus the component table.
     if matches!(ident.as_deref(), Some("Text")) {
@@ -1241,6 +1246,9 @@ fn struct_key_of(ty: &syn::Type) -> Option<String> {
         "NativeMinimap",
         "NativeMod",
         "NativeScreen",
+        "NativeScreenView",
+        "FogType",
+        "FogData",
         "ModContainer",
         "ModFluidTanks",
         "ModEnergyBuffer",
@@ -1278,6 +1286,7 @@ fn struct_key_of(ty: &syn::Type) -> Option<String> {
         "[f32;2]",
         "[i32;3]",
         "[f64;3]",
+        "[f32;3]",
     ];
     const OPT_STRUCTS: &[&str] = &[
         "Music",
@@ -1406,6 +1415,19 @@ fn struct_ts(key: &str) -> &'static str {
         }
         "NativeScreen" => {
             "{ width: number, height: number, slots: {{ x: number, y: number }?}, inventory_y: number, inventory_x: number, own_labels: boolean, own_background: boolean }"
+        }
+        // `rect` is `[x, y, width, height]` in the native; `title` is the
+        // rich-text pair (plain string plus the component table).
+        "NativeScreenView" => {
+            "{ id: string, menu: string?, title: string?, title_component: Component?, rect: { x: number, y: number, width: number, height: number }, slots: number, mouse: Vec2, partial_tick: number }"
+        }
+        "FogType" => "\"atmospheric\" | \"water\" | \"lava\" | \"powder_snow\"",
+        // The `*_start`/`*_end` names are quoted: `quote_keyword_fields`'s
+        // range-table check keys on the `start: number` substring and would
+        // otherwise demand a `["end"]` of its own. Quoted names are the same
+        // keys to Luau.
+        "FogData" => {
+            "{ color: { r: number, g: number, b: number, a: number }, [\"environmental_start\"]: number, [\"environmental_end\"]: number, [\"render_distance_start\"]: number, [\"render_distance_end\"]: number, [\"sky_end\"]: number, [\"cloud_end\"]: number }"
         }
         "ModContainer" => {
             "{ slots: number, faces: {{ number }}, inputs: { number }, outputs: { number }, menu: string? }"
@@ -2195,6 +2217,115 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             ),
             vec![leaf("width", format!("{:?}", 100.0 + n as f32))],
         ),
+        // The open screen's view, read-only: `rect` is `[x, y, width,
+        // height]` in the native and `title` is the rich-text pair. Built
+        // through `test_events::native_screen_view` (the `#[non_exhaustive]`
+        // struct literal is illegal from the generated test): every field
+        // counts up with `n` so a field swap between two cannot pass, and
+        // the borrowed title is a temporary that outlives the dispatch.
+        "NativeScreenView" => fixed(
+            format!(
+                "horizon_client::test_events::native_screen_view(\"test:screen{n}\", Some(\"test:menu{n}\"), Some(&Text::literal(\"test:title{n}\")), [{:?}, {:?}, {:?}, {:?}], {}, [{:?}, {:?}], {:?})",
+                1.0 + n as f32,
+                2.0 + n as f32,
+                176.0 + n as f32,
+                166.0 + n as f32,
+                9 + n,
+                3.0 + n as f32,
+                4.0 + n as f32,
+                0.25 + n as f32 * 0.125,
+            ),
+            format!(
+                "{{ id = \"test:screen{n}\", menu = \"test:menu{n}\", title = \"test:title{n}\", title_component = {{ text = \"test:title{n}\" }}, rect = {{ x = {:?}, y = {:?}, width = {:?}, height = {:?} }}, slots = {}, mouse = {{ x = {:?}, y = {:?} }}, partial_tick = {:?} }}",
+                1.0 + n as f32,
+                2.0 + n as f32,
+                176.0 + n as f32,
+                166.0 + n as f32,
+                9 + n,
+                3.0 + n as f32,
+                4.0 + n as f32,
+                0.25 + n as f32 * 0.125,
+            ),
+            vec![
+                leaf("id", format!("\"test:screen{n}\"")),
+                leaf("menu", format!("\"test:menu{n}\"")),
+                leaf("title", format!("\"test:title{n}\"")),
+                (".title_component.text".into(), format!("\"test:title{n}\"")),
+                leaf("rect.x", format!("{:?}", 1.0 + n as f32)),
+                leaf("rect.y", format!("{:?}", 2.0 + n as f32)),
+                leaf("rect.width", format!("{:?}", 176.0 + n as f32)),
+                leaf("rect.height", format!("{:?}", 166.0 + n as f32)),
+                leaf("slots", format!("{}", 9 + n)),
+                leaf("mouse.x", format!("{:?}", 3.0 + n as f32)),
+                leaf("mouse.y", format!("{:?}", 4.0 + n as f32)),
+                leaf("partial_tick", format!("{:?}", 0.25 + n as f32 * 0.125)),
+            ],
+        ),
+        "FogType" => {
+            let variants = [
+                ("Atmospheric", "atmospheric"),
+                ("Water", "water"),
+                ("Lava", "lava"),
+                ("PowderSnow", "powder_snow"),
+            ];
+            let (rust, lua) = variants[n % 4];
+            fixed(format!("FogType::{rust}"), format!("\"{lua}\""), vec![])
+        }
+        // The fog uniform, written back: every field counts up with `n` so
+        // a field swap between two cannot pass.
+        "FogData" => {
+            let mut s = mutable(
+                format!(
+                    "FogData {{ color: [0.25, 0.5, 0.75, 1.0], environmental_start: {:?}, environmental_end: {:?}, render_distance_start: {:?}, render_distance_end: {:?}, sky_end: {:?}, cloud_end: {:?} }}",
+                    1.0 + n as f32,
+                    2.0 + n as f32,
+                    3.0 + n as f32,
+                    4.0 + n as f32,
+                    5.0 + n as f32,
+                    6.0 + n as f32,
+                ),
+                format!(
+                    "{{ color = {{ r = 0.25, g = 0.5, b = 0.75, a = 1.0 }}, environmental_start = {:?}, environmental_end = {:?}, render_distance_start = {:?}, render_distance_end = {:?}, sky_end = {:?}, cloud_end = {:?} }}",
+                    1.0 + n as f32,
+                    2.0 + n as f32,
+                    3.0 + n as f32,
+                    4.0 + n as f32,
+                    5.0 + n as f32,
+                    6.0 + n as f32,
+                ),
+                format!(
+                    "FogData {{ color: [0.5, 0.75, 1.0, 0.25], environmental_start: {:?}, environmental_end: {:?}, render_distance_start: {:?}, render_distance_end: {:?}, sky_end: {:?}, cloud_end: {:?} }}",
+                    11.0 + n as f32,
+                    12.0 + n as f32,
+                    13.0 + n as f32,
+                    14.0 + n as f32,
+                    15.0 + n as f32,
+                    16.0 + n as f32,
+                ),
+                format!(
+                    "{{ color = {{ r = 0.5, g = 0.75, b = 1.0, a = 0.25 }}, environmental_start = {:?}, environmental_end = {:?}, render_distance_start = {:?}, render_distance_end = {:?}, sky_end = {:?}, cloud_end = {:?} }}",
+                    11.0 + n as f32,
+                    12.0 + n as f32,
+                    13.0 + n as f32,
+                    14.0 + n as f32,
+                    15.0 + n as f32,
+                    16.0 + n as f32,
+                ),
+            );
+            s.leaves = vec![
+                leaf("color.r", "0.25".into()),
+                leaf("color.g", "0.5".into()),
+                leaf("color.b", "0.75".into()),
+                leaf("color.a", "1.0".into()),
+                leaf("environmental_start", format!("{:?}", 1.0 + n as f32)),
+                leaf("environmental_end", format!("{:?}", 2.0 + n as f32)),
+                leaf("render_distance_start", format!("{:?}", 3.0 + n as f32)),
+                leaf("render_distance_end", format!("{:?}", 4.0 + n as f32)),
+                leaf("sky_end", format!("{:?}", 5.0 + n as f32)),
+                leaf("cloud_end", format!("{:?}", 6.0 + n as f32)),
+            ];
+            s
+        }
         "ModContainer" => fixed(
             format!(
                 "ModContainer {{ slots: {}, faces: [vec![0], vec![], vec![], vec![], vec![], vec![]], inputs: vec![0], outputs: vec![], menu: None }}",
@@ -2842,7 +2973,9 @@ pub(crate) fn tuple_struct(ty: &syn::Type) -> Option<(String, String)> {
 /// The cannot reason for a borrow that can never enter the Lua state, if
 /// the type is one: render-thread borrows and draw handles (Lua runs on the
 /// game thread and has no drawing API), worldgen borrows, borrowed loot
-/// state, and client input.
+/// state, and client input. (`NativeScreenView` is plain main-thread data,
+/// so it is kept out of the render list; its test fixture comes from
+/// `horizon_client::test_events::native_screen_view`.)
 fn cannot_id(id: &str) -> Option<String> {
     if matches!(
         id,
@@ -2856,15 +2989,12 @@ fn cannot_id(id: &str) -> Option<String> {
             | "Corners"
             | "HandDrawn"
             | "HudBatch"
-            | "NativeScreenView"
             | "NativeScreen"
             | "NativePanelEvent"
             | "NativeTextField"
             | "GuiDraw"
             | "NativeBlockRim"
             | "NativeColoredLight"
-            | "FogData"
-            | "FogType"
             | "CameraEntity"
             | "FovPlayer"
             | "BiomeColors"
@@ -3930,6 +4060,11 @@ const DUP_LEAF_ALLOWLIST: &[(&str, &str, &str)] = &[
         ".component.text",
         "the component carries the same text",
     ),
+    (
+        "NativeScreenView",
+        ".title_component.text",
+        "the component carries the same text as the plain title",
+    ),
 ];
 
 /// Every `(leaf suffix, value)` the generated handler asserts for one
@@ -4562,6 +4697,7 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
                 "{ \"test:edited\", \"test:added\" }".into(),
             )
         }
+        Conv::Char => plain("'x'".into(), "\"x\"".into()),
     }
 }
 

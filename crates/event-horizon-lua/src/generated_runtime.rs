@@ -335,6 +335,10 @@ macro_rules! gen_seed {
             mlua::IntoLua::into_lua($event.$field.clone(), $lua)?,
         )?
     };
+    // A `char`: its one-character string.
+    ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : s_char) => {
+        $table.set(stringify!($field), $event.$field.to_string())?
+    };
     ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : copy_ref) => {
         $table.set(
             stringify!($field),
@@ -595,6 +599,14 @@ macro_rules! gen_seed {
         )?
     };
     ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : s_notechange) => {
+        $table.set(
+            stringify!($field),
+            crate::generated_runtime::LuaStruct::to_value($lua, $event.$field)?,
+        )?
+    };
+    // The read-only screen view: like `s_mapinfo`, it seeds through its own
+    // `LuaStruct` impl without naming the lifetime in a type parameter.
+    ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : s_screenview) => {
         $table.set(
             stringify!($field),
             crate::generated_runtime::LuaStruct::to_value($lua, $event.$field)?,
@@ -2924,7 +2936,7 @@ use horizon_client::mod_api::{
     Corner, MerchantOffer, Music, MusicLayer, NativeConfig, NativeConfigFile, NativeConfigKind,
     NativeDataMapType, NativeFluidAction, NativeFluidDrain, NativeFluidStack, NativeFluidTankView,
     NativeMapDecoration, NativeMapInfo, NativeMinimap, NativeMod, NativeNoteBlockChange,
-    NativeScreen, NativeZoom, RecipeBookCategory, SpawnEntry, Suggestion,
+    NativeScreen, NativeScreenView, NativeZoom, RecipeBookCategory, SpawnEntry, Suggestion,
 };
 
 impl LuaStruct for Corner {
@@ -3209,7 +3221,126 @@ impl LuaStruct for NativeScreen {
     }
 }
 
-use horizon_client::mod_api::{ModContainer, ModEnergyBuffer, ModFluidTanks};
+/// The open screen's view, read-only: `id` is the stable screen id, `menu`
+/// the server-opened menu's type id (nil without a menu), `title` the rich
+/// text as its plain string beside `title_component`'s vanilla JSON table
+/// (both nil without a server title), `rect` the container panel's `[x, y,
+/// width, height]` as a table, `slots` how many the menu has, `mouse` the
+/// pointer in GUI pixels and `partial_tick` the frame's partial tick.
+impl<'a> LuaStruct for NativeScreenView<'a> {
+    fn to_value(lua: &Lua, v: &Self) -> mlua::Result<Value> {
+        let t = lua.create_table()?;
+        t.set("id", v.id)?;
+        match v.menu {
+            Some(menu) => t.set("menu", menu)?,
+            None => t.set("menu", mlua::Value::Nil)?,
+        }
+        match v.title {
+            Some(title) => {
+                let (plain, component) = text_parts(lua, title)?;
+                t.set("title", plain)?;
+                t.set("title_component", component)?;
+            }
+            None => {
+                t.set("title", mlua::Value::Nil)?;
+                t.set("title_component", mlua::Value::Nil)?;
+            }
+        }
+        let rect = lua.create_table()?;
+        rect.set("x", v.rect[0])?;
+        rect.set("y", v.rect[1])?;
+        rect.set("width", v.rect[2])?;
+        rect.set("height", v.rect[3])?;
+        t.set("rect", rect)?;
+        t.set("slots", v.slots)?;
+        let mouse = lua.create_table()?;
+        mouse.set("x", v.mouse[0])?;
+        mouse.set("y", v.mouse[1])?;
+        t.set("mouse", mouse)?;
+        t.set("partial_tick", v.partial_tick)?;
+        Ok(Value::Table(t))
+    }
+    fn from_value(_lua: &Lua, _v: Value, field: &str) -> mlua::Result<Self> {
+        Err(mlua::Error::runtime(format!(
+            "{field}: a screen view is read-only"
+        )))
+    }
+}
+
+/// The camera's fog type: its lowercase name (`"atmospheric"`, `"water"`,
+/// `"lava"`, `"powder_snow"`).
+impl LuaStruct for FogType {
+    fn to_value(lua: &Lua, v: &Self) -> mlua::Result<Value> {
+        str_value(
+            lua,
+            match v {
+                FogType::Atmospheric => "atmospheric",
+                FogType::Water => "water",
+                FogType::Lava => "lava",
+                FogType::PowderSnow => "powder_snow",
+            },
+        )
+    }
+    fn from_value(_lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
+        Ok(
+            match enum_from(v, field, &["atmospheric", "water", "lava", "powder_snow"])? {
+                "atmospheric" => FogType::Atmospheric,
+                "water" => FogType::Water,
+                "lava" => FogType::Lava,
+                _ => FogType::PowderSnow,
+            },
+        )
+    }
+}
+
+/// The fog uniform, written back: `color` as `{r, g, b, a}` and the six
+/// distances by their native names. Non-finite components are refused here,
+/// naming the field; the native validates and clamps further.
+impl LuaStruct for FogData {
+    fn to_value(lua: &Lua, v: &Self) -> mlua::Result<Value> {
+        let t = lua.create_table()?;
+        let color = lua.create_table()?;
+        color.set("r", v.color[0])?;
+        color.set("g", v.color[1])?;
+        color.set("b", v.color[2])?;
+        color.set("a", v.color[3])?;
+        t.set("color", color)?;
+        t.set("environmental_start", v.environmental_start)?;
+        t.set("environmental_end", v.environmental_end)?;
+        t.set("render_distance_start", v.render_distance_start)?;
+        t.set("render_distance_end", v.render_distance_end)?;
+        t.set("sky_end", v.sky_end)?;
+        t.set("cloud_end", v.cloud_end)?;
+        Ok(Value::Table(t))
+    }
+    fn from_value(lua: &Lua, v: Value, field: &str) -> mlua::Result<Self> {
+        match v {
+            Value::Table(t) => {
+                let (color, at) = req_table(lua, &t, "color", field)?;
+                Ok(FogData {
+                    color: [
+                        req_finite::<f32>(&color, "r", &at)?,
+                        req_finite::<f32>(&color, "g", &at)?,
+                        req_finite::<f32>(&color, "b", &at)?,
+                        req_finite::<f32>(&color, "a", &at)?,
+                    ],
+                    environmental_start: req_finite::<f32>(&t, "environmental_start", field)?,
+                    environmental_end: req_finite::<f32>(&t, "environmental_end", field)?,
+                    render_distance_start: req_finite::<f32>(&t, "render_distance_start", field)?,
+                    render_distance_end: req_finite::<f32>(&t, "render_distance_end", field)?,
+                    sky_end: req_finite::<f32>(&t, "sky_end", field)?,
+                    cloud_end: req_finite::<f32>(&t, "cloud_end", field)?,
+                })
+            }
+            other => Err(mlua::Error::runtime(format!(
+                "{field}: expected a fog table, got {}",
+                other.type_name()
+            ))),
+        }
+    }
+}
+
+use horizon_client::mod_api::{FogData, FogType, ModContainer, ModEnergyBuffer, ModFluidTanks};
 
 /// Six face lists as one sequence of six sequences.
 fn faces_to_lua(lua: &Lua, faces: &[Vec<usize>; 6]) -> mlua::Result<Table> {

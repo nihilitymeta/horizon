@@ -173,17 +173,11 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("enchant_effect", "generated"),
     (
         "screen_render_post",
-        "cannot: screen_render_post: unsupported: HudBatch borrows render state (render thread); screen_render_post: unsupported: NativeScreenView borrows render state (render thread)",
+        "cannot: screen_render_post: unsupported: HudBatch borrows render state (render thread)",
     ),
     ("modify_default_components", "generated"),
-    (
-        "screen_mouse_button_pressed_pre",
-        "cannot: screen_mouse_button_pressed_pre: unsupported: NativeScreenView borrows render state (render thread)",
-    ),
-    (
-        "screen_mouse_button_released_pre",
-        "cannot: screen_mouse_button_released_pre: unsupported: NativeScreenView borrows render state (render thread)",
-    ),
+    ("screen_mouse_button_pressed_pre", "generated"),
+    ("screen_mouse_button_released_pre", "generated"),
     (
         "camera_shake",
         "cannot: camera_shake: unsupported: NativeShake borrows render state (render thread)",
@@ -201,20 +195,11 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("can_eat", "generated"),
     ("living_entity_use_item_start", "generated"),
     ("living_entity_use_item_finish", "generated"),
-    (
-        "screen_mouse_scrolled_pre",
-        "cannot: screen_mouse_scrolled_pre: unsupported: NativeScreenView borrows render state (render thread)",
-    ),
+    ("screen_mouse_scrolled_pre", "generated"),
     ("player_command", "generated"),
     ("perform_console_command", "generated"),
-    (
-        "screen_key_pressed_pre",
-        "cannot: screen_key_pressed_pre: unsupported: NativeScreenView borrows render state (render thread)",
-    ),
-    (
-        "screen_char_typed_pre",
-        "cannot: screen_char_typed_pre: unsupported: NativeScreenView borrows render state (render thread)",
-    ),
+    ("screen_key_pressed_pre", "generated"),
+    ("screen_char_typed_pre", "generated"),
     ("data_pack_files", "generated"),
     (
         "biome_colors",
@@ -230,21 +215,12 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "camera_distance",
         "cannot: camera_distance: unsupported: CameraEntity borrows render state (render thread)",
     ),
-    (
-        "compute_fog_color",
-        "cannot: compute_fog_color: unsupported: FogType borrows render state (render thread)",
-    ),
+    ("compute_fog_color", "generated"),
     ("mouse_button_pre", "generated"),
     ("mouse_button_post", "generated"),
     ("player_respawned", "generated"),
-    (
-        "render_fog",
-        "cannot: render_fog: unsupported: FogType borrows render state (render thread); render_fog: unsupported: FogData borrows render state (render thread)",
-    ),
-    (
-        "screen_key_released_pre",
-        "cannot: screen_key_released_pre: unsupported: NativeScreenView borrows render state (render thread)",
-    ),
+    ("render_fog", "generated"),
+    ("screen_key_released_pre", "generated"),
     ("music", "generated"),
     ("music_layers", "generated"),
     ("datapack_sync", "generated"),
@@ -254,10 +230,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "cannot: input_key: unsupported: a borrowed client key event cannot enter the Lua state",
     ),
     ("mouse_scrolling", "generated"),
-    (
-        "screen_mouse_dragged_pre",
-        "cannot: screen_mouse_dragged_pre: unsupported: NativeScreenView borrows render state (render thread)",
-    ),
+    ("screen_mouse_dragged_pre", "generated"),
     ("mod_container_viewers", "generated"),
     ("living_knockback", "generated"),
     ("experience_orb_can_merge", "generated"),
@@ -573,18 +546,9 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("render_hand_pose", "generated"),
     ("render_item_in_frame", "generated"),
     ("render_name_tag", "generated"),
-    (
-        "screen_closing",
-        "cannot: screen_closing: unsupported: NativeScreenView borrows render state (render thread)",
-    ),
-    (
-        "screen_init_post",
-        "cannot: screen_init_post: unsupported: NativeScreenView borrows render state (render thread)",
-    ),
-    (
-        "screen_opening",
-        "cannot: screen_opening: unsupported: NativeScreenView borrows render state (render thread)",
-    ),
+    ("screen_closing", "generated"),
+    ("screen_init_post", "generated"),
+    ("screen_opening", "generated"),
     ("tooltip_color", "generated"),
     ("camera_pose", "generated"),
     ("client_chat_received", "generated"),
@@ -691,7 +655,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("screen_mouse_scrolled_pre_v2", "generated"),
     (
         "screen_text_field_char_typed_pre",
-        "cannot: screen_text_field_char_typed_pre: unsupported: NativeScreenView borrows render state (render thread); screen_text_field_char_typed_pre: unsupported: NativeTextField borrows render state (render thread)",
+        "cannot: screen_text_field_char_typed_pre: unsupported: NativeTextField borrows render state (render thread)",
     ),
     (
         "screen_transparent_background",
@@ -1272,14 +1236,14 @@ pub fn hook_side(name: &str) -> Option<HookSide> {
 /// of failing later on a missing hook name. Bumped by hand in
 /// `xtask/src/lua_hooks.rs` whenever the surface changes shape.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 1;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 3;
 
 /// The fingerprint of the surface above (every generated hook's
 /// name, kind filter, contract and published field types): `lua-hooks
 /// --check` fails when the freshly computed one differs, so the
 /// version above is bumped with the change.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "09ae0b3def574f52";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "ace1a23ef1dd46d0";
 
 #[cfg(test)]
 mod test_support;
@@ -1377,6 +1341,8 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "state_for_placement",
     "enchant_effect",
     "modify_default_components",
+    "screen_mouse_button_pressed_pre",
+    "screen_mouse_button_released_pre",
     "shader_params",
     "block_highlight",
     "render_hand",
@@ -1386,19 +1352,26 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "can_eat",
     "living_entity_use_item_start",
     "living_entity_use_item_finish",
+    "screen_mouse_scrolled_pre",
     "player_command",
     "perform_console_command",
+    "screen_key_pressed_pre",
+    "screen_char_typed_pre",
     "data_pack_files",
     "server_data_loaded",
     "compute_fov",
+    "compute_fog_color",
     "mouse_button_pre",
     "mouse_button_post",
     "player_respawned",
+    "render_fog",
+    "screen_key_released_pre",
     "music",
     "music_layers",
     "datapack_sync",
     "recipes_received",
     "mouse_scrolling",
+    "screen_mouse_dragged_pre",
     "mod_container_viewers",
     "living_knockback",
     "experience_orb_can_merge",
@@ -1655,6 +1628,9 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "render_hand_pose",
     "render_item_in_frame",
     "render_name_tag",
+    "screen_closing",
+    "screen_init_post",
+    "screen_opening",
     "tooltip_color",
     "camera_pose",
     "client_chat_received",
@@ -1932,6 +1908,8 @@ macro_rules! impl_generated_hooks {
     gen_replace!(state_for_placement, level, horizon_client::mod_api::StateForPlacementEvent<'_>, (none), [dimension: dim, state: state_level, context: s_ref(horizon_client::mod_api::PlacementContext), fluid: s_val(horizon_client::mod_api::FluidState), state_props: state_props_note], answer : answer_state, Option<Option<BlockStateId>>);
     gen_listen!(enchant_effect, game_mut, horizon_client::mod_api::EnchantEffectEvent<'_>, (none), [enchantment: cloned, kind: cloned, data: s_ref(serde_json::Value), level: copy, victim: copy]);
     gen_collect!(modify_default_components, none, horizon_client::mod_api::ModifyDefaultComponentsEvent<'_>, (none), [item: cloned, components: s_mut(serde_json::Map<String, serde_json::Value>) => w_mut(serde_json::Map<String, serde_json::Value>)]);
+    gen_cancel!(screen_mouse_button_pressed_pre, game_ref, horizon_client::mod_api::ScreenMouseButtonPressedPreEvent<'_>, (none), [screen: s_screenview, button: copy, modifiers: copy]);
+    gen_cancel!(screen_mouse_button_released_pre, game_ref, horizon_client::mod_api::ScreenMouseButtonReleasedPreEvent<'_>, (none), [screen: s_screenview, button: copy, modifiers: copy]);
     gen_listen!(shader_params, game_ref, horizon_client::mod_api::ShaderParamsEvent<'_>, (none), [partial: copy, params: s_mut([[f32;4];8]) => w_mut([[f32;4];8])]);
     gen_cancel!(block_highlight, game_ref, horizon_client::mod_api::BlockHighlightEvent, (none), [pos: pos, state: state_game, partial: copy, state_props: state_props_note]);
     gen_cancel!(render_hand, game_ref, horizon_client::mod_api::RenderHandEvent<'_>, (none), [hand: s_val(horizon_client::mod_api::Hand), stack: opt_item, partial: copy, swing: copy, equip: copy]);
@@ -1941,19 +1919,26 @@ macro_rules! impl_generated_hooks {
     gen_listen!(can_eat, game_ref, horizon_client::mod_api::CanEatEvent<'_>, (none), [stack: item, can_eat: copy => mut_scalar]);
     gen_cancel!(living_entity_use_item_start, game_mut, horizon_client::mod_api::LivingEntityUseItemStartEvent<'_>, (opt_entity entity), [stack: item, entity: copy, hand: s_val(horizon_client::mod_api::Hand), duration: copy => mut_scalar]);
     gen_listen!(living_entity_use_item_finish, game_mut, horizon_client::mod_api::LivingEntityUseItemFinishEvent<'_>, (opt_entity entity), [stack: item, entity: copy, hand: s_val(horizon_client::mod_api::Hand), duration: copy, result: s_opt(horizon_client::mod_api::ItemStack) => w_optmut(horizon_client::mod_api::ItemStack)]);
+    gen_cancel!(screen_mouse_scrolled_pre, game_ref, horizon_client::mod_api::ScreenMouseScrolledPreEvent<'_>, (none), [screen: s_screenview, scroll: pair64, modifiers: copy]);
     gen_cancel!(player_command, game_mut, horizon_client::mod_api::PlayerCommandEvent<'_>, (none), [player: player, command: cloned, replies: s_vec(horizon_client::mod_api::Text) => w_vec(horizon_client::mod_api::Text)]);
     gen_cancel!(perform_console_command, game_mut, horizon_client::mod_api::PerformConsoleCommandEvent<'_>, (none), [command: cloned]);
+    gen_cancel!(screen_key_pressed_pre, game_ref, horizon_client::mod_api::ScreenKeyPressedPreEvent<'_>, (none), [screen: s_screenview, key: cloned, repeat: copy, modifiers: copy]);
+    gen_cancel!(screen_char_typed_pre, game_ref, horizon_client::mod_api::ScreenCharTypedPreEvent<'_>, (none), [screen: s_screenview, c: s_char, modifiers: copy]);
     gen_data_pack_files!(data_pack_files, game_ref, horizon_client::mod_api::DataPackFilesEvent<'_>, (none), [files: s_vec((String,Vec<u8>)) => w_vec((String,Vec<u8>))]);
     gen_listen!(server_data_loaded, game_mut, horizon_client::mod_api::ServerDataLoadedEvent, (none), [reload: copy]);
     gen_listen!(compute_fov, game_ref, horizon_client::mod_api::ComputeFovEvent, (none), [partial: copy, camera: vec3, degrees: copy => mut_scalar]);
+    gen_listen!(compute_fog_color, game_ref, horizon_client::mod_api::ComputeFogColorEvent<'_>, (none), [partial: copy, camera: vec3, fog_type: s_val(horizon_client::mod_api::FogType), rgb: s_mut([f32;3]) => w_mut([f32;3])]);
     gen_cancel!(mouse_button_pre, game_mut, horizon_client::mod_api::MouseButtonPreEvent, (none), [button: copy, pressed: copy, modifiers: copy]);
     gen_listen!(mouse_button_post, game_mut, horizon_client::mod_api::MouseButtonPostEvent, (none), [button: copy, pressed: copy, modifiers: copy]);
     gen_listen!(player_respawned, game_mut, horizon_client::mod_api::PlayerRespawnedEvent<'_>, (none), [player: player]);
+    gen_listen!(render_fog, game_ref, horizon_client::mod_api::RenderFogEvent<'_>, (none), [partial: copy, camera: vec3, fog_type: s_val(horizon_client::mod_api::FogType), fog: s_mut(horizon_client::mod_api::FogData) => w_mut(horizon_client::mod_api::FogData)]);
+    gen_cancel!(screen_key_released_pre, game_ref, horizon_client::mod_api::ScreenKeyReleasedPreEvent<'_>, (none), [screen: s_screenview, key: cloned, modifiers: copy]);
     gen_listen!(music, game_ref, horizon_client::mod_api::MusicEvent<'_>, (none), [music: s_opt(horizon_client::mod_api::Music) => w_optmut(horizon_client::mod_api::Music), volume: copy => mut_scalar]);
     gen_collect!(music_layers, game_ref, horizon_client::mod_api::MusicLayersEvent<'_>, (none), [layers: s_vec(horizon_client::mod_api::MusicLayer) => w_vec(horizon_client::mod_api::MusicLayer)]);
     gen_collect!(datapack_sync, game_mut, horizon_client::mod_api::DatapackSyncEvent<'_>, (none), [recipe_types: str_seq => mut_strvec]);
     gen_listen!(recipes_received, game_mut, horizon_client::mod_api::RecipesReceivedEvent<'_>, (none), [recipe_types: str_seq]);
     gen_cancel!(mouse_scrolling, game_mut, horizon_client::mod_api::MouseScrollingEvent, (none), [scroll: pair64, accumulated: s_val([i32;2]), buttons: s_val([bool;3]), cursor: pair, modifiers: copy]);
+    gen_cancel!(screen_mouse_dragged_pre, game_ref, horizon_client::mod_api::ScreenMouseDraggedPreEvent<'_>, (none), [screen: s_screenview, button: copy, delta: pair, modifiers: copy]);
     gen_listen!(mod_container_viewers, game_mut, horizon_client::mod_api::ModContainerViewersEvent<'_>, (none), [dimension: cloned, pos: pos, viewers: copy, previous: copy]);
     gen_cancel!(living_knockback, none, horizon_client::mod_api::LivingKnockbackEvent<'_>, (field kind), [entity: copy, kind: cloned, damage_type: cloned, causing: copy, direct: copy, strength: copy => mut_scalar, x: copy => mut_scalar, z: copy => mut_scalar]);
     gen_listen!(experience_orb_can_merge, game_mut, horizon_client::mod_api::ExperienceOrbCanMergeEvent<'_>, (none), [dimension: cloned, into: copy, from: copy, into_value: copy, from_value: copy, can_merge: copy => mut_scalar]);
@@ -2213,6 +2198,9 @@ macro_rules! impl_generated_hooks {
     gen_listen!(render_hand_pose, game_ref, horizon_client::mod_api::RenderHandPoseEvent<'_>, (none), [hand: s_val(horizon_client::mod_api::Hand), stack: opt_item, partial: copy, swing: copy, equip: copy, x: copy => mut_scalar, y: copy => mut_scalar, z: copy => mut_scalar, pitch: copy => mut_scalar, yaw: copy => mut_scalar, roll: copy => mut_scalar, scale: copy => mut_scalar]);
     gen_cancel!(render_item_in_frame, game_ref, horizon_client::mod_api::RenderItemInFrameEvent<'_>, (entity entity_id), [entity_id: copy, pos: pos, stack: item]);
     gen_listen!(render_name_tag, game_ref, horizon_client::mod_api::RenderNameTagEvent<'_>, (field kind), [entity_id: copy, kind: cloned, vanilla_visible: copy, visible: copy => mut_scalar, text: mut_opt_string => mut_opt_string]);
+    gen_listen!(screen_closing, game_ref, horizon_client::mod_api::ScreenClosingEvent<'_>, (none), [screen: s_screenview]);
+    gen_listen!(screen_init_post, game_ref, horizon_client::mod_api::ScreenInitPostEvent<'_>, (none), [screen: s_screenview]);
+    gen_listen!(screen_opening, game_ref, horizon_client::mod_api::ScreenOpeningEvent<'_>, (none), [screen: s_screenview]);
     gen_listen!(tooltip_color, game_ref, horizon_client::mod_api::TooltipColorEvent<'_>, (none), [stack: opt_item, background: copy => mut_scalar, border_top: copy => mut_scalar, border_bottom: copy => mut_scalar]);
     gen_listen!(camera_pose, game_ref, horizon_client::mod_api::CameraPoseEvent<'_>, (none), [partial: copy, position: s_mut([f64;3]) => w_mut([f64;3]), yaw: copy => mut_scalar, pitch: copy => mut_scalar]);
     gen_cancel!(client_chat_received, game_mut, horizon_client::mod_api::ClientChatReceivedEvent<'_>, (none), [system: copy, overlay: copy, sender: uuid, chat_type: copy, message: s_text => w_text]);
@@ -17109,6 +17097,324 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_screen_mouse_button_pressed_pre() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_mouse_button_pressed_pre",
+            "horizon.on(\"screen_mouse_button_pressed_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\n    assert(event.button == 8, \"button\")\n    assert(event.modifiers == 9, \"modifiers\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_mouse_button_pressed_pre(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+            8,
+            9,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_mouse_button_pressed_pre_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_mouse_button_pressed_pre_nocancel",
+            "horizon.on(\"screen_mouse_button_pressed_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\n    assert(event.button == 8, \"button\")\n    assert(event.modifiers == 9, \"modifiers\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_mouse_button_pressed_pre(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+            8,
+            9,
+            &mut canceled,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_mouse_button_pressed_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_mouse_button_pressed_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_mouse_button_pressed_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                8,
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "screen_mouse_button_pressed_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_mouse_button_pressed_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_mouse_button_pressed_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_mouse_button_pressed_pre_cost_live",
+            "horizon.on(\"screen_mouse_button_pressed_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_mouse_button_pressed_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                8,
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "screen_mouse_button_pressed_pre built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_mouse_button_pressed_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_mouse_button_pressed_pre read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_screen_mouse_button_released_pre() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_mouse_button_released_pre",
+            "horizon.on(\"screen_mouse_button_released_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\n    assert(event.button == 8, \"button\")\n    assert(event.modifiers == 9, \"modifiers\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_mouse_button_released_pre(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+            8,
+            9,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_mouse_button_released_pre_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_mouse_button_released_pre_nocancel",
+            "horizon.on(\"screen_mouse_button_released_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\n    assert(event.button == 8, \"button\")\n    assert(event.modifiers == 9, \"modifiers\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_mouse_button_released_pre(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+            8,
+            9,
+            &mut canceled,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_mouse_button_released_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_mouse_button_released_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_mouse_button_released_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                8,
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "screen_mouse_button_released_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_mouse_button_released_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_mouse_button_released_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_mouse_button_released_pre_cost_live",
+            "horizon.on(\"screen_mouse_button_released_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_mouse_button_released_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                8,
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "screen_mouse_button_released_pre built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_mouse_button_released_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_mouse_button_released_pre read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_shader_params() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_shader_params",
@@ -18447,6 +18753,165 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_screen_mouse_scrolled_pre() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_mouse_scrolled_pre",
+            "horizon.on(\"screen_mouse_scrolled_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\n    assert(event.scroll.x == 2.5, \"scroll\")\n    assert(event.scroll.y == 3.5, \"scroll\")\n    assert(event.modifiers == 9, \"modifiers\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_mouse_scrolled_pre(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+            [2.5, 3.5],
+            9,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_mouse_scrolled_pre_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_mouse_scrolled_pre_nocancel",
+            "horizon.on(\"screen_mouse_scrolled_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\n    assert(event.scroll.x == 2.5, \"scroll\")\n    assert(event.scroll.y == 3.5, \"scroll\")\n    assert(event.modifiers == 9, \"modifiers\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_mouse_scrolled_pre(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+            [2.5, 3.5],
+            9,
+            &mut canceled,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_mouse_scrolled_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_mouse_scrolled_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_mouse_scrolled_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                [2.5, 3.5],
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "screen_mouse_scrolled_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_mouse_scrolled_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_mouse_scrolled_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_mouse_scrolled_pre_cost_live",
+            "horizon.on(\"screen_mouse_scrolled_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_mouse_scrolled_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                [2.5, 3.5],
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "screen_mouse_scrolled_pre built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_mouse_scrolled_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_mouse_scrolled_pre read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_command() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_command",
@@ -18700,6 +19165,328 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "perform_console_command read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_screen_key_pressed_pre() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_key_pressed_pre",
+            "horizon.on(\"screen_key_pressed_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\n    assert(event.key == \"test:key\", \"key\")\n    assert(event[\"repeat\"] == true, \"repeat\")\n    assert(event.modifiers == 10, \"modifiers\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_key_pressed_pre(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+            "test:key",
+            true,
+            10,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_key_pressed_pre_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_key_pressed_pre_nocancel",
+            "horizon.on(\"screen_key_pressed_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\n    assert(event.key == \"test:key\", \"key\")\n    assert(event[\"repeat\"] == true, \"repeat\")\n    assert(event.modifiers == 10, \"modifiers\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_key_pressed_pre(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+            "test:key",
+            true,
+            10,
+            &mut canceled,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_key_pressed_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_key_pressed_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_key_pressed_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                "test:key",
+                true,
+                10,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "screen_key_pressed_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_key_pressed_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_key_pressed_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_key_pressed_pre_cost_live",
+            "horizon.on(\"screen_key_pressed_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_key_pressed_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                "test:key",
+                true,
+                10,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "screen_key_pressed_pre built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_key_pressed_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_key_pressed_pre read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_screen_char_typed_pre() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_char_typed_pre",
+            "horizon.on(\"screen_char_typed_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\n    assert(event.c == \"x\", \"c\")\n    assert(event.modifiers == 9, \"modifiers\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_char_typed_pre(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+            'x',
+            9,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_char_typed_pre_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_char_typed_pre_nocancel",
+            "horizon.on(\"screen_char_typed_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\n    assert(event.c == \"x\", \"c\")\n    assert(event.modifiers == 9, \"modifiers\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_char_typed_pre(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+            'x',
+            9,
+            &mut canceled,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_char_typed_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_char_typed_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_char_typed_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                'x',
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "screen_char_typed_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_char_typed_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_char_typed_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_char_typed_pre_cost_live",
+            "horizon.on(\"screen_char_typed_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_char_typed_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                'x',
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "screen_char_typed_pre built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_char_typed_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_char_typed_pre read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -19087,6 +19874,112 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_compute_fog_color() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_compute_fog_color",
+            "horizon.on(\"compute_fog_color\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.partial == 1.5, \"partial\")\n    assert(event.camera.x == 2.0, \"camera\")\n    assert(event.camera.y == 3.0, \"camera\")\n    assert(event.camera.z == 4.0, \"camera\")\n    assert(event.fog_type == \"lava\", \"fog_type\")\n    assert(event.rgb.x == 4.0, \"rgb\")\n    assert(event.rgb.y == 5.0, \"rgb\")\n    assert(event.rgb.z == 6.0, \"rgb\")\n    event.rgb = { x = 14.0, y = 15.0, z = 16.0 }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut rgb = [4.0, 5.0, 6.0];
+        dispatch_compute_fog_color(
+            &FakeHost::empty(),
+            &firing_mods,
+            1.5,
+            [2.0, 3.0, 4.0],
+            FogType::Lava,
+            &mut rgb,
+        );
+        assert_eq!(rgb, [14.0, 15.0, 16.0]);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_compute_fog_color_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_compute_fog_color_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut rgb = [4.0, 5.0, 6.0];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_compute_fog_color(
+                &FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                [2.0, 3.0, 4.0],
+                FogType::Lava,
+                &mut rgb,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "compute_fog_color read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "compute_fog_color read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "compute_fog_color read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_compute_fog_color_cost_live",
+            "horizon.on(\"compute_fog_color\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut rgb = [4.0, 5.0, 6.0];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_compute_fog_color(
+                &FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                [2.0, 3.0, 4.0],
+                FogType::Lava,
+                &mut rgb,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "compute_fog_color built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "compute_fog_color read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "compute_fog_color read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_mouse_button_pre() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_mouse_button_pre",
@@ -19368,6 +20261,302 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_respawned read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_render_fog() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_render_fog",
+            "horizon.on(\"render_fog\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.partial == 1.5, \"partial\")\n    assert(event.camera.x == 2.0, \"camera\")\n    assert(event.camera.y == 3.0, \"camera\")\n    assert(event.camera.z == 4.0, \"camera\")\n    assert(event.fog_type == \"lava\", \"fog_type\")\n    assert(event.fog.color.r == 0.25, \"fog\")\n    assert(event.fog.color.g == 0.5, \"fog\")\n    assert(event.fog.color.b == 0.75, \"fog\")\n    assert(event.fog.color.a == 1.0, \"fog\")\n    assert(event.fog.environmental_start == 4.0, \"fog\")\n    assert(event.fog.environmental_end == 5.0, \"fog\")\n    assert(event.fog.render_distance_start == 6.0, \"fog\")\n    assert(event.fog.render_distance_end == 7.0, \"fog\")\n    assert(event.fog.sky_end == 8.0, \"fog\")\n    assert(event.fog.cloud_end == 9.0, \"fog\")\n    event.fog = { color = { r = 0.5, g = 0.75, b = 1.0, a = 0.25 }, environmental_start = 14.0, environmental_end = 15.0, render_distance_start = 16.0, render_distance_end = 17.0, sky_end = 18.0, cloud_end = 19.0 }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut fog = FogData {
+            color: [0.25, 0.5, 0.75, 1.0],
+            environmental_start: 4.0,
+            environmental_end: 5.0,
+            render_distance_start: 6.0,
+            render_distance_end: 7.0,
+            sky_end: 8.0,
+            cloud_end: 9.0,
+        };
+        dispatch_render_fog(
+            &FakeHost::empty(),
+            &firing_mods,
+            1.5,
+            [2.0, 3.0, 4.0],
+            FogType::Lava,
+            &mut fog,
+        );
+        assert_eq!(
+            fog,
+            FogData {
+                color: [0.5, 0.75, 1.0, 0.25],
+                environmental_start: 14.0,
+                environmental_end: 15.0,
+                render_distance_start: 16.0,
+                render_distance_end: 17.0,
+                sky_end: 18.0,
+                cloud_end: 19.0
+            }
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_render_fog_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_render_fog_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut fog = FogData {
+                color: [0.25, 0.5, 0.75, 1.0],
+                environmental_start: 4.0,
+                environmental_end: 5.0,
+                render_distance_start: 6.0,
+                render_distance_end: 7.0,
+                sky_end: 8.0,
+                cloud_end: 9.0,
+            };
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_render_fog(
+                &FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                [2.0, 3.0, 4.0],
+                FogType::Lava,
+                &mut fog,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "render_fog read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "render_fog read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "render_fog read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_render_fog_cost_live",
+            "horizon.on(\"render_fog\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut fog = FogData {
+                color: [0.25, 0.5, 0.75, 1.0],
+                environmental_start: 4.0,
+                environmental_end: 5.0,
+                render_distance_start: 6.0,
+                render_distance_end: 7.0,
+                sky_end: 8.0,
+                cloud_end: 9.0,
+            };
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_render_fog(
+                &FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                [2.0, 3.0, 4.0],
+                FogType::Lava,
+                &mut fog,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "render_fog built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "render_fog read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "render_fog read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_screen_key_released_pre() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_key_released_pre",
+            "horizon.on(\"screen_key_released_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\n    assert(event.key == \"test:key\", \"key\")\n    assert(event.modifiers == 9, \"modifiers\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_key_released_pre(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+            "test:key",
+            9,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_key_released_pre_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_key_released_pre_nocancel",
+            "horizon.on(\"screen_key_released_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\n    assert(event.key == \"test:key\", \"key\")\n    assert(event.modifiers == 9, \"modifiers\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_key_released_pre(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+            "test:key",
+            9,
+            &mut canceled,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_key_released_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_key_released_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_key_released_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                "test:key",
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "screen_key_released_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_key_released_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_key_released_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_key_released_pre_cost_live",
+            "horizon.on(\"screen_key_released_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_key_released_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                "test:key",
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "screen_key_released_pre built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_key_released_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_key_released_pre read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -20095,6 +21284,169 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "mouse_scrolling read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_screen_mouse_dragged_pre() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_mouse_dragged_pre",
+            "horizon.on(\"screen_mouse_dragged_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\n    assert(event.button == 8, \"button\")\n    assert(event.delta.x == 3.5, \"delta\")\n    assert(event.delta.y == 4.5, \"delta\")\n    assert(event.modifiers == 10, \"modifiers\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_mouse_dragged_pre(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+            8,
+            [3.5, 4.5],
+            10,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_mouse_dragged_pre_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_mouse_dragged_pre_nocancel",
+            "horizon.on(\"screen_mouse_dragged_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\n    assert(event.button == 8, \"button\")\n    assert(event.delta.x == 3.5, \"delta\")\n    assert(event.delta.y == 4.5, \"delta\")\n    assert(event.modifiers == 10, \"modifiers\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_screen_mouse_dragged_pre(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+            8,
+            [3.5, 4.5],
+            10,
+            &mut canceled,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_mouse_dragged_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_mouse_dragged_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_mouse_dragged_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                8,
+                [3.5, 4.5],
+                10,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "screen_mouse_dragged_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_mouse_dragged_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_mouse_dragged_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_mouse_dragged_pre_cost_live",
+            "horizon.on(\"screen_mouse_dragged_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_mouse_dragged_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                8,
+                [3.5, 4.5],
+                10,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "screen_mouse_dragged_pre built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_mouse_dragged_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_mouse_dragged_pre read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -54955,6 +56307,357 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_screen_closing() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_closing",
+            "horizon.on(\"screen_closing\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_screen_closing(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_closing_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_closing_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_closing(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "screen_closing read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_closing read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_closing read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_closing_cost_live",
+            "horizon.on(\"screen_closing\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_closing(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "screen_closing built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_closing read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_closing read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_screen_init_post() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_init_post",
+            "horizon.on(\"screen_init_post\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_screen_init_post(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_init_post_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_init_post_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_init_post(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "screen_init_post read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_init_post read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_init_post read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_init_post_cost_live",
+            "horizon.on(\"screen_init_post\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_init_post(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "screen_init_post built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_init_post read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_init_post read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_screen_opening() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_screen_opening",
+            "horizon.on(\"screen_opening\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.screen.id == \"test:screen0\", \"screen\")\n    assert(event.screen.menu == \"test:menu0\", \"screen\")\n    assert(event.screen.title == \"test:title0\", \"screen\")\n    assert(event.screen.title_component.text == \"test:title0\", \"screen\")\n    assert(event.screen.rect.x == 1.0, \"screen\")\n    assert(event.screen.rect.y == 2.0, \"screen\")\n    assert(event.screen.rect.width == 176.0, \"screen\")\n    assert(event.screen.rect.height == 166.0, \"screen\")\n    assert(event.screen.slots == 9, \"screen\")\n    assert(event.screen.mouse.x == 3.0, \"screen\")\n    assert(event.screen.mouse.y == 4.0, \"screen\")\n    assert(event.screen.partial_tick == 0.25, \"screen\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_screen_opening(
+            &FakeHost::empty(),
+            &firing_mods,
+            &horizon_client::test_events::native_screen_view(
+                "test:screen0",
+                Some("test:menu0"),
+                Some(&Text::literal("test:title0")),
+                [1.0, 2.0, 176.0, 166.0],
+                9,
+                [3.0, 4.0],
+                0.25,
+            ),
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_screen_opening_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_opening_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_opening(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "screen_opening read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_opening read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_opening read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_screen_opening_cost_live",
+            "horizon.on(\"screen_opening\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_screen_opening(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "screen_opening built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "screen_opening read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "screen_opening read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_tooltip_color() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_tooltip_color",
@@ -69433,6 +71136,48 @@ mod generated_tests {
                 .collect();
             dispatch_modify_default_components(&firing_mods, "test:item", &mut components);
         }
+        // screen_mouse_button_pressed_pre: unregistered, nothing runs.
+        {
+            let mut canceled = false;
+            dispatch_screen_mouse_button_pressed_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                8,
+                9,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
+        // screen_mouse_button_released_pre: unregistered, nothing runs.
+        {
+            let mut canceled = false;
+            dispatch_screen_mouse_button_released_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                8,
+                9,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
         // shader_params: unregistered, nothing runs.
         {
             let mut params = [
@@ -69570,6 +71315,27 @@ mod generated_tests {
                 &mut result,
             );
         }
+        // screen_mouse_scrolled_pre: unregistered, nothing runs.
+        {
+            let mut canceled = false;
+            dispatch_screen_mouse_scrolled_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                [2.5, 3.5],
+                9,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
         // player_command: unregistered, nothing runs.
         {
             let mut replies = vec![Text::literal("test:line3"), Text::literal("test:line4")];
@@ -69596,6 +71362,49 @@ mod generated_tests {
             );
             assert!(!ran, "ran changed with no handler");
         }
+        // screen_key_pressed_pre: unregistered, nothing runs.
+        {
+            let mut canceled = false;
+            dispatch_screen_key_pressed_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                "test:key",
+                true,
+                10,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
+        // screen_char_typed_pre: unregistered, nothing runs.
+        {
+            let mut canceled = false;
+            dispatch_screen_char_typed_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                'x',
+                9,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
         // data_pack_files: unregistered, nothing runs.
         {
             let mut files = vec![
@@ -69619,6 +71428,18 @@ mod generated_tests {
                 &mut degrees,
             );
         }
+        // compute_fog_color: unregistered, nothing runs.
+        {
+            let mut rgb = [4.0, 5.0, 6.0];
+            dispatch_compute_fog_color(
+                &FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                [2.0, 3.0, 4.0],
+                FogType::Lava,
+                &mut rgb,
+            );
+        }
         // mouse_button_pre: unregistered, nothing runs.
         {
             let mut canceled = false;
@@ -69639,6 +71460,47 @@ mod generated_tests {
         // player_respawned: unregistered, nothing runs.
         {
             dispatch_player_respawned(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
+        }
+        // render_fog: unregistered, nothing runs.
+        {
+            let mut fog = FogData {
+                color: [0.25, 0.5, 0.75, 1.0],
+                environmental_start: 4.0,
+                environmental_end: 5.0,
+                render_distance_start: 6.0,
+                render_distance_end: 7.0,
+                sky_end: 8.0,
+                cloud_end: 9.0,
+            };
+            dispatch_render_fog(
+                &FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                [2.0, 3.0, 4.0],
+                FogType::Lava,
+                &mut fog,
+            );
+        }
+        // screen_key_released_pre: unregistered, nothing runs.
+        {
+            let mut canceled = false;
+            dispatch_screen_key_released_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                "test:key",
+                9,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
         }
         // music: unregistered, nothing runs.
         {
@@ -69689,6 +71551,28 @@ mod generated_tests {
                 [true, false, false],
                 [4.5, 5.5],
                 11,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
+        // screen_mouse_dragged_pre: unregistered, nothing runs.
+        {
+            let mut canceled = false;
+            dispatch_screen_mouse_dragged_pre(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+                8,
+                [3.5, 4.5],
+                10,
                 &mut canceled,
             );
             assert!(!canceled, "canceled changed with no handler");
@@ -72626,6 +74510,54 @@ mod generated_tests {
                 true,
                 &mut visible,
                 &mut text,
+            );
+        }
+        // screen_closing: unregistered, nothing runs.
+        {
+            dispatch_screen_closing(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+            );
+        }
+        // screen_init_post: unregistered, nothing runs.
+        {
+            dispatch_screen_init_post(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
+            );
+        }
+        // screen_opening: unregistered, nothing runs.
+        {
+            dispatch_screen_opening(
+                &FakeHost::empty(),
+                &firing_mods,
+                &horizon_client::test_events::native_screen_view(
+                    "test:screen0",
+                    Some("test:menu0"),
+                    Some(&Text::literal("test:title0")),
+                    [1.0, 2.0, 176.0, 166.0],
+                    9,
+                    [3.0, 4.0],
+                    0.25,
+                ),
             );
         }
         // tooltip_color: unregistered, nothing runs.

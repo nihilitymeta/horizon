@@ -1587,3 +1587,139 @@ fn string_sequences_keep_whole_float_indices() {
         vec!["a".to_owned(), "b".to_owned(), "c".to_owned()]
     );
 }
+
+/// FogData (`from_value`, the fog struct arm): non-finite components are
+/// refused naming `fog.<field>` / `fog.color.<which>`, and legit values
+/// pass and round-trip.
+#[test]
+fn non_finite_fog_fields_are_refused() {
+    use horizon_client::mod_api::FogData;
+    let lua = lua();
+    let fog_lua = |r: &str,
+                   g: &str,
+                   b: &str,
+                   a: &str,
+                   es: &str,
+                   ee: &str,
+                   rds: &str,
+                   rde: &str,
+                   se: &str,
+                   ce: &str| {
+        format!(
+            r#"return {{ color = {{ r = {r}, g = {g}, b = {b}, a = {a} }}, environmental_start = {es}, environmental_end = {ee}, render_distance_start = {rds}, render_distance_end = {rde}, sky_end = {se}, cloud_end = {ce} }}"#
+        )
+    };
+    let ok = "0.25";
+    for (field, lit) in [
+        (
+            "color.r",
+            fog_lua("0/0", ok, ok, ok, ok, ok, ok, ok, ok, ok),
+        ),
+        (
+            "color.g",
+            fog_lua(ok, "1e39", ok, ok, ok, ok, ok, ok, ok, ok),
+        ),
+        (
+            "color.b",
+            fog_lua(ok, ok, "1/0", ok, ok, ok, ok, ok, ok, ok),
+        ),
+        (
+            "color.a",
+            fog_lua(ok, ok, ok, "\"nan\"", ok, ok, ok, ok, ok, ok),
+        ),
+        (
+            "environmental_start",
+            fog_lua(ok, ok, ok, ok, "0/0", ok, ok, ok, ok, ok),
+        ),
+        (
+            "environmental_end",
+            fog_lua(ok, ok, ok, ok, ok, "1e39", ok, ok, ok, ok),
+        ),
+        (
+            "render_distance_start",
+            fog_lua(ok, ok, ok, ok, ok, ok, "1/0", ok, ok, ok),
+        ),
+        (
+            "render_distance_end",
+            fog_lua(ok, ok, ok, ok, ok, ok, ok, "0/0", ok, ok),
+        ),
+        (
+            "sky_end",
+            fog_lua(ok, ok, ok, ok, ok, ok, ok, ok, "1e39", ok),
+        ),
+        (
+            "cloud_end",
+            fog_lua(ok, ok, ok, ok, ok, ok, ok, ok, ok, "1/0"),
+        ),
+    ] {
+        let fog: Value = lua.load(&lit).eval().unwrap();
+        let got = <FogData as LuaStruct>::from_value(&lua, fog, "fog");
+        let e = match got {
+            Ok(_) => panic!("{field}: non-finite value was accepted"),
+            Err(e) => e.to_string(),
+        };
+        assert!(e.contains(&format!("fog.{field}")), "{field}: {e}");
+        assert!(e.contains("finite"), "{field}: {e}");
+    }
+    let fog: Value = lua
+        .load(fog_lua(
+            "0.5", "0.75", "1.0", "0.25", "11", "12", "13", "14", "15", "16",
+        ))
+        .eval()
+        .unwrap();
+    let got = <FogData as LuaStruct>::from_value(&lua, fog, "fog").expect("legit fog");
+    assert_eq!(
+        got,
+        FogData {
+            color: [0.5, 0.75, 1.0, 0.25],
+            environmental_start: 11.0,
+            environmental_end: 12.0,
+            render_distance_start: 13.0,
+            render_distance_end: 14.0,
+            sky_end: 15.0,
+            cloud_end: 16.0,
+        }
+    );
+}
+
+/// The fog color (`[f32;3]` write-back): a non-finite component is refused
+/// naming `rgb.<which>`, a finite table writes back.
+#[test]
+fn non_finite_fog_rgb_is_refused() {
+    let (m, id, dir) = loaded(
+        "fog_rgb_bad",
+        r#"horizon.on("compute_fog_color", function(event) event.rgb.x = 0/0 end)"#,
+    );
+    let mods = boxed(m);
+    let mut rgb = [0.25, 0.5, 0.75];
+    horizon_client::mod_api::dispatch_compute_fog_color(
+        &FakeHost::empty(),
+        &mods,
+        0.5,
+        [1.0, 2.0, 3.0],
+        horizon_client::fog::FogType::Atmospheric,
+        &mut rgb,
+    );
+    let e = hook_error_of(&id);
+    assert!(e.contains("rgb.x"), "names the field: {e}");
+    assert!(e.contains("finite"), "names the rule: {e}");
+    assert_eq!(rgb, [0.25, 0.5, 0.75], "the bad write is dropped");
+    drop_dir(dir);
+    let (m, id, dir) = loaded(
+        "fog_rgb_legit",
+        r#"horizon.on("compute_fog_color", function(event) event.rgb = { x = 0.0, y = 0.5, z = 1.0 } end)"#,
+    );
+    let mods = boxed(m);
+    let mut rgb = [0.25, 0.5, 0.75];
+    horizon_client::mod_api::dispatch_compute_fog_color(
+        &FakeHost::empty(),
+        &mods,
+        0.5,
+        [1.0, 2.0, 3.0],
+        horizon_client::fog::FogType::Atmospheric,
+        &mut rgb,
+    );
+    no_error(&id);
+    assert_eq!(rgb, [0.0, 0.5, 1.0]);
+    drop_dir(dir);
+}
