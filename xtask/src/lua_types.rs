@@ -7,8 +7,33 @@
 //! file is not what the tables here say, and tests keep the tables equal to
 //! the runtime: every hook `horizon.on` takes has a handler type, every
 //! function the runtime installs has a declaration.
+use super::lua_helper_model::{GenKind, HelperClass, classify_helpers, luau_function};
 use super::lua_model::{Class, Kind, classify, event_name, extra_ts, replace_field_ts};
 use std::{fs, path::Path};
+
+/// The `(name, type)` lines of the helpers the helper generator emits
+/// (its SPIKE set), from the same model that emits the bridge: not a
+/// second hand list.
+fn generated_helper_functions() -> Result<Vec<(String, String)>, String> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let rows = classify_helpers(&root)?;
+    let mut out = Vec::new();
+    for name in super::lua_helpers::SPIKE_SET {
+        let row = rows
+            .iter()
+            .find(|row| row.name == *name)
+            .ok_or_else(|| format!("{name} is in SPIKE_SET but is not a helper"))?;
+        match &row.class {
+            HelperClass::Generated(GenKind::Read | GenKind::Action) => out.push(luau_function(row)),
+            class => {
+                return Err(format!(
+                    "{name} is enabled by SPIKE_SET but classifies as {class:?}"
+                ));
+            }
+        }
+    }
+    Ok(out)
+}
 
 /// The tables a hook or helper hands a script, as Luau types.
 const TYPES: &[(&str, &str)] = &[
@@ -606,6 +631,9 @@ fn render() -> Result<String, String> {
     for (name, ty) in FUNCTIONS {
         out.push_str(&format!("    {name}: {ty},\n"));
     }
+    for (name, ty) in generated_helper_functions()? {
+        out.push_str(&format!("    {name}: {ty},\n"));
+    }
     out.push_str("}\n\n-- `scripts/registry.lua` and its modules (`scripts/registry/`) run with this instead of `horizon`.\ndeclare registry: {\n");
     for (name, ty) in REGISTRY {
         out.push_str(&format!("    {name}: {ty},\n"));
@@ -777,7 +805,7 @@ mod tests {
             }
         }
         let actions_start = src.find("for action in [").unwrap();
-        let actions_end = actions_start + src[actions_start..].find("] {").unwrap();
+        let actions_end = actions_start + src[actions_start..].find("]").unwrap();
         for name in src[actions_start..actions_end]
             .split('"')
             .skip(1)
@@ -785,9 +813,26 @@ mod tests {
         {
             installed.insert(name.to_owned());
         }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let bridge =
+            std::fs::read_to_string(root.join("crates/event-horizon-lua/src/generated_helpers.rs"))
+                .unwrap();
+        for list in ["GENERATED_ACTIONS", "GENERATED_READS"] {
+            let start = bridge.find(list).unwrap();
+            let end = start + bridge[start..].find("];").unwrap();
+            for name in bridge[start..end].split('"').skip(1).step_by(2) {
+                installed.insert(name.to_owned());
+            }
+        }
         let declared: BTreeSet<String> = super::FUNCTIONS
             .iter()
             .map(|(n, _)| n.to_string())
+            .chain(
+                super::generated_helper_functions()
+                    .unwrap()
+                    .into_iter()
+                    .map(|(n, _)| n),
+            )
             .chain(std::iter::once("on".to_owned()))
             .collect();
         assert_eq!(installed, declared);

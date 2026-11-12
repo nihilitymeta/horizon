@@ -1034,6 +1034,21 @@ declare horizon: {
     kick: (who: string | ReadPlayer, reason: string) -> (),
     teleport_player: (who: string | ReadPlayer, dimension: string, pos: Vec3, yaw: number, pitch: number) -> (),
     run_command_as: (who: string | ReadPlayer, line: string, callback: ((result: CommandResult) -> ())?) -> (),
+    remove_effect: (who: string | ReadPlayer, name: string) -> (),
+    set_attribute_base: (who: string | ReadPlayer, name: string, value: number) -> (),
+    set_flight: (who: string | ReadPlayer, value: boolean, value2: boolean) -> (),
+    respawn_player: (who: string | ReadPlayer) -> (),
+    resend_commands: (who: string | ReadPlayer) -> (),
+    profile_by_uuid: (who: string | ReadPlayer) -> string?,
+    player_view_distance: (who: string | ReadPlayer) -> number?,
+    player_sneaking: (who: string | ReadPlayer) -> boolean?,
+    player_stat: (who: string | ReadPlayer, name: string, name2: string) -> number?,
+    hide_entity_from: (who: string | ReadPlayer, value: number, value2: boolean) -> (),
+    sleep_ignored: (who: string | ReadPlayer, value: boolean) -> (),
+    mob_stop: (name: string, value: number) -> (),
+    mob_navigating: (name: string, value: number) -> (),
+    max_stack_size: (name: string) -> number?,
+    refresh_player: (who: string | ReadPlayer) -> (),
 }
 
 -- `scripts/registry.lua` and its modules (`scripts/registry/`) run with this instead of `horizon`.

@@ -12,6 +12,9 @@ pub mod console;
 mod generated_runtime;
 #[macro_use]
 mod generated_hooks;
+mod generated_helpers;
+#[cfg(test)]
+mod generated_helpers_tests;
 pub mod hud_hooks;
 pub mod lua_mods;
 pub mod profiler;

@@ -9,7 +9,11 @@ use super::lua_model::{
 use horizon_mod_api_gen::{
     catalog_hooks, doc_comments, free_function_source, impl_functions, one_function,
 };
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::Path,
+};
 use syn::Item;
 
 /// Hooks whose Lua cell stays exactly this curated text: the two
@@ -573,8 +577,15 @@ const LUA_HELPERS_INDIRECT: &[&str] = &[
     "set_mod_block_entity_data",
 ];
 
+/// The names of the hand-written Lua helpers (`LUA_HELPERS`), for the
+/// helper generator's classifier (to tell an AlreadyLua helper apart
+/// from one it may emit).
+pub(crate) fn lua_helper_names() -> Vec<&'static str> {
+    LUA_HELPERS.iter().map(|(n, _)| *n).collect()
+}
+
 /// The helpers listed by the pending hook fragments, in file order.
-fn fragment_helpers(root: &Path) -> Result<Vec<serde_json::Value>, String> {
+pub(crate) fn fragment_helpers(root: &Path) -> Result<Vec<serde_json::Value>, String> {
     let dir = root.join("tools/native-hook-fragments");
     let mut paths: Vec<_> = fs::read_dir(&dir)
         .map_err(|e| format!("{}: {e}", dir.display()))?
@@ -727,6 +738,12 @@ fn generate(root: &Path, check: bool) -> Result<(), String> {
     let verbatim: BTreeMap<&str, &str> = LUA_VERBATIM.iter().copied().collect();
     let notes: BTreeMap<&str, &str> = LUA_NOTES.iter().copied().collect();
     let lua_helpers: BTreeMap<&str, &str> = LUA_HELPERS.iter().copied().collect();
+    // The helpers the helper generator emits (`docs/api/helper-exposure.md`
+    // lists every helper's class): their Lua cell names `generated` (its
+    // bridge writes the calls in `generated_helpers.rs`, which the
+    // hand-written test below does not scan). Every other helper keeps
+    // the empty cell, as before.
+    let generated_helpers: BTreeSet<&str> = super::lua_helpers::SPIKE_SET.iter().copied().collect();
     // Every hook in exactly one class, from the same model that emits the
     // runtime and `horizon.d.lua`: the Lua cell of a generated hook comes
     // from its model, and a hook of any other class keeps an empty cell
@@ -786,7 +803,11 @@ The full doc of each is on its `native_<name>` function.\n\n");
         let target = helper["target"].as_str().ok_or("helper target missing")?;
         let text = docs_of(target, target_fn(target), &mut parsed)?;
         let api = api_of(&text).map_or("—".to_owned(), |n| n.to_string());
-        let lua = lua_helpers.get(name).copied().unwrap_or("");
+        let lua = if generated_helpers.contains(name) {
+            "generated"
+        } else {
+            lua_helpers.get(name).copied().unwrap_or("")
+        };
         out.push_str(&format!("| `{name}` | {api} | {lua} | {} |\n", cell(&text)));
     }
     out.push_str(&format!(
@@ -794,9 +815,9 @@ The full doc of each is on its `native_<name>` function.\n\n");
         helpers.len(),
         helpers
             .iter()
-            .filter(|h| h["name"]
-                .as_str()
-                .is_some_and(|n| lua_helpers.contains_key(n)))
+            .filter(|h| h["name"].as_str().is_some_and(|n| lua_helpers
+                .contains_key(n)
+                || generated_helpers.contains(n)))
             .count()
     ));
     for (name, _) in LUA_VERBATIM.iter().chain(LUA_NOTES.iter()) {

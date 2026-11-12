@@ -18,6 +18,8 @@
 //! and `horizon.icns`. `docs/media/brand/README.md` lists what goes where.
 
 mod hooks_doc;
+mod lua_helper_model;
+mod lua_helpers;
 mod lua_hooks;
 mod lua_model;
 mod lua_types;
@@ -27,7 +29,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-const USAGE: &str = "usage: cargo run -p xtask -- package BINARY OUTDIR | package-server ENGINE OUTDIR | mod-api | hooks-doc [--check] | lua-types [--check] | lua-hooks [--check] | tokens | icons";
+const USAGE: &str = "usage: cargo run -p xtask -- package BINARY OUTDIR | package-server ENGINE OUTDIR | mod-api | hooks-doc [--check] | lua-types [--check] | lua-hooks [--check] | lua-helpers [--check] | tokens | icons";
 
 /// What the release folder takes from the repository at HEAD, as `git archive` writes it.
 const ARCHIVED: [&str; 5] = [
@@ -61,6 +63,8 @@ fn main() -> ExitCode {
         [task, check] if task == "lua-types" && check == "--check" => lua_types::run(true),
         [task] if task == "lua-hooks" => lua_hooks::run(false),
         [task, check] if task == "lua-hooks" && check == "--check" => lua_hooks::run(true),
+        [task] if task == "lua-helpers" => lua_helpers::run(false),
+        [task, check] if task == "lua-helpers" && check == "--check" => lua_helpers::run(true),
         [task] if task == "tokens" => tokens(),
         [task] if task == "icons" => icons(),
         _ => Err(USAGE.to_string()),

@@ -360,6 +360,11 @@ return function(slot, horizon, base)
   horizon.menu_cursor = function(who) return read("menu_cursor", who) end
   horizon.has_permission = function(player, node, default_level) return read("has_permission", player, node, default_level) end
   horizon.player_permission = function(player) return read("player_permission", player) end
+  horizon.profile_by_uuid = function(who) return read("profile_by_uuid", who) end
+  horizon.player_view_distance = function(who) return read("player_view_distance", who) end
+  horizon.player_sneaking = function(who) return read("player_sneaking", who) end
+  horizon.player_stat = function(who, stat_type, key) return read("player_stat", who, stat_type, key) end
+  horizon.max_stack_size = function(id) return read("max_stack_size", id) end
   horizon.dev = { inspect = function(who, what) return read("dev_inspect", who, what) end }
   -- A refused registration (a hook name the runtime does not know) is
   -- raised from the script's own line, as any Lua error is.
@@ -530,7 +535,7 @@ fn player_table_with_held(
 
 /// The player a script named: a `player` table (its `uuid`), a UUID or a
 /// name of a player of the world.
-fn uuid_of(h: &dyn Host, who: &Value) -> Option<u128> {
+pub(crate) fn uuid_of(h: &dyn Host, who: &Value) -> Option<u128> {
     let text = match who {
         Value::Table(t) => t.get::<Option<String>>("uuid").ok().flatten()?,
         Value::String(s) => s.to_str().ok()?.to_owned(),
@@ -1052,11 +1057,14 @@ impl LuaMod {
                             None => Value::Nil,
                         }
                     }
-                    other => {
-                        return Err(mlua::Error::runtime(format!(
-                            "horizon.{other}: no such read"
-                        )));
-                    }
+                    other => match crate::generated_helpers::generated_read(lua, h, other, rest) {
+                        Some(value) => value?,
+                        None => {
+                            return Err(mlua::Error::runtime(format!(
+                                "horizon.{other}: no such read"
+                            )));
+                        }
+                    },
                 }
             }
         })
@@ -2369,7 +2377,10 @@ impl LuaMod {
             "close_menu",
             "kick",
             "teleport_player",
-        ] {
+        ]
+        .into_iter()
+        .chain(crate::generated_helpers::GENERATED_ACTIONS.iter().copied())
+        {
             let slot = slot.clone();
             api.set(
                 action,
@@ -3675,7 +3686,10 @@ impl LuaMod {
                 // later queued actions still run.
                 let _ = host.teleport_player(uuid, &dimension, pos, yaw, pitch);
             }
-            other => self.warn(format!("unknown action {other}")),
+            other => match crate::generated_helpers::run_generated_action(host, other, args) {
+                Some(ran) => ran?,
+                None => self.warn(format!("unknown action {other}")),
+            },
         }
         Ok(())
     }
