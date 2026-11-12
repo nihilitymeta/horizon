@@ -288,7 +288,7 @@ The client helpers are the generated helpers a client state (and only a client s
 
 | Function | Description |
 |---|---|
-| `horizon.goal(name, def)` | Defines a mob goal. *def* has `flags` (any of `"move"`, `"look"`, `"jump"` and `"target"`), `every_tick`, `interruptable`, and the functions `can_use(mob, state, out)` (required), `can_continue`, `start`, `tick` and `stop`. *mob* is the [mob view](#the-mob-view), *state* a table of the goal's own that lives with the mob, and *out* the [goal actions](#goal-actions). Call it at load |
+| `horizon.goal(name, def)` | Defines a mob goal. *def* has `flags` (any of `"move"`, `"look"`, `"jump"` and `"target"`), `every_tick`, `interruptable`, and the functions `can_use(mob, state, out)` (required), `can_continue`, `start`, `tick` and `stop`. *mob* is the [mob view](#the-mob-view), *state* a table of the goal's own that lives with the mob, and *out* the [goal actions](#goal-actions). A def is plain data: its fields are read without consulting a metatable, so a field only `__index` would supply counts as missing. Call it at load |
 | `horizon.add_goal(priority, name)`, `horizon.add_target_goal(priority, name)` | Adds a defined goal to the mob's goal selector or target selector. In `mob_ai_register` or `register_goals` |
 | `horizon.clear_goals()`, `horizon.clear_target_goals()` | Removes every goal from a selector. In `mob_ai_register` or `register_goals` |
 | `horizon.set_body_rotation(mode, rate)` | Sets how a stationary mob's body follows its head. In `mob_ai_register` or `register_goals`. *mode* is `"vanilla"` (the default ramp), `"smooth"` (the body turns towards the head by at most *rate* degrees a tick, default `5`) or `"frozen"` (the body never turns). *rate* stays within `0.1` to `90` |
@@ -413,7 +413,8 @@ error naming the mod. The same cap of 8 also bounds a Lua-handled command that q
 of itself: the nested commands run synchronously inside the draining call, so the 9th nested ask does not
 run, its callback is delivered the empty result, and the same one-line error is logged. A callback that
 raises is reported (`run_command_as callback`) and stops neither the other callbacks nor the rest of the
-firing.
+firing. Each callback runs inside the same per-handler time budget as the firing's handlers (a quarter
+second): a callback that runs past it is stopped and logged, and the next callback still runs.
 
 ```lua
 horizon.run_command_as(event.player, "/say hello", function(result)
@@ -1112,6 +1113,9 @@ The developer tools are made for this ([dev-tools.md](dev-tools.md)). Start the 
   as one marked line, which `horizon-ctl mod-state ID` queues on this console and reads (the reply is that line, plus
   `ok` and `id`; a `print` the script or a `/lua` snippet rebound does not matter). Entity data
   (`horizon.entity_data`) is not read by either: no per-entity enumeration.
+- In the console, `mc.set(entity, path, value)` and `mc.merge(entity, value)` convert a Lua value to SNBT before
+  touching the entity: a table that holds itself, or nested past 128 tables, is an error rather than an abort. A
+  tag nested past 128 levels is likewise an error where it is read back as a Lua table (`mc.get`, `mc.mod_state`).
 
 ## Plan
 

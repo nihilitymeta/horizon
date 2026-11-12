@@ -2564,13 +2564,26 @@ impl LuaMod {
         api.set(
             "goal",
             lua.create_function(move |lua, (name, def): (String, Table)| {
-                let mut goals = goals.lock().map_err(|_| mlua::Error::runtime("goals"))?;
-                // One name for the game's life: a redefinition keeps the first string.
-                let leaked: &'static str = match goals.get(name.as_str()) {
-                    Some(g) => g.name,
-                    None => Box::leak(format!("{id}:{name}").into_boxed_str()),
+                // The def is parsed before the lock is taken: a def whose
+                // metatable's `__index` re-enters `horizon.goal` would
+                // otherwise block on the held mutex, and no Lua runs in
+                // between, so the load budget never fires. A def is plain
+                // data, so nothing runs during the parse anyway.
+                // One name for the game's life: a redefinition copies the
+                // stored &'static str under a brief lock and reuses it (no
+                // new leak); a new name is interned inside `parse` only
+                // after it succeeds, so a failed parse interns nothing.
+                let existing: Option<&'static str> = {
+                    let locked = goals.lock().map_err(|_| mlua::Error::runtime("goals"))?;
+                    let existing = locked.get(name.as_str()).map(|g| g.name);
+                    drop(locked);
+                    existing
                 };
-                let def = goals::GoalDef::parse(lua, leaked, def)?;
+                let def = match existing {
+                    Some(static_name) => goals::GoalDef::parse_existing(lua, static_name, def)?,
+                    None => goals::GoalDef::parse(lua, &format!("{id}:{name}"), def)?,
+                };
+                let mut goals = goals.lock().map_err(|_| mlua::Error::runtime("goals"))?;
                 goals.insert(name, def);
                 Ok(())
             })?,
@@ -3197,6 +3210,20 @@ impl LuaMod {
         args: impl mlua::IntoLuaMulti,
         apply: &mut dyn FnMut(&mut dyn Host, &str, &Table) -> mlua::Result<()>,
     ) -> mlua::Result<()> {
+        // The turn is held for the whole firing, handlers and the
+        // `run_command_as` callbacks of `finish_callbacks` alike: the turn
+        // is re-entrant, so the handlers' own take inside `run_handlers`
+        // is free, and a waiting thread bounds at `TURN_TIMEOUT`.
+        let _guard = self
+            .turn
+            .try_acquire_timeout_label(turn::TURN_TIMEOUT, Some(hook))
+            .ok_or_else(|| {
+                let note = self
+                    .turn
+                    .held_by()
+                    .unwrap_or_else(|| "unknown holder".to_owned());
+                mlua::Error::runtime(format!("{hook}: turn timed out ({note})"))
+            })?;
         // A reload since the last firing left the old state with markers
         // and no host to clear them with: clear them now, before whatever
         // the new handlers queue.
@@ -3255,7 +3282,11 @@ impl LuaMod {
                 }
                 slot.set(3, outer + 1)?;
                 for (f, result) in batch {
-                    if let Err(e) = f.call::<()>(result) {
+                    // Each callback gets a handler's budget of its own: a
+                    // callback the budget stops is logged like any other
+                    // raising one, and the next callback still runs.
+                    let called = self.budget.run(HANDLER_BUDGET, || f.call::<()>(result));
+                    if let Err(e) = called {
                         self.error(handler_error_text("run_command_as callback", &e));
                     }
                 }
@@ -4712,6 +4743,108 @@ experimental = ["scripts"]
             .map(|n| n.as_str())
             .collect();
         assert_eq!(added, ["ruby:alpha", "ruby:beta"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_goal_def_through_a_metatable_neither_deadlocks_nor_supplies_fields() {
+        // A def whose `__index` re-enters `horizon.goal` used to deadlock
+        // the load on the `goals` mutex (the lock was held across the
+        // parse, so no Lua safepoint ever fired the load budget). A def
+        // is plain data: the load returns with the def missing `can_use`,
+        // on a thread with a bounded wait, since a hang is the bug.
+        let (dir, path) = hmod(
+            "goal-meta",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.goal("outer", setmetatable({}, { __index = function() horizon.goal("inner", { can_use = function() return false end }) return nil end }))
+                "#,
+            )],
+        );
+        let in_thread = path.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let err = LuaMod::load(&in_thread, LuaSide::Server, &[])
+                .err()
+                .unwrap_or_default();
+            let _ = tx.send(err);
+        });
+        let err = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the load returned instead of deadlocking");
+        assert!(err.contains("can_use"), "{err}");
+        std::fs::remove_dir_all(&dir).unwrap();
+        // A field only `__index` supplies does not count as present: the
+        // def is plain data and the field is missing.
+        let (dir2, path2) = hmod(
+            "goal-meta-field",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                local def = setmetatable({}, { __index = { can_use = function() return false end } })
+                horizon.goal("x", def)
+                "#,
+            )],
+        );
+        let err = LuaMod::load(&path2, LuaSide::Server, &[])
+            .err()
+            .unwrap_or_default();
+        assert!(err.contains("can_use"), "{err}");
+        assert!(err.contains("required"), "{err}");
+        std::fs::remove_dir_all(&dir2).unwrap();
+    }
+
+    #[test]
+    fn redefining_a_goal_reuses_its_name_and_a_failed_one_keeps_it() {
+        let (dir, path) = hmod(
+            "goal-redefine",
+            &[(
+                "scripts/server/init.lua",
+                br#"horizon.goal("sit", { flags = {"move"}, can_use = function() return false end })"#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let first = m.goals.lock().unwrap().get("sit").unwrap().name;
+        // A second successful definition keeps the first string (same
+        // pointer) and is the live one.
+        m.lua
+            .load("horizon.goal('sit', { flags = {'look'}, can_use = function() return true end })")
+            .exec()
+            .unwrap();
+        let (second, flags) = {
+            let goals = m.goals.lock().unwrap();
+            let def = goals.get("sit").unwrap();
+            (def.name, def.flags)
+        };
+        assert!(std::ptr::eq(first, second));
+        assert_eq!(flags, horizon_client::mod_api::GOAL_LOOK);
+        // A failed redefinition keeps both the pointer and the def.
+        let before = m.goals.lock().unwrap().get("sit").unwrap().flags;
+        assert!(m.lua.load("horizon.goal('sit', {})").exec().is_err());
+        let goals = m.goals.lock().unwrap();
+        let def = goals.get("sit").unwrap();
+        assert!(std::ptr::eq(first, def.name));
+        assert_eq!(def.flags, before);
+        drop(goals);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn failed_first_time_goal_definitions_store_nothing() {
+        let (dir, path) = hmod(
+            "goal-fail-first",
+            &[(
+                "scripts/server/init.lua",
+                br#"horizon.goal("ok", { can_use = function() return false end })"#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        for _ in 0..5 {
+            assert!(m.lua.load("horizon.goal('new', {})").exec().is_err());
+        }
+        assert!(!m.goals.lock().unwrap().contains_key("new"));
+        assert!(m.goals.lock().unwrap().contains_key("ok"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -11936,6 +12069,48 @@ end)"#,
             ]
         );
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_run_command_as_callback_that_never_returns_is_stopped_and_the_next_runs() {
+        // Each callback gets a handler's budget: an endless callback is
+        // stopped and logged, and the callback queued after it still runs.
+        // The dispatch runs on a thread with a bounded wait, since a hang
+        // is the bug being pinned.
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let (m, _host, dir) = dead_mod(
+                "cmd_as_overrun",
+                br#"
+                horizon.on("net_from_client", function(event)
+                  horizon.run_command_as(event.player, "one", function(result)
+                    while true do end
+                  end)
+                  horizon.run_command_as(event.player, "two", function(result)
+                    horizon.broadcast("cb two")
+                  end)
+                end)
+                "#,
+            );
+            let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+            let mut host = command_as_host(ran_result());
+            horizon_client::mod_api::dispatch_net_from_client(
+                &mut host,
+                &mods,
+                CMD_STEVE,
+                "ruby:from",
+                &[],
+            );
+            let lines = host.lines.lock().unwrap().clone();
+            let _ = tx.send(lines);
+            std::fs::remove_dir_all(&dir).unwrap();
+        });
+        let lines = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the firing returned with the callback stopped");
+        assert!(lines.iter().any(|l| l == "as one"), "{lines:?}");
+        assert!(lines.iter().any(|l| l == "as two"), "{lines:?}");
+        assert!(lines.iter().any(|l| l == "broadcast cb two"), "{lines:?}");
     }
 
     #[test]

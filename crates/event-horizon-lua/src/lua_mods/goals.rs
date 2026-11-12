@@ -48,10 +48,29 @@ pub struct GoalDef {
 }
 impl GoalDef {
     /// Reads `def`; `name` is the goal's name for F3 and the log, kept for
-    /// the game's life (a mod defines a handful of goals, once).
-    pub fn parse(lua: &Lua, name: &'static str, def: Table) -> mlua::Result<Self> {
+    /// the game's life (a mod defines a handful of goals, once). A def is
+    /// plain data: its fields are read without consulting a metatable, so a
+    /// field only `__index` would supply counts as missing.
+    ///
+    /// The name is interned (leaked) only after the def parses, so a failed
+    /// definition of a new name leaks nothing.
+    pub fn parse(lua: &Lua, name: &str, def: Table) -> mlua::Result<Self> {
+        Self::build(lua, name, def, |n| Box::leak(n.to_owned().into_boxed_str()))
+    }
+    /// As `parse`, but keeps an already-interned name: no new string is
+    /// leaked and the stored pointer is unchanged.
+    pub(crate) fn parse_existing(lua: &Lua, name: &'static str, def: Table) -> mlua::Result<Self> {
+        Self::build(lua, name, def, |_| name)
+    }
+    fn build(
+        lua: &Lua,
+        display: &str,
+        def: Table,
+        intern: impl FnOnce(&str) -> &'static str,
+    ) -> mlua::Result<Self> {
+        let name = display;
         let mut flags = 0;
-        if let Some(list) = def.get::<Option<Table>>("flags")? {
+        if let Some(list) = def.raw_get::<Option<Table>>("flags")? {
             for flag in list.sequence_values::<String>() {
                 flags |= match flag?.as_str() {
                     "move" => GOAL_MOVE,
@@ -67,23 +86,25 @@ impl GoalDef {
             }
         }
         for key in ["can_use", "can_continue", "start", "tick", "stop"] {
-            let v: Value = def.get(key)?;
+            let v: Value = def.raw_get(key)?;
             if !v.is_nil() && !v.is_function() {
                 return Err(mlua::Error::runtime(format!(
                     "goal {name}: {key} is not a function"
                 )));
             }
         }
-        if def.get::<Value>("can_use")?.is_nil() {
+        if def.raw_get::<Value>("can_use")?.is_nil() {
             return Err(mlua::Error::runtime(format!(
                 "goal {name}: can_use(mob, state, out) is required"
             )));
         }
         Ok(GoalDef {
-            name,
+            name: intern(name),
             flags,
-            every_tick: def.get::<Option<bool>>("every_tick")?.unwrap_or(false),
-            interruptable: def.get::<Option<bool>>("interruptable")?.unwrap_or(true),
+            every_tick: def.raw_get::<Option<bool>>("every_tick")?.unwrap_or(false),
+            interruptable: def
+                .raw_get::<Option<bool>>("interruptable")?
+                .unwrap_or(true),
             def: Arc::new(lua.create_registry_value(def)?),
         })
     }

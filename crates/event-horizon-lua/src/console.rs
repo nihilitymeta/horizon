@@ -119,8 +119,23 @@ fn vm() -> mlua::Result<Lua> {
     })
 }
 
+/// Whether a `level` of nesting is within the cap: past
+/// `lua_mods::nbt::MAX_DEPTH` is an error naming it.
+fn check_nest(level: usize) -> mlua::Result<()> {
+    if level > crate::lua_mods::nbt::MAX_DEPTH {
+        Err(mlua::Error::runtime(format!(
+            "nests deeper than {} levels",
+            crate::lua_mods::nbt::MAX_DEPTH
+        )))
+    } else {
+        Ok(())
+    }
+}
+
 /// A tag as a Lua value: compounds as tables, lists and arrays as sequences.
-fn tag_to_lua(lua: &Lua, tag: &Tag) -> mlua::Result<Value> {
+/// `level` is the tag's nesting: nested past `lua_mods::nbt::MAX_DEPTH` is
+/// an error, so a deep tag cannot overflow the stack.
+fn tag_to_lua(lua: &Lua, tag: &Tag, level: usize) -> mlua::Result<Value> {
     Ok(match tag {
         Tag::End => Value::Nil,
         Tag::Byte(v) => Value::Integer(i64::from(*v)),
@@ -140,16 +155,18 @@ fn tag_to_lua(lua: &Lua, tag: &Tag) -> mlua::Result<Value> {
         Tag::IntArray(v) => Value::Table(lua.create_sequence_from(v.iter().copied())?),
         Tag::LongArray(v) => Value::Table(lua.create_sequence_from(v.iter().copied())?),
         Tag::List(items) => {
+            check_nest(level)?;
             let t = lua.create_table()?;
             for (i, item) in items.iter().enumerate() {
-                t.set(i + 1, tag_to_lua(lua, item)?)?;
+                t.set(i + 1, tag_to_lua(lua, item, level + 1)?)?;
             }
             Value::Table(t)
         }
         Tag::Compound(c) => {
+            check_nest(level)?;
             let t = lua.create_table()?;
             for (k, v) in c {
-                t.set(k.to_string_lossy(), tag_to_lua(lua, v)?)?;
+                t.set(k.to_string_lossy(), tag_to_lua(lua, v, level + 1)?)?;
             }
             Value::Table(t)
         }
@@ -158,8 +175,17 @@ fn tag_to_lua(lua: &Lua, tag: &Tag) -> mlua::Result<Value> {
 
 /// A Lua value as SNBT text, for `mc.set` and `mc.merge` given a table or
 /// a number rather than SNBT: integers are ints, other numbers doubles,
-/// sequences lists, other tables compounds, booleans bytes.
+/// sequences lists, other tables compounds, booleans bytes. A table that
+/// holds itself, or nested past `lua_mods::nbt::MAX_DEPTH`, is an error
+/// and not an endless recursion.
 fn lua_to_snbt(v: &Value) -> Result<String, String> {
+    let mut tables: Vec<*const std::ffi::c_void> = Vec::new();
+    lua_snbt(v, &mut tables)
+}
+
+/// `lua_to_snbt` with `tables` the tables on the path from the root, so a
+/// cycle and a deep nest are found on the way down.
+fn lua_snbt(v: &Value, tables: &mut Vec<*const std::ffi::c_void>) -> Result<String, String> {
     Ok(match v {
         Value::Nil => return Err("nil has no SNBT".into()),
         Value::Boolean(b) => if *b { "1b" } else { "0b" }.to_string(),
@@ -167,27 +193,43 @@ fn lua_to_snbt(v: &Value) -> Result<String, String> {
         Value::Number(n) => format!("{n}d"),
         Value::String(s) => horizon_world::snbt_text::quote_and_escape(&s.to_string_lossy()),
         Value::Table(t) => {
-            let len = t.raw_len();
-            if len > 0 {
-                let mut items = Vec::new();
-                for i in 1..=len {
-                    items.push(lua_to_snbt(
-                        &t.raw_get::<Value>(i).map_err(|e| e.to_string())?,
-                    )?);
-                }
-                format!("[{}]", items.join(","))
-            } else {
-                let mut entries = Vec::new();
-                for pair in t.clone().pairs::<String, Value>() {
-                    let (k, v) = pair.map_err(|e| e.to_string())?;
-                    entries.push(format!(
-                        "{}:{}",
-                        horizon_world::snbt_text::quote_and_escape(&k),
-                        lua_to_snbt(&v)?
-                    ));
-                }
-                format!("{{{}}}", entries.join(","))
+            let p = t.to_pointer();
+            if tables.contains(&p) {
+                return Err("a table that holds itself (a cycle) cannot be written as SNBT".into());
             }
+            if tables.len() >= crate::lua_mods::nbt::MAX_DEPTH {
+                return Err(format!(
+                    "nested deeper than {} tables",
+                    crate::lua_mods::nbt::MAX_DEPTH
+                ));
+            }
+            tables.push(p);
+            let out = (|| -> Result<String, String> {
+                let len = t.raw_len();
+                if len > 0 {
+                    let mut items = Vec::new();
+                    for i in 1..=len {
+                        items.push(lua_snbt(
+                            &t.raw_get::<Value>(i).map_err(|e| e.to_string())?,
+                            tables,
+                        )?);
+                    }
+                    Ok(format!("[{}]", items.join(",")))
+                } else {
+                    let mut entries = Vec::new();
+                    for pair in t.clone().pairs::<String, Value>() {
+                        let (k, v) = pair.map_err(|e| e.to_string())?;
+                        entries.push(format!(
+                            "{}:{}",
+                            horizon_world::snbt_text::quote_and_escape(&k),
+                            lua_snbt(&v, tables)?
+                        ));
+                    }
+                    Ok(format!("{{{}}}", entries.join(",")))
+                }
+            })();
+            tables.pop();
+            out?
         }
         other => return Err(format!("{} has no SNBT", other.type_name())),
     })
@@ -393,7 +435,7 @@ fn lua_run(host: &mut dyn Host, lua: &Lua, label: &str, code: &str) {
                 let mut h = host.borrow_mut();
                 let data = first_data(&mut **h, &v).map_err(lua_err)?;
                 let tag = tag_of(&data, path).map_err(lua_err)?;
-                tag_to_lua(lua, &tag)
+                tag_to_lua(lua, &tag, 1)
             })?,
         )?;
         mc.set(
@@ -595,10 +637,10 @@ fn lua_run(host: &mut dyn Host, lua: &Lua, label: &str, code: &str) {
                 let mut h = host.borrow_mut();
                 let (world, players) = mod_saved(&mut **h, &id).map_err(lua_err)?;
                 let t = lua.create_table()?;
-                t.set("world_data", tag_to_lua(lua, &Tag::Compound(world))?)?;
+                t.set("world_data", tag_to_lua(lua, &Tag::Compound(world), 1)?)?;
                 let by_uuid = lua.create_table()?;
                 for (uuid, data) in players {
-                    by_uuid.set(uuid, tag_to_lua(lua, &Tag::Compound(data))?)?;
+                    by_uuid.set(uuid, tag_to_lua(lua, &Tag::Compound(data), 1)?)?;
                 }
                 t.set("players", by_uuid)?;
                 Ok(t)
@@ -888,6 +930,66 @@ mod tests {
             tag,
             Tag::Compound(Compound::from_iter([(JavaString::from("a"), Tag::Int(1))]))
         );
+    }
+
+    /// A table that holds itself is an error, in a sequence or in a
+    /// compound: `mc.set` and `mc.merge` convert before touching the
+    /// entity, and a cycle must not recurse forever here or abort.
+    #[test]
+    fn a_cyclic_table_is_an_error_not_an_abort() {
+        let lua = Lua::new();
+        let seq = lua
+            .load("local t = {} t[1] = t return t")
+            .eval::<Value>()
+            .unwrap();
+        let e = lua_to_snbt(&seq).unwrap_err();
+        assert!(e.contains("holds itself"), "{e}");
+        let map = lua
+            .load("local t = {} t.self = t return t")
+            .eval::<Value>()
+            .unwrap();
+        let e = lua_to_snbt(&map).unwrap_err();
+        assert!(e.contains("holds itself"), "{e}");
+        // The same through `snbt_of`, what `mc.set` and `mc.merge` call.
+        assert!(snbt_of(&seq).is_err());
+        assert!(snbt_of(&map).is_err());
+    }
+
+    /// Nested one table past `MAX_DEPTH` is an error; nested at the cap is
+    /// not: the cap is the same one saving to NBT keeps.
+    #[test]
+    fn nesting_past_the_cap_is_an_error_and_at_the_cap_passes() {
+        let lua = Lua::new();
+        // `t` wrapped `wraps` times is `wraps + 1` nested tables.
+        let nested = |wraps: usize| {
+            lua.load(format!(
+                "local t = {{}} for _ = 1, {wraps} do t = {{t}} end return t"
+            ))
+            .eval::<Value>()
+            .unwrap()
+        };
+        let cap = crate::lua_mods::nbt::MAX_DEPTH;
+        assert!(lua_to_snbt(&nested(cap - 1)).is_ok());
+        let e = lua_to_snbt(&nested(cap)).unwrap_err();
+        assert!(e.contains("nested deeper"), "{e}");
+    }
+
+    /// A tag nested past the cap is an error for `tag_to_lua`, as it is for
+    /// `tag_at`: one at the cap is not.
+    #[test]
+    fn a_tag_nested_past_the_cap_is_an_error() {
+        let lua = Lua::new();
+        let nest = |wraps: usize| {
+            let mut tag = Tag::Int(1);
+            for _ in 0..wraps {
+                tag = Tag::List(vec![tag]);
+            }
+            tag
+        };
+        let cap = crate::lua_mods::nbt::MAX_DEPTH;
+        assert!(tag_to_lua(&lua, &nest(cap), 1).is_ok());
+        let e = tag_to_lua(&lua, &nest(cap + 1), 1).unwrap_err();
+        assert!(e.to_string().contains("nests deeper"), "{e}");
     }
 
     /// A host that answers the console's calls with fixed values, so a
