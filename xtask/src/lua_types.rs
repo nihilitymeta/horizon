@@ -687,7 +687,14 @@ fn render() -> Result<String, String> {
         out.push_str(&format!("    {name}: {ty},\n"));
     }
     for (name, ty) in generated_helper_functions()? {
-        out.push_str(&format!("    {name}: {ty},\n"));
+        // A client-state helper's declaration is the server one's
+        // function type with this comment (issue 50).
+        let comment = if super::lua_helpers::is_client_side(&name) {
+            " -- client state only"
+        } else {
+            ""
+        };
+        out.push_str(&format!("    {name}: {ty},{comment}\n"));
     }
     out.push_str("}\n\n-- `scripts/registry.lua` and its modules (`scripts/registry/`) run with this instead of `horizon`.\ndeclare registry: {\n");
     for (name, ty) in REGISTRY {
@@ -872,7 +879,12 @@ mod tests {
         let bridge =
             std::fs::read_to_string(root.join("crates/event-horizon-lua/src/generated_helpers.rs"))
                 .unwrap();
-        for list in ["GENERATED_ACTIONS", "GENERATED_READS"] {
+        for list in [
+            "GENERATED_ACTIONS",
+            "GENERATED_READS",
+            "GENERATED_CLIENT_ACTIONS",
+            "GENERATED_CLIENT_READS",
+        ] {
             let start = bridge.find(list).unwrap();
             let end = start + bridge[start..].find("];").unwrap();
             for name in bridge[start..end].split('"').skip(1).step_by(2) {

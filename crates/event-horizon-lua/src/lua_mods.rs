@@ -1223,10 +1223,16 @@ fn install_reads(lua: &Lua, api: &Table) -> mlua::Result<()> {
         .split_once("-- generated reads below --")
         .expect("READS_CODE carries the generated-reads marker");
     let mut code = String::with_capacity(
-        READS_CODE.len() + crate::generated_helpers::GENERATED_READS.len() * 96,
+        READS_CODE.len()
+            + (crate::generated_helpers::GENERATED_READS.len()
+                + crate::generated_helpers::GENERATED_CLIENT_READS.len())
+                * 96,
     );
     code.push_str(head);
-    for name in crate::generated_helpers::GENERATED_READS {
+    for name in crate::generated_helpers::GENERATED_READS
+        .iter()
+        .chain(crate::generated_helpers::GENERATED_CLIENT_READS)
+    {
         code.push_str(&format!(
             "  horizon.{name} = function(...) return read(\"{name}\", ...) end\n"
         ));
@@ -2535,7 +2541,11 @@ impl LuaMod {
         ]
         .into_iter()
         .chain(crate::generated_helpers::GENERATED_ACTIONS.iter().copied())
-        {
+        .chain(
+            crate::generated_helpers::GENERATED_CLIENT_ACTIONS
+                .iter()
+                .copied(),
+        ) {
             let slot = slot.clone();
             api.set(
                 action,
@@ -2543,8 +2553,10 @@ impl LuaMod {
                     // A draw hook (`hud`, `gui_layer_post`) may queue only
                     // `tell` and `broadcast`: a marker call there fails at
                     // the call (`run_action` cannot tell a draw firing from
-                    // any other), as a `&mut` read does.
-                    if action.starts_with("marker_")
+                    // any other), as a `&mut` read does — and so does a
+                    // client-state action (issue 50).
+                    if (action.starts_with("marker_")
+                        || crate::generated_helpers::GENERATED_CLIENT_ACTIONS.contains(&action))
                         && slot.raw_get::<Option<bool>>(4)?.unwrap_or(false)
                     {
                         return Err(mlua::Error::runtime(format!(
@@ -2749,7 +2761,12 @@ impl LuaMod {
                 .map(|result| result.map(|(name, _)| name))
                 .collect::<mlua::Result<Vec<_>>>()?;
             for key in keys {
-                if CLIENT_API.contains(&key.as_str()) {
+                // The generated client-state helpers (issue 50) are
+                // real on a client state, beside `CLIENT_API`.
+                if CLIENT_API.contains(&key.as_str())
+                    || crate::generated_helpers::GENERATED_CLIENT_READS.contains(&key.as_str())
+                    || crate::generated_helpers::GENERATED_CLIENT_ACTIONS.contains(&key.as_str())
+                {
                     continue;
                 }
                 let name = key.clone();
@@ -2777,10 +2794,25 @@ impl LuaMod {
         // The mirror for the world markers: a client-only queued action, so
         // a server state stubs it with the client-only error (the `player`
         // read branches on the side the same way). Server hooks never set
-        // the draw flag, so no draw-hook arm is needed here.
+        // the draw flag, so no draw-hook arm is needed here. The generated
+        // client-state helpers (issue 50) stub the same way, in one
+        // mirror loop over their lists.
         if side == LuaSide::Server {
             let id = self.id.clone();
-            for name in ["marker_set", "marker_move", "marker_remove", "marker_clear"] {
+            for name in ["marker_set", "marker_move", "marker_remove", "marker_clear"]
+                .iter()
+                .copied()
+                .chain(
+                    crate::generated_helpers::GENERATED_CLIENT_READS
+                        .iter()
+                        .copied(),
+                )
+                .chain(
+                    crate::generated_helpers::GENERATED_CLIENT_ACTIONS
+                        .iter()
+                        .copied(),
+                )
+            {
                 let name = name.to_owned();
                 let id = id.clone();
                 let key = name.clone();

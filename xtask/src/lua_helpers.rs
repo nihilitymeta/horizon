@@ -38,98 +38,7 @@ pub const EXCLUDED: &[(&str, &str)] = &[
         "watch_server_packets",
         "dev/diagnostic: not for mod scripts",
     ),
-    // Client-side helpers (client UI, input, screens, local sound,
-    // window): the generated helpers are server-state only today, so
-    // these stay off until the client-state gating (issue 50).
-    (
-        "apply_screen_blur",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "client_entity_move",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "client_visual_clear",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "flame_particle",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "has_alt_down",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "has_control_down",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "has_shift_down",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "key_down",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "menu_blur_radius",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "mod_screen",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "mod_screen_close",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "mod_screen_open",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "play_local_sound",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "playing",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "screen_pos",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "screen_title",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "text_width",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "window",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    // Refreshing biome colours rebuilds loaded sections and far terrain
-    // for a client mod: a client mesh rebuild, not a server helper.
-    (
-        "refresh_biome_colors",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    // Client-side reads: the open chat box's text, and a block's
-    // collision/occlusion facts behind the `native_window()` guard —
-    // neither exists on a server.
-    (
-        "chat_input",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
-    (
-        "client_block_obstruction",
-        "client-side helper: needs the client-state gating (issue 50)",
-    ),
+    // Client-side helpers live in [`CLIENT_SIDE`] (issue 50).
     // A helper whose doc comment does not read as server-side
     // gameplay: the lead decides (see the report).
     ("mod_key", "side or semantics unclear: needs a decision"),
@@ -143,6 +52,43 @@ pub const EXCLUDED: &[(&str, &str)] = &[
         "side or semantics unclear: needs a decision",
     ),
 ];
+
+/// The Generated helpers that belong to the client state (issue 50):
+/// client UI, input, screens, local sound, the window, and the client
+/// reads. Emitted in their own lists, `GENERATED_CLIENT_READS` and
+/// `GENERATED_CLIENT_ACTIONS`, never in `GENERATED_READS` /
+/// `GENERATED_ACTIONS` (those stay server-state, so the enabled server
+/// helpers do not move). Every name classifies as Generated, as in
+/// [`EXCLUDED`]; a name not here stays server-state by default. The
+/// four "needs a decision" helpers stay in [`EXCLUDED`] unchanged.
+pub const CLIENT_SIDE: &[&str] = &[
+    "apply_screen_blur",
+    "chat_input",
+    "client_block_obstruction",
+    "client_entity_move",
+    "client_visual_clear",
+    "flame_particle",
+    "has_alt_down",
+    "has_control_down",
+    "has_shift_down",
+    "key_down",
+    "menu_blur_radius",
+    "mod_screen",
+    "mod_screen_close",
+    "mod_screen_open",
+    "play_local_sound",
+    "playing",
+    "refresh_biome_colors",
+    "screen_pos",
+    "screen_title",
+    "text_width",
+    "window",
+];
+
+/// Whether `name` is one of the generated client-state helpers.
+pub(crate) fn is_client_side(name: &str) -> bool {
+    CLIENT_SIDE.contains(&name)
+}
 
 /// Why `name` is excluded, or `None` when it is enabled: the denylist
 /// above (see [`EXCLUDED`]).
@@ -194,6 +140,21 @@ fn run_with_excluded_check(rows: &[HelperRow]) -> Result<(), String> {
         if !matches!(row.class, HelperClass::Generated(_)) {
             return Err(format!(
                 "{name} is excluded but classifies as {:?}",
+                row.class
+            ));
+        }
+        if is_client_side(name) {
+            return Err(format!("{name} is both excluded and client-side"));
+        }
+    }
+    for name in CLIENT_SIDE {
+        let row = rows
+            .iter()
+            .find(|row| row.name == *name)
+            .ok_or_else(|| format!("{name} is in CLIENT_SIDE but is not a helper"))?;
+        if !matches!(row.class, HelperClass::Generated(_)) {
+            return Err(format!(
+                "{name} is client-side but classifies as {:?}",
                 row.class
             ));
         }
@@ -296,18 +257,36 @@ fn rustfmt(code: &str) -> Result<String, String> {
     String::from_utf8(formatted.stdout).map_err(|e| e.to_string())
 }
 
-/// The Lua names of the enabled helpers' read and action halves.
-fn kinds_of(rows: &[HelperRow]) -> (Vec<&str>, Vec<&str>) {
+/// The Lua names of the enabled helpers' halves, split by side:
+/// `(server reads, server actions, client reads, client actions)`. A
+/// helper in [`CLIENT_SIDE`] lands in the client halves, never the
+/// server halves (the 88 enabled server helpers do not move); the read
+/// and action arms themselves are shared (issue 50).
+fn kinds_of(rows: &[HelperRow]) -> (Vec<&str>, Vec<&str>, Vec<&str>, Vec<&str>) {
     let mut reads = Vec::new();
     let mut actions = Vec::new();
+    let mut client_reads = Vec::new();
+    let mut client_actions = Vec::new();
     for row in rows {
         match &row.class {
-            HelperClass::Generated(GenKind::Read) => reads.push(row.name.as_str()),
-            HelperClass::Generated(GenKind::Action) => actions.push(row.name.as_str()),
+            HelperClass::Generated(GenKind::Read) => {
+                if is_client_side(&row.name) {
+                    client_reads.push(row.name.as_str());
+                } else {
+                    reads.push(row.name.as_str());
+                }
+            }
+            HelperClass::Generated(GenKind::Action) => {
+                if is_client_side(&row.name) {
+                    client_actions.push(row.name.as_str());
+                } else {
+                    actions.push(row.name.as_str());
+                }
+            }
             _ => {}
         }
     }
-    (reads, actions)
+    (reads, actions, client_reads, client_actions)
 }
 
 /// `a{index}` local for the `index`-th argument: the native argument's
@@ -999,7 +978,7 @@ fn dimension_of(helper: &str, arg: &str, value: &Value) -> mlua::Result<String> 
 /// against `backend`'s host (the real file against `Host`, the
 /// synthetic conformance file against `SyntheticHost`).
 fn bridge_of(rows: &[HelperRow], backend: &Backend) -> String {
-    let (reads, actions) = kinds_of(rows);
+    let (reads, actions, client_reads, client_actions) = kinds_of(rows);
     let mut out = String::new();
     out.push_str("// Generated by `cargo run -p xtask -- lua-helpers` from the\n");
     out.push_str("// `native_*` helper signatures (`lua_helper_model`): do not edit. Regenerate\n");
@@ -1013,11 +992,18 @@ fn bridge_of(rows: &[HelperRow], backend: &Backend) -> String {
         "// fallthroughs from the hand-written `run_action` and `read` in `lua_mods.rs`).\n",
     );
     out.push_str(
-        "// Server-state only: the names stay out of `CLIENT_API`/`DRAW_API`, so a client\n",
+        "// Server-state helpers: the server lists stay out of `CLIENT_API`/`DRAW_API`, so a client\n",
     );
     out.push_str(
-        "// state and a draw hook raise the server-only error, like the hand-written ones.\n",
+        "// state raises the server-only error for them, like the hand-written server ones;\n",
     );
+    out.push_str(
+        "// client-state helpers (`GENERATED_CLIENT_*`, issue 50) are installed for real on a\n",
+    );
+    out.push_str(
+        "// client state and stubbed on a server state with the client-only error, like\n",
+    );
+    out.push_str("// the world markers.\n");
     out.push_str(
         "// The hand-written helpers it mirrors: `kick` (a player and a string, dropped\n",
     );
@@ -1066,6 +1052,22 @@ fn bridge_of(rows: &[HelperRow], backend: &Backend) -> String {
     out.push_str("/// `horizon.<name>` wrapper per entry, delegating to `read`.\n");
     out.push_str("pub(crate) const GENERATED_READS: &[&str] = &[\n");
     for name in &reads {
+        out.push_str(&format!("    {name:?},\n"));
+    }
+    out.push_str("];\n\n");
+    out.push_str("/// The queued actions of the client state (issue 50): installed for real\n");
+    out.push_str("/// on a client state, stubbed on a server state with the client-only\n");
+    out.push_str("/// error, like the world markers.\n");
+    out.push_str("pub(crate) const GENERATED_CLIENT_ACTIONS: &[&str] = &[\n");
+    for name in &client_actions {
+        out.push_str(&format!("    {name:?},\n"));
+    }
+    out.push_str("];\n\n");
+    out.push_str("/// The reads of the client state (issue 50): `install_reads` sets one\n");
+    out.push_str("/// `horizon.<name>` wrapper per entry, as for the server reads; a\n");
+    out.push_str("/// client state keeps them for real, a server state stubs them.\n");
+    out.push_str("pub(crate) const GENERATED_CLIENT_READS: &[&str] = &[\n");
+    for name in &client_reads {
         out.push_str(&format!("    {name:?},\n"));
     }
     out.push_str("];\n\n");
@@ -1478,6 +1480,27 @@ fn host_method_sig(row: &HelperRow) -> String {
     )
 }
 
+/// The canned payloads every test host answers, in one place: the
+/// host methods render them (`gen_host_method`, `canned`) and the
+/// emitted read tests assert them exactly (`value_asserts`), so a
+/// bridge that returns a fixed value of the right Lua type fails a
+/// test instead of passing it.
+fn canned_string() -> &'static str {
+    "ruby:gen"
+}
+
+fn canned_float() -> f64 {
+    1.5
+}
+
+fn canned_f64_xyz() -> [f64; 3] {
+    [1.5, 2.5, 3.5]
+}
+
+fn canned_i32_xyz() -> [i64; 3] {
+    [3, 4, 5]
+}
+
 fn gen_host_method(row: &HelperRow) -> String {
     let out = format!("{} {{\n", host_method_sig(row));
     let mut out = out
@@ -1502,17 +1525,17 @@ fn gen_host_method(row: &HelperRow) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         );
-    out += match (&row.class, row.ret.as_str()) {
+    out.push_str(&match (&row.class, row.ret.as_str()) {
         // A unit method is empty after recording (a trailing `()`
         // would trip `unused_unit`).
-        (_, "unit") => "",
-        (HelperClass::Generated(GenKind::Action), "bool") => "        !self.refuse\n",
-        (_, "bool") => "        true\n",
-        (_, "[f64; 3]") => "        [1.5, 2.5, 3.5]\n",
-        (_, "[i32; 3]") => "        [3, 4, 5]\n",
-        (_, "String") if row.ret_borrowed => "        \"ruby:gen\"\n",
-        (_, "String") => "        \"ruby:gen\".to_owned()\n",
-        (_, "f64" | "f32") => "        1.5\n",
+        (_, "unit") => String::new(),
+        (HelperClass::Generated(GenKind::Action), "bool") => "        !self.refuse\n".to_owned(),
+        (_, "bool") => "        true\n".to_owned(),
+        (_, "[f64; 3]") => format!("        {:?}\n", canned_f64_xyz()),
+        (_, "[i32; 3]") => format!("        {:?}\n", canned_i32_xyz()),
+        (_, "String") if row.ret_borrowed => format!("        {:?}\n", canned_string()),
+        (_, "String") => format!("        {:?}.to_owned()\n", canned_string()),
+        (_, "f64" | "f32") => format!("        {:?}\n", canned_float()),
         (_, inner) if inner.starts_with("Option<") => {
             let scalar = inner
                 .strip_prefix("Option<")
@@ -1520,7 +1543,7 @@ fn gen_host_method(row: &HelperRow) -> String {
                 .strip_suffix('>')
                 .unwrap();
             let canned_value = if scalar == "String" && row.ret_borrowed {
-                "\"ruby:gen\"".to_owned()
+                format!("{:?}", canned_string())
             } else {
                 canned(scalar)
             };
@@ -1530,7 +1553,7 @@ fn gen_host_method(row: &HelperRow) -> String {
             );
         }
         (_, scalar) => return format!("{out}        {}\n    }}\n", canned(scalar)),
-    };
+    });
     out.push_str("    }\n");
     out
 }
@@ -1569,11 +1592,11 @@ fn canned_elem(elem: &str, i: usize) -> String {
 fn canned(scalar: &str) -> String {
     match scalar {
         "bool" => "true".to_owned(),
-        "String" => "\"ruby:gen\".to_owned()".to_owned(),
+        "String" => format!("{:?}.to_owned()", canned_string()),
         "u128" => "STEVE_UUID".to_owned(),
-        "f32" | "f64" => "1.5".to_owned(),
-        "[f64; 3]" => "[1.5, 2.5, 3.5]".to_owned(),
-        "[i32; 3]" => "[3, 4, 5]".to_owned(),
+        "f32" | "f64" => format!("{:?}", canned_float()),
+        "[f64; 3]" => format!("{:?}", canned_f64_xyz()),
+        "[i32; 3]" => format!("{:?}", canned_i32_xyz()),
         "LevelRef" => "horizon_client::mod_api::LevelRef::new(horizon_client::mod_api::NativeWorldEpoch::new(1), \"minecraft:overworld\")".to_owned(),
         _ if scalar.starts_with('(') => {
             let elems = crate::lua_helper_model::tuple_elems(scalar);
@@ -1590,7 +1613,7 @@ fn canned(scalar: &str) -> String {
 
 /// `crates/event-horizon-lua/src/generated_helpers.rs` tests: one test
 /// per emitted helper (the arguments reach the host exactly, a read
-/// returns its canned value as the right Lua type, and nil for None; an
+/// returns its exact canned value, and nil for None; an
 /// unresolvable player or entity is a silent no-op/nil without calling
 /// the host; a malformed script argument is an error naming it) plus
 /// the shared client/draw raises and the drain test.
@@ -1599,8 +1622,8 @@ fn tests_of(rows: &[HelperRow], backend: &Backend) -> String {
     let mut out = String::new();
     out.push_str("// Generated by `cargo run -p xtask -- lua-helpers`: do not edit.\n");
     out.push_str("// One test per emitted helper, over the `GenHost` recording double: the\n");
-    out.push_str("// arguments reach the host exactly, a read returns its canned value as\n");
-    out.push_str("// the right Lua type (and nil for None), an unresolvable player or\n");
+    out.push_str("// arguments reach the host exactly, a read returns its exact canned\n");
+    out.push_str("// value (and nil for None), an unresolvable player or\n");
     out.push_str("// entity is a silent no-op/nil without calling the host, a malformed\n");
     out.push_str("// script argument is an error naming it, and the names raise in a client\n");
     out.push_str("// state and a draw hook. The drain test drives the real queue through a\n");
@@ -1611,7 +1634,7 @@ fn tests_of(rows: &[HelperRow], backend: &Backend) -> String {
     if real {
         out.push_str("use crate::generated_helpers::{\n");
         out.push_str(
-            "    GENERATED_ACTIONS, GENERATED_READS, generated_read, run_generated_action,\n",
+            "    GENERATED_ACTIONS, GENERATED_CLIENT_ACTIONS, GENERATED_CLIENT_READS, GENERATED_READS,\n    generated_read, run_generated_action,\n",
         );
         out.push_str("};\n");
         out.push_str("use crate::lua_mods::{LuaMod, LuaSide};\n");
@@ -2261,8 +2284,8 @@ fn residual_blocks(
 /// saturated integers, a NaN on a float, an entity id resolved to its
 /// handle, position tables), an unresolvable player or entity calls
 /// nothing (a read answers nil), a bad id/component/parse is an error
-/// naming the argument, and a read returns its canned value as the
-/// right Lua type (and nil for None).
+/// naming the argument, and a read returns its exact canned value
+/// (and nil for None).
 fn helper_test(row: &HelperRow, backend: &Backend) -> String {
     let host_new = backend.host_new;
     let read_fn = backend.read_fn;
@@ -2355,6 +2378,7 @@ fn helper_test(row: &HelperRow, backend: &Backend) -> String {
                 }
                 out.push_str("    }\n");
             }
+            out.push_str(&value_asserts(row));
             out.push_str(&format!(
                 "    assert_eq!(h.logged(), [{}]);\n",
                 recorded
@@ -2516,6 +2540,41 @@ fn tuple_field_asserts(row: &HelperRow) -> Vec<String> {
     out
 }
 
+/// The exact canned-value asserts of one scalar read test (the `v` it
+/// already matched as its Lua type): a string read asserts the exact
+/// canned string, a float read the exact canned number, an `[i32; 3]`
+/// read its `x`/`y`/`z` components — the canned payloads from
+/// `canned_string`/`canned_float`/`canned_i32_xyz` (the same values
+/// `gen_host_method`/`canned` hand the host double), so a bridge that
+/// returns a fixed value of the right Lua type fails the test. Other
+/// scalar returns need none here: `bool` already matches
+/// `Boolean(true)` exactly, and tuples are `tuple_field_asserts`'s.
+fn value_asserts(row: &HelperRow) -> String {
+    let scalar = row
+        .ret
+        .strip_prefix("Option<")
+        .and_then(|r| r.strip_suffix('>'))
+        .unwrap_or(&row.ret);
+    match scalar {
+        "String" | "&str" | "&'static str" => format!(
+            "    if let mlua::Value::String(s) = &v {{\n        assert_eq!(s.to_string_lossy(), {:?});\n    }}\n",
+            canned_string()
+        ),
+        "f32" | "f64" => format!(
+            "    if let mlua::Value::Number(n) = &v {{\n        assert_eq!(*n, {:?});\n    }}\n",
+            canned_float()
+        ),
+        "[i32; 3]" => {
+            let xyz = canned_i32_xyz();
+            format!(
+                "    if let mlua::Value::Table(t) = &v {{\n        assert_eq!(t.get::<i64>(\"x\").unwrap(), {:?});\n        assert_eq!(t.get::<i64>(\"y\").unwrap(), {:?});\n        assert_eq!(t.get::<i64>(\"z\").unwrap(), {:?});\n    }}\n",
+                xyz[0], xyz[1], xyz[2]
+            )
+        }
+        _ => String::new(),
+    }
+}
+
 /// The Lua value type a canned read answers.
 fn lua_type_of(row: &HelperRow) -> String {
     let scalar = row
@@ -2534,14 +2593,17 @@ fn lua_type_of(row: &HelperRow) -> String {
 }
 
 /// The shared tests: the name lists are exactly the enabled set
-/// (Generated minus the denylist); the names raise in a client state
-/// and a draw hook (the same stub behaviour as the hand-written
-/// helpers); and the drain test — a helper whose host answers `false`
-/// does not abort the handler's remaining queued `broadcast` (the
-/// real queue, driven through a hook dispatch as the net-send tests
-/// drive it).
+/// (Generated minus the denylist); the server names raise in a client
+/// state with the server-only error, the client names raise in a
+/// server state with the client-only error, and a draw hook refuses a
+/// client action (the same stub behaviour as the hand-written helpers);
+/// reads plus an action run from hooks with the real drain (client
+/// helpers through a `tick` dispatch on a client state); and the drain
+/// test — a helper whose host answers `false` does not abort the
+/// handler's remaining queued `broadcast` (the real queue, driven
+/// through a hook dispatch as the net-send tests drive it).
 fn shared_tests(rows: &[HelperRow]) -> String {
-    let (reads, actions) = kinds_of(rows);
+    let (reads, actions, client_reads, client_actions) = kinds_of(rows);
     let actions_lit = actions
         .iter()
         .map(|n| format!("            {n:?},\n"))
@@ -2552,9 +2614,19 @@ fn shared_tests(rows: &[HelperRow]) -> String {
         .map(|n| format!("            {n:?},\n"))
         .collect::<Vec<_>>()
         .join("");
+    let client_actions_lit = client_actions
+        .iter()
+        .map(|n| format!("            {n:?},\n"))
+        .collect::<Vec<_>>()
+        .join("");
+    let client_reads_lit = client_reads
+        .iter()
+        .map(|n| format!("            {n:?},\n"))
+        .collect::<Vec<_>>()
+        .join("");
     let mut out = String::new();
     out.push_str(&format!(
-        "#[test]\nfn the_generated_lists_are_the_enabled_set_and_nothing_else() {{\n    assert_eq!(\n        GENERATED_ACTIONS,\n        [\n{actions_lit}        ]\n    );\n    assert_eq!(\n        GENERATED_READS,\n        [\n{reads_lit}        ]\n    );\n}}\n\n"
+        "#[test]\nfn the_generated_lists_are_the_enabled_set_and_nothing_else() {{\n    assert_eq!(\n        GENERATED_ACTIONS,\n        [\n{actions_lit}        ]\n    );\n    assert_eq!(\n        GENERATED_READS,\n        [\n{reads_lit}        ]\n    );\n    assert_eq!(\n        GENERATED_CLIENT_ACTIONS,\n        [\n{client_actions_lit}        ]\n    );\n    assert_eq!(\n        GENERATED_CLIENT_READS,\n        [\n{client_reads_lit}        ]\n    );\n}}\n\n"
     ));
     // Every generated name on `horizon`: a server state carries each as a
     // function, a client state raises the server-only error for each, and
@@ -2596,7 +2668,7 @@ fn every_generated_name_is_a_function_on_horizon() {
 }
 
 #[test]
-fn generated_names_raise_in_a_client_state() {
+fn generated_server_names_raise_in_a_client_state() {
     let (dir, path) = hmod_as(
         "gen_client_stubs",
         &[(
@@ -2690,8 +2762,162 @@ fn generated_helpers_run_from_a_hook() {
 }
 "##,
     );
+    let client_all_lit = client_actions
+        .iter()
+        .chain(client_reads.iter())
+        .map(|n| format!("            {n:?},\n"))
+        .collect::<Vec<_>>()
+        .join("");
     out.push_str(
         r##"
+#[test]
+fn every_generated_client_name_is_a_function_on_horizon() {
+    for side in [LuaSide::Server, LuaSide::Client] {
+        let (dir, path) = hmod_as(
+            &format!("gen_client_functions_{side:?}"),
+            &[(
+                match side {
+                    LuaSide::Server => "scripts/server/init.lua",
+                    LuaSide::Client => "scripts/client/init.lua",
+                },
+                br#"
+                local names = {
+"##,
+    );
+    out.push_str(&client_all_lit);
+    out.push_str(
+        r##"                }
+                local missing = {}
+                for _, name in ipairs(names) do
+                  local f = horizon[name]
+                  if type(f) ~= "function" then
+                    missing[#missing + 1] = name
+                  end
+                end
+                assert(#missing == 0, "not installed: " .. table.concat(missing, ", "))
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, side, &[]).unwrap();
+        assert_eq!(m.side(), side);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+#[test]
+fn generated_client_names_raise_in_a_server_state() {
+    let (dir, path) = hmod_as(
+        "gen_server_stubs",
+        &[(
+            "scripts/server/init.lua",
+            br#"
+            local names = {
+"##,
+    );
+    out.push_str(&client_all_lit);
+    out.push_str(
+        r##"            }
+            for _, name in ipairs(names) do
+              local f = horizon[name]
+              assert(type(f) == "function", name .. " is not installed on horizon")
+              local ok, err = pcall(f)
+              assert(not ok, name .. " should fail in a server state")
+              assert(
+                string.find(tostring(err), "only available in scripts/client/", 1, true),
+                name .. ": " .. tostring(err)
+              )
+            end
+            "#,
+        )],
+    );
+    let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+    assert_eq!(m.side(), LuaSide::Server);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn generated_client_helpers_run_from_a_client_hook() {
+    // Client-side reads answer from the hook's host at once, and a
+    // client action queues and runs after the handler against the
+    // hook's `&mut` host: `has_shift_down` (a plain `bool` read),
+    // `text_width` (a `f32` read of its argument), `playing` (a no-arg
+    // `bool` read), and `flame_particle` (a typed position + a bool).
+    // Every host line names its arguments, so a swapped argument or
+    // the wrong side fails.
+    let (dir, path) = hmod(
+        "gen_client_hook_calls",
+        &[(
+            "scripts/client/init.lua",
+            br#"
+            horizon.on("tick", function(event)
+              local pair = {horizon.has_shift_down(), horizon.playing()}
+              horizon.text_width("ruby:gen1")
+              horizon.flame_particle({x = 1.5, y = 2.5, z = 3.5}, true)
+            end)
+            "#,
+        )],
+    );
+    let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+    let mods: Vec<Box<dyn horizon_client::mod_api::Hooks>> = vec![Box::new(m)];
+    let mut host = gen_host(false, false);
+    horizon_client::mod_api::dispatch_tick(&mut host, &mods);
+    assert_eq!(
+        host.logged(),
+        [
+            "has_shift_down",
+            "playing",
+            "text_width ruby:gen1",
+            "flame_particle [1.5, 2.5, 3.5] true",
+        ]
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn generated_client_reads_work_in_a_draw_hook_but_actions_do_not() {
+    // A `&self` client read answers through the shared host in a draw
+    // hook (`hud`); a client action raises the draw-hook error, like a
+    // `marker_*` call does. (Every generated read is `&self` by
+    // construction — a `&mut self` method returning data is `Cannot` —
+    // so the read arm does not diverge.)
+    let (dir, path) = hmod(
+        "gen_client_draw",
+        &[(
+            "scripts/client/init.lua",
+            br#"
+            horizon.on("hud", function(event)
+              __shift = horizon.has_shift_down()
+              local ok, err = pcall(function()
+                horizon.flame_particle({x = 1.5, y = 2.5, z = 3.5}, true)
+              end)
+              __draw_ok = ok
+              __draw_err = tostring(err)
+            end)
+            "#,
+        )],
+    );
+    let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+    let state = m.lua.clone();
+    let mods: Vec<Box<dyn horizon_client::mod_api::Hooks>> = vec![Box::new(m)];
+    let mut host = gen_host(false, false);
+    let mut batch = horizon_client::mod_api::HudBatch::new([800, 600]);
+    let mut corners = horizon_client::mod_api::Corners::new(800.0, 600.0, 0.0);
+    horizon_client::mod_api::dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+    assert!(state.globals().get::<bool>("__shift").unwrap());
+    assert!(!state.globals().get::<bool>("__draw_ok").unwrap());
+    assert!(
+        state
+            .globals()
+            .get::<String>("__draw_err")
+            .unwrap()
+            .contains("not available in draw hooks (hud, gui_layer_post)"),
+        "{:?}",
+        state.globals().get::<String>("__draw_err")
+    );
+    assert_eq!(host.logged(), ["has_shift_down"]);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn generated_names_raise_in_a_draw_hook() {
     let (dir, path) = hmod(
@@ -2867,7 +3093,9 @@ fn exposure_of(rows: &[HelperRow], enabled: &[HelperRow]) -> String {
         |row| exclusion_of(&row.name).unwrap().to_owned(),
     );
     out.push_str(&format!("\n## Generated, enabled ({})\n\n", enabled.len()));
-    out.push_str("| Helper | Receiver | Kind | Lua signature |\n| --- | --- | --- | --- |\n");
+    out.push_str(
+        "| Helper | Side | Receiver | Kind | Lua signature |\n| --- | --- | --- | --- | --- |\n",
+    );
     for row in enabled {
         let kind = match &row.class {
             HelperClass::Generated(GenKind::Read) => "read",
@@ -2876,8 +3104,13 @@ fn exposure_of(rows: &[HelperRow], enabled: &[HelperRow]) -> String {
         };
         let (_, sig) = luau_function(row);
         let receiver = row.receiver.as_deref().unwrap_or("-");
+        let side = if is_client_side(&row.name) {
+            "client"
+        } else {
+            "server"
+        };
         out.push_str(&format!(
-            "| `{}` | {receiver} | {kind} | `{sig}` |\n",
+            "| `{}` | {side} | {receiver} | {kind} | `{sig}` |\n",
             row.name
         ));
     }
@@ -3055,7 +3288,8 @@ fn synthetic_of() -> String {
 /// The synthetic file's shared test: its name lists are exactly the
 /// synthetic rows.
 fn synthetic_shared_tests(rows: &[HelperRow]) -> String {
-    let (reads, actions) = kinds_of(rows);
+    let (reads, actions, client_reads, client_actions) = kinds_of(rows);
+    debug_assert!(client_reads.is_empty() && client_actions.is_empty());
     let actions_lit = actions
         .iter()
         .map(|n| format!("            {n:?},\n"))
@@ -3080,6 +3314,8 @@ fn the_synthetic_lists_are_the_synthetic_set_and_nothing_else() {{
         [
 {reads_lit}        ]
     );
+    assert!(GENERATED_CLIENT_ACTIONS.is_empty());
+    assert!(GENERATED_CLIENT_READS.is_empty());
 }}
 "#
     )

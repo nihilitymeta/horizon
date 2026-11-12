@@ -4,7 +4,7 @@
 
 Every native host helper (`native-hooks.json` plus the pending `tools/native-hook-fragments/`, 409 in all) lands in exactly one class: `generated` (plain args and a supported return: the generator can emit the `horizon.*` bridge), `already-lua` (a hand-written Lua helper already stands behind it), `adapter` (a hand-written converter would unblock it: the table names the blocking types), `handle` (an opaque draw/mod handle, needing its own design), or `cannot` (no bridge, with the reason). `docs/api/hook-exposure.md` is the same idea for hook points. This page is `lua-helpers`'s human-readable record; `crates/event-horizon-lua/src/generated_helpers.rs` is its bridge for the enabled helpers. Enabled is every `generated` helper except the [`EXCLUDED`] denylist below.
 
-121 generated (88 enabled, 33 excluded), 70 already-lua, 149 adapter, 29 handle, 40 cannot (409 total). Every generated helper not on the denylist reaches Lua; there is no other not-enabled bucket.
+121 generated (109 enabled, 12 excluded), 70 already-lua, 149 adapter, 29 handle, 40 cannot (409 total). Every generated helper not on the denylist reaches Lua; there is no other not-enabled bucket.
 
 ## What the numbers say
 
@@ -128,141 +128,141 @@ Generator size: this generator plus its model are hand-written; the emitted brid
 Generated but excluded (the denylist): these all have plain args and a supported return (the generator can emit them) but are not emitted: their Lua cell in `docs/api/hook-points.md` stays empty, each for the reason named.
 
 
-## Generated, excluded (33)
+## Generated, excluded (12)
 
 | Helper | Reason |
 | --- | --- |
-| `apply_screen_blur` | client-side helper: needs the client-state gating (issue 50) |
-| `chat_input` | client-side helper: needs the client-state gating (issue 50) |
-| `client_block_obstruction` | client-side helper: needs the client-state gating (issue 50) |
-| `client_entity_move` | client-side helper: needs the client-state gating (issue 50) |
-| `client_visual_clear` | client-side helper: needs the client-state gating (issue 50) |
 | `count_packets` | dev/diagnostic: not for mod scripts |
-| `flame_particle` | client-side helper: needs the client-state gating (issue 50) |
-| `has_alt_down` | client-side helper: needs the client-state gating (issue 50) |
-| `has_control_down` | client-side helper: needs the client-state gating (issue 50) |
-| `has_shift_down` | client-side helper: needs the client-state gating (issue 50) |
-| `key_down` | client-side helper: needs the client-state gating (issue 50) |
 | `level_dimension` | dev/diagnostic: not for mod scripts |
-| `menu_blur_radius` | client-side helper: needs the client-state gating (issue 50) |
 | `mob_cost_sampling` | dev/diagnostic: not for mod scripts |
 | `mod_key` | side or semantics unclear: needs a decision |
-| `mod_screen` | client-side helper: needs the client-state gating (issue 50) |
-| `mod_screen_close` | client-side helper: needs the client-state gating (issue 50) |
-| `mod_screen_open` | client-side helper: needs the client-state gating (issue 50) |
-| `play_local_sound` | client-side helper: needs the client-state gating (issue 50) |
-| `playing` | client-side helper: needs the client-state gating (issue 50) |
-| `refresh_biome_colors` | client-side helper: needs the client-state gating (issue 50) |
 | `run_mod_command` | side or semantics unclear: needs a decision |
-| `screen_pos` | client-side helper: needs the client-state gating (issue 50) |
-| `screen_title` | client-side helper: needs the client-state gating (issue 50) |
 | `set_setting` | dev/diagnostic: not for mod scripts |
 | `setting` | side or semantics unclear: needs a decision |
 | `spans` | dev/diagnostic: not for mod scripts |
 | `text_allowed` | side or semantics unclear: needs a decision |
-| `text_width` | client-side helper: needs the client-state gating (issue 50) |
 | `tps` | dev/diagnostic: not for mod scripts |
 | `watch_entity_data` | dev/diagnostic: not for mod scripts |
 | `watch_server_packets` | dev/diagnostic: not for mod scripts |
-| `window` | client-side helper: needs the client-state gating (issue 50) |
 
-## Generated, enabled (88)
+## Generated, enabled (109)
 
-| Helper | Receiver | Kind | Lua signature |
-| --- | --- | --- | --- |
-| `biome` | - | read | `(value: Vec3) -> string?` |
-| `biome_name` | - | read | `(value: number) -> string?` |
-| `block_entity_sync` | - | action | `(value: Vec3) -> ()` |
-| `dismount` | - | action | `(value: number) -> ()` |
-| `eject_passengers` | - | action | `(value: number) -> ()` |
-| `entity_add_tag` | entity | action | `(value: number, name: string) -> ()` |
-| `entity_air_supply` | entity | read | `(value: number) -> number?` |
-| `entity_block_position` | entity | read | `(value: number) -> Vec3?` |
-| `entity_direction` | entity | read | `(value: number) -> string?` |
-| `entity_distance_to_sqr` | entity | read | `(value: number, value2: Vec3) -> number?` |
-| `entity_eye_height` | entity | read | `(value: number) -> number?` |
-| `entity_eye_position` | entity | read | `(value: number) -> Vec3?` |
-| `entity_fire_immune` | entity | read | `(value: number) -> boolean?` |
-| `entity_fire_ticks` | entity | read | `(value: number) -> number?` |
-| `entity_head_yaw` | entity | read | `(value: number) -> number?` |
-| `entity_is_crouching` | entity | read | `(value: number) -> boolean?` |
-| `entity_is_in_lava` | entity | read | `(value: number) -> boolean?` |
-| `entity_is_in_water` | entity | read | `(value: number) -> boolean?` |
-| `entity_is_invisible` | entity | read | `(value: number) -> boolean?` |
-| `entity_is_shift_key_down` | entity | read | `(value: number) -> boolean?` |
-| `entity_is_silent` | entity | read | `(value: number) -> boolean?` |
-| `entity_is_sprinting` | entity | read | `(value: number) -> boolean?` |
-| `entity_kind` | entity | read | `(value: number) -> string?` |
-| `entity_level` | entity | read | `(value: number) -> string?` |
-| `entity_max_air_supply` | entity | read | `(value: number) -> number?` |
-| `entity_name` | entity | read | `(value: number) -> string?` |
-| `entity_on_ground` | entity | read | `(value: number) -> boolean?` |
-| `entity_pose` | entity | read | `(value: number) -> string?` |
-| `entity_position` | entity | read | `(value: number) -> Vec3?` |
-| `entity_push` | entity | action | `(value: number, value2: Vec3) -> ()` |
-| `entity_remove_tag` | entity | action | `(value: number, name: string) -> ()` |
-| `entity_set_head_yaw` | entity | action | `(value: number, value2: number) -> ()` |
-| `entity_set_rotation` | entity | action | `(value: number, value2: number, value3: number) -> ()` |
-| `entity_set_silent` | entity | action | `(value: number, value2: boolean) -> ()` |
-| `entity_set_velocity` | entity | action | `(value: number, value2: Vec3) -> ()` |
-| `entity_velocity` | entity | read | `(value: number) -> Vec3?` |
-| `entity_view_vector` | entity | read | `(value: number) -> Vec3?` |
-| `fluid_flow` | - | read | `(name: string, value: Vec3) -> Vec3?` |
-| `hide_entity_from` | - | action | `(who: string | ReadPlayer, value: number, value2: boolean) -> ()` |
-| `level` | - | read | `(name: string) -> string?` |
-| `level_block` | level | read | `(name: string, value: Vec3) -> string?` |
-| `level_block_property` | level | read | `(name: string, value: Vec3, name2: string) -> string?` |
-| `level_block_state` | level | read | `(name: string, value: Vec3) -> string?` |
-| `level_day_time` | level | read | `(name: string) -> number?` |
-| `level_difficulty` | level | read | `(name: string) -> string?` |
-| `level_game_time` | level | read | `(name: string) -> number?` |
-| `level_height` | level | read | `(name: string) -> { min: number, max: number }?` |
-| `level_is_loaded` | level | read | `(name: string, value: Vec3) -> boolean` |
-| `level_is_raining` | level | read | `(name: string) -> boolean?` |
-| `level_is_thundering` | level | read | `(name: string) -> boolean?` |
-| `level_play_sound` | level | action | `(name: string, name2: string, value: Vec3, value2: number, value3: number, value4: number) -> ()` |
-| `level_seed` | level | read | `(name: string) -> number?` |
-| `level_weather` | level | read | `(name: string) -> { number, number }?` |
-| `lit_block_name` | - | read | `(value: Vec3) -> string?` |
-| `max_players` | - | read | `() -> number?` |
-| `max_stack_size` | - | read | `(name: string) -> number?` |
-| `mob_attack` | - | action | `(name: string, value: number, value2: number) -> ()` |
-| `mob_follow` | - | action | `(name: string, value: number, value2: number, value3: number) -> ()` |
-| `mob_look_at` | - | action | `(name: string, value: number, value2: Vec3) -> ()` |
-| `mob_navigate` | - | action | `(name: string, value: number, value2: Vec3, value3: number, value4: number) -> ()` |
-| `mob_stop` | - | action | `(name: string, value: number) -> ()` |
-| `mount` | - | action | `(value: number, value2: number) -> ()` |
-| `move_entity` | - | action | `(name: string, value: number, value2: Vec3, value3: number, value4: number) -> ()` |
-| `player_break_block` | - | action | `(who: string | ReadPlayer, value: Vec3, value2: boolean) -> ()` |
-| `player_sneaking` | - | read | `(who: string | ReadPlayer) -> boolean?` |
-| `player_stat` | - | read | `(who: string | ReadPlayer, name: string, name2: string) -> number?` |
-| `player_textures` | - | read | `(who: string | ReadPlayer) -> { value: string, signature: string? }?` |
-| `player_view_distance` | - | read | `(who: string | ReadPlayer) -> number?` |
-| `profile_by_name` | - | read | `(name: string) -> { string, string }?` |
-| `profile_by_uuid` | - | read | `(who: string | ReadPlayer) -> string?` |
-| `refresh_commands` | - | action | `() -> ()` |
-| `refresh_player` | - | action | `(who: string | ReadPlayer) -> ()` |
-| `remove_effect` | - | action | `(who: string | ReadPlayer, name: string) -> ()` |
-| `remove_entity` | - | action | `(name: string, value: number) -> ()` |
-| `resend_commands` | - | action | `(who: string | ReadPlayer) -> ()` |
-| `respawn_player` | - | action | `(who: string | ReadPlayer) -> ()` |
-| `set_attribute_base` | - | action | `(who: string | ReadPlayer, name: string, value: number) -> ()` |
-| `set_block_property_with` | - | action | `(value: Vec3, name: string, name2: string, value2: number) -> ()` |
-| `set_break_progress` | - | action | `(value: number, value2: Vec3, value3: number) -> ()` |
-| `set_compass_target` | - | action | `(who: string | ReadPlayer, value: { string, Vec3 }?) -> ()` |
-| `set_flight` | - | action | `(who: string | ReadPlayer, value: boolean, value2: boolean) -> ()` |
-| `set_profile_property` | - | action | `(who: string | ReadPlayer, name: string, value: { value: string, signature: string? }?) -> ()` |
-| `sleep_ignored` | - | action | `(who: string | ReadPlayer, value: boolean) -> ()` |
-| `sneaking` | - | read | `() -> boolean` |
-| `teleport_vehicle` | - | action | `(name: string, value: number, value2: Vec3) -> ()` |
-| `update_output_neighbors` | - | action | `(name: string, value: Vec3) -> ()` |
-| `update_signal_neighbors` | - | action | `(name: string, value: Vec3) -> ()` |
-| `world_seed` | - | read | `() -> number?` |
+| Helper | Side | Receiver | Kind | Lua signature |
+| --- | --- | --- | --- | --- |
+| `apply_screen_blur` | client | - | read | `() -> boolean` |
+| `biome` | server | - | read | `(value: Vec3) -> string?` |
+| `biome_name` | server | - | read | `(value: number) -> string?` |
+| `block_entity_sync` | server | - | action | `(value: Vec3) -> ()` |
+| `chat_input` | client | - | read | `() -> { string, number }?` |
+| `client_block_obstruction` | client | - | read | `(value: Vec3) -> { boolean, boolean }?` |
+| `client_entity_move` | client | - | action | `(who: string | ReadPlayer, value: number, value2: Vec3, value3: number) -> ()` |
+| `client_visual_clear` | client | - | read | `(value: Vec3, value2: Vec3) -> boolean` |
+| `dismount` | server | - | action | `(value: number) -> ()` |
+| `eject_passengers` | server | - | action | `(value: number) -> ()` |
+| `entity_add_tag` | server | entity | action | `(value: number, name: string) -> ()` |
+| `entity_air_supply` | server | entity | read | `(value: number) -> number?` |
+| `entity_block_position` | server | entity | read | `(value: number) -> Vec3?` |
+| `entity_direction` | server | entity | read | `(value: number) -> string?` |
+| `entity_distance_to_sqr` | server | entity | read | `(value: number, value2: Vec3) -> number?` |
+| `entity_eye_height` | server | entity | read | `(value: number) -> number?` |
+| `entity_eye_position` | server | entity | read | `(value: number) -> Vec3?` |
+| `entity_fire_immune` | server | entity | read | `(value: number) -> boolean?` |
+| `entity_fire_ticks` | server | entity | read | `(value: number) -> number?` |
+| `entity_head_yaw` | server | entity | read | `(value: number) -> number?` |
+| `entity_is_crouching` | server | entity | read | `(value: number) -> boolean?` |
+| `entity_is_in_lava` | server | entity | read | `(value: number) -> boolean?` |
+| `entity_is_in_water` | server | entity | read | `(value: number) -> boolean?` |
+| `entity_is_invisible` | server | entity | read | `(value: number) -> boolean?` |
+| `entity_is_shift_key_down` | server | entity | read | `(value: number) -> boolean?` |
+| `entity_is_silent` | server | entity | read | `(value: number) -> boolean?` |
+| `entity_is_sprinting` | server | entity | read | `(value: number) -> boolean?` |
+| `entity_kind` | server | entity | read | `(value: number) -> string?` |
+| `entity_level` | server | entity | read | `(value: number) -> string?` |
+| `entity_max_air_supply` | server | entity | read | `(value: number) -> number?` |
+| `entity_name` | server | entity | read | `(value: number) -> string?` |
+| `entity_on_ground` | server | entity | read | `(value: number) -> boolean?` |
+| `entity_pose` | server | entity | read | `(value: number) -> string?` |
+| `entity_position` | server | entity | read | `(value: number) -> Vec3?` |
+| `entity_push` | server | entity | action | `(value: number, value2: Vec3) -> ()` |
+| `entity_remove_tag` | server | entity | action | `(value: number, name: string) -> ()` |
+| `entity_set_head_yaw` | server | entity | action | `(value: number, value2: number) -> ()` |
+| `entity_set_rotation` | server | entity | action | `(value: number, value2: number, value3: number) -> ()` |
+| `entity_set_silent` | server | entity | action | `(value: number, value2: boolean) -> ()` |
+| `entity_set_velocity` | server | entity | action | `(value: number, value2: Vec3) -> ()` |
+| `entity_velocity` | server | entity | read | `(value: number) -> Vec3?` |
+| `entity_view_vector` | server | entity | read | `(value: number) -> Vec3?` |
+| `flame_particle` | client | - | action | `(value: Vec3, value2: boolean) -> ()` |
+| `fluid_flow` | server | - | read | `(name: string, value: Vec3) -> Vec3?` |
+| `has_alt_down` | client | - | read | `() -> boolean` |
+| `has_control_down` | client | - | read | `() -> boolean` |
+| `has_shift_down` | client | - | read | `() -> boolean` |
+| `hide_entity_from` | server | - | action | `(who: string | ReadPlayer, value: number, value2: boolean) -> ()` |
+| `key_down` | client | - | read | `(name: string) -> boolean` |
+| `level` | server | - | read | `(name: string) -> string?` |
+| `level_block` | server | level | read | `(name: string, value: Vec3) -> string?` |
+| `level_block_property` | server | level | read | `(name: string, value: Vec3, name2: string) -> string?` |
+| `level_block_state` | server | level | read | `(name: string, value: Vec3) -> string?` |
+| `level_day_time` | server | level | read | `(name: string) -> number?` |
+| `level_difficulty` | server | level | read | `(name: string) -> string?` |
+| `level_game_time` | server | level | read | `(name: string) -> number?` |
+| `level_height` | server | level | read | `(name: string) -> { min: number, max: number }?` |
+| `level_is_loaded` | server | level | read | `(name: string, value: Vec3) -> boolean` |
+| `level_is_raining` | server | level | read | `(name: string) -> boolean?` |
+| `level_is_thundering` | server | level | read | `(name: string) -> boolean?` |
+| `level_play_sound` | server | level | action | `(name: string, name2: string, value: Vec3, value2: number, value3: number, value4: number) -> ()` |
+| `level_seed` | server | level | read | `(name: string) -> number?` |
+| `level_weather` | server | level | read | `(name: string) -> { number, number }?` |
+| `lit_block_name` | server | - | read | `(value: Vec3) -> string?` |
+| `max_players` | server | - | read | `() -> number?` |
+| `max_stack_size` | server | - | read | `(name: string) -> number?` |
+| `menu_blur_radius` | client | - | read | `() -> number` |
+| `mob_attack` | server | - | action | `(name: string, value: number, value2: number) -> ()` |
+| `mob_follow` | server | - | action | `(name: string, value: number, value2: number, value3: number) -> ()` |
+| `mob_look_at` | server | - | action | `(name: string, value: number, value2: Vec3) -> ()` |
+| `mob_navigate` | server | - | action | `(name: string, value: number, value2: Vec3, value3: number, value4: number) -> ()` |
+| `mob_stop` | server | - | action | `(name: string, value: number) -> ()` |
+| `mod_screen` | client | - | read | `() -> string?` |
+| `mod_screen_close` | client | - | action | `(name: string) -> ()` |
+| `mod_screen_open` | client | - | action | `(name: string) -> ()` |
+| `mount` | server | - | action | `(value: number, value2: number) -> ()` |
+| `move_entity` | server | - | action | `(name: string, value: number, value2: Vec3, value3: number, value4: number) -> ()` |
+| `play_local_sound` | client | - | action | `(name: string, value: Vec3, value2: number, value3: number, value4: number) -> ()` |
+| `player_break_block` | server | - | action | `(who: string | ReadPlayer, value: Vec3, value2: boolean) -> ()` |
+| `player_sneaking` | server | - | read | `(who: string | ReadPlayer) -> boolean?` |
+| `player_stat` | server | - | read | `(who: string | ReadPlayer, name: string, name2: string) -> number?` |
+| `player_textures` | server | - | read | `(who: string | ReadPlayer) -> { value: string, signature: string? }?` |
+| `player_view_distance` | server | - | read | `(who: string | ReadPlayer) -> number?` |
+| `playing` | client | - | read | `() -> boolean` |
+| `profile_by_name` | server | - | read | `(name: string) -> { string, string }?` |
+| `profile_by_uuid` | server | - | read | `(who: string | ReadPlayer) -> string?` |
+| `refresh_biome_colors` | client | - | action | `() -> ()` |
+| `refresh_commands` | server | - | action | `() -> ()` |
+| `refresh_player` | server | - | action | `(who: string | ReadPlayer) -> ()` |
+| `remove_effect` | server | - | action | `(who: string | ReadPlayer, name: string) -> ()` |
+| `remove_entity` | server | - | action | `(name: string, value: number) -> ()` |
+| `resend_commands` | server | - | action | `(who: string | ReadPlayer) -> ()` |
+| `respawn_player` | server | - | action | `(who: string | ReadPlayer) -> ()` |
+| `screen_pos` | client | - | read | `() -> Vec3?` |
+| `screen_title` | client | - | read | `() -> string?` |
+| `set_attribute_base` | server | - | action | `(who: string | ReadPlayer, name: string, value: number) -> ()` |
+| `set_block_property_with` | server | - | action | `(value: Vec3, name: string, name2: string, value2: number) -> ()` |
+| `set_break_progress` | server | - | action | `(value: number, value2: Vec3, value3: number) -> ()` |
+| `set_compass_target` | server | - | action | `(who: string | ReadPlayer, value: { string, Vec3 }?) -> ()` |
+| `set_flight` | server | - | action | `(who: string | ReadPlayer, value: boolean, value2: boolean) -> ()` |
+| `set_profile_property` | server | - | action | `(who: string | ReadPlayer, name: string, value: { value: string, signature: string? }?) -> ()` |
+| `sleep_ignored` | server | - | action | `(who: string | ReadPlayer, value: boolean) -> ()` |
+| `sneaking` | server | - | read | `() -> boolean` |
+| `teleport_vehicle` | server | - | action | `(name: string, value: number, value2: Vec3) -> ()` |
+| `text_width` | client | - | read | `(name: string) -> number` |
+| `update_output_neighbors` | server | - | action | `(name: string, value: Vec3) -> ()` |
+| `update_signal_neighbors` | server | - | action | `(name: string, value: Vec3) -> ()` |
+| `window` | client | - | read | `() -> boolean` |
+| `world_seed` | server | - | read | `() -> number?` |
 
 ## Plain tuple shapes (8)
 
-- `chat_input` -> `() -> { string, number }? (excluded; no Lua cell)`
-- `client_block_obstruction` -> `(value: Vec3) -> { boolean, boolean }? (excluded; no Lua cell)`
+- `chat_input` -> `() -> { string, number }?`
+- `client_block_obstruction` -> `(value: Vec3) -> { boolean, boolean }?`
 - `level_height` -> `(name: string) -> { min: number, max: number }?`
 - `level_weather` -> `(name: string) -> { number, number }?`
 - `player_textures` -> `(who: string | ReadPlayer) -> { value: string, signature: string? }?`

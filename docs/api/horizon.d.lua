@@ -1069,9 +1069,14 @@ declare horizon: {
     marker_move: (id: string, pos: Vec3) -> (),
     marker_remove: (id: string) -> (),
     marker_clear: () -> (),
+    apply_screen_blur: () -> boolean, -- client state only
     biome: (value: Vec3) -> string?,
     biome_name: (value: number) -> string?,
     block_entity_sync: (value: Vec3) -> (),
+    chat_input: () -> { string, number }?, -- client state only
+    client_block_obstruction: (value: Vec3) -> { boolean, boolean }?, -- client state only
+    client_entity_move: (who: string | ReadPlayer, value: number, value2: Vec3, value3: number) -> (), -- client state only
+    client_visual_clear: (value: Vec3, value2: Vec3) -> boolean, -- client state only
     dismount: (value: number) -> (),
     eject_passengers: (value: number) -> (),
     entity_add_tag: (value: number, name: string) -> (),
@@ -1106,8 +1111,13 @@ declare horizon: {
     entity_set_velocity: (value: number, value2: Vec3) -> (),
     entity_velocity: (value: number) -> Vec3?,
     entity_view_vector: (value: number) -> Vec3?,
+    flame_particle: (value: Vec3, value2: boolean) -> (), -- client state only
     fluid_flow: (name: string, value: Vec3) -> Vec3?,
+    has_alt_down: () -> boolean, -- client state only
+    has_control_down: () -> boolean, -- client state only
+    has_shift_down: () -> boolean, -- client state only
     hide_entity_from: (who: string | ReadPlayer, value: number, value2: boolean) -> (),
+    key_down: (name: string) -> boolean, -- client state only
     level: (name: string) -> string?,
     level_block: (name: string, value: Vec3) -> string?,
     level_block_property: (name: string, value: Vec3, name2: string) -> string?,
@@ -1125,26 +1135,35 @@ declare horizon: {
     lit_block_name: (value: Vec3) -> string?,
     max_players: () -> number?,
     max_stack_size: (name: string) -> number?,
+    menu_blur_radius: () -> number, -- client state only
     mob_attack: (name: string, value: number, value2: number) -> (),
     mob_follow: (name: string, value: number, value2: number, value3: number) -> (),
     mob_look_at: (name: string, value: number, value2: Vec3) -> (),
     mob_navigate: (name: string, value: number, value2: Vec3, value3: number, value4: number) -> (),
     mob_stop: (name: string, value: number) -> (),
+    mod_screen: () -> string?, -- client state only
+    mod_screen_close: (name: string) -> (), -- client state only
+    mod_screen_open: (name: string) -> (), -- client state only
     mount: (value: number, value2: number) -> (),
     move_entity: (name: string, value: number, value2: Vec3, value3: number, value4: number) -> (),
+    play_local_sound: (name: string, value: Vec3, value2: number, value3: number, value4: number) -> (), -- client state only
     player_break_block: (who: string | ReadPlayer, value: Vec3, value2: boolean) -> (),
     player_sneaking: (who: string | ReadPlayer) -> boolean?,
     player_stat: (who: string | ReadPlayer, name: string, name2: string) -> number?,
     player_textures: (who: string | ReadPlayer) -> { value: string, signature: string? }?,
     player_view_distance: (who: string | ReadPlayer) -> number?,
+    playing: () -> boolean, -- client state only
     profile_by_name: (name: string) -> { string, string }?,
     profile_by_uuid: (who: string | ReadPlayer) -> string?,
+    refresh_biome_colors: () -> (), -- client state only
     refresh_commands: () -> (),
     refresh_player: (who: string | ReadPlayer) -> (),
     remove_effect: (who: string | ReadPlayer, name: string) -> (),
     remove_entity: (name: string, value: number) -> (),
     resend_commands: (who: string | ReadPlayer) -> (),
     respawn_player: (who: string | ReadPlayer) -> (),
+    screen_pos: () -> Vec3?, -- client state only
+    screen_title: () -> string?, -- client state only
     set_attribute_base: (who: string | ReadPlayer, name: string, value: number) -> (),
     set_block_property_with: (value: Vec3, name: string, name2: string, value2: number) -> (),
     set_break_progress: (value: number, value2: Vec3, value3: number) -> (),
@@ -1154,8 +1173,10 @@ declare horizon: {
     sleep_ignored: (who: string | ReadPlayer, value: boolean) -> (),
     sneaking: () -> boolean,
     teleport_vehicle: (name: string, value: number, value2: Vec3) -> (),
+    text_width: (name: string) -> number, -- client state only
     update_output_neighbors: (name: string, value: Vec3) -> (),
     update_signal_neighbors: (name: string, value: Vec3) -> (),
+    window: () -> boolean, -- client state only
     world_seed: () -> number?,
 }
 
