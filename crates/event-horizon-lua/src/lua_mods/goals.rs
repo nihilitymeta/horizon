@@ -68,6 +68,8 @@ impl GoalDef {
         def: Table,
         intern: impl FnOnce(&str) -> &'static str,
     ) -> mlua::Result<Self> {
+        // `intern` runs last: every fallible read above it returns first,
+        // so a failed parse leaks no name string.
         let name = display;
         let mut flags = 0;
         if let Some(list) = def.raw_get::<Option<Table>>("flags")? {
@@ -98,14 +100,17 @@ impl GoalDef {
                 "goal {name}: can_use(mob, state, out) is required"
             )));
         }
+        let every_tick = def.raw_get::<Option<bool>>("every_tick")?.unwrap_or(false);
+        let interruptable = def
+            .raw_get::<Option<bool>>("interruptable")?
+            .unwrap_or(true);
+        let key = lua.create_registry_value(def)?;
         Ok(GoalDef {
             name: intern(name),
             flags,
-            every_tick: def.raw_get::<Option<bool>>("every_tick")?.unwrap_or(false),
-            interruptable: def
-                .raw_get::<Option<bool>>("interruptable")?
-                .unwrap_or(true),
-            def: Arc::new(lua.create_registry_value(def)?),
+            every_tick,
+            interruptable,
+            def: Arc::new(key),
         })
     }
     /// The goal's decisions, running in `lua`: what [`GoalDef::goal`] wraps.
@@ -291,7 +296,11 @@ fn who_from_lua(v: Value) -> mlua::Result<Option<Who>> {
         Value::Integer(id) => u32::try_from(id)
             .map(|id| Some(Who::Mob(id)))
             .map_err(|_| mlua::Error::runtime(format!("{id} is not a mob id"))),
-        Value::Number(n) if n.fract() == 0.0 && n >= 0.0 => Ok(Some(Who::Mob(n as u32))),
+        // A float `as u32` saturates: refuse past the mob id range
+        // instead (2^32 is not a mob id, and neither is 2^63).
+        Value::Number(n) if n.fract() == 0.0 && (0.0..4_294_967_296.0).contains(&n) => {
+            Ok(Some(Who::Mob(n as u32)))
+        }
         Value::String(s) if s.to_str().is_ok_and(|s| &*s == "player") => Ok(Some(Who::Player)),
         other => Err(mlua::Error::runtime(format!(
             "{} is not \"player\", a mob id or nil",
@@ -519,5 +528,72 @@ mod tests {
             .eval()
             .unwrap();
         assert_eq!(d, 13.0);
+    }
+
+    #[test]
+    fn a_failed_parse_interns_no_name() {
+        use std::cell::Cell;
+        let lua = Lua::new();
+        let calls = Cell::new(0u32);
+        let build = |display: &str, script: &str| -> mlua::Result<GoalDef> {
+            let def: Table = lua.load(script).eval().unwrap();
+            GoalDef::build(&lua, display, def, |n: &str| {
+                calls.set(calls.get() + 1);
+                Box::leak(n.to_owned().into_boxed_str())
+            })
+        };
+        // A def missing `can_use`, or with a bad flag, fails and interns
+        // nothing: `intern` runs only after every fallible read.
+        let e = build("stalk", r#"{ tick = function() end }"#)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("can_use"), "{e}");
+        let e = build("stalk", r#"{ flags = {"fly"}, can_use = function() end }"#)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("fly"), "{e}");
+        assert_eq!(calls.get(), 0);
+        // A good def interns exactly once.
+        let g = build("stalk", r#"{ can_use = function() end }"#).unwrap();
+        assert_eq!(calls.get(), 1);
+        assert_eq!(
+            (g.name, g.every_tick, g.interruptable),
+            ("stalk", false, true)
+        );
+    }
+
+    #[test]
+    fn out_of_range_mob_ids_are_errors_not_u32_max() {
+        let lua = Lua::new();
+        let queued = |script: &str| -> mlua::Result<Actions> {
+            let (api, queue) = actions_table(&lua)?;
+            lua.globals().set("out", api)?;
+            lua.load(script).exec()?;
+            let mut out = Actions::default();
+            drain_actions(&queue, &mut out)?;
+            Ok(out)
+        };
+        // 2^63 would saturate into `u32::MAX` with a plain `as` cast.
+        let e = queued("out.set_target(2^63)").unwrap_err().to_string();
+        assert!(e.contains("mob id"), "{e}");
+        let e = queued("out.attack(2^63)").unwrap_err().to_string();
+        assert!(e.contains("mob id"), "{e}");
+        // 2^32 is one past the last mob id, and -1 is none at all.
+        assert!(queued("out.set_target(2^32)").is_err());
+        let e = queued("out.set_target(-1)").unwrap_err().to_string();
+        assert!(e.contains("mob id"), "{e}");
+        // A fraction is not a mob id either.
+        assert!(queued("out.set_target(1.5)").is_err());
+        // The last mob id still works, as an integer and as a float.
+        let out = queued("out.set_target(4294967295)").unwrap();
+        assert_eq!(
+            out.as_slice(),
+            [GoalAction::SetTarget(Some(Who::Mob(u32::MAX)))]
+        );
+        let out = queued("out.set_target(4294967295.0)").unwrap();
+        assert_eq!(
+            out.as_slice(),
+            [GoalAction::SetTarget(Some(Who::Mob(u32::MAX)))]
+        );
     }
 }

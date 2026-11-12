@@ -1500,6 +1500,11 @@ pub struct LuaMod {
     library_scripts: Scripts,
     /// The goals the scripts defined (`horizon.goal`), by name.
     goals: Goals,
+    /// Every goal name interned so far (`mod_id:name`): a redefinition and
+    /// a reload reuse the same `&'static str` instead of leaking a new one,
+    /// and a failed parse inserts nothing. This outlives the `goals` map,
+    /// which a reload swaps out before the scripts run again.
+    goal_names: GoalNames,
     /// The commands the scripts declared (`horizon.command`), for the
     /// server's tree; their handlers are kind handlers of the
     /// `perform_command` hook.
@@ -1554,6 +1559,8 @@ pub struct LuaMod {
 
 /// A mod's goal definitions, shared with the `horizon.goal` function.
 type Goals = Arc<Mutex<HashMap<String, goals::GoalDef>>>;
+/// Goal names interned once per mod, shared with `horizon.goal`.
+type GoalNames = Arc<Mutex<HashMap<String, &'static str>>>;
 /// The kinds watched by hook, shared with the `horizon.on` function.
 type Kinds = Arc<Mutex<HashMap<String, HashSet<String>>>>;
 
@@ -2062,6 +2069,7 @@ impl LuaMod {
             libraries: libraries.to_vec(),
             library_scripts: Arc::new(Mutex::new(library_scripts)),
             goals: Goals::default(),
+            goal_names: GoalNames::default(),
             commands: Arc::default(),
             names: Mutex::default(),
             block_entities: BlockEntities::default(),
@@ -2560,6 +2568,7 @@ impl LuaMod {
         // Goals: `horizon.goal(name, def)` defines one for `horizon.add_goal`.
         // Its name for F3 and the tools' /goals is `mod_id:name`.
         let goals = self.goals.clone();
+        let goal_names = self.goal_names.clone();
         let id = self.id.clone();
         api.set(
             "goal",
@@ -2569,19 +2578,27 @@ impl LuaMod {
                 // otherwise block on the held mutex, and no Lua runs in
                 // between, so the load budget never fires. A def is plain
                 // data, so nothing runs during the parse anyway.
-                // One name for the game's life: a redefinition copies the
-                // stored &'static str under a brief lock and reuses it (no
-                // new leak); a new name is interned inside `parse` only
+                // One name for the mod's life: the interned names outlive
+                // the `goals` map (a reload swaps that map out), so a
+                // redefinition and a reload reuse the stored &'static str
+                // (no new leak); a new name is interned inside `parse` only
                 // after it succeeds, so a failed parse interns nothing.
                 let existing: Option<&'static str> = {
-                    let locked = goals.lock().map_err(|_| mlua::Error::runtime("goals"))?;
-                    let existing = locked.get(name.as_str()).map(|g| g.name);
-                    drop(locked);
-                    existing
+                    let known = goal_names
+                        .lock()
+                        .map_err(|_| mlua::Error::runtime("goals"))?;
+                    known.get(name.as_str()).copied()
                 };
                 let def = match existing {
                     Some(static_name) => goals::GoalDef::parse_existing(lua, static_name, def)?,
-                    None => goals::GoalDef::parse(lua, &format!("{id}:{name}"), def)?,
+                    None => {
+                        let def = goals::GoalDef::parse(lua, &format!("{id}:{name}"), def)?;
+                        goal_names
+                            .lock()
+                            .map_err(|_| mlua::Error::runtime("goals"))?
+                            .insert(name.clone(), def.name);
+                        def
+                    }
                 };
                 let mut goals = goals.lock().map_err(|_| mlua::Error::runtime("goals"))?;
                 goals.insert(name, def);
@@ -4845,6 +4862,27 @@ experimental = ["scripts"]
         }
         assert!(!m.goals.lock().unwrap().contains_key("new"));
         assert!(m.goals.lock().unwrap().contains_key("ok"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_reload_reuses_goal_names_instead_of_interning_again() {
+        let (dir, path) = hmod(
+            "goal-reload-names",
+            &[(
+                "scripts/server/init.lua",
+                br#"horizon.goal("sit", { can_use = function() return false end })"#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let first = m.goals.lock().unwrap().get("sit").unwrap().name;
+        m.reload().unwrap();
+        let second = m.goals.lock().unwrap().get("sit").unwrap().name;
+        assert!(std::ptr::eq(first, second));
+        // And again: every reload reuses the one interned name.
+        m.reload().unwrap();
+        let third = m.goals.lock().unwrap().get("sit").unwrap().name;
+        assert!(std::ptr::eq(first, third));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

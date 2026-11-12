@@ -113,11 +113,46 @@ pub fn lua_to_tag(v: &Value, like: Option<&Tag>) -> mlua::Result<Tag> {
 
 impl Walk {
     fn tag(&mut self, v: &Value, like: Option<&Tag>) -> mlua::Result<Tag> {
-        let number = |n: f64| -> Tag {
-            match like {
-                Some(Tag::Byte(_)) => Tag::Byte(n as i8),
-                Some(Tag::Short(_)) => Tag::Short(n as i16),
-                Some(Tag::Int(_)) => Tag::Int(n as i32),
+        let at = self.at();
+        // A narrowing `as` wraps (integers) or saturates (floats): refuse
+        // past the tag's range instead, naming the field and the tag type.
+        let range = |n: f64, lo: f64, hi: f64, tag: &str| -> mlua::Result<()> {
+            if n.is_nan() || n < lo || n > hi {
+                return Err(mlua::Error::runtime(format!(
+                    "{at}: {n} is out of range for an NBT {tag}"
+                )));
+            }
+            Ok(())
+        };
+        let fit_byte = |i: i64| -> mlua::Result<i8> {
+            i8::try_from(i).map_err(|_| {
+                mlua::Error::runtime(format!("{at}: {i} is out of range for an NBT byte"))
+            })
+        };
+        let fit_short = |i: i64| -> mlua::Result<i16> {
+            i16::try_from(i).map_err(|_| {
+                mlua::Error::runtime(format!("{at}: {i} is out of range for an NBT short"))
+            })
+        };
+        let fit_int = |i: i64| -> mlua::Result<i32> {
+            i32::try_from(i).map_err(|_| {
+                mlua::Error::runtime(format!("{at}: {i} is out of range for an NBT int"))
+            })
+        };
+        let number = |n: f64| -> mlua::Result<Tag> {
+            Ok(match like {
+                Some(Tag::Byte(_)) => Tag::Byte({
+                    range(n, f64::from(i8::MIN), f64::from(i8::MAX), "byte")?;
+                    n as i8
+                }),
+                Some(Tag::Short(_)) => Tag::Short({
+                    range(n, f64::from(i16::MIN), f64::from(i16::MAX), "short")?;
+                    n as i16
+                }),
+                Some(Tag::Int(_)) => Tag::Int({
+                    range(n, f64::from(i32::MIN), f64::from(i32::MAX), "int")?;
+                    n as i32
+                }),
                 // The number the script got for the old long is the old
                 // long rounded to a double: the same number back means the
                 // script left it alone, and the exact value is kept.
@@ -136,7 +171,7 @@ impl Walk {
                 _ if n.fract() == 0.0 && n.abs() < 2f64.powi(31) => Tag::Int(n as i32),
                 _ if n.fract() == 0.0 => Tag::Long(n as i64),
                 _ => Tag::Double(n.to_bits()),
-            }
+            })
         };
         Ok(match v {
             Value::Nil => Tag::End,
@@ -145,17 +180,17 @@ impl Walk {
                 _ => Tag::Byte(i8::from(*b)),
             },
             Value::Integer(i) => match like {
-                Some(Tag::Float(_)) | Some(Tag::Double(_)) => number(*i as f64),
-                Some(Tag::Byte(_)) => Tag::Byte(*i as i8),
-                Some(Tag::Short(_)) => Tag::Short(*i as i16),
+                Some(Tag::Float(_)) | Some(Tag::Double(_)) => number(*i as f64)?,
+                Some(Tag::Byte(_)) => Tag::Byte(fit_byte(*i)?),
+                Some(Tag::Short(_)) => Tag::Short(fit_short(*i)?),
                 // A whole double comes back as an integer: the same number as
                 // the old long rounded means the script left it alone.
-                Some(Tag::Long(_)) => number(*i as f64),
-                Some(Tag::Int(_)) => Tag::Int(*i as i32),
+                Some(Tag::Long(_)) => number(*i as f64)?,
+                Some(Tag::Int(_)) => Tag::Int(fit_int(*i)?),
                 _ if i32::try_from(*i).is_ok() => Tag::Int(*i as i32),
                 _ => Tag::Long(*i),
             },
-            Value::Number(n) => number(*n),
+            Value::Number(n) => number(*n)?,
             Value::String(s) => Tag::String(JavaString::from(s.to_string_lossy().as_ref())),
             Value::Table(t) => {
                 self.enter(t)?;
@@ -211,7 +246,13 @@ impl Walk {
             Some(Tag::IntArray(_)) => {
                 let mut out = Vec::with_capacity(len);
                 for i in 1..=len {
-                    out.push(t.raw_get::<i64>(i)? as i32);
+                    let v: i64 = t.raw_get(i)?;
+                    out.push(i32::try_from(v).map_err(|_| {
+                        mlua::Error::runtime(format!(
+                            "{}[{i}]: {v} is out of range for an NBT int",
+                            self.at()
+                        ))
+                    })?);
                 }
                 Tag::IntArray(out)
             }
@@ -225,7 +266,13 @@ impl Walk {
             Some(Tag::ByteArray(_)) => {
                 let mut out = Vec::with_capacity(len);
                 for i in 1..=len {
-                    out.push(t.raw_get::<i64>(i)? as i8 as u8);
+                    let v: i64 = t.raw_get(i)?;
+                    out.push(i8::try_from(v).map_err(|_| {
+                        mlua::Error::runtime(format!(
+                            "{}[{i}]: {v} is out of range for an NBT byte",
+                            self.at()
+                        ))
+                    })? as u8);
                 }
                 Tag::ByteArray(out)
             }
@@ -429,5 +476,63 @@ mod tests {
         let c = table_to_compound(&t, None).unwrap();
         assert!(matches!(c.get(&"items".into()), Some(Tag::List(l)) if l.len() == 2));
         assert!(matches!(c.get(&"named".into()), Some(Tag::Compound(_))));
+    }
+
+    #[test]
+    fn out_of_range_numbers_are_errors_naming_the_field_and_type() {
+        let lua = Lua::new();
+        let mut c = Compound::new();
+        c.insert("b".into(), Tag::Byte(0));
+        c.insert("s".into(), Tag::Short(0));
+        c.insert("i".into(), Tag::Int(0));
+        c.insert("f".into(), Tag::Float(0f32.to_bits()));
+        c.insert("ints".into(), Tag::IntArray(vec![1]));
+        c.insert("bytes".into(), Tag::ByteArray(vec![1]));
+        let write = |script: &str| -> Result<Compound, String> {
+            let t: Table = lua.load(script).eval().map_err(|e| e.to_string())?;
+            table_to_compound(&t, Some(&c)).map_err(|e| e.to_string())
+        };
+        // 300 wraps to 44 as an `i8`, and 300.0 saturates to 127: both are
+        // errors naming the field and the tag type.
+        for script in ["return { b = 300 }", "return { b = 300.0 }"] {
+            let e = write(script).unwrap_err();
+            assert!(e.contains('b') && e.contains("byte"), "{script}: {e}");
+        }
+        for script in [
+            "return { b = 128 }",
+            "return { b = -129 }",
+            "return { s = 32768 }",
+            "return { s = -32769 }",
+            "return { i = 2147483648 }",
+            "return { i = -2147483649 }",
+            "return { i = 3000000000.0 }",
+            "return { ints = { 1, 5000000000 } }",
+            "return { bytes = { 1, 200 } }",
+        ] {
+            assert!(write(script).is_err(), "{script} wrote back");
+        }
+        let e = write("return { s = 40000 }").unwrap_err();
+        assert!(e.contains('s') && e.contains("short"), "{e}");
+        let e = write("return { i = 3000000000 }").unwrap_err();
+        assert!(e.contains('i') && e.contains("int"), "{e}");
+        let e = write("return { ints = { 1, 1099511627776 } }").unwrap_err();
+        assert!(e.contains("ints") && e.contains("int"), "{e}");
+        let e = write("return { bytes = { 300 } }").unwrap_err();
+        assert!(e.contains("bytes") && e.contains("byte"), "{e}");
+        // The edges still fit, and other types are untouched.
+        let back = write("return { b = 127, s = -32768, i = 2147483647, f = 0.5 }").unwrap();
+        assert_eq!(back.get(&"b".into()), Some(&Tag::Byte(127)));
+        assert_eq!(back.get(&"s".into()), Some(&Tag::Short(-32768)));
+        assert_eq!(back.get(&"i".into()), Some(&Tag::Int(2_147_483_647)));
+        assert_eq!(back.get(&"f".into()), Some(&Tag::Float(0.5f32.to_bits())));
+        let back = write("return { ints = { 1, -2147483648 }, bytes = { 127, -128 } }").unwrap();
+        assert_eq!(
+            back.get(&"ints".into()),
+            Some(&Tag::IntArray(vec![1, -2_147_483_648]))
+        );
+        assert_eq!(
+            back.get(&"bytes".into()),
+            Some(&Tag::ByteArray(vec![127, 128]))
+        );
     }
 }
