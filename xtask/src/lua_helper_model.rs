@@ -46,16 +46,20 @@ pub enum HelperClass {
 /// emitted bridge reads it as, and the normalized Rust scalar it converts
 /// to). `player` marks a `u128` argument, read through `uuid_of` (a player
 /// table, uuid text, or a player name, like every hand-written action's
-/// first argument).
+/// first argument); `entity` marks an [`EntityRef`] argument, read as an
+/// entity id number and resolved through the `Host::entity` lookup.
 #[derive(Clone, Debug)]
 pub struct Arg {
     /// The native argument's own name, for the emitted local.
     pub name: String,
-    /// The normalized Rust type: `u128` for a player, `&str`, an int,
+    /// The normalized Rust type: `u128` for a player, `EntityRef` for an
+    /// entity, `[f64; 3]`/`[i32; 3]` for a position table, `&str`, an int,
     /// `f32`, `f64`, `bool`, or `String` for a by-value string.
     pub rust: String,
     /// True when the argument is a player (a `u128`), read via `uuid_of`.
     pub player: bool,
+    /// True when the argument is an entity (an `EntityRef`).
+    pub entity: bool,
 }
 
 /// One resolved helper: its signature, class, and doc.
@@ -67,7 +71,9 @@ pub struct HelperRow {
     /// The normalized arguments (empty unless Generated).
     pub args: Vec<Arg>,
     /// The normalized return: `unit`, a scalar (`bool`, `String`, an int,
-    /// `f32`, `f64`), or `Option<scalar>` (empty unless Generated).
+    /// `f32`, `f64`), a position (`[f64; 3]`/`[i32; 3]`), or
+    /// `Option<scalar>`/`Option<[f64; 3]>`/`Option<[i32; 3]>`
+    /// (empty unless Generated).
     pub ret: String,
     /// The `native_*` function's prose (its doc, first paragraph).
     pub doc: String,
@@ -82,6 +88,11 @@ pub struct HelperRow {
     /// `Option<&str>`, normalized to `String`): the `Host` trait's
     /// method returns the borrow, not an owned `String`.
     pub ret_borrowed: bool,
+    /// Whether the borrowed return is a `'static` str (an explicit
+    /// `&'static str` in the native signature, like `facing`'s
+    /// `Option<&'static str>`): the double must spell the same
+    /// lifetime, or the `impl` signature does not match the trait.
+    pub ret_static: bool,
 }
 
 fn prose(attrs: &[syn::Attribute], name: &str) -> Result<String, String> {
@@ -242,6 +253,59 @@ fn is_plain_option(ty: &Type) -> bool {
         .is_some_and(|s| s.ident == "str" || s.ident == "String")
 }
 
+/// Whether the type is the by-value [`EntityRef`] handle: a Lua number
+/// (the entity's network id) resolved through `Host::entity`.
+fn is_entity_ref(ty: &Type) -> bool {
+    matches!(ty, Type::Path(p) if p.qself.is_none()
+        && p.path.segments.len() == 1
+        && p.path.segments[0].ident == "EntityRef")
+}
+
+/// The position layout a type carries: `[f64; 3]` or `[i32; 3]` (a
+/// `{x, y, z}` table), or `None` for anything else.
+fn vec3_layout(ty: &Type) -> Option<&'static str> {
+    let Type::Array(a) = ty else {
+        return None;
+    };
+    let syn::Expr::Lit(lit) = &a.len else {
+        return None;
+    };
+    let syn::Lit::Int(n) = &lit.lit else {
+        return None;
+    };
+    if n.base10_digits() != "3" {
+        return None;
+    }
+    let Type::Path(p) = &*a.elem else {
+        return None;
+    };
+    let name = p.path.segments.last()?.ident.to_string();
+    match name.as_str() {
+        "f64" => Some("[f64; 3]"),
+        "i32" => Some("[i32; 3]"),
+        _ => None,
+    }
+}
+
+/// The position layout of an `Option<[f64; 3]>`/`Option<[i32; 3]>` return,
+/// or `None` (its `nil`-for-`None` is the value-or-nil a read answers).
+fn opt_vec3_layout(ty: &Type) -> Option<&'static str> {
+    let Type::Path(p) = ty else {
+        return None;
+    };
+    let seg = p.path.segments.last()?;
+    if seg.ident != "Option" {
+        return None;
+    }
+    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
+        return None;
+    };
+    let Some(syn::GenericArgument::Type(inner)) = args.args.first() else {
+        return None;
+    };
+    vec3_layout(inner)
+}
+
 /// Whether the type is a plain string borrow (`&str`, `&'static str`,
 /// `&String`): the bridge answers it as its owned `String`.
 fn str_borrow(ty: &Type) -> bool {
@@ -282,12 +346,14 @@ fn callback_reason(ty: &Type) -> String {
 
 /// One argument or return type's place in the classes: a plain string
 /// borrow or scalar is nothing (the caller handles the receiver); an
-/// opaque `&mut` is a handle; a callback, a trait object, or a tuple is
-/// beyond the bridge (a design of its own); any other type blocks on the
-/// type it names. An `Option<scalar>` blocks only in an argument: Lua
-/// has no absent argument (a `None`-for-nil write needs the optional-
-/// parameter design); in a return it is exactly the value-or-nil a read
-/// answers.
+/// entity id (`EntityRef`) or a position table (`[f64; 3]`/`[i32; 3]`)
+/// is nothing either (the bridge converts it); an opaque `&mut` is a
+/// handle; a callback, a trait object, or a tuple is beyond the bridge
+/// (a design of its own); any other type blocks on the type it names.
+/// An `Option<scalar>` blocks only in an argument: Lua has no absent
+/// argument (a `None`-for-nil write needs the optional-parameter
+/// design); in a return it is exactly the value-or-nil a read answers,
+/// as an optional position (`Option<[f64; 3]>`/`Option<[i32; 3]>`) is.
 fn collect_blocks(
     ty: &Type,
     in_return: bool,
@@ -297,6 +363,16 @@ fn collect_blocks(
 ) {
     if is_mut_handle(ty) {
         handles.push(blocking_head(ty));
+        return;
+    }
+    // The converted types: an entity id number (`EntityRef`), a position
+    // table (`[f64; 3]`/`[i32; 3]`), and the value-or-nil of an optional
+    // position in a return. An optional position as an argument still
+    // blocks: Lua has no absent argument.
+    if is_entity_ref(ty)
+        || vec3_layout(ty).is_some()
+        || (in_return && opt_vec3_layout(ty).is_some())
+    {
         return;
     }
     match ty {
@@ -354,11 +430,13 @@ fn blocks_of(f: &syn::ItemFn) -> (Vec<String>, Vec<String>, Vec<String>) {
 }
 
 /// The supported plain return, in normalized form: `unit`, a scalar
-/// (`bool`, `String`, an int, `f32`, `f64`), a string borrow (`&str` as
-/// `String`), or `Option<scalar>` (with `Option<&str>` as
-/// `Option<String>`). `None` when the return is not plain and supported
-/// (a wide integer a Lua number cannot hold, a `Result`, a nested
-/// `Option<other>`, a struct, ...).
+/// (`bool`, `String`, an int, `f32`, `f64`), a position (`[f64; 3]` or
+/// `[i32; 3]`), a string borrow (`&str` as `String`), or
+/// `Option<scalar>` (with `Option<&str>` as `Option<String>`), or an
+/// optional position (`Option<[f64; 3]>`/`Option<[i32; 3]>`). `None` when
+/// the return is not plain and supported (a wide integer a Lua number
+/// cannot hold, `Option<EntityRef>` (the lookup the bridge uses, never
+/// a Lua function), a `Result`, a nested `Option<other>`, a struct, ...).
 fn supported_return(f: &syn::ItemFn) -> Option<String> {
     let ty = match &f.sig.output {
         ReturnType::Default => return Some("unit".to_owned()),
@@ -391,6 +469,16 @@ fn supported_return(f: &syn::ItemFn) -> Option<String> {
                 inner_scalar => Some(format!("Option<{inner_scalar}>")),
             };
         }
+        // An optional position: a table or nil, like the
+        // `Option<[f32; 2]>` precedent; `Option<EntityRef>` stays
+        // unsupported below (it is the `entity` lookup itself).
+        if let Some(v) = opt_vec3_layout(ty) {
+            return Some(format!("Option<{v}>"));
+        }
+    }
+    // A plain position: a `{x, y, z}` table.
+    if let Some(v) = vec3_layout(ty) {
+        return Some(v.to_owned());
     }
     None
 }
@@ -424,6 +512,7 @@ fn normalize_arg(ty: &Type, name: &str) -> Arg {
                     name: name.to_owned(),
                     rust: "&str".to_owned(),
                     player: false,
+                    entity: false,
                 };
             }
             // Any other borrow blocks (the struct, not the borrow).
@@ -431,8 +520,16 @@ fn normalize_arg(ty: &Type, name: &str) -> Arg {
                 name: name.to_owned(),
                 rust: blocking_head(ty),
                 player: false,
+                entity: false,
             }
         }
+        // An entity id number (`EntityRef`): the `Host::entity` lookup.
+        Type::Path(_) if is_entity_ref(ty) => Arg {
+            name: name.to_owned(),
+            rust: "EntityRef".to_owned(),
+            player: false,
+            entity: true,
+        },
         Type::Path(_) if scalar_of(ty).is_some() => {
             let scalar = scalar_of(ty).unwrap();
             match scalar {
@@ -440,33 +537,46 @@ fn normalize_arg(ty: &Type, name: &str) -> Arg {
                     name: name.to_owned(),
                     rust: "u128".to_owned(),
                     player: true,
+                    entity: false,
                 },
                 "String" => Arg {
                     name: name.to_owned(),
                     rust: "String".to_owned(),
                     player: false,
+                    entity: false,
                 },
                 "bool" => Arg {
                     name: name.to_owned(),
                     rust: "bool".to_owned(),
                     player: false,
+                    entity: false,
                 },
                 "f32" | "f64" => Arg {
                     name: name.to_owned(),
                     rust: scalar.to_owned(),
                     player: false,
+                    entity: false,
                 },
                 _ => Arg {
                     name: name.to_owned(),
                     rust: scalar.to_owned(),
                     player: false,
+                    entity: false,
                 },
             }
         }
+        // A position table (`[f64; 3]`/`[i32; 3]`).
+        Type::Array(_) if vec3_layout(ty).is_some() => Arg {
+            name: name.to_owned(),
+            rust: vec3_layout(ty).unwrap().to_owned(),
+            player: false,
+            entity: false,
+        },
         _ => Arg {
             name: name.to_owned(),
             rust: blocking_head(ty),
             player: false,
+            entity: false,
         },
     }
 }
@@ -553,6 +663,7 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
         }
         let receiver = helper["receiver"].as_str().map(str::to_owned);
         let ret_borrowed = return_is_borrowed(f);
+        let ret_static = return_is_static_borrowed(f);
         if f.sig.asyncness.is_some() {
             rows.push(row(
                 name,
@@ -565,6 +676,7 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
                 receiver,
                 receiver_mut,
                 ret_borrowed,
+                ret_static,
             ));
             continue;
         }
@@ -585,6 +697,7 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
                 receiver,
                 receiver_mut,
                 ret_borrowed,
+                ret_static,
             ));
             continue;
         }
@@ -600,6 +713,7 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
                 receiver,
                 receiver_mut,
                 ret_borrowed,
+                ret_static,
             ));
             continue;
         }
@@ -615,6 +729,28 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
                 receiver,
                 receiver_mut,
                 ret_borrowed,
+                ret_static,
+            ));
+            continue;
+        }
+        // A helper whose name is already a Lua `horizon.*` function
+        // (hook registration, a hand-written read or action) cannot be
+        // emitted under the same name: it would overwrite that
+        // function. A hand-written helper keeps its `AlreadyLua` above;
+        // anything else named reserved is a collision.
+        if super::lua_types::reserved_horizon_name(&name) {
+            rows.push(row(
+                name,
+                target,
+                HelperClass::Cannot("name collides with an existing horizon.* function".to_owned()),
+                Vec::new(),
+                String::new(),
+                doc,
+                api,
+                receiver,
+                receiver_mut,
+                ret_borrowed,
+                ret_static,
             ));
             continue;
         }
@@ -631,6 +767,7 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
                 receiver,
                 receiver_mut,
                 ret_borrowed,
+                ret_static,
             ));
             continue;
         }
@@ -646,6 +783,7 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
                 receiver,
                 receiver_mut,
                 ret_borrowed,
+                ret_static,
             ));
             continue;
         }
@@ -664,6 +802,7 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
                 receiver,
                 receiver_mut,
                 ret_borrowed,
+                ret_static,
             ));
             continue;
         }
@@ -671,8 +810,11 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
         // the return named too. `blocks_of` already names the return,
         // except a supported-looking scalar the bridge rejects (a wide
         // `u64`/`u128`/`i128` a Lua number cannot hold): name it as well.
-        // A `receiver` tag (`entity`/`level`/`living`) is a ref type the
-        // bridge cannot name, so a Generated helper never carries one.
+        // A `level`/`living` `receiver` tag is a ref type the bridge
+        // cannot name, so a Generated helper never carries one of those.
+        // An `entity` tag names the helper's first argument, an
+        // `EntityRef` (an id number the bridge converts), so it adds no
+        // blocker of its own.
         let mut eff_blocking = blocking;
         if ret.is_none()
             && let ReturnType::Type(_, ty) = &f.sig.output
@@ -682,9 +824,10 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
                 eff_blocking.push(head);
             }
         }
-        if let Some(tag) = receiver.as_deref() {
+        if let Some(tag) = receiver.as_deref()
+            && tag != "entity"
+        {
             let ref_ty = match tag {
-                "entity" => "EntityRef",
                 "level" => "LevelRef",
                 "living" => "LivingRef",
                 _ => tag,
@@ -708,12 +851,36 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
                 receiver,
                 receiver_mut,
                 ret_borrowed,
+                ret_static,
             ));
             continue;
         }
         // Step 3/4: with nothing blocking, the return is supported.
         // `&self` + `()` is the same shape as `&mut self` + `()`: an
         // Action. `&mut self` + a data return cannot ride the queue.
+        // A `&mut self` helper whose `bool` answers a query (its doc starts
+        // "Whether" and it takes no `bool` argument to set) is not a queued
+        // action: the queue drops the answer. It needs a read design; a
+        // setter's `bool` is its success flag and stays an action below.
+        if receiver_mut
+            && ret.as_deref() == Some("bool")
+            && doc.starts_with("Whether")
+            && !plain_args(f).iter().any(|a| a.rust == "bool")
+        {
+            rows.push(cannot_row(
+                name,
+                target,
+                "a `&mut self` helper that answers a query: a queued \
+                 action would drop the answer (needs a read design)",
+                doc,
+                api,
+                receiver,
+                receiver_mut,
+                ret_borrowed,
+                ret_static,
+            ));
+            continue;
+        }
         let kind = if !has_receiver {
             // A receiverless helper is `&self` in the trait: a read of
             // a plain return, a queued action of unit/bool.
@@ -739,6 +906,7 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
                         receiver,
                         receiver_mut,
                         ret_borrowed,
+                        ret_static,
                     ));
                     continue;
                 }
@@ -762,6 +930,7 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
             receiver,
             receiver_mut,
             ret_borrowed,
+            ret_static,
         ));
     }
     Ok(rows)
@@ -821,6 +990,42 @@ fn return_is_borrowed(f: &syn::ItemFn) -> bool {
     false
 }
 
+/// Whether a borrowed return's lifetime is explicitly `'static`.
+fn return_is_static_borrowed(f: &syn::ItemFn) -> bool {
+    let ReturnType::Type(_, ty) = &f.sig.output else {
+        return false;
+    };
+    if is_static_str_borrow(ty) {
+        return true;
+    }
+    if let Type::Path(p) = &**ty
+        && let Some(seg) = p.path.segments.last()
+        && seg.ident == "Option"
+        && let syn::PathArguments::AngleBracketed(args) = &seg.arguments
+        && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
+    {
+        return is_static_str_borrow(inner);
+    }
+    false
+}
+
+/// Whether the type is a string borrow with an explicit `'static`.
+fn is_static_str_borrow(ty: &Type) -> bool {
+    let Type::Reference(r) = ty else {
+        return false;
+    };
+    if !r.lifetime.as_ref().is_some_and(|l| l.ident == "static") {
+        return false;
+    }
+    let Type::Path(p) = &*r.elem else {
+        return false;
+    };
+    p.path
+        .segments
+        .last()
+        .is_some_and(|s| s.ident == "str" || s.ident == "String")
+}
+
 #[allow(clippy::too_many_arguments)]
 fn row(
     name: String,
@@ -833,6 +1038,7 @@ fn row(
     receiver: Option<String>,
     receiver_mut: bool,
     ret_borrowed: bool,
+    ret_static: bool,
 ) -> HelperRow {
     HelperRow {
         name,
@@ -845,6 +1051,7 @@ fn row(
         receiver,
         receiver_mut,
         ret_borrowed,
+        ret_static,
     }
 }
 
@@ -857,6 +1064,7 @@ fn cannot_row(
     receiver: Option<String>,
     receiver_mut: bool,
     ret_borrowed: bool,
+    ret_static: bool,
 ) -> HelperRow {
     row(
         name,
@@ -869,6 +1077,7 @@ fn cannot_row(
         receiver,
         receiver_mut,
         ret_borrowed,
+        ret_static,
     )
 }
 
@@ -876,8 +1085,10 @@ fn cannot_row(
 /// renamed (`who`, then numbered), matching the emitted Rust reads. A
 /// player argument takes a player table, uuid text, or a player name
 /// (`string | ReadPlayer`, as the hand-written `who` parameters spell
-/// it); reads return their value type (a `number?` for an optional
-/// number, and so on); actions return `()`.
+/// it); an entity argument is its network id (a number); a position is
+/// a `Vec3`; reads return their value type (a `number?` for an optional
+/// number, a `Vec3?` for an optional position, and so on); actions
+/// return `()`.
 pub fn luau_function(row: &HelperRow) -> (String, String) {
     let mut strings = 0;
     let mut other = 0;
@@ -894,8 +1105,17 @@ pub fn luau_function(row: &HelperRow) -> (String, String) {
                 };
                 params.push(format!("{name}: string"));
             }
-            // Numbers and booleans share one counter, so no two
-            // parameters ever carry the same name.
+            "[f64; 3]" | "[i32; 3]" | "Option<[f64; 3]>" | "Option<[i32; 3]>" => {
+                other += 1;
+                let name = if other == 1 {
+                    "value".to_owned()
+                } else {
+                    format!("value{other}")
+                };
+                params.push(format!("{name}: Vec3"));
+            }
+            // Numbers, booleans and entity ids share one counter, so no
+            // two parameters ever carry the same name.
             _ => {
                 other += 1;
                 let ty = if a.rust == "bool" {
@@ -913,10 +1133,21 @@ pub fn luau_function(row: &HelperRow) -> (String, String) {
         }
     }
     let ret = match row.ret.as_str() {
-        "unit" | "bool" => "()",
+        "unit" => "()",
+        // A read's `bool` is its answer; an action's `bool` is its queued
+        // success flag, which the queue drops.
+        "bool" => {
+            if matches!(&row.class, HelperClass::Generated(GenKind::Read)) {
+                "boolean"
+            } else {
+                "()"
+            }
+        }
         "Option<bool>" => "boolean?",
         "Option<String>" => "string?",
         "String" => "string",
+        "[f64; 3]" | "[i32; 3]" => "Vec3",
+        "Option<[f64; 3]>" | "Option<[i32; 3]>" => "Vec3?",
         _ if row.ret.starts_with("Option<") => "number?",
         _ => "number",
     };
@@ -1004,8 +1235,10 @@ mod tests {
         );
     }
 
-    /// The spike set's five reads and ten actions classify as Generated
-    /// with the kind the receiver and return promise.
+    /// The smoke list's five reads and nine enabled actions (the helpers
+    /// the spike enabled first, less `mob_navigating`, which answers a
+    /// query) classify as Generated with the kind the receiver and return
+    /// promise.
     #[test]
     fn the_spike_set_classifies_as_promised() {
         let rows = classify_helpers(&root()).unwrap();
@@ -1025,7 +1258,6 @@ mod tests {
             "hide_entity_from",
             "sleep_ignored",
             "mob_stop",
-            "mob_navigating",
             "refresh_player",
         ];
         for name in reads {
@@ -1042,8 +1274,7 @@ mod tests {
                 class => panic!("{name} should be a generated action, got {class:?}"),
             }
         }
-        // No spike name is already a Lua helper, and the smoke list is
-        // exactly the spike set: nothing else gets emitted behind it.
+        // No smoke name is already a Lua helper.
         for name in reads.iter().copied().chain(actions) {
             let row = rows.iter().find(|r| r.name == *name).unwrap();
             assert!(
@@ -1051,6 +1282,33 @@ mod tests {
                 "{name} must not already be a Lua helper"
             );
         }
+    }
+
+    /// A `&mut self` helper whose `bool` answers a query (its doc starts
+    /// "Whether" and it takes no `bool` argument) is not a queued action:
+    /// the queue would drop the answer. `entity_is_mob` (pinned here) and
+    /// `mob_navigating` are those; `sleep_ignored` takes the bool it sets,
+    /// so its `bool` stays a success flag and it stays an action.
+    #[test]
+    fn answer_queries_are_cannot_not_queued_actions() {
+        let rows = classify_helpers(&root()).unwrap();
+        for name in ["entity_is_mob", "mob_navigating"] {
+            let row = rows.iter().find(|r| r.name == name).unwrap();
+            match &row.class {
+                HelperClass::Cannot(why) => assert_eq!(
+                    why,
+                    "a `&mut self` helper that answers a query: a queued \
+                     action would drop the answer (needs a read design)"
+                ),
+                class => panic!("{name} should be cannot, got {class:?}"),
+            }
+        }
+        let row = rows.iter().find(|r| r.name == "sleep_ignored").unwrap();
+        assert!(
+            matches!(&row.class, HelperClass::Generated(GenKind::Action)),
+            "sleep_ignored should stay an action, got {:?}",
+            row.class
+        );
     }
 
     /// No `Cannot` row carries the generic fallback (or nothing at all):
@@ -1071,16 +1329,19 @@ mod tests {
         }
     }
 
-    /// A `Generated` helper never carries a `receiver` tag, and the
-    /// string-borrow reads and `&self` unit actions classify as
-    /// Generated after the order fix.
+    /// A `Generated` helper carries no `receiver` tag but `entity` (its
+    /// `EntityRef` is its first argument, an id number the bridge
+    /// converts); a `level`/`living` tag still blocks. The string-borrow
+    /// reads and `&self` unit actions classify as Generated after the
+    /// order fix, and the entity/position helpers classify once their
+    /// types convert.
     #[test]
     fn generated_helpers_carry_no_receiver() {
         let rows = classify_helpers(&root()).unwrap();
         for row in &rows {
             if matches!(row.class, HelperClass::Generated(_)) {
                 assert!(
-                    row.receiver.is_none(),
+                    matches!(row.receiver.as_deref(), None | Some("entity")),
                     "{} is Generated but carries receiver {:?}",
                     row.name,
                     row.receiver
@@ -1110,18 +1371,45 @@ mod tests {
                 row.class
             );
         }
-        for name in [
-            "entity_nbt",
-            "entity_position",
-            "level_height",
-            "living_equipment",
+        // Entity and position helpers are Generated once their types
+        // convert (`entity_position` is a read of `[f64; 3]`,
+        // `block_entity_sync` an action on `[i32; 3]`).
+        for (name, kind) in [
+            ("entity_position", GenKind::Read),
+            ("block_entity_sync", GenKind::Action),
+            ("entity_set_velocity", GenKind::Action),
         ] {
+            let row = rows.iter().find(|r| r.name == name).unwrap();
+            assert!(
+                matches!(&row.class, HelperClass::Generated(k) if *k == kind),
+                "{name} should be Generated({kind:?}), got {:?}",
+                row.class
+            );
+        }
+        for name in ["entity_nbt", "level_height", "living_equipment"] {
             let row = rows.iter().find(|r| r.name == name).unwrap();
             assert!(
                 matches!(row.class, HelperClass::Adapter(_)),
                 "{name} should be Adapter, got {:?}",
                 row.class
             );
+        }
+    }
+
+    /// A helper named for an existing `horizon.*` function (`on` is
+    /// the hook registration) is `Cannot` with the collision reason:
+    /// emitting it would overwrite that function. A hand-written
+    /// helper (an `AlreadyLua` name) keeps its class instead.
+    #[test]
+    fn a_reserved_name_is_cannot() {
+        let rows = classify_helpers(&root()).unwrap();
+        let row = rows.iter().find(|r| r.name == "on").unwrap();
+        match &row.class {
+            HelperClass::Cannot(why) => assert!(
+                why.contains("collides"),
+                "on should name the collision, got {why}"
+            ),
+            class => panic!("on should be Cannot, got {class:?}"),
         }
     }
 }

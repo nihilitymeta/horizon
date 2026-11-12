@@ -222,11 +222,16 @@ docs, and a test keeps it current. It is the place to look for what the hooks be
 Some helpers are not hand-written: `lua-helpers` generates their Lua bridge from the `native_*` signatures
 (`crates/event-horizon-lua/src/generated_helpers.rs`, and its tests in `generated_helpers_tests.rs`), the same way
 `lua-hooks` generates the hooks — `&self` helpers become reads and `&mut self` helpers of unit/bool return become
-queued actions, with the saturating casts and finite checks the hand-written ones spell out. The spike enables an
-allowlist of 15; the rest of the generated class is classified but not enabled. [helper-exposure.md](api/helper-exposure.md)
-lists every helper's class with its reason and the blocking types; `hook-points.md` marks the enabled ones `generated`.
-Regenerate with `cargo run -p xtask -- lua-helpers` (its `--check` fails when any of the five outputs — the bridge,
-its tests, the exposure page, `hook-points.md` and `horizon.d.lua` — is stale).
+queued actions, with the saturating casts and finite checks the hand-written ones spell out. Every generated helper
+is emitted except the denylist [`EXCLUDED`](../xtask/src/lua_helpers.rs) in `xtask/src/lua_helpers.rs` (dev/diagnostic,
+client-side, and unclear helpers, each with its reason). [helper-exposure.md](api/helper-exposure.md) lists every
+helper's class with its reason and the blocking types; `hook-points.md` marks the enabled ones `generated`.
+Entities are named by their network id, the id the hook events carry: the `entity_*` helpers take it as a number,
+resolved against the world (a read with no such entity answers nil, an action does nothing). Positions are
+`{x, y, z}` tables: a `[f64; 3]` component must be finite, and a `[i32; 3]` component that is fractional or out of
+range is an error (it does not saturate, unlike a plain integer argument). Regenerate with
+`cargo run -p xtask -- lua-helpers` (its `--check` fails when any of the five outputs — the bridge, its tests, the
+exposure page, `hook-points.md` and `horizon.d.lua` — is stale).
 
 ## The `horizon` table
 

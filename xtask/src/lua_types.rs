@@ -12,25 +12,25 @@ use super::lua_model::{Class, Kind, classify, event_name, extra_ts, replace_fiel
 use std::{fs, path::Path};
 
 /// The `(name, type)` lines of the helpers the helper generator emits
-/// (its SPIKE set), from the same model that emits the bridge: not a
-/// second hand list.
+/// (every helper it classifies as Generated except the denylist
+/// `EXCLUDED`), from the same model that emits the bridge: not a second
+/// hand list. A helper that stops classifying as Generated is "dropped
+/// from the output" and fails the run.
 fn generated_helper_functions() -> Result<Vec<(String, String)>, String> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let rows = classify_helpers(&root)?;
     let mut out = Vec::new();
-    for name in super::lua_helpers::SPIKE_SET {
-        let row = rows
-            .iter()
-            .find(|row| row.name == *name)
-            .ok_or_else(|| format!("{name} is in SPIKE_SET but is not a helper"))?;
-        match &row.class {
-            HelperClass::Generated(GenKind::Read | GenKind::Action) => out.push(luau_function(row)),
-            class => {
-                return Err(format!(
-                    "{name} is enabled by SPIKE_SET but classifies as {class:?}"
-                ));
-            }
+    for row in &rows {
+        if !matches!(
+            &row.class,
+            HelperClass::Generated(GenKind::Read | GenKind::Action)
+        ) {
+            continue;
         }
+        if super::lua_helpers::exclusion_of(&row.name).is_some() {
+            continue;
+        }
+        out.push(luau_function(row));
     }
     Ok(out)
 }
@@ -578,6 +578,31 @@ const FUNCTIONS: &[(&str, &str)] = &[
     ),
 ];
 
+/// `horizon.*` names the Lua crate installs that are not native
+/// helpers: hook registration (`on`), commands, the timers, and the
+/// removed-action stubs (which raise with the field that replaces
+/// them). A generated helper must never claim one of these names: it
+/// would overwrite the hand-written function.
+pub(crate) const RESERVED_EXTRA: &[&str] = &[
+    "on",
+    "profile",
+    "set_count",
+    "set_result",
+    "set_duration",
+    "set_distance",
+    "set_multiplier",
+    "set_strength",
+    "set_amount",
+    "reply",
+];
+
+/// Whether `name` is already a `horizon.*` function the Lua crate
+/// installs (a hand-written [`FUNCTIONS`] entry or a reserved extra),
+/// so the helper generator must never emit it as `horizon.<name>`.
+pub(crate) fn reserved_horizon_name(name: &str) -> bool {
+    FUNCTIONS.iter().any(|(n, _)| *n == name) || RESERVED_EXTRA.contains(&name)
+}
+
 /// The `registry` global of `scripts/registry.lua`.
 const REGISTRY: &[(&str, &str)] = &[
     ("id", "string"),
@@ -975,5 +1000,40 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Every enabled read declares its answer, never `()`: a read's
+    /// `bool` is `boolean` (an action's stays `()`), derived from the
+    /// model's `luau_function` for each enabled read.
+    #[test]
+    fn enabled_reads_declare_a_value_return() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let rows = crate::lua_helper_model::classify_helpers(&root).unwrap();
+        for row in &rows {
+            if !matches!(
+                row.class,
+                crate::lua_helper_model::HelperClass::Generated(
+                    crate::lua_helper_model::GenKind::Read
+                )
+            ) {
+                continue;
+            }
+            if crate::lua_helpers::exclusion_of(&row.name).is_some() {
+                continue;
+            }
+            let (_, sig) = crate::lua_helper_model::luau_function(row);
+            assert!(!sig.ends_with("-> ()"), "{} declares {sig}", row.name);
+        }
+    }
+
+    /// The plain-`bool` read `sneaking` declares `() -> boolean`.
+    #[test]
+    fn sneaking_is_typed_as_boolean() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let rows = crate::lua_helper_model::classify_helpers(&root).unwrap();
+        let row = rows.iter().find(|r| r.name == "sneaking").unwrap();
+        let (name, sig) = crate::lua_helper_model::luau_function(row);
+        assert_eq!(name, "sneaking");
+        assert_eq!(sig, "() -> boolean");
     }
 }

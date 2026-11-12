@@ -360,11 +360,7 @@ return function(slot, horizon, base)
   horizon.menu_cursor = function(who) return read("menu_cursor", who) end
   horizon.has_permission = function(player, node, default_level) return read("has_permission", player, node, default_level) end
   horizon.player_permission = function(player) return read("player_permission", player) end
-  horizon.profile_by_uuid = function(who) return read("profile_by_uuid", who) end
-  horizon.player_view_distance = function(who) return read("player_view_distance", who) end
-  horizon.player_sneaking = function(who) return read("player_sneaking", who) end
-  horizon.player_stat = function(who, stat_type, key) return read("player_stat", who, stat_type, key) end
-  horizon.max_stack_size = function(id) return read("max_stack_size", id) end
+  -- generated reads below --
   horizon.dev = { inspect = function(who, what) return read("dev_inspect", who, what) end }
   -- A refused registration (a hook name the runtime does not know) is
   -- raised from the script's own line, as any Lua error is.
@@ -1096,11 +1092,29 @@ impl LuaMod {
     }
 }
 
-/// Installs the read wrappers (`READS_CODE`) on the `horizon` table.
+/// Installs the read wrappers (`READS_CODE`) on the `horizon` table, plus
+/// one wrapper per `GENERATED_READS` entry, each delegating to the `read`
+/// this code defines (the same shape as a hand-written read wrapper). The
+/// five spike reads (`profile_by_uuid`, `player_view_distance`,
+/// `player_sneaking`, `player_stat`, `max_stack_size`) are covered by the
+/// same loop, so `GENERATED_READS` is the one source of truth.
 fn install_reads(lua: &Lua, api: &Table) -> mlua::Result<()> {
     let slot: Table = lua.named_registry_value(HOST_SLOT)?;
     let base: Table = lua.named_registry_value(BASE)?;
-    let install: Function = lua.load(READS_CODE).set_name("horizon").eval()?;
+    let (head, tail) = READS_CODE
+        .split_once("-- generated reads below --")
+        .expect("READS_CODE carries the generated-reads marker");
+    let mut code = String::with_capacity(
+        READS_CODE.len() + crate::generated_helpers::GENERATED_READS.len() * 96,
+    );
+    code.push_str(head);
+    for name in crate::generated_helpers::GENERATED_READS {
+        code.push_str(&format!(
+            "  horizon.{name} = function(...) return read(\"{name}\", ...) end\n"
+        ));
+    }
+    code.push_str(tail);
+    let install: Function = lua.load(code.as_str()).set_name("horizon").eval()?;
     install.call::<()>((slot, api, base))
 }
 

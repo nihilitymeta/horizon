@@ -743,7 +743,8 @@ fn generate(root: &Path, check: bool) -> Result<(), String> {
     // bridge writes the calls in `generated_helpers.rs`, which the
     // hand-written test below does not scan). Every other helper keeps
     // the empty cell, as before.
-    let generated_helpers: BTreeSet<&str> = super::lua_helpers::SPIKE_SET.iter().copied().collect();
+    let enabled = super::lua_helpers::enabled_helper_names(root)?;
+    let generated_helpers: BTreeSet<&str> = enabled.iter().map(String::as_str).collect();
     // Every hook in exactly one class, from the same model that emits the
     // runtime and `horizon.d.lua`: the Lua cell of a generated hook comes
     // from its model, and a hook of any other class keeps an empty cell
