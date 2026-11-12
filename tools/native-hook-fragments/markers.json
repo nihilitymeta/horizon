@@ -1,0 +1,26 @@
+{
+  "hooks": [],
+  "helpers": [
+    {
+      "name": "marker_set",
+      "target": "horizon_client::game::native_markers::Game<'_>::native_marker_set"
+    },
+    {
+      "name": "marker_move",
+      "target": "horizon_client::game::native_markers::Game<'_>::native_marker_move"
+    },
+    {
+      "name": "marker_remove",
+      "target": "horizon_client::game::native_markers::Game<'_>::native_marker_remove"
+    },
+    {
+      "name": "marker_clear_owner",
+      "target": "horizon_client::game::native_markers::Game<'_>::native_marker_clear_owner"
+    }
+  ],
+  "rust_summary": "Retained world markers (`native_marker_set`, `native_marker_move`, `native_marker_remove`, `native_marker_clear_owner`, `NativeMarker`, `NativeMarkerShape`): a box, a line, a beam or text at a world position, kept by the engine and drawn every frame until the mod moves or removes it or its lifetime runs out. A marker belongs to the level it was set in and is drawn only there.",
+  "doc_summary": "`native_marker_set(owner, id, marker)` creates or replaces the marker `id` of the mod `owner` (`NativeMarker`: `pos`, `shape` (`NativeMarkerShape`: `Box { size, filled }`, `Line { to }`, `Beam { height }` (drawn `height` rounded to whole blocks), `Text { text, scale }`), `argb`, `through_walls`, `ttl_ticks`), `native_marker_move(owner, id, pos)` moves it, `native_marker_remove(owner, id)` takes it away and `native_marker_clear_owner(owner)` drops all of a mod's. A marker belongs to the level it was set in and is drawn only there. The engine draws them every frame (within 256 blocks of the camera, through walls where asked) in world primitives; a lifetime of 1 to 72,000 game ticks runs on the world's game time. At most 64 characters per owner and id, 256 markers per mod and 4096 in all. Bundles need \"hooks\": @API:marker_set@, @API:marker_move@, @API:marker_remove@ and @API:marker_clear_owner@.",
+  "comments": [
+    "crates/horizon-client/src/game/native_markers.rs"
+  ]
+}

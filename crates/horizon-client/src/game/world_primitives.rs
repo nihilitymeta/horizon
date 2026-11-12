@@ -40,6 +40,13 @@ impl Game<'_> {
         view: glam::Mat4,
     ) -> PrimitiveGeometry {
         let mut primitives = WorldPrimitives::default();
+        // The window's retained markers first, then the mods' frame-local ones.
+        // A marker of another level is skipped: it belongs to the level it was
+        // set in.
+        let now = self.world.game_time.max(0) as u64;
+        self.markers.prune(now);
+        let level = self.marker_level_key();
+        self.markers.emit(camera.to_array(), level, &mut primitives);
         self.native_world_primitives(alpha as f32, camera.to_array(), &mut primitives);
         let mut out = PrimitiveGeometry::default();
         if primitives.is_empty() {

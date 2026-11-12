@@ -4516,6 +4516,48 @@ fn world_primitives(&self, _host: &dyn Host, event: &mut WorldPrimitivesEvent<'_
 }
 ```
 
+### World markers
+
+`native_marker_set(owner, id, marker)` creates or replaces the marker `id` of the mod `owner`: a box, a line, a beam
+or text at a world position, which the engine draws every frame until the mod moves or removes it or its lifetime runs
+out. Unlike `native_world_primitives`, it is not asked again each frame: a mod sets a marker once. A `NativeMarker` is:
+
+- `pos`, the anchor in world coordinates, and `shape`, a `NativeMarkerShape`:
+  - `Box { size, filled }`: a box whose minimum corner is `pos`, `size` blocks on each axis (0 to 256, not all zero):
+    its twelve edges or, with `filled`, its six faces;
+  - `Line { to }`: a line from `pos` to `pos + to`, an offset at most 512 blocks long;
+  - `Beam { height }`: a beacon's beam from `pos` (the centre of its foot), 0 to 512 blocks up, rotating and scrolling
+    as a beacon's. The drawn height is `height` rounded to a whole number of blocks: 7.5 is drawn 8 blocks high and 7.4
+    is drawn 7;
+  - `Text { text, scale }`: text facing the camera, centred on `pos`, 1 to 64 characters, `scale` a name tag's size at
+    1 (0.25 to 8);
+- every coordinate a shape reaches must stay within 30,000,000 blocks of the origin, as `pos` itself must: a box's far
+  corner, a line's end or a beam's top may not leave that bound, at set or at move;
+- `argb`, the colour (a beam's alpha scales the beacon's own), and `through_walls`, which makes it seen through walls
+  as `.through_walls()` does for a primitive;
+- `ttl_ticks`: `Some(1..=72_000)` for a lifetime in game ticks from the moment it was set, `None` until the mod removes
+  it. The clock is the world's game time, so `/tick freeze` holds a lifetime too: 10 ticks set on tick 100 is drawn
+  through tick 109 and gone on tick 110.
+
+`native_marker_move(owner, id, pos)` moves a marker's anchor only: its shape, colour, through-walls setting and the
+lifetime it has left stay. `native_marker_remove(owner, id)` stops drawing it, and `native_marker_clear_owner(owner)`
+drops every marker of a mod (what a mod turned off or reloaded leaves behind). `owner` is the mod's own id and `id` its
+key, 1 to 64 characters each; a mod keeps at most 256 markers, every mod together 4096, and replacing an id does not
+count twice. A set over a cap or with a value out of range changes nothing and answers false, as does any of the four on
+a server: only the window keeps and draws markers, and opening or closing a world drops them all.
+
+A marker belongs to the level it was set in and is drawn only there: one set in the overworld does not show at the
+same coordinates in the Nether or the End, and it comes back when the player returns. A move keeps the level the marker
+was set in, so a mod that wants it in another level sets it again there.
+
+Each frame, before the mods' `native_world_primitives` hook, the engine adds the markers of the level the window is in
+within 256 blocks of the camera to the frame's primitives: a farther one is skipped, not dropped, and shows again as
+the camera comes closer. They are drawn by the same pipelines, at the same depth and resolution, and are made
+camera-relative the same way as the hook's own. Markers draw whenever the world does, including under an open screen.
+
+Bundles need `"hooks": @API:marker_set@`, `@API:marker_move@`, `@API:marker_remove@` and
+`@API:marker_clear_owner@`.
+
 ### Holding the world's picture
 
 `native_world_hold(hold)` (the trait's `Hooks::world_hold`) is asked once a frame while a world is shown, on the

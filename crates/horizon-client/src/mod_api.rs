@@ -248,6 +248,52 @@ pub struct NativeRealClock {
 /// level event to play, `CLICK` (1000), `FAIL` (1001) or 0 for none.
 pub type NativeDispensed = (Option<ItemStack>, i32);
 
+/// Something a client mod keeps drawn in the world (`native_marker_set`): a
+/// box, a line, a beam or text at a world position, which the engine draws
+/// every frame until the mod moves or removes it, or its lifetime runs out.
+/// A marker belongs to the level it was set in (its key, like
+/// `minecraft:overworld`) and is drawn only there; opening or closing a world
+/// drops every marker. Every coordinate a shape reaches (a box's far corner, a
+/// line's end, a beam's top) must stay within 30,000,000 blocks of the origin,
+/// as `pos` must.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativeMarker {
+    /// The anchor, in world coordinates.
+    pub pos: [f64; 3],
+    /// What is drawn there.
+    pub shape: NativeMarkerShape,
+    /// The colour, ARGB (`0xAARRGGBB`); a beam's alpha scales the beacon's
+    /// own.
+    pub argb: u32,
+    /// Seen through walls (no depth test) instead of hidden by the world in
+    /// front of it.
+    pub through_walls: bool,
+    /// How long it lasts, in game ticks from the moment it was set
+    /// (`1..=72_000`); None until the mod removes it. The lifetime runs on the
+    /// world's game time (`native_clock`), which `/tick freeze` holds.
+    pub ttl_ticks: Option<u32>,
+}
+
+/// A world marker's shape, in world coordinates.
+#[derive(Clone, Debug, PartialEq)]
+pub enum NativeMarkerShape {
+    /// A box whose minimum corner is the marker's `pos`, `size` blocks along
+    /// each axis (`0..=256`, not all zero): its twelve edges, or with `filled`
+    /// its six faces.
+    Box { size: [f64; 3], filled: bool },
+    /// A line from the marker's `pos` to `pos + to`: an offset at most 512
+    /// blocks long.
+    Line { to: [f64; 3] },
+    /// A beacon's beam from the marker's `pos` (the centre of its foot),
+    /// `height` blocks up (`0..=512`), rotating and scrolling as a beacon's.
+    /// The drawn height is `height` rounded to a whole number of blocks (0.5
+    /// rounds up), as the beacon primitive's height is a whole number.
+    Beam { height: f64 },
+    /// The text, centred on the marker's `pos` and facing the camera: `text`
+    /// is 1 to 64 characters, `scale` a name tag's size at 1 (`0.25..=8`).
+    Text { text: String, scale: f32 },
+}
+
 /// What a mod's fake player uses its item on (`Host::use_as_player`), as a
 /// player's click would.
 #[derive(Clone, Copy, Debug, PartialEq)]

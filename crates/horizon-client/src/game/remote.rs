@@ -1040,6 +1040,9 @@ impl Game<'_> {
         streaming.remote = true;
         streaming.radius = self.settings.render_distance;
         self.streaming = streaming;
+        // A marker belongs to the level it was set in, not to this window: the
+        // world being joined starts without the last one's.
+        self.drop_markers_for_new_world();
         self.world = World::new(self.res.facts().air, 0);
         self.save = Arc::new(SaveDir::new(
             std::env::temp_dir().join("horizon-remote-unused"),
@@ -1289,6 +1292,8 @@ impl Game<'_> {
         streaming.remote = true;
         streaming.radius = self.settings.render_distance;
         self.streaming = streaming;
+        // The replay is a world of its own: the last one's markers stay there.
+        self.drop_markers_for_new_world();
         self.world = World::new(self.res.facts().air, 0);
         self.save = Arc::new(SaveDir::new(
             std::env::temp_dir().join("horizon-replay-unused"),
@@ -1548,6 +1553,8 @@ impl Game<'_> {
         self.score.board = Default::default();
         self.streaming = Streaming::new(Arc::new(NoTerrain), self.worker_context(), 1);
         self.streaming.paused = true;
+        // The level's markers go with it, not into the next world.
+        self.drop_markers_for_new_world();
         self.world = World::new(self.res.facts().air, 0);
         self.player = None;
         // The vehicle went with the level: an id kept here would seat the

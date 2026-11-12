@@ -695,11 +695,16 @@ impl Game<'_> {
     }
     /// Trait mods follow the player's switches at once
     /// (`mod_api::set_mod_on`): the next dispatch skips a mod turned off.
-    /// Mixin code checks `native_on` itself.
-    pub(super) fn sync_native_switches(&self) {
+    /// Mixin code checks `native_on` itself. A mod that is off also loses its
+    /// world markers (`native_marker_clear_owner`): it runs no hook, so it
+    /// cannot set one again, and a mod left on keeps what it drew.
+    pub(super) fn sync_native_switches(&mut self) {
         for id in horizon_client::mod_api::mod_ids() {
             let on = !self.settings.mods.disabled.contains(*id);
             horizon_client::mod_api::set_mod_on(id, on);
+            if !on {
+                self.markers.clear_owner(id);
+            }
         }
     }
     /// Once, in the first world after the update: which WebAssembly mods stopped.

@@ -73,6 +73,20 @@ pub const EXCLUDED: &[(&str, &str)] = &[
         "key_down",
         "client-side helper: needs the client-state gating (issue 50)",
     ),
+    // The world-marker registry is drawn by the window only; its Lua side
+    // is hand-written on the client state (issue 46), not generated.
+    (
+        "marker_clear_owner",
+        "client-side helper: needs the client-state gating (issue 50)",
+    ),
+    (
+        "marker_move",
+        "client-side helper: needs the client-state gating (issue 50)",
+    ),
+    (
+        "marker_remove",
+        "client-side helper: needs the client-state gating (issue 50)",
+    ),
     (
         "menu_blur_radius",
         "client-side helper: needs the client-state gating (issue 50)",

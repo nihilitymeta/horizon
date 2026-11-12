@@ -294,6 +294,7 @@ mod native_lifecycle;
 mod native_living_refs;
 mod native_local_player;
 mod native_machines;
+mod native_markers;
 mod native_menu_stacks;
 mod native_menus;
 mod native_mob_draw;
@@ -3411,6 +3412,8 @@ struct Game<'a> {
     score: scoreboard::ScoreState,
     fns: functions::FnState,
     bosses: bossbars::BossState,
+    /// The window's retained world markers (`native_marker_set`).
+    markers: native_markers::Markers,
     /// `Hud.bossOverlay`: the bars this window is showing.
     boss_overlay: horizon_client::boss_overlay::BossOverlay,
     exec: commands::execute::ExecState,
@@ -11115,6 +11118,7 @@ impl Game<'_> {
         self.native_server_data_loaded(false);
         self.sync_recipe_content();
         self.bosses = Default::default();
+        self.drop_markers_for_new_world();
         reset_world_progress(&mut self.adv, &mut self.stats);
         self.prefetch_advancement_tree();
         self.restore_player_state = true;
@@ -11385,6 +11389,7 @@ impl Game<'_> {
         self.item_activation.reset();
         self.kept_block_entities.get_mut().clear();
         self.bosses = Default::default();
+        self.drop_markers_for_new_world();
         self.streaming.paused = true;
         self.world = World::new(self.res.facts().air, 0);
         self.player = None;
@@ -17496,6 +17501,7 @@ impl<'a> Game<'a> {
             score: Default::default(),
             fns: Default::default(),
             bosses: Default::default(),
+            markers: Default::default(),
             boss_overlay: Default::default(),
             exec: Default::default(),
             rand_sequences: Default::default(),
