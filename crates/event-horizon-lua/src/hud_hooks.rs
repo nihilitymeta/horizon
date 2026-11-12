@@ -1608,4 +1608,44 @@ mod tests {
             std::fs::remove_dir_all(&dir).unwrap();
         }
     }
+
+    #[test]
+    fn batch_item_stack_uses_the_legacy_lenient_parser() {
+        // The HUD parser predates the strict `stack_from_table`: any
+        // `u32` count, stray keys ignored, a numeric string coerced
+        // by mlua — all draw, exactly as on hub/engine-work.
+        for (name, script, drawn) in [
+            (
+                "zero_count",
+                r#"horizon.on("hud", function(event) assert(event.batch.item_stack({id = "stick", count = 0, damage = 3}, 6, 6, 16) == true) end)"#,
+                "item_stack \"minecraft:stick\" x0 @[6.0, 6.0] size 16",
+            ),
+            (
+                "hundred_count",
+                r#"horizon.on("hud", function(event) assert(event.batch.item_stack({id = "stick", count = 100, damage = 3}, 6, 6, 16) == true) end)"#,
+                "item_stack \"minecraft:stick\" x100 @[6.0, 6.0] size 16",
+            ),
+            (
+                "stray_key",
+                r#"horizon.on("hud", function(event) assert(event.batch.item_stack({id = "stick", count = 1, damage = 3, stray = 42}, 6, 6, 16) == true) end)"#,
+                "item_stack \"minecraft:stick\" x1 @[6.0, 6.0] size 16",
+            ),
+            (
+                "string_count",
+                r#"horizon.on("hud", function(event) assert(event.batch.item_stack({id = "stick", count = "2", damage = 3}, 6, 6, 16) == true) end)"#,
+                "item_stack \"minecraft:stick\" x2 @[6.0, 6.0] size 16",
+            ),
+        ] {
+            let id = format!("ruby_hud_{name}");
+            let (m, id, dir) = hmod(&format!("legacy_{name}"), &id, script);
+            let mods = boxed(m);
+            let mut host = RecordingHost::default();
+            let mut batch = HudBatch::new([800, 600]);
+            let mut corners = Corners::new(800.0, 600.0, 0.0);
+            dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+            no_error(&id);
+            assert_eq!(*host.draws.lock().unwrap(), [drawn]);
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+    }
 }

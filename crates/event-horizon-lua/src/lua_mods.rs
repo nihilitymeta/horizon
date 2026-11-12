@@ -716,6 +716,120 @@ pub(crate) fn item_table_of(lua: &Lua, stack: &ItemStack) -> mlua::Result<Table>
     Ok(t)
 }
 
+/// `field`'s optional integer `key`: nil is absent (`None`), a number
+/// that is an integer in `min..=max` is its value, and anything else
+/// (a fractional, negative or out-of-range number, a non-number) is a
+/// script error naming `field` and the field.
+fn stack_int(
+    table: &Table,
+    key: &str,
+    field: &str,
+    min: i64,
+    max: i64,
+) -> mlua::Result<Option<i64>> {
+    fn bad(key: &str, field: &str, min: i64, max: i64, got: &str) -> mlua::Error {
+        mlua::Error::runtime(format!(
+            "{field}.{key}: expected an integer in {min}..={max}, got {got}"
+        ))
+    }
+    match table.get::<Value>(key)? {
+        Value::Nil => Ok(None),
+        Value::Integer(n) => {
+            if (min..=max).contains(&n) {
+                Ok(Some(n))
+            } else {
+                Err(bad(key, field, min, max, &n.to_string()))
+            }
+        }
+        Value::Number(n) if n.is_finite() && n.fract() == 0.0 => {
+            let raw = n;
+            let n = n as i64;
+            if (min..=max).contains(&n) {
+                Ok(Some(n))
+            } else {
+                Err(bad(key, field, min, max, &raw.to_string()))
+            }
+        }
+        Value::Number(n) => Err(bad(key, field, min, max, &n.to_string())),
+        other => Err(mlua::Error::runtime(format!(
+            "{field}.{key}: expected an integer, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+/// An item stack from its table, as `item_table_of` hands them out:
+/// `id` (a string), `count` (an integer in 1..=99, 1 by default),
+/// `damage` (a non-negative integer, 0 by default), and the seeded
+/// `extra` components back (nil is plain; `plain` is ignored). A
+/// fractional, negative or out-of-range field, a non-string `id` and
+/// any other key are a script error naming `field` and the field, as
+/// the generated bridge answers every malformed argument. Shared by
+/// the generated helpers. `lua` is for the seeded `extra` types (the
+/// hidden table lives in the `Lua`'s registry); without it `extra`
+/// decodes with the default NBT types.
+pub(crate) fn stack_from_table(
+    lua: Option<&Lua>,
+    table: &Table,
+    field: &str,
+) -> mlua::Result<ItemStack> {
+    for pair in table.clone().pairs::<Value, Value>() {
+        let (key, _) = pair?;
+        let known = matches!(&key, Value::String(s)
+            if matches!(s.to_string_lossy().as_ref(), "id" | "count" | "damage" | "extra" | "plain"));
+        if !known {
+            return Err(mlua::Error::runtime(format!(
+                "{field}: unknown key {key:?}"
+            )));
+        }
+    }
+    let id = table.get::<Value>("id")?;
+    let id = match &id {
+        Value::String(s) => s.to_string_lossy(),
+        _ => {
+            return Err(mlua::Error::runtime(format!(
+                "{field}.id: expected a string, got {}",
+                id.type_name()
+            )));
+        }
+    };
+    let count = stack_int(table, "count", field, 1, 99)?.unwrap_or(1) as u32;
+    let damage = stack_int(table, "damage", field, 0, i64::from(u32::MAX))?.unwrap_or(0) as u32;
+    let extra = match lua {
+        Some(lua) => crate::generated_runtime::extra_back(lua, table)
+            .map_err(|e| mlua::Error::runtime(format!("{field}: {e}")))?,
+        None => fresh_extra(table, field)?,
+    };
+    Ok(ItemStack {
+        item: std::sync::Arc::from(qualify(id.as_str()).as_str()),
+        count,
+        damage,
+        extra,
+    })
+}
+
+/// `extra` without a `Lua`: the same components back, decoded with
+/// the default NBT types, as a fresh table reads (the seeded types
+/// live in the `Lua`'s registry).
+fn fresh_extra(
+    table: &Table,
+    field: &str,
+) -> mlua::Result<Option<Box<horizon_client::item_data::StackData>>> {
+    use horizon_world::nbt::Tag;
+    match table.get::<Value>("extra")? {
+        Value::Nil => Ok(None),
+        Value::Table(extra) => {
+            let compound = nbt::table_to_compound(&extra, None)
+                .map_err(|e| mlua::Error::runtime(format!("{field}: {e}")))?;
+            Ok(horizon_client::item_data::decode_components(Some(&Tag::Compound(compound))).1)
+        }
+        other => Err(mlua::Error::runtime(format!(
+            "{field}.extra: expected a components table or nil, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
 impl LuaMod {
     /// One read (`what`, its arguments) answered from `reader`; a saved table
     /// handed out joins `fetched` for the write-back after the call.
@@ -3977,10 +4091,12 @@ impl LuaMod {
             "marker_clear" => {
                 host.marker_clear_owner(&self.id);
             }
-            other => match crate::generated_helpers::run_generated_action(host, other, args) {
-                Some(ran) => ran?,
-                None => self.warn(format!("unknown action {other}")),
-            },
+            other => {
+                match crate::generated_helpers::run_generated_action(&self.lua, host, other, args) {
+                    Some(ran) => ran?,
+                    None => self.warn(format!("unknown action {other}")),
+                }
+            }
         }
         Ok(())
     }
@@ -14535,5 +14651,102 @@ end)"#,
         );
         drop(host);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A host that keeps the stacks `set_item_entity` was handed, so a
+    /// test can see exactly what the bridge built.
+    #[derive(Default)]
+    struct SeededHost {
+        stacks: Vec<ItemStack>,
+    }
+
+    impl Host for SeededHost {
+        fn dimension(&self) -> &'static str {
+            "minecraft:overworld"
+        }
+        fn attachments(
+            &mut self,
+            _: Holder,
+        ) -> horizon_client::mod_api::AttachmentResult<&mut horizon_client::mod_api::Attachments>
+        {
+            Err(horizon_client::mod_api::AttachmentError::MissingHolder)
+        }
+        fn set_item_entity(&mut self, _dimension: &str, _id: u32, stack: ItemStack) -> bool {
+            self.stacks.push(stack);
+            true
+        }
+    }
+
+    #[test]
+    fn item_stack_ids_are_qualified() {
+        let lua = Lua::new();
+        for (id, expected) in [
+            ("diamond", "minecraft:diamond"),
+            ("ruby:gen", "ruby:gen"),
+            ("minecraft:stone", "minecraft:stone"),
+        ] {
+            let t = lua.create_table().unwrap();
+            t.set("id", id).unwrap();
+            t.set("count", 1).unwrap();
+            let stack = stack_from_table(Some(&lua), &t, "test.stack").unwrap();
+            assert_eq!(&*stack.item, expected, "id {id:?}");
+        }
+    }
+
+    #[test]
+    fn a_seeded_item_stack_keeps_its_array_types_through_set_item_entity() {
+        use horizon_world::nbt::Tag;
+        let lua = Lua::new();
+        let byte = Tag::ByteArray(vec![1, 2, 3]);
+        let int = Tag::IntArray(vec![70_000, 80_000]);
+        let long = Tag::LongArray(vec![6_000_000_000, 7_000_000_000]);
+        let mut data = horizon_client::item_data::StackData::default();
+        data.other.push((
+            "minecraft:custom_data".to_owned(),
+            Tag::compound([
+                ("ba", byte.clone()),
+                ("ia", int.clone()),
+                ("la", long.clone()),
+            ]),
+        ));
+        let stack = ItemStack {
+            item: "ruby:gen".into(),
+            count: 1,
+            damage: 0,
+            extra: Some(Box::new(data)),
+        };
+        let table = item_table_of(&lua, &stack).unwrap();
+        let args = lua.create_table().unwrap();
+        args.set(1, "minecraft:overworld").unwrap();
+        args.set(2, 3i64).unwrap();
+        args.set(3, table).unwrap();
+        let mut host = SeededHost::default();
+        crate::generated_helpers::run_generated_action(&lua, &mut host, "set_item_entity", &args)
+            .unwrap()
+            .unwrap();
+        assert_eq!(host.stacks.len(), 1);
+        let got = host.stacks.pop().unwrap();
+        let data = got.extra.expect("the seeded components came back");
+        let custom = data
+            .other
+            .iter()
+            .find(|(k, _)| k == "minecraft:custom_data")
+            .map(|(_, v)| v)
+            .expect("the custom data component came back");
+        assert!(
+            matches!(custom, Tag::Compound(_)),
+            "the custom data came back as {custom:?}"
+        );
+        assert_eq!(
+            custom.get("ba"),
+            Some(&byte),
+            "the byte array kept its type"
+        );
+        assert_eq!(custom.get("ia"), Some(&int), "the int array kept its type");
+        assert_eq!(
+            custom.get("la"),
+            Some(&long),
+            "the long array kept its type"
+        );
     }
 }

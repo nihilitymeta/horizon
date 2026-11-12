@@ -60,8 +60,11 @@ pub struct Arg {
     /// The normalized Rust type: `u128` for a player, `EntityRef` for an
     /// entity, `[f64; 3]`/`[i32; 3]` for a position table, `Direction`,
     /// `LevelRef`, an `Option<(A, B)>` plain tuple (a positional
-    /// sequence or a named table, see [`tuple_shape`]), `&str`, an int,
-    /// `f32`, `f64`, `bool`, or `String` for a by-value string.
+    /// sequence or a named table, see [`tuple_shape`]), `ItemStack` (the
+    /// item table), `Compound`/`&Compound` (an NBT table), `EquipmentSlot`
+    /// (a slot name), `Option<BlockStateId>` (a block-state name or nil),
+    /// `&str`, an int, `f32`, `f64`, `bool`, or `String` for a by-value
+    /// string.
     pub rust: String,
     /// True when the argument is a player (a `u128`), read via `uuid_of`.
     pub player: bool,
@@ -83,9 +86,10 @@ pub struct HelperRow {
     /// The normalized arguments (empty unless Generated).
     pub args: Vec<Arg>,
     /// The normalized return: `unit`, a scalar (`bool`, `String`, an int,
-    /// `f32`, `f64`), a position (`[f64; 3]`/`[i32; 3]`), or
-    /// `Option<scalar>`/`Option<[f64; 3]>`/`Option<[i32; 3]>`
-    /// (empty unless Generated).
+    /// `f32`, `f64`), a position (`[f64; 3]`/`[i32; 3]`), an item table
+    /// (`ItemStack`, and its `Option`), an optional block-state name
+    /// (`Option<BlockStateId>`), or `Option<scalar>`/`Option<[f64;
+    /// 3]>`/`Option<[i32; 3]>` (empty unless Generated).
     pub ret: String,
     /// The `native_*` function's prose (its doc, first paragraph).
     pub doc: String,
@@ -305,6 +309,68 @@ fn is_opt_level_ref(ty: &Type) -> bool {
     seg.ident == "Option"
         && matches!(&seg.arguments, syn::PathArguments::AngleBracketed(args)
             if matches!(args.args.first(), Some(syn::GenericArgument::Type(inner)) if is_level_ref(inner)))
+}
+
+/// Whether the type is an [`ItemStack`]: the item table (`id`, `count`,
+/// `damage`, `extra`, `plain`), read through the shared
+/// `lua_mods::stack_from_table`.
+fn is_item_stack(ty: &Type) -> bool {
+    matches!(ty, Type::Path(p) if p.qself.is_none()
+        && p.path.segments.len() == 1
+        && p.path.segments[0].ident == "ItemStack")
+}
+
+/// Whether the type is an `Option<ItemStack>` (nil or the item table),
+/// in a return.
+fn is_opt_item_stack(ty: &Type) -> bool {
+    let Type::Path(p) = ty else {
+        return false;
+    };
+    let Some(seg) = p.path.segments.last() else {
+        return false;
+    };
+    seg.ident == "Option"
+        && matches!(&seg.arguments, syn::PathArguments::AngleBracketed(args)
+            if matches!(args.args.first(), Some(syn::GenericArgument::Type(inner)) if is_item_stack(inner)))
+}
+
+/// Whether the type is a [`Compound`] (or `&Compound`, which the bridge
+/// borrows back for the host call): the NBT table, read through
+/// `nbt::table_to_compound`.
+fn is_compound(ty: &Type) -> bool {
+    if let Type::Reference(r) = ty {
+        return is_compound(&r.elem);
+    }
+    matches!(ty, Type::Path(p) if p.qself.is_none()
+        && p.path.segments.len() == 1
+        && p.path.segments[0].ident == "Compound")
+}
+
+/// Whether the type is an [`EquipmentSlot`]: one of its eight lowercase
+/// name strings (`"mainhand"`, `"offhand"`, `"head"`, `"chest"`,
+/// `"legs"`, `"feet"`, `"body"`, `"saddle"`), as the hooks name them.
+fn is_equipment_slot(ty: &Type) -> bool {
+    matches!(ty, Type::Path(p) if p.qself.is_none()
+        && p.path.segments.len() == 1
+        && p.path.segments[0].ident == "EquipmentSlot")
+}
+
+/// Whether the type is an `Option<BlockStateId>` (nil or a block-state
+/// name string, as `horizon.set_block` takes it), in an argument or a
+/// return.
+fn is_opt_block_state_id(ty: &Type) -> bool {
+    let Type::Path(p) = ty else {
+        return false;
+    };
+    let Some(seg) = p.path.segments.last() else {
+        return false;
+    };
+    seg.ident == "Option"
+        && matches!(&seg.arguments, syn::PathArguments::AngleBracketed(args)
+            if matches!(args.args.first(), Some(syn::GenericArgument::Type(inner))
+                if matches!(inner, Type::Path(ip)
+                    if ip.path.segments.len() == 1
+                    && ip.path.segments[0].ident == "BlockStateId")))
 }
 
 /// One plain element of a two-tuple, in normalized form: a scalar (`u128`
@@ -573,9 +639,13 @@ fn collect_blocks(
     // direction name (`Direction`), a level's dimension id (`LevelRef`),
     // a position table (`[f64; 3]`/`[i32; 3]`), an optional plain
     // two-tuple (nil for `None`, the table for `Some`, as an argument
-    // and as a return), and the value-or-nil of an optional position
-    // in a return. An optional position as an argument still blocks:
-    // Lua has no absent argument.
+    // and as a return), the value-or-nil of an optional position in a
+    // return, an item table (`ItemStack`, as an argument and back in a
+    // return, and its `Option` in a return), an NBT table (`Compound`,
+    // or `&Compound`), an equipment-slot name (`EquipmentSlot`), and an
+    // optional block-state name (`Option<BlockStateId>`, as an argument
+    // and as a return). An optional position as an argument still
+    // blocks: Lua has no absent argument.
     if is_entity_ref(ty)
         || is_direction(ty)
         || is_level_ref(ty)
@@ -583,6 +653,11 @@ fn collect_blocks(
         || opt_tuple_elems(ty).is_some()
         || vec3_layout(ty).is_some()
         || (in_return && opt_vec3_layout(ty).is_some())
+        || is_item_stack(ty)
+        || (in_return && is_opt_item_stack(ty))
+        || is_compound(ty)
+        || is_equipment_slot(ty)
+        || is_opt_block_state_id(ty)
     {
         return;
     }
@@ -645,10 +720,12 @@ fn blocks_of(f: &syn::ItemFn) -> (Vec<String>, Vec<String>, Vec<String>) {
 /// `[i32; 3]`), a string borrow (`&str` as `String`), or
 /// `Option<scalar>` (with `Option<&str>` as `Option<String>`), an
 /// optional position (`Option<[f64; 3]>`/`Option<[i32; 3]>`), an
-/// `Option<LevelRef>` (the dimension string, or nil), or an optional
-/// plain two-tuple (`Option<(A, B)>`, nil for `None`, the table for
-/// `Some`). `None` when the return is not plain and supported (a wide
-/// integer a Lua number cannot hold, `Option<EntityRef>` (the lookup the
+/// `Option<LevelRef>` (the dimension string, or nil), an item table
+/// (`ItemStack`, and its `Option`: the table, or nil), an optional
+/// block-state name (`Option<BlockStateId>`), or an optional plain
+/// two-tuple (`Option<(A, B)>`, nil for `None`, the table for `Some`).
+/// `None` when the return is not plain and supported (a wide integer
+/// a Lua number cannot hold, `Option<EntityRef>` (the lookup the
 /// bridge uses, never a Lua function), a `Result`, a nested
 /// `Option<other>`, a struct, ...).
 fn supported_return(f: &syn::ItemFn) -> Option<String> {
@@ -676,6 +753,19 @@ fn supported_return(f: &syn::ItemFn) -> Option<String> {
         && is_level_ref(inner)
     {
         return Some("Option<LevelRef>".to_owned());
+    }
+    // An item table: the table, and its `Option` the table or nil
+    // (`level`'s `Option<LevelRef>` precedent, for stacks).
+    if is_item_stack(ty) {
+        return Some("ItemStack".to_owned());
+    }
+    if is_opt_item_stack(ty) {
+        return Some("Option<ItemStack>".to_owned());
+    }
+    // An optional block-state name: the `state_name` string, or nil
+    // (`Option<LevelRef>`'s precedent, for states).
+    if is_opt_block_state_id(ty) {
+        return Some("Option<BlockStateId>".to_owned());
     }
     // An optional plain two-tuple: nil for `None`, the table for `Some`
     // (a positional sequence, or a named table where a sequence loses a
@@ -749,6 +839,11 @@ fn normalize_arg(ty: &Type, name: &str) -> Arg {
             {
                 return mark("&str".to_owned(), false, false);
             }
+            // `&Compound`: the NBT table, borrowed back for the host
+            // call (the local is owned).
+            if is_compound(ty) {
+                return mark("&Compound".to_owned(), false, false);
+            }
             // Any other borrow blocks (the struct, not the borrow).
             mark(blocking_head(ty), false, false)
         }
@@ -771,6 +866,19 @@ fn normalize_arg(ty: &Type, name: &str) -> Arg {
         Type::Path(_) if opt_tuple_elems(ty).is_some() => {
             let elems = opt_tuple_elems(ty).unwrap();
             mark(format!("Option<({})>", elems.join(", ")), false, false)
+        }
+        // An item table (`ItemStack`): `id`, `count`, `damage`, `extra`,
+        // `plain` (see `lua_mods::stack_from_table`).
+        Type::Path(_) if is_item_stack(ty) => mark("ItemStack".to_owned(), false, false),
+        // An NBT table (`Compound`): read through `nbt::table_to_compound`.
+        Type::Path(_) if is_compound(ty) => mark("Compound".to_owned(), false, false),
+        // An equipment-slot name (`EquipmentSlot`): one of its eight
+        // lowercase name strings.
+        Type::Path(_) if is_equipment_slot(ty) => mark("EquipmentSlot".to_owned(), false, false),
+        // An optional block-state name (`Option<BlockStateId>`): nil, or
+        // a name the host resolves with `state_named`.
+        Type::Path(_) if is_opt_block_state_id(ty) => {
+            mark("Option<BlockStateId>".to_owned(), false, false)
         }
         Type::Path(_) if scalar_of(ty).is_some() => {
             let scalar = scalar_of(ty).unwrap();
@@ -1386,6 +1494,53 @@ pub fn luau_function(row: &HelperRow) -> (String, String) {
                     "{name}: \"down\" | \"up\" | \"north\" | \"south\" | \"west\" | \"east\""
                 ));
             }
+            "EquipmentSlot" => {
+                other += 1;
+                let name = if other == 1 {
+                    "value".to_owned()
+                } else {
+                    format!("value{other}")
+                };
+                params.push(format!(
+                    "{name}: \"mainhand\" | \"offhand\" | \"head\" | \"chest\" | \"legs\" | \"feet\" | \"body\" | \"saddle\""
+                ));
+            }
+            "ItemStack" => {
+                other += 1;
+                let name = if other == 1 {
+                    "value".to_owned()
+                } else {
+                    format!("value{other}")
+                };
+                params.push(format!("{name}: Item"));
+            }
+            "Compound" | "&Compound" => {
+                other += 1;
+                let name = if other == 1 {
+                    "value".to_owned()
+                } else {
+                    format!("value{other}")
+                };
+                params.push(format!("{name}: Data"));
+            }
+            "Option<ItemStack>" => {
+                other += 1;
+                let name = if other == 1 {
+                    "value".to_owned()
+                } else {
+                    format!("value{other}")
+                };
+                params.push(format!("{name}: Item?"));
+            }
+            "Option<BlockStateId>" => {
+                other += 1;
+                let name = if other == 1 {
+                    "value".to_owned()
+                } else {
+                    format!("value{other}")
+                };
+                params.push(format!("{name}: string?"));
+            }
             // An optional tuple argument: nil for `None`, the table for
             // `Some`.
             _ if a.rust.starts_with("Option<(") => {
@@ -1440,8 +1595,12 @@ pub fn luau_function(row: &HelperRow) -> (String, String) {
         }
         .to_owned(),
         "Option<bool>" => "boolean?".to_owned(),
-        "Option<String>" | "Option<LevelRef>" => "string?".to_owned(),
+        "Option<String>" | "Option<LevelRef>" | "Option<BlockStateId>" => "string?".to_owned(),
         "String" => "string".to_owned(),
+        // An item table return: `Item`, or `Item?` for its `Option`
+        // (nil for no stack).
+        "ItemStack" => "Item".to_owned(),
+        "Option<ItemStack>" => "Item?".to_owned(),
         "[f64; 3]" | "[i32; 3]" => "Vec3".to_owned(),
         "Option<[f64; 3]>" | "Option<[i32; 3]>" => "Vec3?".to_owned(),
         // An optional tuple return: nil for `None`, the table for

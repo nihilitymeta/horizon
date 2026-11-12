@@ -238,9 +238,17 @@ sequence `{a, b}`, or as a named table where a sequence would lose a nil second 
 profile reads return the pair or nil — e.g. `level_height` returns `{min = ..., max = ...}` and
 `player_textures` returns `{value = ..., signature = ...}` (the signature is nil when unsigned) — and a
 compass target or profile property takes the pair or nil: `set_compass_target` as the sequence
-`{dimension, {x, y, z}}`, `set_profile_property` as the named `{value = ..., signature = ...}`. `docs/api/helper-exposure.md` lists every helper's class; the denylist of generated
+`{dimension, {x, y, z}}`, `set_profile_property` as the named `{value = ..., signature = ...}`. An item is the
+`Item` table (`{id, count, damage, extra, plain}`): `count` must be an integer in 1..=99, `damage` a
+non-negative integer, `id` a string, and any other key an error. An NBT table is a `Data` table. An equipment
+slot is one of its eight lowercase names (`"mainhand"`, `"offhand"`, `"head"`, `"chest"`, `"legs"`, `"feet"`,
+`"body"`, `"saddle"`), and an optional block state a block-state name string or nil. `docs/api/helper-exposure.md` lists every helper's class; the denylist of generated
 helpers that scripts never see (`EXCLUDED` in `xtask/src/lua_helpers.rs`) is where the client-side and
-diagnostic exclusions live. Regenerate with
+diagnostic exclusions live. The two placements of issue 52's round 3: `mod_key` reads the client's key
+bindings, so it is a client helper; `text_allowed` asks the server's chat filter, so it stays server-side.
+`setting` stays out (it joins `mod_id` and `key` onto the data dir with no validation, so a script could read
+any file with `../`; `horizon.config()` is the Lua way to keep settings) and `run_mod_command` stays out (it
+runs a console command; `run_command_as` already covers that). Regenerate with
 `cargo run -p xtask -- lua-helpers` (its `--check` fails when any of the five outputs — the bridge, its tests, the
 exposure page, `hook-points.md` and `horizon.d.lua` — is stale).
 

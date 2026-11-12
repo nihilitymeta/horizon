@@ -1076,7 +1076,9 @@ declare horizon: {
     chat_input: () -> { string, number }?, -- client state only
     client_block_obstruction: (value: Vec3) -> { boolean, boolean }?, -- client state only
     client_entity_move: (who: string | ReadPlayer, value: number, value2: Vec3, value3: number) -> (), -- client state only
+    client_entity_set: (who: string | ReadPlayer, value: number, value2: Data) -> (),
     client_visual_clear: (value: Vec3, value2: Vec3) -> boolean, -- client state only
+    default_state: (name: string) -> string?,
     dismount: (value: number) -> (),
     eject_passengers: (value: number) -> (),
     entity_add_tag: (value: number, name: string) -> (),
@@ -1099,6 +1101,7 @@ declare horizon: {
     entity_kind: (value: number) -> string?,
     entity_level: (value: number) -> string?,
     entity_max_air_supply: (value: number) -> number?,
+    entity_merge_nbt: (value: number, value2: Data) -> (),
     entity_name: (value: number) -> string?,
     entity_on_ground: (value: number) -> boolean?,
     entity_pose: (value: number) -> string?,
@@ -1111,12 +1114,14 @@ declare horizon: {
     entity_set_velocity: (value: number, value2: Vec3) -> (),
     entity_velocity: (value: number) -> Vec3?,
     entity_view_vector: (value: number) -> Vec3?,
+    equipment: (value: "mainhand" | "offhand" | "head" | "chest" | "legs" | "feet" | "body" | "saddle") -> Item?,
     flame_particle: (value: Vec3, value2: boolean) -> (), -- client state only
     fluid_flow: (name: string, value: Vec3) -> Vec3?,
     has_alt_down: () -> boolean, -- client state only
     has_control_down: () -> boolean, -- client state only
     has_shift_down: () -> boolean, -- client state only
     hide_entity_from: (who: string | ReadPlayer, value: number, value2: boolean) -> (),
+    item_from_snbt: (name: string) -> Item?,
     key_down: (name: string) -> boolean, -- client state only
     level: (name: string) -> string?,
     level_block: (name: string, value: Vec3) -> string?,
@@ -1136,11 +1141,13 @@ declare horizon: {
     max_players: () -> number?,
     max_stack_size: (name: string) -> number?,
     menu_blur_radius: () -> number, -- client state only
+    merge_entity_nbt: (name: string, value: number, value2: Data) -> (),
     mob_attack: (name: string, value: number, value2: number) -> (),
     mob_follow: (name: string, value: number, value2: number, value3: number) -> (),
     mob_look_at: (name: string, value: number, value2: Vec3) -> (),
     mob_navigate: (name: string, value: number, value2: Vec3, value3: number, value4: number) -> (),
     mob_stop: (name: string, value: number) -> (),
+    mod_key: (name: string, name2: string, name3: string) -> string, -- client state only
     mod_screen: () -> string?, -- client state only
     mod_screen_close: (name: string) -> (), -- client state only
     mod_screen_open: (name: string) -> (), -- client state only
@@ -1148,6 +1155,8 @@ declare horizon: {
     move_entity: (name: string, value: number, value2: Vec3, value3: number, value4: number) -> (),
     play_local_sound: (name: string, value: Vec3, value2: number, value3: number, value4: number) -> (), -- client state only
     player_break_block: (who: string | ReadPlayer, value: Vec3, value2: boolean) -> (),
+    player_equipment: (who: string | ReadPlayer, value: "mainhand" | "offhand" | "head" | "chest" | "legs" | "feet" | "body" | "saddle") -> Item?,
+    player_head: (who: string | ReadPlayer) -> Item,
     player_sneaking: (who: string | ReadPlayer) -> boolean?,
     player_stat: (who: string | ReadPlayer, name: string, name2: string) -> number?,
     player_textures: (who: string | ReadPlayer) -> { value: string, signature: string? }?,
@@ -1168,11 +1177,14 @@ declare horizon: {
     set_block_property_with: (value: Vec3, name: string, name2: string, value2: number) -> (),
     set_break_progress: (value: number, value2: Vec3, value3: number) -> (),
     set_compass_target: (who: string | ReadPlayer, value: { string, Vec3 }?) -> (),
+    set_entity_data: (value: number, value2: Data) -> (),
     set_flight: (who: string | ReadPlayer, value: boolean, value2: boolean) -> (),
+    set_item_entity: (name: string, value: number, value2: Item) -> (),
     set_profile_property: (who: string | ReadPlayer, name: string, value: { value: string, signature: string? }?) -> (),
     sleep_ignored: (who: string | ReadPlayer, value: boolean) -> (),
     sneaking: () -> boolean,
     teleport_vehicle: (name: string, value: number, value2: Vec3) -> (),
+    text_allowed: (name: string) -> boolean?,
     text_width: (name: string) -> number, -- client state only
     update_output_neighbors: (name: string, value: Vec3) -> (),
     update_signal_neighbors: (name: string, value: Vec3) -> (),

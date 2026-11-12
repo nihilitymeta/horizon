@@ -39,17 +39,18 @@ pub const EXCLUDED: &[(&str, &str)] = &[
         "dev/diagnostic: not for mod scripts",
     ),
     // Client-side helpers live in [`CLIENT_SIDE`] (issue 50).
-    // A helper whose doc comment does not read as server-side
-    // gameplay: the lead decides (see the report).
-    ("mod_key", "side or semantics unclear: needs a decision"),
+    // The two the lead kept out (issue 52, round 3):
+    // `setting` joins `mod_id` and `key` onto the data dir with no
+    // validation, so a script could read any file with `../`;
+    // `run_mod_command` runs a console command, which
+    // `run_command_as` already covers.
+    (
+        "setting",
+        "unvalidated path: horizon.config() is the Lua way to keep settings",
+    ),
     (
         "run_mod_command",
-        "side or semantics unclear: needs a decision",
-    ),
-    ("setting", "side or semantics unclear: needs a decision"),
-    (
-        "text_allowed",
-        "side or semantics unclear: needs a decision",
+        "runs a console command: use run_command_as (owner decision)",
     ),
 ];
 
@@ -59,8 +60,10 @@ pub const EXCLUDED: &[(&str, &str)] = &[
 /// `GENERATED_CLIENT_ACTIONS`, never in `GENERATED_READS` /
 /// `GENERATED_ACTIONS` (those stay server-state, so the enabled server
 /// helpers do not move). Every name classifies as Generated, as in
-/// [`EXCLUDED`]; a name not here stays server-state by default. The
-/// four "needs a decision" helpers stay in [`EXCLUDED`] unchanged.
+/// [`EXCLUDED`]; a name not here stays server-state by default.
+/// `mod_key` reads the client's key bindings, so it is client-state
+/// too (issue 52, round 3); `text_allowed` stays server-state (the
+/// server's chat filter).
 pub const CLIENT_SIDE: &[&str] = &[
     "apply_screen_blur",
     "chat_input",
@@ -73,6 +76,7 @@ pub const CLIENT_SIDE: &[&str] = &[
     "has_shift_down",
     "key_down",
     "menu_blur_radius",
+    "mod_key",
     "mod_screen",
     "mod_screen_close",
     "mod_screen_open",
@@ -386,6 +390,70 @@ fn read_lines(row: &HelperRow, source: &str) -> Vec<String> {
             ));
             continue;
         }
+        // An item table: the shared `stack_from_table` (a table of
+        // `id`, `count`, `damage`, `extra`, `plain`). Both the read
+        // and the queued-action arm pass `lua`, so the seeded `extra`
+        // types come back.
+        if arg.rust == "ItemStack" {
+            let lua = "Some(lua)";
+            let field = format!("{}.{}", row.name, arg.name);
+            out.push(format!("let {local}_lua: Value = {raw};"));
+            out.push(format!(
+                "let {local} = crate::lua_mods::stack_from_table({lua}, {local}_lua.as_table().ok_or_else(|| mlua::Error::runtime(format!(\"{{}}: expected an item table, got {{}}\", {field:?}, {local}_lua.type_name())))?, {field:?})?;"
+            ));
+            continue;
+        }
+        // An NBT table: the existing `nbt::table_to_compound`
+        // (`&Compound` borrows back for the host call, as `&str`
+        // does). A non-table is a script error naming the argument.
+        if arg.rust == "Compound" || arg.rust == "&Compound" {
+            let field = format!("{}.{}", row.name, arg.name);
+            out.push(format!("let {local}_lua: Value = {raw};"));
+            out.push(format!(
+                "let {local}_t = {local}_lua.as_table().ok_or_else(|| mlua::Error::runtime(format!(\"{{}}: expected a table, got {{}}\", {field:?}, {local}_lua.type_name())))?;"
+            ));
+            out.push(format!(
+                "let {local} = crate::lua_mods::nbt::table_to_compound({local}_t, None).map_err(|e| mlua::Error::runtime(format!(\"{{}}: {{e}}\", {field:?})))?;"
+            ));
+            continue;
+        }
+        // An equipment-slot name: one of its eight lowercase name
+        // strings, through the shared `equipment_slot_of` (a wrong
+        // string or a non-string is a script error naming the
+        // argument, as for every argument).
+        if arg.rust == "EquipmentSlot" {
+            out.push(format!("let {local}_lua: Value = {raw};"));
+            out.push(format!(
+                "let {local}: EquipmentSlot = equipment_slot_of({:?}, {:?}, &{local}_lua)?;",
+                row.name, arg.name
+            ));
+            continue;
+        }
+        // An optional block-state name: nil for `None`, a name the
+        // host resolves with `state_named` (an unknown name is a
+        // script error naming the argument).
+        if arg.rust == "Option<BlockStateId>" {
+            let host_var = if source == "args" { "host" } else { "h" };
+            out.push(format!("let {local}_lua: Value = {raw};"));
+            out.push(format!("let {local} = match {local}_lua {{"));
+            out.push("    Value::Nil => None,".to_string());
+            out.push("    Value::String(s) => {".to_string());
+            out.push("        let name = s.to_string_lossy().to_owned();".to_string());
+            out.push(format!("        match {host_var}.state_named(&name) {{"));
+            out.push("            Some(state) => Some(state),".to_string());
+            out.push(format!(
+                "            None => return Err(mlua::Error::runtime(format!(\"{{}}.{{}}: no block state {{name:?}}\", {:?}, {:?}))),",
+                row.name, arg.name
+            ));
+            out.push("        }".to_string());
+            out.push("    }".to_string());
+            out.push(format!(
+                "    other => return Err(mlua::Error::runtime(format!(\"{{}}.{{}}: expected a block state name or nil, got {{}}\", {:?}, {:?}, other.type_name()))),",
+                row.name, arg.name
+            ));
+            out.push("};".to_string());
+            continue;
+        }
         // An optional plain two-tuple: nil for `None`, the table for
         // `Some`, read element-wise (a positional sequence read by
         // number, a named table by field name).
@@ -687,7 +755,7 @@ fn call_args(row: &HelperRow) -> String {
     for (arg, local) in row.args.iter().zip(&names) {
         if arg.player {
             parts.push("uuid".to_owned());
-        } else if arg.rust == "&str" {
+        } else if arg.rust == "&str" || arg.rust == "&Compound" {
             parts.push(format!("&{local}"));
         } else if arg.rust.starts_with("Option<(") {
             let inner = arg
@@ -794,6 +862,11 @@ fn value_of(scalar: &str, expr: &str) -> String {
         "i64" => format!("Value::Integer({expr})"),
         "[f64; 3]" => format!("Value::Table(crate::lua_mods::goals::vec3(lua, {expr})?)"),
         "[i32; 3]" => format!("Value::Table(crate::generated_runtime::pos_table(lua, {expr})?)"),
+        // An item table: the `Item` table (`id`, `count`, `damage`,
+        // `extra`, `plain`), as the hooks hand them out.
+        "ItemStack" => format!("Value::Table(crate::lua_mods::item_table_of(lua, &{expr})?)"),
+        // A block-state name: the `state_name` string.
+        "BlockStateId" => format!("Value::String(lua.create_string(h.state_name({expr}))?)"),
         _ => format!("Value::Integer(i64::from({expr}))"),
     }
 }
@@ -941,6 +1014,44 @@ fn direction_of(helper: &str, arg: &str, value: &Value) -> mlua::Result<Directio
 "#
 }
 
+/// The `equipment_slot_of` helper the bridge carries while an
+/// `EquipmentSlot` argument is emitted: one of its eight lowercase
+/// name strings, as the hooks name them (a wrong string or a
+/// non-string is a script error naming the helper and the argument).
+fn equipment_slot_of_fn() -> &'static str {
+    r#"
+/// One `EquipmentSlot` argument's Lua value: one of its eight
+/// lowercase name strings (`"mainhand"`, `"offhand"`, `"head"`,
+/// `"chest"`, `"legs"`, `"feet"`, `"body"`, `"saddle"`), as the
+/// hooks name them, else a script error naming the helper and the
+/// argument. Shared by the read and queued-action arms (the latter
+/// has no `Lua` at hand for the converter itself).
+fn equipment_slot_of(helper: &str, arg: &str, value: &Value) -> mlua::Result<EquipmentSlot> {
+    let field = format!("{helper}.{arg}");
+    match value {
+        Value::String(s) => match s.to_string_lossy().as_ref() {
+            "mainhand" => Ok(EquipmentSlot::MainHand),
+            "offhand" => Ok(EquipmentSlot::OffHand),
+            "head" => Ok(EquipmentSlot::Head),
+            "chest" => Ok(EquipmentSlot::Chest),
+            "legs" => Ok(EquipmentSlot::Legs),
+            "feet" => Ok(EquipmentSlot::Feet),
+            "body" => Ok(EquipmentSlot::Body),
+            "saddle" => Ok(EquipmentSlot::Saddle),
+            name => Err(mlua::Error::runtime(format!(
+                "{field}: expected one of \"mainhand\", \"offhand\", \"head\", \"chest\", \"legs\", \"feet\", \"body\", \"saddle\", got {name:?}"
+            ))),
+        },
+        other => Err(mlua::Error::runtime(format!(
+            "{field}: expected a name, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+"#
+}
+
 /// Whether an argument is a dimension-id string: a plain string
 /// (`&str`/`String`) the native names `dimension` (like `level`'s
 /// own, which the host lookup then resolves). Its non-string or
@@ -1031,9 +1142,31 @@ fn bridge_of(rows: &[HelperRow], backend: &Backend) -> String {
     if rows.iter().any(|row| row.args.iter().any(|a| a.direction)) {
         out.push_str("use horizon_client::mod_api::Direction;\n");
     }
+    if rows
+        .iter()
+        .any(|row| row.args.iter().any(|a| a.rust == "EquipmentSlot"))
+    {
+        out.push_str("use horizon_client::mod_api::EquipmentSlot;\n");
+    }
+    // The block-state type is named by the synthetic trait's
+    // `Option<BlockStateId>` argument only (the real bridge never
+    // names it: it carries `state_name`/`state_named` through the
+    // host), so the import rides on the argument.
+    if rows
+        .iter()
+        .any(|row| row.args.iter().any(|a| a.rust == "Option<BlockStateId>"))
+    {
+        out.push_str("use horizon_client::mod_api::BlockStateId;\n");
+    }
     out.push_str("use mlua::{Lua, MultiValue, Table, Value};\n\n");
     if rows.iter().any(|row| row.args.iter().any(|a| a.direction)) {
         out.push_str(direction_of_fn());
+    }
+    if rows
+        .iter()
+        .any(|row| row.args.iter().any(|a| a.rust == "EquipmentSlot"))
+    {
+        out.push_str(equipment_slot_of_fn());
     }
     if rows
         .iter()
@@ -1133,7 +1266,9 @@ fn bridge_of(rows: &[HelperRow], backend: &Backend) -> String {
     out.push_str("/// action is not this generator's, and the caller keeps its own `warn`).\n");
     out.push_str("/// The arms are closures (so `?` widens to the match's `Some`);\n");
     out.push_str("#[allow(clippy::redundant_closure_call)]\n");
+    out.push_str("#[allow(unused_variables)]\n");
     out.push_str(&format!("pub(crate) fn {}(\n", backend.action_fn));
+    out.push_str("    lua: &Lua,\n");
     out.push_str(&format!("    host: &mut dyn {},\n", backend.host_ty));
     out.push_str("    action: &str,\n");
     out.push_str("    args: &Table,\n");
@@ -1258,6 +1393,21 @@ fn gen_host(rows: &[HelperRow]) -> String {
     out.push_str("            ))\n");
     out.push_str("        }\n");
     out.push_str("    }\n");
+    // The block-state lookups the bridge for `Option<BlockStateId>`
+    // uses: `state_named` answers the canned name only (anything
+    // else is unresolved, as an unknown state is), and `state_name`
+    // answers its canned name back.
+    out.push_str("    fn state_named(&self, name: &str) -> Option<horizon_client::mod_api::BlockStateId> {\n");
+    out.push_str(
+        "        (name == \"ruby:gen\").then_some(horizon_client::mod_api::BlockStateId(7))\n",
+    );
+    out.push_str("    }\n");
+    out.push_str(
+        "    fn state_name(&self, state: horizon_client::mod_api::BlockStateId) -> String {\n",
+    );
+    out.push_str("        let _ = state;\n");
+    out.push_str("        \"ruby:gen\".to_owned()\n");
+    out.push_str("    }\n");
     for row in rows {
         // `level`'s method is the lookup above, not a canned helper.
         if row.name != "level" {
@@ -1282,6 +1432,13 @@ fn synthetic_host(rows: &[HelperRow]) -> String {
     out.push_str("pub(crate) trait SyntheticHost {\n");
     for row in rows {
         out.push_str(&format!("{};\n", host_method_sig(row)));
+    }
+    // The block-state lookups the bridge for `Option<BlockStateId>`
+    // uses (the same pair, on the synthetic trait, as on `Host`):
+    // `state_name` rides on a synthetic read returning one.
+    out.push_str("    fn state_named(&self, name: &str) -> Option<BlockStateId>;\n");
+    if rows.iter().any(|row| row.ret == "Option<BlockStateId>") {
+        out.push_str("    fn state_name(&self, state: BlockStateId) -> String;\n");
     }
     out.push_str("}\n\n");
     out.push_str("struct SyntheticDouble {\n");
@@ -1308,6 +1465,15 @@ fn synthetic_host(rows: &[HelperRow]) -> String {
     out.push_str("impl SyntheticHost for SyntheticDouble {\n");
     for row in rows {
         out.push_str(&gen_host_method(row));
+    }
+    out.push_str("    fn state_named(&self, name: &str) -> Option<BlockStateId> {\n");
+    out.push_str("        (name == \"ruby:gen\").then_some(BlockStateId(7))\n");
+    out.push_str("    }\n");
+    if rows.iter().any(|row| row.ret == "Option<BlockStateId>") {
+        out.push_str("    fn state_name(&self, state: BlockStateId) -> String {\n");
+        out.push_str("        let _ = state;\n");
+        out.push_str("        \"ruby:gen\".to_owned()\n");
+        out.push_str("    }\n");
     }
     out.push_str("}\n");
     out
@@ -1394,6 +1560,13 @@ fn synthetic_rows() -> Vec<HelperRow> {
             GenKind::Action,
             Vec::new(),
             "unit",
+            true,
+        ),
+        row(
+            "synthetic_state_probe",
+            GenKind::Action,
+            vec![arg("state", "Option<BlockStateId>", false)],
+            "bool",
             true,
         ),
         row(
@@ -1501,6 +1674,12 @@ fn canned_i32_xyz() -> [i64; 3] {
     [3, 4, 5]
 }
 
+/// One canned item stack's fields, every one distinct (`ruby:gen`, 7,
+/// 3), so a swapped field fails a test on either side.
+fn canned_stack() -> (&'static str, u32, u32) {
+    ("ruby:gen", 7, 3)
+}
+
 fn gen_host_method(row: &HelperRow) -> String {
     let out = format!("{} {{\n", host_method_sig(row));
     let mut out = out
@@ -1520,6 +1699,13 @@ fn gen_host_method(row: &HelperRow) -> String {
                         format!("format!(\"{{:?}}\", {})", a.name)
                     }
                     "[f64; 3]" | "[i32; 3]" => format!("format!(\"{{:?}}\", {})", a.name),
+                    // Item, NBT and block-state values have no `Display`:
+                    // recorded as Debug, like a position or a tuple.
+                    "ItemStack"
+                    | "Compound"
+                    | "&Compound"
+                    | "EquipmentSlot"
+                    | "Option<BlockStateId>" => format!("format!(\"{{:?}}\", {})", a.name),
                     _ => format!("{}.to_string()", a.name),
                 })
                 .collect::<Vec<_>>()
@@ -1598,6 +1784,14 @@ fn canned(scalar: &str) -> String {
         "[f64; 3]" => format!("{:?}", canned_f64_xyz()),
         "[i32; 3]" => format!("{:?}", canned_i32_xyz()),
         "LevelRef" => "horizon_client::mod_api::LevelRef::new(horizon_client::mod_api::NativeWorldEpoch::new(1), \"minecraft:overworld\")".to_owned(),
+        // One canned stack, every field distinct (`ruby:gen`, 7, 3), so
+        // a swapped field fails a return test.
+        "ItemStack" => {
+            let (id, count, damage) = canned_stack();
+            format!("ItemStack {{ item: {id:?}.into(), count: {count}, damage: {damage}, extra: None }}")
+        }
+        // One canned block state.
+        "BlockStateId" => "BlockStateId(7)".to_owned(),
         _ if scalar.starts_with('(') => {
             let elems = crate::lua_helper_model::tuple_elems(scalar);
             let values: Vec<String> = elems
@@ -1646,6 +1840,27 @@ fn tests_of(rows: &[HelperRow], backend: &Backend) -> String {
     // The synthetic file already carries the bridge's `mlua` import.
     if real {
         out.push_str("use mlua::{Lua, Table};\n");
+    }
+    // The `GenHost` methods spell the converted types in their
+    // signatures (and their canned returns name them), so import each
+    // one a row uses (like `Direction` above).
+    if real {
+        let uses = |ty: &str| {
+            rows.iter()
+                .any(|row| row.ret.contains(ty) || row.args.iter().any(|a| a.rust.contains(ty)))
+        };
+        if uses("ItemStack") {
+            out.push_str("use horizon_client::mod_api::ItemStack;\n");
+        }
+        if uses("Compound") {
+            out.push_str("use horizon_client::mod_api::Compound;\n");
+        }
+        if uses("EquipmentSlot") {
+            out.push_str("use horizon_client::mod_api::EquipmentSlot;\n");
+        }
+        if uses("BlockStateId") {
+            out.push_str("use horizon_client::mod_api::BlockStateId;\n");
+        }
     }
     out.push_str("use std::sync::Mutex;\n\n");
     out.push_str("const STEVE_UUID: u128 = 0x123e4567_e89b_12d3_a456_426614174000;\n\n");
@@ -1771,6 +1986,33 @@ fn normal_case(row: &HelperRow) -> (Vec<String>, Vec<String>) {
                     "{{\n        let t = lua.create_table().unwrap();\n        t.set(\"x\", {x}).unwrap();\n        t.set(\"y\", {y}).unwrap();\n        t.set(\"z\", {z}).unwrap();\n        mlua::Value::Table(t)\n    }}",
                 ));
                 recorded.push(format!("[{x}, {y}, {z}]"));
+            }
+            "ItemStack" => {
+                let (id, count, damage) = canned_stack();
+                literals.push(format!(
+                    "{{\n        let t = lua.create_table().unwrap();\n        t.set(\"id\", {id:?}).unwrap();\n        t.set(\"count\", {count}).unwrap();\n        t.set(\"damage\", {damage}).unwrap();\n        mlua::Value::Table(t)\n    }}",
+                ));
+                recorded.push(format!(
+                    "ItemStack {{ item: {id:?}, count: {count}, damage: {damage}, extra: None }}"
+                ));
+            }
+            "Compound" | "&Compound" => {
+                literals.push(
+                    "{\n        let t = lua.create_table().unwrap();\n        t.set(\"a\", 1).unwrap();\n        t.set(\"b\", 2).unwrap();\n        mlua::Value::Table(t)\n    }"
+                    .to_owned(),
+                );
+                recorded.push("{JavaString([97]): Int(1), JavaString([98]): Int(2)}".to_owned());
+            }
+            "EquipmentSlot" => {
+                literals
+                    .push("mlua::Value::String(lua.create_string(\"head\").unwrap())".to_owned());
+                recorded.push("Head".to_owned());
+            }
+            "Option<BlockStateId>" => {
+                literals.push(
+                    "mlua::Value::String(lua.create_string(\"ruby:gen\").unwrap())".to_owned(),
+                );
+                recorded.push("Some(BlockStateId(7))".to_owned());
             }
             "[i32; 3]" => {
                 ints += 1;
@@ -2011,6 +2253,35 @@ fn edge_cases(row: &HelperRow) -> Vec<(Vec<String>, Vec<String>)> {
                     literals.push("mlua::Value::Number(1.5)".to_owned());
                     recorded.push("1.5".to_owned());
                 }
+                "ItemStack" => {
+                    let (id, count, damage) = canned_stack();
+                    literals.push(format!(
+                        "{{\n        let t = lua.create_table().unwrap();\n        t.set(\"id\", {id:?}).unwrap();\n        t.set(\"count\", {count}).unwrap();\n        t.set(\"damage\", {damage}).unwrap();\n        mlua::Value::Table(t)\n    }}",
+                    ));
+                    recorded.push(format!(
+                        "ItemStack {{ item: {id:?}, count: {count}, damage: {damage}, extra: None }}"
+                    ));
+                }
+                "Compound" | "&Compound" => {
+                    literals.push(
+                        "{\n        let t = lua.create_table().unwrap();\n        t.set(\"a\", 1).unwrap();\n        t.set(\"b\", 2).unwrap();\n        mlua::Value::Table(t)\n    }"
+                            .to_owned(),
+                    );
+                    recorded
+                        .push("{JavaString([97]): Int(1), JavaString([98]): Int(2)}".to_owned());
+                }
+                "EquipmentSlot" => {
+                    literals.push(
+                        "mlua::Value::String(lua.create_string(\"head\").unwrap())".to_owned(),
+                    );
+                    recorded.push("Head".to_owned());
+                }
+                "Option<BlockStateId>" => {
+                    literals.push(
+                        "mlua::Value::String(lua.create_string(\"ruby:gen\").unwrap())".to_owned(),
+                    );
+                    recorded.push("Some(BlockStateId(7))".to_owned());
+                }
                 ty => {
                     literals.push(format!("mlua::Value::Integer({value})"));
                     recorded.push(saturate(value, ty).to_string());
@@ -2080,7 +2351,7 @@ fn residual_blocks(
     let mut out = String::new();
     let call = |lits: &Vec<String>| match kind {
         GenKind::Action => format!(
-            "        let t = args(&lua, &[{}]);\n        let err = {action_fn}(&mut host, {:?}, &t).unwrap().unwrap_err();",
+            "        let t = args(&lua, &[{}]);\n        let err = {action_fn}(&lua, &mut host, {:?}, &t).unwrap().unwrap_err();",
             lits.join(", "),
             row.name
         ),
@@ -2092,12 +2363,22 @@ fn residual_blocks(
     };
     let ok_call = |lits: &Vec<String>| match kind {
         GenKind::Action => format!(
-            "        let t = args(&lua, &[{}]);\n        {action_fn}(&mut host, {:?}, &t).unwrap().unwrap();",
+            "        let t = args(&lua, &[{}]);\n        {action_fn}(&lua, &mut host, {:?}, &t).unwrap().unwrap();",
             lits.join(", "),
             row.name
         ),
         GenKind::Read => format!(
             "        let v = {read_fn}(&lua, &h, {:?}, rest(&lua, &[{}])).unwrap().unwrap();",
+            row.name,
+            lits.join(", ")
+        ),
+    };
+    // An ok call whose answer nobody reads (the variant matrices
+    // below assert on the host log, not on `v`), so it binds `_v`.
+    let discard_call = |lits: &Vec<String>| match kind {
+        GenKind::Action => ok_call(lits),
+        GenKind::Read => format!(
+            "        let _v = {read_fn}(&lua, &h, {:?}, rest(&lua, &[{}])).unwrap().unwrap();",
             row.name,
             lits.join(", ")
         ),
@@ -2277,6 +2558,140 @@ fn residual_blocks(
         bad[pos] = "mlua::Value::Table(lua.create_table().unwrap())".to_owned();
         out.push_str(&err_block(bad, &arg));
     }
+    // The converted types' bad shapes: an error naming the argument,
+    // and the host is never called (like the dimension block above).
+    let bad_block = |lits: Vec<String>, arg: &str| {
+        let mut s = String::from("    {\n");
+        host_decl(&mut s);
+        s.push_str(&call(&lits));
+        s.push_str(&format!(
+            "\n        let text = err.to_string();\n        assert!(text.contains({:?}), \"{{text}}\");\n",
+            format!("{}.{}", row.name, arg)
+        ));
+        s.push_str(match kind {
+            GenKind::Action => {
+                "        assert!(host.logged().is_empty(), \"a bad argument calls nothing\");\n    }\n"
+            }
+            GenKind::Read => {
+                "        assert!(h.logged().is_empty(), \"a bad argument calls nothing\");\n    }\n"
+            }
+        });
+        s
+    };
+    // An item table with a fractional or out-of-range count, a
+    // negative damage, a non-string id or any other key is an error
+    // naming the argument, and the host is never called.
+    if let Some(pos) = row.args.iter().position(|a| a.rust == "ItemStack") {
+        let arg = row.args[pos].name.clone();
+        let table = |id: &str, count: &str, damage: &str, extra: &str| {
+            format!(
+                "{{\n        let t = lua.create_table().unwrap();\n        t.set(\"id\", {id}).unwrap();\n        t.set(\"count\", {count}).unwrap();\n        t.set(\"damage\", {damage}).unwrap();{extra}\n        mlua::Value::Table(t)\n    }}"
+            )
+        };
+        for bad in [
+            table("\"ruby:gen\"", "2.5", "3", ""),
+            table("\"ruby:gen\"", "0", "3", ""),
+            table("\"ruby:gen\"", "100", "3", ""),
+            table("\"ruby:gen\"", "7", "-1", ""),
+            table(
+                "\"ruby:gen\"",
+                "7",
+                "3",
+                "\n        t.set(\"bogus\", 1).unwrap();",
+            ),
+            table("123", "7", "3", ""),
+        ] {
+            let mut lit = literals.to_vec();
+            lit[pos] = bad;
+            out.push_str(&bad_block(lit, &arg));
+        }
+    }
+    // A non-table NBT argument is an error naming the argument, and
+    // the host is never called.
+    if let Some(pos) = row
+        .args
+        .iter()
+        .position(|a| matches!(a.rust.as_str(), "Compound" | "&Compound"))
+    {
+        let arg = row.args[pos].name.clone();
+        for value in [
+            "mlua::Value::Integer(3)",
+            "mlua::Value::String(lua.create_string(\"ruby:gen\").unwrap())",
+        ] {
+            let mut bad = literals.to_vec();
+            bad[pos] = value.to_owned();
+            out.push_str(&bad_block(bad, &arg));
+        }
+    }
+    // The eight slot names reach the host as the right variant; a
+    // misspelled name or a non-string is an error naming the
+    // argument, and the host is never called.
+    if let Some(pos) = row.args.iter().position(|a| a.rust == "EquipmentSlot") {
+        let arg = row.args[pos].name.clone();
+        for (text, variant) in [
+            ("mainhand", "MainHand"),
+            ("offhand", "OffHand"),
+            ("head", "Head"),
+            ("chest", "Chest"),
+            ("legs", "Legs"),
+            ("feet", "Feet"),
+            ("body", "Body"),
+            ("saddle", "Saddle"),
+        ] {
+            let mut lit = literals.to_vec();
+            lit[pos] = format!("mlua::Value::String(lua.create_string({text:?}).unwrap())");
+            let mut s = String::from("    {\n");
+            host_decl(&mut s);
+            s.push_str(&discard_call(&lit));
+            s.push_str(&format!(
+                "\n        let last = {log}.logged().last().cloned().unwrap_or_default();\n        assert!(last.contains({variant:?}), \"{{last}}\");\n    }}\n",
+                log = match kind {
+                    GenKind::Action => "host",
+                    GenKind::Read => "h",
+                },
+                variant = variant,
+            ));
+            out.push_str(&s);
+        }
+        for value in [
+            "mlua::Value::String(lua.create_string(\"heead\").unwrap())".to_string(),
+            "mlua::Value::Integer(3)".to_owned(),
+        ] {
+            let mut bad = literals.to_vec();
+            bad[pos] = value;
+            out.push_str(&bad_block(bad, &arg));
+        }
+    }
+    // Nil is `None`; a bad block-state name or a non-string is an
+    // error naming the argument, and the host is never called.
+    if let Some(pos) = row
+        .args
+        .iter()
+        .position(|a| a.rust == "Option<BlockStateId>")
+    {
+        let arg = row.args[pos].name.clone();
+        let mut lit = literals.to_vec();
+        lit[pos] = "mlua::Value::Nil".to_owned();
+        let mut s = String::from("    {\n");
+        host_decl(&mut s);
+        s.push_str(&discard_call(&lit));
+        s.push_str(&format!(
+            "\n        let last = {log}.logged().last().cloned().unwrap_or_default();\n        assert!(last.contains(\"None\"), \"{{last}}\");\n    }}\n",
+            log = match kind {
+                GenKind::Action => "host",
+                GenKind::Read => "h",
+            }
+        ));
+        out.push_str(&s);
+        for value in [
+            "mlua::Value::String(lua.create_string(\"ruby:gibberish\").unwrap())",
+            "mlua::Value::Integer(3)",
+        ] {
+            let mut bad = literals.to_vec();
+            bad[pos] = value.to_owned();
+            out.push_str(&bad_block(bad, &arg));
+        }
+    }
     out
 }
 
@@ -2295,7 +2710,7 @@ fn helper_test(row: &HelperRow, backend: &Backend) -> String {
     match &row.class {
         HelperClass::Generated(GenKind::Action) => {
             out.push_str(&format!(
-                "    let lua = lua();\n    let mut host = {host_new}(false, false);\n    let t = args(&lua, &[{}]);\n    {action_fn}(&mut host, {:?}, &t).unwrap().unwrap();\n    assert_eq!(host.logged(), [{}]);\n",
+                "    let lua = lua();\n    let mut host = {host_new}(false, false);\n    let t = args(&lua, &[{}]);\n    {action_fn}(&lua, &mut host, {:?}, &t).unwrap().unwrap();\n    assert_eq!(host.logged(), [{}]);\n",
                 literals.join(", "),
                 row.name,
                 recorded
@@ -2307,7 +2722,7 @@ fn helper_test(row: &HelperRow, backend: &Backend) -> String {
             if row.args.iter().any(is_int) {
                 for (literals, recorded) in edge_cases(row) {
                     out.push_str(&format!(
-                        "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        {action_fn}(&mut host, {:?}, &t).unwrap().unwrap();\n        assert_eq!(host.logged(), [{}]);\n    }}\n",
+                        "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        {action_fn}(&lua, &mut host, {:?}, &t).unwrap().unwrap();\n        assert_eq!(host.logged(), [{}]);\n    }}\n",
                         literals.join(", "),
                         row.name,
                         recorded
@@ -2323,7 +2738,7 @@ fn helper_test(row: &HelperRow, backend: &Backend) -> String {
                 ghost[pos] =
                     "mlua::Value::String(lua.create_string(\"ghost\").unwrap())".to_owned();
                 out.push_str(&format!(
-                    "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        {action_fn}(&mut host, {:?}, &t).unwrap().unwrap();\n        assert!(host.logged().is_empty(), \"an unresolvable player calls nothing\");\n    }}\n",
+                    "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        {action_fn}(&lua, &mut host, {:?}, &t).unwrap().unwrap();\n        assert!(host.logged().is_empty(), \"an unresolvable player calls nothing\");\n    }}\n",
                     ghost.join(", "),
                     row.name
                 ));
@@ -2338,7 +2753,7 @@ fn helper_test(row: &HelperRow, backend: &Backend) -> String {
                 let pos = row.args.iter().position(|a| std::ptr::eq(a, arg)).unwrap();
                 nan_lua[pos] = "mlua::Value::Number(f64::NAN)".to_owned();
                 out.push_str(&format!(
-                    "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        let err = {action_fn}(&mut host, {:?}, &t).unwrap().unwrap_err();\n        let text = err.to_string();\n        assert!(text.contains({:?}), \"{{text}}\");\n    }}\n",
+                    "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        let err = {action_fn}(&lua, &mut host, {:?}, &t).unwrap().unwrap_err();\n        let text = err.to_string();\n        assert!(text.contains({:?}), \"{{text}}\");\n    }}\n",
                     nan_lua.join(", "),
                     row.name,
                     format!("{}.{}", row.name, arg.name)
@@ -2355,7 +2770,7 @@ fn helper_test(row: &HelperRow, backend: &Backend) -> String {
                 }
                 .to_owned();
                 out.push_str(&format!(
-                    "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        let err = {action_fn}(&mut host, {:?}, &t).unwrap().unwrap_err();\n        let text = err.to_string();\n        assert!(text.contains({:?}), \"{{text}}\");\n        assert!(text.contains({:?}), \"{{text}}\");\n    }}\n",
+                    "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        let err = {action_fn}(&lua, &mut host, {:?}, &t).unwrap().unwrap_err();\n        let text = err.to_string();\n        assert!(text.contains({:?}), \"{{text}}\");\n        assert!(text.contains({:?}), \"{{text}}\");\n    }}\n",
                     wrong.join(", "),
                     row.name,
                     row.name,
@@ -2571,6 +2986,17 @@ fn value_asserts(row: &HelperRow) -> String {
                 xyz[0], xyz[1], xyz[2]
             )
         }
+        "ItemStack" => {
+            let (id, count, damage) = canned_stack();
+            format!(
+                "    if let mlua::Value::Table(t) = &v {{\n        assert_eq!(t.get::<String>(\"id\").unwrap(), {:?});\n        assert_eq!(t.get::<u32>(\"count\").unwrap(), {count});\n        assert_eq!(t.get::<u32>(\"damage\").unwrap(), {damage});\n        assert!(matches!(t.get::<mlua::Value>(\"extra\").unwrap(), mlua::Value::Nil));\n        assert!(t.get::<bool>(\"plain\").unwrap());\n    }}\n",
+                id
+            )
+        }
+        "BlockStateId" => format!(
+            "    if let mlua::Value::String(s) = &v {{\n        assert_eq!(s.to_string_lossy(), {:?});\n    }}\n",
+            canned_string()
+        ),
         _ => String::new(),
     }
 }
@@ -2584,9 +3010,9 @@ fn lua_type_of(row: &HelperRow) -> String {
         .unwrap_or(&row.ret);
     match scalar {
         "bool" => "mlua::Value::Boolean(true)".to_owned(),
-        "String" | "u128" | "LevelRef" => "mlua::Value::String(_)".to_owned(),
+        "String" | "u128" | "LevelRef" | "BlockStateId" => "mlua::Value::String(_)".to_owned(),
         "f32" | "f64" => "mlua::Value::Number(_)".to_owned(),
-        "[f64; 3]" | "[i32; 3]" => "mlua::Value::Table(_)".to_owned(),
+        "[f64; 3]" | "[i32; 3]" | "ItemStack" => "mlua::Value::Table(_)".to_owned(),
         _ if scalar.starts_with('(') => "mlua::Value::Table(_)".to_owned(),
         _ => "mlua::Value::Integer(_)".to_owned(),
     }
@@ -3333,6 +3759,10 @@ enum ArgKind {
     OptTuple,
     PosFloat,
     PosInt,
+    ItemStack,
+    Compound,
+    EquipmentSlot,
+    OptBlockStateId,
     Str,
     Bool,
     Float64,
@@ -3349,6 +3779,10 @@ const ALL_ARG_KINDS: &[ArgKind] = &[
     ArgKind::OptTuple,
     ArgKind::PosFloat,
     ArgKind::PosInt,
+    ArgKind::ItemStack,
+    ArgKind::Compound,
+    ArgKind::EquipmentSlot,
+    ArgKind::OptBlockStateId,
     ArgKind::Str,
     ArgKind::Bool,
     ArgKind::Float64,
@@ -3374,6 +3808,10 @@ fn arg_kind(arg: &super::lua_helper_model::Arg) -> ArgKind {
         ArgKind::PosInt
     } else {
         match arg.rust.as_str() {
+            "ItemStack" => ArgKind::ItemStack,
+            "Compound" | "&Compound" => ArgKind::Compound,
+            "EquipmentSlot" => ArgKind::EquipmentSlot,
+            "Option<BlockStateId>" => ArgKind::OptBlockStateId,
             "&str" | "String" => ArgKind::Str,
             "bool" => ArgKind::Bool,
             "f64" => ArgKind::Float64,
@@ -3398,6 +3836,8 @@ enum RetKind {
     Int,
     PosFloat,
     PosInt,
+    ItemStack,
+    BlockStateId,
     Tuple,
 }
 
@@ -3413,6 +3853,8 @@ const ALL_RET_KINDS: &[RetKind] = &[
     RetKind::Int,
     RetKind::PosFloat,
     RetKind::PosInt,
+    RetKind::ItemStack,
+    RetKind::BlockStateId,
     RetKind::Tuple,
 ];
 
@@ -3433,6 +3875,8 @@ fn ret_kind(row: &HelperRow) -> RetKind {
         "f64" => RetKind::Float64,
         "[f64; 3]" => RetKind::PosFloat,
         "[i32; 3]" => RetKind::PosInt,
+        "ItemStack" => RetKind::ItemStack,
+        "BlockStateId" => RetKind::BlockStateId,
         _ if scalar.starts_with('(') => RetKind::Tuple,
         _ => RetKind::Int,
     }

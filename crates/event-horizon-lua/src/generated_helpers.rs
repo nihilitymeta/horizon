@@ -26,8 +26,38 @@
 // as `menu_contents` and `has_permission` do).
 
 use crate::lua_mods::uuid_of;
+use horizon_client::mod_api::EquipmentSlot;
 use horizon_client::mod_api::Host;
 use mlua::{Lua, MultiValue, Table, Value};
+
+/// One `EquipmentSlot` argument's Lua value: one of its eight
+/// lowercase name strings (`"mainhand"`, `"offhand"`, `"head"`,
+/// `"chest"`, `"legs"`, `"feet"`, `"body"`, `"saddle"`), as the
+/// hooks name them, else a script error naming the helper and the
+/// argument. Shared by the read and queued-action arms (the latter
+/// has no `Lua` at hand for the converter itself).
+fn equipment_slot_of(helper: &str, arg: &str, value: &Value) -> mlua::Result<EquipmentSlot> {
+    let field = format!("{helper}.{arg}");
+    match value {
+        Value::String(s) => match s.to_string_lossy().as_ref() {
+            "mainhand" => Ok(EquipmentSlot::MainHand),
+            "offhand" => Ok(EquipmentSlot::OffHand),
+            "head" => Ok(EquipmentSlot::Head),
+            "chest" => Ok(EquipmentSlot::Chest),
+            "legs" => Ok(EquipmentSlot::Legs),
+            "feet" => Ok(EquipmentSlot::Feet),
+            "body" => Ok(EquipmentSlot::Body),
+            "saddle" => Ok(EquipmentSlot::Saddle),
+            name => Err(mlua::Error::runtime(format!(
+                "{field}: expected one of \"mainhand\", \"offhand\", \"head\", \"chest\", \"legs\", \"feet\", \"body\", \"saddle\", got {name:?}"
+            ))),
+        },
+        other => Err(mlua::Error::runtime(format!(
+            "{field}: expected a name, got {}",
+            other.type_name()
+        ))),
+    }
+}
 
 /// One `LevelRef` argument's Lua value: its dimension id string
 /// (`"minecraft:overworld"`), else a script error naming the helper
@@ -45,9 +75,11 @@ fn dimension_of(helper: &str, arg: &str, value: &Value) -> mlua::Result<String> 
 /// hand-written ones.
 pub(crate) const GENERATED_ACTIONS: &[&str] = &[
     "block_entity_sync",
+    "client_entity_set",
     "dismount",
     "eject_passengers",
     "entity_add_tag",
+    "entity_merge_nbt",
     "entity_push",
     "entity_remove_tag",
     "entity_set_head_yaw",
@@ -56,6 +88,7 @@ pub(crate) const GENERATED_ACTIONS: &[&str] = &[
     "entity_set_velocity",
     "hide_entity_from",
     "level_play_sound",
+    "merge_entity_nbt",
     "mob_attack",
     "mob_follow",
     "mob_look_at",
@@ -74,7 +107,9 @@ pub(crate) const GENERATED_ACTIONS: &[&str] = &[
     "set_block_property_with",
     "set_break_progress",
     "set_compass_target",
+    "set_entity_data",
     "set_flight",
+    "set_item_entity",
     "set_profile_property",
     "sleep_ignored",
     "teleport_vehicle",
@@ -87,6 +122,7 @@ pub(crate) const GENERATED_ACTIONS: &[&str] = &[
 pub(crate) const GENERATED_READS: &[&str] = &[
     "biome",
     "biome_name",
+    "default_state",
     "entity_air_supply",
     "entity_block_position",
     "entity_direction",
@@ -112,7 +148,9 @@ pub(crate) const GENERATED_READS: &[&str] = &[
     "entity_position",
     "entity_velocity",
     "entity_view_vector",
+    "equipment",
     "fluid_flow",
+    "item_from_snbt",
     "level",
     "level_block",
     "level_block_property",
@@ -129,6 +167,8 @@ pub(crate) const GENERATED_READS: &[&str] = &[
     "lit_block_name",
     "max_players",
     "max_stack_size",
+    "player_equipment",
+    "player_head",
     "player_sneaking",
     "player_stat",
     "player_textures",
@@ -136,6 +176,7 @@ pub(crate) const GENERATED_READS: &[&str] = &[
     "profile_by_name",
     "profile_by_uuid",
     "sneaking",
+    "text_allowed",
     "world_seed",
 ];
 
@@ -164,6 +205,7 @@ pub(crate) const GENERATED_CLIENT_READS: &[&str] = &[
     "has_shift_down",
     "key_down",
     "menu_blur_radius",
+    "mod_key",
     "mod_screen",
     "playing",
     "screen_pos",
@@ -224,7 +266,9 @@ fn read_action_arg<T: mlua::FromLua>(
 /// action is not this generator's, and the caller keeps its own `warn`).
 /// The arms are closures (so `?` widens to the match's `Some`);
 #[allow(clippy::redundant_closure_call)]
+#[allow(unused_variables)]
 pub(crate) fn run_generated_action(
+    lua: &Lua,
     host: &mut dyn Host,
     action: &str,
     args: &Table,
@@ -268,6 +312,29 @@ pub(crate) fn run_generated_action(
             let _ = host.client_entity_move(uuid, id, pos, yaw);
             Ok(())
         })(host)),
+        "client_entity_set" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let viewer: Value = read_action_arg(args, 1, "client_entity_set", "viewer")?;
+            let n2: i64 = read_action_arg(args, 2, "client_entity_set", "id")?;
+            let id: i32 = i32::try_from(n2).unwrap_or(if n2 < 0 { i32::MIN } else { i32::MAX });
+            let nbt_lua: Value = read_action_arg(args, 3, "client_entity_set", "nbt")?;
+            let nbt_t = nbt_lua.as_table().ok_or_else(|| {
+                mlua::Error::runtime(format!(
+                    "{}: expected a table, got {}",
+                    "client_entity_set.nbt",
+                    nbt_lua.type_name()
+                ))
+            })?;
+            let nbt = crate::lua_mods::nbt::table_to_compound(nbt_t, None)
+                .map_err(|e| mlua::Error::runtime(format!("{}: {e}", "client_entity_set.nbt")))?;
+            let Some(uuid) = uuid_of(host, &viewer) else {
+                log::debug!("[lua] client_entity_set: no such player");
+                return Ok(());
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.client_entity_set(uuid, id, &nbt);
+            Ok(())
+        })(host)),
         "dismount" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
             let n1: i64 = read_action_arg(args, 1, "dismount", "entity")?;
             let entity: u32 = u32::try_from(n1).unwrap_or(if n1 < 0 { u32::MIN } else { u32::MAX });
@@ -296,6 +363,28 @@ pub(crate) fn run_generated_action(
             // A native refusal is ordinary: drop the return
             // value, so later queued actions still run.
             let _ = host.entity_add_tag(entity, &tag);
+            Ok(())
+        })(host)),
+        "entity_merge_nbt" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let entity_id: Value = read_action_arg(args, 1, "entity_merge_nbt", "entity")?;
+            let entity_id: u32 = entity_id_of("entity_merge_nbt", "entity", &entity_id)?;
+            let nbt_lua: Value = read_action_arg(args, 2, "entity_merge_nbt", "nbt")?;
+            let nbt_t = nbt_lua.as_table().ok_or_else(|| {
+                mlua::Error::runtime(format!(
+                    "{}: expected a table, got {}",
+                    "entity_merge_nbt.nbt",
+                    nbt_lua.type_name()
+                ))
+            })?;
+            let nbt = crate::lua_mods::nbt::table_to_compound(nbt_t, None)
+                .map_err(|e| mlua::Error::runtime(format!("{}: {e}", "entity_merge_nbt.nbt")))?;
+            let Some(entity) = host.entity(entity_id) else {
+                log::debug!("[lua] entity_merge_nbt: no such entity");
+                return Ok(());
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.entity_merge_nbt(entity, nbt);
             Ok(())
         })(host)),
         "entity_push" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
@@ -499,6 +588,26 @@ pub(crate) fn run_generated_action(
             // A native refusal is ordinary: drop the return
             // value, so later queued actions still run.
             let _ = host.level_play_sound(level, &sound, at, source, volume, pitch);
+            Ok(())
+        })(host)),
+        "merge_entity_nbt" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let dimension_lua: Value = read_action_arg(args, 1, "merge_entity_nbt", "dimension")?;
+            let dimension: String = dimension_of("merge_entity_nbt", "dimension", &dimension_lua)?;
+            let n2: i64 = read_action_arg(args, 2, "merge_entity_nbt", "id")?;
+            let id: u32 = u32::try_from(n2).unwrap_or(if n2 < 0 { u32::MIN } else { u32::MAX });
+            let nbt_lua: Value = read_action_arg(args, 3, "merge_entity_nbt", "nbt")?;
+            let nbt_t = nbt_lua.as_table().ok_or_else(|| {
+                mlua::Error::runtime(format!(
+                    "{}: expected a table, got {}",
+                    "merge_entity_nbt.nbt",
+                    nbt_lua.type_name()
+                ))
+            })?;
+            let nbt = crate::lua_mods::nbt::table_to_compound(nbt_t, None)
+                .map_err(|e| mlua::Error::runtime(format!("{}: {e}", "merge_entity_nbt.nbt")))?;
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.merge_entity_nbt(&dimension, id, nbt);
             Ok(())
         })(host)),
         "mob_attack" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
@@ -853,6 +962,24 @@ pub(crate) fn run_generated_action(
             );
             Ok(())
         })(host)),
+        "set_entity_data" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let n1: i64 = read_action_arg(args, 1, "set_entity_data", "id")?;
+            let id: u32 = u32::try_from(n1).unwrap_or(if n1 < 0 { u32::MIN } else { u32::MAX });
+            let tag_lua: Value = read_action_arg(args, 2, "set_entity_data", "tag")?;
+            let tag_t = tag_lua.as_table().ok_or_else(|| {
+                mlua::Error::runtime(format!(
+                    "{}: expected a table, got {}",
+                    "set_entity_data.tag",
+                    tag_lua.type_name()
+                ))
+            })?;
+            let tag = crate::lua_mods::nbt::table_to_compound(tag_t, None)
+                .map_err(|e| mlua::Error::runtime(format!("{}: {e}", "set_entity_data.tag")))?;
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.set_entity_data(id, tag);
+            Ok(())
+        })(host)),
         "set_flight" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
             let uuid: Value = read_action_arg(args, 1, "set_flight", "uuid")?;
             let allow: bool = match read_action_arg(args, 2, "set_flight", "allow")? {
@@ -880,6 +1007,28 @@ pub(crate) fn run_generated_action(
             // A native refusal is ordinary: drop the return
             // value, so later queued actions still run.
             let _ = host.set_flight(uuid, allow, flying);
+            Ok(())
+        })(host)),
+        "set_item_entity" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let dimension_lua: Value = read_action_arg(args, 1, "set_item_entity", "dimension")?;
+            let dimension: String = dimension_of("set_item_entity", "dimension", &dimension_lua)?;
+            let n2: i64 = read_action_arg(args, 2, "set_item_entity", "id")?;
+            let id: u32 = u32::try_from(n2).unwrap_or(if n2 < 0 { u32::MIN } else { u32::MAX });
+            let stack_lua: Value = read_action_arg(args, 3, "set_item_entity", "stack")?;
+            let stack = crate::lua_mods::stack_from_table(
+                Some(lua),
+                stack_lua.as_table().ok_or_else(|| {
+                    mlua::Error::runtime(format!(
+                        "{}: expected an item table, got {}",
+                        "set_item_entity.stack",
+                        stack_lua.type_name()
+                    ))
+                })?,
+                "set_item_entity.stack",
+            )?;
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.set_item_entity(&dimension, id, stack);
             Ok(())
         })(host)),
         "set_profile_property" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
@@ -1099,6 +1248,13 @@ pub(crate) fn generated_read(
                 crate::generated_runtime::req_finite::<f64>(&to, "z", "client_visual_clear.to")?;
             let to: [f64; 3] = [to_x, to_y, to_z];
             Ok(Value::Boolean(h.client_visual_clear(from, to)))
+        })(h)),
+        "default_state" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let block: String = read_arg(lua, &rest, 1, "default_state", "block")?;
+            match h.default_state(&block) {
+                Some(v) => Ok(Value::String(lua.create_string(h.state_name(v))?)),
+                None => Ok(Value::Nil),
+            }
         })(h)),
         "entity_air_supply" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             let entity_id: Value = read_arg(lua, &rest, 1, "entity_air_supply", "entity")?;
@@ -1392,6 +1548,14 @@ pub(crate) fn generated_read(
                 None => Ok(Value::Nil),
             }
         })(h)),
+        "equipment" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let slot_lua: Value = read_arg(lua, &rest, 1, "equipment", "slot")?;
+            let slot: EquipmentSlot = equipment_slot_of("equipment", "slot", &slot_lua)?;
+            match h.equipment(slot) {
+                Some(v) => Ok(Value::Table(crate::lua_mods::item_table_of(lua, &v)?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
         "fluid_flow" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             let dimension_lua: Value = read_arg(lua, &rest, 1, "fluid_flow", "dimension")?;
             let dimension: String = dimension_of("fluid_flow", "dimension", &dimension_lua)?;
@@ -1413,6 +1577,13 @@ pub(crate) fn generated_read(
         })(h)),
         "has_shift_down" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             Ok(Value::Boolean(h.has_shift_down()))
+        })(h)),
+        "item_from_snbt" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let snbt: String = read_arg(lua, &rest, 1, "item_from_snbt", "snbt")?;
+            match h.item_from_snbt(&snbt) {
+                Some(v) => Ok(Value::Table(crate::lua_mods::item_table_of(lua, &v)?)),
+                None => Ok(Value::Nil),
+            }
         })(h)),
         "key_down" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             let mapping: String = read_arg(lua, &rest, 1, "key_down", "mapping")?;
@@ -1628,11 +1799,41 @@ pub(crate) fn generated_read(
         "menu_blur_radius" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             Ok(Value::Number(f64::from(h.menu_blur_radius())))
         })(h)),
+        "mod_key" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let mod_id: String = read_arg(lua, &rest, 1, "mod_key", "mod_id")?;
+            let name: String = read_arg(lua, &rest, 2, "mod_key", "name")?;
+            let default: String = read_arg(lua, &rest, 3, "mod_key", "default")?;
+            Ok(Value::String(
+                lua.create_string(h.mod_key(&mod_id, &name, &default))?,
+            ))
+        })(h)),
         "mod_screen" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             match h.mod_screen() {
                 Some(v) => Ok(Value::String(lua.create_string(v)?)),
                 None => Ok(Value::Nil),
             }
+        })(h)),
+        "player_equipment" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let uuid: Value = read_arg(lua, &rest, 1, "player_equipment", "uuid")?;
+            let slot_lua: Value = read_arg(lua, &rest, 2, "player_equipment", "slot")?;
+            let slot: EquipmentSlot = equipment_slot_of("player_equipment", "slot", &slot_lua)?;
+            let Some(uuid) = uuid_of(h, &uuid) else {
+                return Ok(Value::Nil);
+            };
+            match h.player_equipment(uuid, slot) {
+                Some(v) => Ok(Value::Table(crate::lua_mods::item_table_of(lua, &v)?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "player_head" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let uuid: Value = read_arg(lua, &rest, 1, "player_head", "uuid")?;
+            let Some(uuid) = uuid_of(h, &uuid) else {
+                return Ok(Value::Nil);
+            };
+            Ok(Value::Table(crate::lua_mods::item_table_of(
+                lua,
+                &h.player_head(uuid),
+            )?))
         })(h)),
         "player_sneaking" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             let uuid: Value = read_arg(lua, &rest, 1, "player_sneaking", "uuid")?;
@@ -1722,6 +1923,13 @@ pub(crate) fn generated_read(
         })(h)),
         "sneaking" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             Ok(Value::Boolean(h.sneaking()))
+        })(h)),
+        "text_allowed" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let text: String = read_arg(lua, &rest, 1, "text_allowed", "text")?;
+            match h.text_allowed(&text) {
+                Some(v) => Ok(Value::Boolean(v)),
+                None => Ok(Value::Nil),
+            }
         })(h)),
         "text_width" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             let text: String = read_arg(lua, &rest, 1, "text_width", "text")?;
