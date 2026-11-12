@@ -276,20 +276,27 @@ impl Instance {
         }
         Ok(())
     }
+    /// The value the instance currently has, computed from the base and every
+    /// modifier without touching the cache or clearing the dirty flag: a
+    /// reader that only observes (`AttributeInstance.getValue` on the paths
+    /// vanilla reads without storing) still sees the last write.
+    pub fn computed(&self) -> f64 {
+        let mut base = self.base;
+        for m in self.operation_modifiers(Operation::AddValue) {
+            base += m.amount();
+        }
+        let mut value = base;
+        for m in self.operation_modifiers(Operation::AddMultipliedBase) {
+            value += base * m.amount();
+        }
+        for m in self.operation_modifiers(Operation::AddMultipliedTotal) {
+            value *= 1.0 + m.amount();
+        }
+        self.definition.sanitize(value)
+    }
     pub fn value(&mut self) -> f64 {
         if self.dirty {
-            let mut base = self.base;
-            for m in self.operation_modifiers(Operation::AddValue) {
-                base += m.amount();
-            }
-            let mut value = base;
-            for m in self.operation_modifiers(Operation::AddMultipliedBase) {
-                value += base * m.amount();
-            }
-            for m in self.operation_modifiers(Operation::AddMultipliedTotal) {
-                value *= 1.0 + m.amount();
-            }
-            self.cached = self.definition.sanitize(value);
+            self.cached = self.computed();
             self.dirty = false;
         }
         self.cached
@@ -346,5 +353,69 @@ fn array_put(map: &mut Vec<Modifier>, m: Modifier) -> Option<Modifier> {
     } else {
         map.push(m);
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::convert::Infallible;
+
+    struct Silent;
+    impl Observer for Silent {
+        type Error = Infallible;
+        fn dirty(&mut self, _: &mut Instance) -> Result<(), Infallible> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn computed_equals_value_without_filling_the_cache() {
+        // A new instance is dirty with a zero cache: the value it reports is
+        // its base, and reading it does not clear the flag.
+        let instance = Instance::new(Definition::basic(20.0));
+        assert!(instance.is_dirty());
+        assert_eq!(instance.cached_value(), 0.0);
+        assert_eq!(instance.computed(), 20.0);
+        assert!(instance.is_dirty(), "computed clears no flag");
+        assert_eq!(instance.cached_value(), 0.0, "computed fills no cache");
+
+        // add_transient: (20 + 5) * (1 + 0.5) = 37.5. The cache still holds the
+        // value from before the writes, as it does after a packet.
+        let mut instance = Instance::new(Definition::basic(20.0));
+        let mut observer = Silent;
+        instance
+            .add_transient(
+                Modifier::new("test:add", 5.0, Operation::AddValue).unwrap(),
+                &mut observer,
+            )
+            .unwrap();
+        instance
+            .add_transient(
+                Modifier::new("test:multiply", 0.5, Operation::AddMultipliedBase).unwrap(),
+                &mut observer,
+            )
+            .unwrap();
+        assert_eq!(instance.computed(), 37.5);
+        assert_eq!(instance.cached_value(), 0.0);
+        assert_eq!(instance.value(), 37.5, "value equals computed");
+        assert_eq!(instance.cached_value(), 37.5);
+
+        // remove_all: back to the base, with the cache still at 37.5.
+        instance.remove_all(&mut observer).unwrap();
+        assert_eq!(instance.computed(), 20.0);
+        assert_eq!(instance.cached_value(), 37.5);
+        assert_eq!(instance.value(), 20.0);
+
+        // The definition's range sanitizes both reads alike.
+        let mut ranged = Instance::new(Definition::ranged(20.0, 0.0, 20.0).unwrap());
+        ranged
+            .add_transient(
+                Modifier::new("test:over", 5.0, Operation::AddValue).unwrap(),
+                &mut observer,
+            )
+            .unwrap();
+        assert_eq!(ranged.computed(), 20.0);
+        assert_eq!(ranged.value(), 20.0);
     }
 }

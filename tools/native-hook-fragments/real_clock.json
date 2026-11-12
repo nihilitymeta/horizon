@@ -1,0 +1,9 @@
+{
+  "hooks": [],
+  "helpers": [
+    {"name": "real_clock", "target": "horizon_client::game::native_local_player::Game<'_>::native_real_clock"}
+  ],
+  "rust_summary": "A monotonic wall clock for HUD animation (`native_real_clock`): seconds since the game started and the last frame's delta, which `/tick freeze` does not hold.",
+  "doc_summary": "`native_real_clock()`, a clock that never freezes: seconds since the game started (monotonic) and the wall time the last frame took. Unlike the game clock `native_clock` reports, `/tick freeze` does not hold it. Bundles need \"hooks\": @API:real_clock@.",
+  "comments": ["crates/horizon-client/src/game/native_local_player.rs"]
+}

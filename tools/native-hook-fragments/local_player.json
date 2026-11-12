@@ -1,0 +1,9 @@
+{
+  "hooks": [],
+  "helpers": [
+    {"name": "local_player", "target": "horizon_client::game::native_local_player::Game<'_>::native_local_player"}
+  ],
+  "rust_summary": "The window's own player (`native_local_player`): health, maximum health, absorption, food and saturation, air, experience, the `minecraft:armor` attribute, position and view, the selected hotbar slot and the crosshair's target.",
+  "doc_summary": "`native_local_player()`, the window's own player, readable live from a HUD draw hook: health, maximum health, absorption, food and saturation, air, experience, the `minecraft:armor` attribute, position and view, the selected hotbar slot, and the crosshair's target (a block, or an entity before it). Bundles need \"hooks\": @API:local_player@.",
+  "comments": ["crates/horizon-client/src/game/native_local_player.rs"]
+}

@@ -292,6 +292,7 @@ mod native_level_refs;
 mod native_level_world;
 mod native_lifecycle;
 mod native_living_refs;
+mod native_local_player;
 mod native_machines;
 mod native_menu_stacks;
 mod native_menus;
@@ -2643,6 +2644,9 @@ struct Game<'a> {
     /// The shader pack's entity and block entity ids, while one draws entities.
     pack_ids: Option<shader_packs::PackIds>,
     started: Instant,
+    /// The last frame's wall time in seconds (`native_real_clock`), set once a
+    /// frame in `extras_frame` from the same delta the frame counter records.
+    frame_delta: f64,
     /// `SpectatorGui`: the menu a spectator opens with the hotbar keys.
     spectator_gui: horizon_client::spectator_menu::SpectatorGui,
     previous: Instant,
@@ -17083,6 +17087,7 @@ impl<'a> Game<'a> {
             pack_ids: None,
             health_hud: hud_layout::HealthHud::default(),
             started: now,
+            frame_delta: 0.0,
             spectator_gui: Default::default(),
             previous: now,
             frame_end: now,

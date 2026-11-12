@@ -4017,6 +4017,21 @@ thread:
 
 Bundles need `"hooks": @API:session_state@`.
 
+### The player and the real clock a HUD reads
+
+- `native_local_player()` is the window's own player, readable live from a draw hook: `health`,
+  `max_health` (the `minecraft:max_health` attribute), `absorption`, `food`, `saturation`, `air` (the last
+  synched `DATA_AIR_SUPPLY_ID`), `max_air` (300), `xp_level`, `xp_progress` (0..1), `xp_total`, `armor` (the
+  `minecraft:armor` attribute), `position` (the feet), `yaw`, `pitch`, `selected_slot` (0..8), and `crosshair`:
+  `None` with nothing in reach, else the target the client's own pick names, `kind` `"block"` or `"entity"`,
+  `distance`, `pos` (the block, or the entity's block position) and `entity` (its network id for an entity
+  hit). None on the title screen. The server sends these even in single player, so they are the state the HUD
+  shows.
+- `native_real_clock()` is `seconds` since the game started and `delta`, the wall time the last frame took:
+  neither stops under `/tick freeze`, unlike the game clock `native_clock()` reports.
+
+Bundles need `"hooks": @API:local_player@` for the player and `@API:real_clock@` for the clock.
+
 ### Toasts a mod hides
 
 `native_toast_add(kind, id, cancel)` (client) is NeoForge's `ToastAddEvent`: it is heard once for each new toast, just

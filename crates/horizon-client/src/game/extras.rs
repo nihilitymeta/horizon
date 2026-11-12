@@ -148,6 +148,8 @@ impl Game<'_> {
     }
     /// Once per frame: the frame's time, and buttons let go behind screens.
     pub(super) fn extras_frame(&mut self, elapsed: Duration) {
+        // The real clock a HUD animates on (`native_real_clock`).
+        self.frame_delta = elapsed.as_secs_f64();
         // Under agent control the window may lack focus without pausing.
         let focused = self.focused || self.control.is_some();
         let playing = self.screen == Screen::Playing && self.title.is_none() && focused;

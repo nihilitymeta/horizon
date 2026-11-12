@@ -174,6 +174,76 @@ pub struct NativeCamera {
     pub dimension: String,
 }
 
+/// The window's own player, readable live from a HUD draw hook
+/// (`native_local_player`). None on the title screen and on a server, which
+/// has no window's player.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativeLocalPlayer {
+    /// The synched health (`PlayerHealth.health`).
+    pub health: f32,
+    /// The `minecraft:max_health` attribute's value; 20 when the player has
+    /// no such attribute.
+    pub max_health: f32,
+    /// The absorption (golden hearts) the server synched.
+    pub absorption: f32,
+    /// `FoodData.food`: 0 to 20 half-drumsticks (0 and 20 are empty and full).
+    pub food: i32,
+    /// `FoodData.saturation`.
+    pub saturation: f32,
+    /// `Entity.DATA_AIR_SUPPLY_ID`: the ticks of air left, as the server
+    /// last synched them (300 at full air).
+    pub air: i32,
+    /// `Entity.getMaxAirSupply` for a player: 300, the game's own constant
+    /// (this version has no `max_air` attribute to read).
+    pub max_air: i32,
+    /// The experience level.
+    pub xp_level: i32,
+    /// The progress to the next level, 0..1.
+    pub xp_progress: f32,
+    /// The total experience points.
+    pub xp_total: i32,
+    /// The `minecraft:armor` attribute's value: the armour points vanilla's
+    /// damage reduction uses. 0 when the player has no such attribute.
+    pub armor: f64,
+    /// The feet, in world coordinates.
+    pub position: [f64; 3],
+    /// The view yaw, in degrees.
+    pub yaw: f32,
+    /// The view pitch, in degrees.
+    pub pitch: f32,
+    /// The selected hotbar slot, 0 to 8.
+    pub selected_slot: usize,
+    /// What the crosshair points at; None when nothing is within reach.
+    pub crosshair: Option<NativeCrosshair>,
+}
+
+/// The crosshair's target, as the client's own view picks it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativeCrosshair {
+    /// `"block"` or `"entity"`.
+    pub kind: &'static str,
+    /// How far along the view the target is, in blocks.
+    pub distance: f32,
+    /// The block hit's position; for an entity, its block position (its feet,
+    /// floored, or the point along the view where the entity's position is
+    /// unknown: `NativeCrosshair::entity` is None then).
+    pub pos: [i32; 3],
+    /// The entity's network id (`Entity.getId`) for an entity hit the client
+    /// can name; None for a block and for an entity without one (an
+    /// interaction box, a dragon part, a projectile).
+    pub entity: Option<u32>,
+}
+
+/// A monotonic wall clock for a HUD (`native_real_clock`): unlike the game
+/// clock (`native_clock`), `/tick freeze` does not hold it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativeRealClock {
+    /// Seconds since the game started (this window's `Minecraft`), monotonic.
+    pub seconds: f64,
+    /// The wall time the last frame took, in seconds; 0 before the first.
+    pub delta: f64,
+}
+
 /// A dispenser hook's answer: the slot's remainder (None empties it) and the
 /// level event to play, `CLICK` (1000), `FAIL` (1001) or 0 for none.
 pub type NativeDispensed = (Option<ItemStack>, i32);

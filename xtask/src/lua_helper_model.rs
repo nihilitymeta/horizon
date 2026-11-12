@@ -1526,13 +1526,36 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
     }
 
-    /// Every helper in the catalog lands in exactly one class, and the
-    /// 403 count holds (182 catalog helpers, 221 in the pending
-    /// fragments).
+    /// The number of `helpers` entries in `native-hooks.json` plus every
+    /// pending fragment, counted straight from the JSON (not from the
+    /// classifier), so the expected value is independent of the code under
+    /// test and a new helper does not need a number edited here.
+    fn helpers_in_the_json() -> usize {
+        let count = |path: &std::path::Path| -> usize {
+            let text = std::fs::read_to_string(path).unwrap();
+            let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+            json["helpers"].as_array().map_or(0, Vec::len)
+        };
+        let mut total = count(&root().join("native-hooks.json"));
+        for entry in std::fs::read_dir(root().join("tools/native-hook-fragments")).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|e| e == "json") {
+                total += count(&path);
+            }
+        }
+        total
+    }
+
+    /// Every helper in the catalog and the pending fragments lands in
+    /// exactly one class.
     #[test]
     fn every_helper_lands_in_one_class() {
         let rows = classify_helpers(&root()).unwrap();
-        assert_eq!(rows.len(), 403, "every helper is classified");
+        assert_eq!(
+            rows.len(),
+            helpers_in_the_json(),
+            "every helper is classified"
+        );
         let (generated, already, adapter, handle, cannot) = class_counts(&rows);
         assert_eq!(
             generated + already + adapter + handle + cannot,
