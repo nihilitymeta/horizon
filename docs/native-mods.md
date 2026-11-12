@@ -4518,8 +4518,8 @@ fn world_primitives(&self, _host: &dyn Host, event: &mut WorldPrimitivesEvent<'_
 
 ### World markers
 
-`native_marker_set(owner, id, marker)` creates or replaces the marker `id` of the mod `owner`: a box, a line, a beam
-or text at a world position, which the engine draws every frame until the mod moves or removes it or its lifetime runs
+`native_marker_set(owner, id, marker)` creates or replaces the marker `id` of the mod `owner`: a box, a line, a beam,
+text or an icon at a world position, which the engine draws every frame until the mod moves or removes it or its lifetime runs
 out. Unlike `native_world_primitives`, it is not asked again each frame: a mod sets a marker once. A `NativeMarker` is:
 
 - `pos`, the anchor in world coordinates, and `shape`, a `NativeMarkerShape`:
@@ -4531,6 +4531,10 @@ out. Unlike `native_world_primitives`, it is not asked again each frame: a mod s
     is drawn 7;
   - `Text { text, scale }`: text facing the camera, centred on `pos`, 1 to 64 characters, `scale` a name tag's size at
     1 (0.25 to 8);
+  - `Icon { sprite, size }`: an icon from the game's atlases facing the camera, centred on `pos`, `size` blocks across
+    (0.25 to 16). `sprite` is 1 to 64 characters of `a-z`, `0-9`, `_`, `/`, `.` and `-`, naming an item's
+    `item/<name>` (`item/diamond`), a block's `block/<name>` or another atlas sprite; a name the atlas lacks draws
+    nothing;
 - every coordinate a shape reaches must stay within 30,000,000 blocks of the origin, as `pos` itself must: a box's far
   corner, a line's end or a beam's top may not leave that bound, at set or at move;
 - `argb`, the colour (a beam's alpha scales the beacon's own), and `through_walls`, which makes it seen through walls

@@ -64,6 +64,14 @@ pub enum PrimitiveShape {
         scale_with_distance: bool,
         background: bool,
     },
+    /// An atlas sprite, facing the camera and centred on `at`, `size` blocks across. A name
+    /// the atlas lacks draws nothing.
+    Sprite {
+        at: [f64; 3],
+        sprite: String,
+        size: f32,
+        color: u32,
+    },
 }
 
 /// Where text with `scale_with_distance` has the size it keeps.
@@ -134,6 +142,22 @@ impl WorldPrimitives {
             scale,
             scale_with_distance: false,
             background: false,
+        })
+    }
+    /// An atlas sprite facing the camera, centred on `at` and `size` blocks across, tinted
+    /// by `color`.
+    pub fn sprite(
+        &mut self,
+        at: [f64; 3],
+        sprite: impl Into<String>,
+        size: f32,
+        color: u32,
+    ) -> &mut WorldPrimitive {
+        self.push(PrimitiveShape::Sprite {
+            at,
+            sprite: sprite.into(),
+            size,
+            color,
         })
     }
     pub fn iter(&self) -> std::slice::Iter<'_, WorldPrimitive> {

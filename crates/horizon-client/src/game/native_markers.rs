@@ -36,6 +36,11 @@ const MAX_BEAM_HEIGHT: f64 = 512.0;
 /// Text's smallest and largest scale: a name tag's size is 1.
 const MIN_TEXT_SCALE: f32 = 0.25;
 const MAX_TEXT_SCALE: f32 = 8.0;
+/// A marker icon's smallest and largest size, in blocks across: 1 is a block.
+const MIN_ICON_SIZE: f32 = 0.25;
+const MAX_ICON_SIZE: f32 = 16.0;
+/// An icon's sprite name's longest, in characters.
+const MAX_SPRITE_CHARS: usize = 64;
 /// A lifetime's longest, in ticks (an hour of game time).
 const MAX_TTL_TICKS: u32 = 72_000;
 /// A marker farther than this from the camera is not drawn this frame; it is
@@ -180,6 +185,9 @@ impl Markers {
                 NativeMarkerShape::Text { text, scale } => {
                     out.text(pos, text.as_str(), marker.argb, *scale)
                 }
+                NativeMarkerShape::Icon { sprite, size } => {
+                    out.sprite(pos, sprite.as_str(), *size, marker.argb)
+                }
             };
             if marker.through_walls {
                 primitive.through_walls();
@@ -201,14 +209,19 @@ fn within(v: f64) -> bool {
 }
 
 /// Whether the far point a shape reaches from `pos` is within `MAX_COORD` too:
-/// a box's maximum corner, a line's end and a beam's top must stay in the
-/// coordinate bounds, not only the anchor every shape shares.
+/// a box's maximum corner, a line's end, a beam's top and either half of an
+/// icon must stay in the coordinate bounds, not only the anchor every shape
+/// shares.
 fn extent_within(pos: [f64; 3], shape: &NativeMarkerShape) -> bool {
     match shape {
         NativeMarkerShape::Box { size, .. } => (0..3).all(|axis| within(pos[axis] + size[axis])),
         NativeMarkerShape::Line { to } => (0..3).all(|axis| within(pos[axis] + to[axis])),
         NativeMarkerShape::Beam { height } => within(pos[1] + height),
         NativeMarkerShape::Text { .. } => true,
+        NativeMarkerShape::Icon { size, .. } => {
+            let half = f64::from(*size) / 2.0;
+            (0..3).all(|axis| within(pos[axis] + half) && within(pos[axis] - half))
+        }
     }
 }
 
@@ -235,11 +248,28 @@ fn valid(id: &str, marker: &NativeMarker) -> bool {
                 && scale.is_finite()
                 && (MIN_TEXT_SCALE..=MAX_TEXT_SCALE).contains(scale)
         }
+        NativeMarkerShape::Icon { sprite, size } => {
+            valid_sprite(sprite)
+                && size.is_finite()
+                && (MIN_ICON_SIZE..=MAX_ICON_SIZE).contains(size)
+        }
     };
     let ttl_ok = marker
         .ttl_ticks
         .is_none_or(|ttl| (1..=MAX_TTL_TICKS).contains(&ttl));
     id_ok && pos_ok && shape_ok && ttl_ok
+}
+
+/// Whether `sprite` can name an atlas sprite: 1 to 64 characters of `a-z`,
+/// `0-9`, `_`, `/`, `.` and `-` (`item/diamond`, `block/stone`,
+/// `entity/beacon/beacon_beam`). Whether the atlas holds it is the draw path's
+/// question, not this one's.
+fn valid_sprite(sprite: &str) -> bool {
+    !sprite.is_empty()
+        && sprite.chars().count() <= MAX_SPRITE_CHARS
+        && sprite.chars().all(|c| {
+            c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '/' | '.' | '-')
+        })
 }
 
 // Native mods use these; nothing in Horizon calls them.
@@ -261,11 +291,11 @@ impl Game<'_> {
     }
 
     /// Creates the world marker `id` of the mod `owner`, or replaces what that
-    /// id showed: a box, a line, a beam or text at a world position, in ARGB,
-    /// which the engine draws every frame until the mod moves or removes it or
-    /// its lifetime runs out. `id` is the mod's own key, 1 to 64 characters
-    /// (`owner` 1 to 64 too); a mod keeps at most 256 markers, every mod
-    /// together 4096, and replacing one does not count twice.
+    /// id showed: a box, a line, a beam, text or an atlas icon at a world
+    /// position, in ARGB, which the engine draws every frame until the mod
+    /// moves or removes it or its lifetime runs out. `id` is the mod's own key,
+    /// 1 to 64 characters (`owner` 1 to 64 too); a mod keeps at most 256
+    /// markers, every mod together 4096, and replacing one does not count twice.
     /// A lifetime runs on the world's game time, which `/tick freeze` holds. A
     /// marker belongs to the level it was set in and is drawn only there,
     /// including after a move, and opening or closing a world drops them all.
@@ -291,8 +321,8 @@ impl Game<'_> {
     /// only, so its shape, colour, through-walls setting, the lifetime it has
     /// left and the level it was set in stay. False when that id has no
     /// marker, or `pos` is invalid: outside the game's coordinate bounds
-    /// itself, or enough that the marker's far corner, line end or beam top
-    /// would leave them; false on a server. API @API:marker_move@.
+    /// itself, or enough that the marker's far corner, line end, beam top or
+    /// icon edge would leave them; false on a server. API @API:marker_move@.
     pub(super) fn native_marker_move(&mut self, owner: &str, id: &str, pos: [f64; 3]) -> bool {
         if !self.native_window() {
             return false;
@@ -834,6 +864,149 @@ mod tests {
             assert_eq!(list[0].shape, expected, "{shape:?}");
             assert!(!list[0].through_walls, "{shape:?}");
         }
+    }
+
+    /// An icon marker at the anchor `boxed()` uses.
+    fn icon(sprite: &str, size: f32) -> NativeMarker {
+        NativeMarker {
+            pos: [10.0, 20.0, 30.0],
+            shape: NativeMarkerShape::Icon {
+                sprite: sprite.to_owned(),
+                size,
+            },
+            argb: 0xFF11_2233,
+            through_walls: false,
+            ttl_ticks: None,
+        }
+    }
+
+    #[test]
+    fn an_icon_names_a_sprite_the_atlas_could_hold_and_a_size() {
+        let mut markers = Markers::default();
+        // An item's sprite, a block's and another of the atlas's.
+        for (id, sprite) in [
+            ("item", "item/diamond"),
+            ("block", "block/stone"),
+            ("other", "entity/beacon/beacon_beam"),
+        ] {
+            assert!(
+                markers.set(OWNER, id, &icon(sprite, 1.0), 0, LEVEL),
+                "{sprite}"
+            );
+        }
+        // The ends of the size range and the longest sprite.
+        assert!(markers.set(
+            OWNER,
+            "small",
+            &icon("item/diamond", MIN_ICON_SIZE),
+            0,
+            LEVEL
+        ));
+        assert!(markers.set(
+            OWNER,
+            "large",
+            &icon("item/diamond", MAX_ICON_SIZE),
+            0,
+            LEVEL
+        ));
+        let longest = "a".repeat(MAX_SPRITE_CHARS);
+        assert!(markers.set(OWNER, "long", &icon(&longest, 2.0), 0, LEVEL));
+
+        // A refused icon leaves the marker the id had.
+        assert!(markers.set(OWNER, "keep", &boxed(), 0, LEVEL));
+        for (sprite, size) in [
+            (String::new(), 1.0),
+            ("a".repeat(MAX_SPRITE_CHARS + 1), 1.0),
+            ("Item/Diamond".to_owned(), 1.0),
+            ("item/diamond ".to_owned(), 1.0),
+            ("item/*".to_owned(), 1.0),
+            ("item/diamond".to_owned(), MIN_ICON_SIZE - 0.01),
+            ("item/diamond".to_owned(), MAX_ICON_SIZE + 0.5),
+            ("item/diamond".to_owned(), f32::NAN),
+            ("item/diamond".to_owned(), f32::INFINITY),
+        ] {
+            assert!(
+                !markers.set(OWNER, "keep", &icon(&sprite, size), 0, LEVEL),
+                "{sprite:?} {size}"
+            );
+            assert_eq!(markers.get(OWNER, "keep"), Some(&boxed()), "{sprite:?}");
+        }
+    }
+
+    #[test]
+    fn an_icon_stays_inside_the_coordinate_bound_on_both_sides() {
+        // It is centred on its anchor, so either half must stay in bounds.
+        let half = f64::from(MAX_ICON_SIZE) / 2.0;
+        let at = |x: f64| NativeMarker {
+            pos: [x, 0.0, 0.0],
+            ..icon("item/diamond", MAX_ICON_SIZE)
+        };
+        let mut markers = Markers::default();
+        assert!(markers.set(OWNER, "far-edge", &at(MAX_COORD - half), 0, LEVEL));
+        assert!(!markers.set(OWNER, "past", &at(MAX_COORD - half + 1.0), 0, LEVEL));
+        assert!(markers.set(OWNER, "near-edge", &at(-(MAX_COORD - half)), 0, LEVEL));
+        assert!(!markers.set(OWNER, "past-low", &at(-(MAX_COORD - half + 1.0)), 0, LEVEL));
+
+        // A move checks the same bounds, and a refused one leaves the anchor.
+        assert!(markers.move_to(OWNER, "far-edge", [0.0, MAX_COORD - half, 0.0]));
+        assert!(!markers.move_to(OWNER, "far-edge", [0.0, MAX_COORD - half + 1.0, 0.0]));
+        assert_eq!(
+            markers.get(OWNER, "far-edge").map(|m| m.pos),
+            Some([0.0, MAX_COORD - half, 0.0])
+        );
+    }
+
+    #[test]
+    fn an_icon_marker_lives_and_expires_as_the_other_shapes_do() {
+        let mut markers = Markers::default();
+        let timed = NativeMarker {
+            ttl_ticks: Some(10),
+            ..icon("item/diamond", 1.0)
+        };
+        assert!(markers.set(OWNER, "timed", &timed, 100, LEVEL));
+        markers.prune(109);
+        assert_eq!(markers.get(OWNER, "timed"), Some(&timed));
+        markers.prune(110);
+        assert_eq!(markers.get(OWNER, "timed"), None);
+
+        // It belongs to the level it was set in, and is kept in another.
+        assert!(markers.set(OWNER, "mine", &timed, 0, LEVEL));
+        assert!(emitted(&markers, timed.pos, NETHER).is_empty());
+        assert_eq!(markers.get(OWNER, "mine"), Some(&timed));
+
+        // And it counts against the per-owner cap as any marker does.
+        let mut full = Markers::default();
+        for i in 0..MAX_MARKERS_PER_OWNER {
+            assert!(full.set(OWNER, &format!("m{i}"), &timed, 0, LEVEL), "m{i}");
+        }
+        assert!(!full.set(OWNER, "one-too-many", &timed, 0, LEVEL));
+        assert!(full.set(OWNER, "m0", &timed, 0, LEVEL));
+    }
+
+    #[test]
+    fn an_icon_marker_emits_a_sprite_at_its_anchor_size_and_colour() {
+        let mut markers = Markers::default();
+        let marker = icon("item/diamond", 2.0);
+        assert!(markers.set(OWNER, "icon", &marker, 0, LEVEL));
+        let drawn = emitted(&markers, [0.0; 3], LEVEL);
+        assert_eq!(drawn.len(), 1);
+        assert_eq!(
+            drawn[0].shape,
+            PrimitiveShape::Sprite {
+                at: [10.0, 20.0, 30.0],
+                sprite: "item/diamond".to_owned(),
+                size: 2.0,
+                color: 0xFF11_2233,
+            }
+        );
+        assert!(!drawn[0].through_walls);
+        // Through walls is kept for an icon as for the other shapes.
+        let through = NativeMarker {
+            through_walls: true,
+            ..marker
+        };
+        assert!(markers.set(OWNER, "icon", &through, 0, LEVEL));
+        assert!(emitted(&markers, [0.0; 3], LEVEL)[0].through_walls);
     }
 
     #[test]

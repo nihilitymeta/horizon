@@ -249,13 +249,14 @@ pub struct NativeRealClock {
 pub type NativeDispensed = (Option<ItemStack>, i32);
 
 /// Something a client mod keeps drawn in the world (`native_marker_set`): a
-/// box, a line, a beam or text at a world position, which the engine draws
-/// every frame until the mod moves or removes it, or its lifetime runs out.
+/// box, a line, a beam, text or an atlas icon at a world position, which the
+/// engine draws every frame until the mod moves or removes it, or its lifetime
+/// runs out.
 /// A marker belongs to the level it was set in (its key, like
 /// `minecraft:overworld`) and is drawn only there; opening or closing a world
 /// drops every marker. Every coordinate a shape reaches (a box's far corner, a
-/// line's end, a beam's top) must stay within 30,000,000 blocks of the origin,
-/// as `pos` must.
+/// line's end, a beam's top, an icon's edge) must stay within 30,000,000 blocks
+/// of the origin, as `pos` must.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NativeMarker {
     /// The anchor, in world coordinates.
@@ -292,6 +293,12 @@ pub enum NativeMarkerShape {
     /// The text, centred on the marker's `pos` and facing the camera: `text`
     /// is 1 to 64 characters, `scale` a name tag's size at 1 (`0.25..=8`).
     Text { text: String, scale: f32 },
+    /// An icon from the game's atlases, facing the camera and centred on the
+    /// marker's `pos`: the sprite `sprite`, `size` blocks across
+    /// (`0.25..=16`). A sprite is 1 to 64 characters of `a-z`, `0-9`, `_`, `/`,
+    /// `.` and `-`, naming what the atlas holds: an item's `item/<name>`
+    /// (`item/diamond`), a block's `block/<name>` or another sprite.
+    Icon { sprite: String, size: f32 },
 }
 
 /// What a mod's fake player uses its item on (`Host::use_as_player`), as a
