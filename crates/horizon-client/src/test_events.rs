@@ -360,6 +360,27 @@ pub fn native_loot_drops<'a>(
         used,
     }
 }
+/// Builds `NativeScreenView` for the workspace's own tests: the struct is
+/// `#[non_exhaustive]`, so only this crate can construct one.
+pub fn native_screen_view<'a>(
+    id: &'static str,
+    menu: Option<&'a str>,
+    title: Option<&'a Text>,
+    rect: [f32; 4],
+    slots: usize,
+    mouse: [f32; 2],
+    partial_tick: f32,
+) -> NativeScreenView<'a> {
+    NativeScreenView {
+        id,
+        menu,
+        title,
+        rect,
+        slots,
+        mouse,
+        partial_tick,
+    }
+}
 /// Builds `NativeServerPlayer` for the workspace's own tests: the struct is
 /// `#[non_exhaustive]`, so only this crate can construct one.
 pub fn native_server_player(
@@ -629,4 +650,32 @@ pub fn use_item_on_event<'a>(
     face: [i32; 3],
 ) -> UseItemOnEvent<'a> {
     UseItemOnEvent { stack, pos, face }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_screen_view_builds_every_field() {
+        let title = Text::literal("Chest");
+        let view = native_screen_view(
+            "inventory",
+            Some("minecraft:generic_9x3"),
+            Some(&title),
+            [1.5, 2.5, 3.5, 4.5],
+            41,
+            [5.5, 6.5],
+            0.75,
+        );
+        assert_eq!(view.id, "inventory");
+        assert_eq!(view.menu, Some("minecraft:generic_9x3"));
+        let seen = view.title.expect("the builder keeps the title");
+        assert!(core::ptr::eq(seen, &title), "the title itself, not a copy");
+        assert_eq!(seen.plain(), "Chest");
+        assert_eq!(view.rect, [1.5, 2.5, 3.5, 4.5]);
+        assert_eq!(view.slots, 41);
+        assert_eq!(view.mouse, [5.5, 6.5]);
+        assert_eq!(view.partial_tick, 0.75);
+    }
 }
