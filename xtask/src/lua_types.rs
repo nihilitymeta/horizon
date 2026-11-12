@@ -115,6 +115,23 @@ const TYPES: &[(&str, &str)] = &[
         "Time",
         "{ dimension: string, day_time: number, day: number, time_of_day: number, rain: number, thunder: number }",
     ),
+    // The window's own player, as `horizon.player()` with no argument
+    // hands it out on a client state: `local` marks it, `xp` is the nested
+    // experience table, `crosshair` is nil when nothing is in reach. There
+    // is no uuid, name, dimension or game_mode (the native does not have
+    // them; the dimension is on `Time`).
+    (
+        "LocalXp",
+        "{ level: number, progress: number?, total: number }",
+    ),
+    (
+        "LocalCrosshair",
+        "{ kind: \"block\" | \"entity\", distance: number?, pos: Vec3, entity: number? }",
+    ),
+    (
+        "LocalPlayer",
+        "{ local: boolean, health: number, max_health: number, absorption: number, food: number, saturation: number, air: number, max_air: number, xp: LocalXp, armor: number, position: Vec3, yaw: number, pitch: number, selected_slot: number, crosshair: LocalCrosshair? }",
+    ),
     (
         "Raycast",
         "{ id: string, x: number, y: number, z: number, block: Vec3 }",
@@ -412,8 +429,9 @@ const FUNCTIONS: &[(&str, &str)] = &[
     ("mob", "(id: number) -> MobView?"),
     ("mobs", "() -> { MobView }"),
     ("players", "() -> { ReadPlayer }"),
-    ("player", "(who: string) -> ReadPlayer?"),
+    ("player", "(who: string?) -> (ReadPlayer | LocalPlayer)?"),
     ("time", "() -> Time"),
+    ("real_time", "() -> { seconds: number, delta: number }"),
     ("raycast", "(player: string, distance: number?) -> Raycast?"),
     ("world_data", "() -> Data"),
     ("player_data", "(who: string) -> Data?"),
@@ -632,7 +650,7 @@ fn render() -> Result<String, String> {
         out.push_str(&format!("export type {name} = {def}\n"));
     }
     out.push_str("\n-- The event tables of the generated hooks: one table per hook,\n-- holding the struct's fields by name.\n");
-    out.push_str("--\n-- A text field reads as its plain string plus a `<field>_component`\n-- table (vanilla JSON). A write is a string, a component table, or both:\n-- the changed side wins; both changed, the component wins; a cleared\n-- component falls back to the string. Setting the plain side to nil leaves\n-- a required text alone and clears an optional one (nil on both sides\n-- clears it too). In-place edits of the seeded component table count.\n--\n-- A sequence field reads its holes as nil. Edits in place keep positions:\n-- a cleared trailing slot shrinks the list (`false` pins an explicit hole\n-- instead), an append past the seeded length grows it (up to 65536 extra\n-- entries; replace the table to grow it further), while a table the script\n-- replaces wholesale reads its own length (use `false` for holes there).\n-- An item's `extra` keeps its NBT types when edited in place; a fresh\n-- table reads with default types.\n--\n-- In hud and gui_layer_post, `horizon.time`, `block`, `block_property`,\n-- `light` read the client's world; `player`, `players`, `mob`, `mobs`,\n-- `raycast`, `surface_height` need a server and read empty on a client\n-- window; `world_data`, `player_data`, `entity_data`, the acting player's\n-- inventory reads and `summon` raise an error. `held` on the player tables\n-- reads nil there, and `acting_player` answers nil with no acting player.\n");
+    out.push_str("--\n-- A text field reads as its plain string plus a `<field>_component`\n-- table (vanilla JSON). A write is a string, a component table, or both:\n-- the changed side wins; both changed, the component wins; a cleared\n-- component falls back to the string. Setting the plain side to nil leaves\n-- a required text alone and clears an optional one (nil on both sides\n-- clears it too). In-place edits of the seeded component table count.\n--\n-- A sequence field reads its holes as nil. Edits in place keep positions:\n-- a cleared trailing slot shrinks the list (`false` pins an explicit hole\n-- instead), an append past the seeded length grows it (up to 65536 extra\n-- entries; replace the table to grow it further), while a table the script\n-- replaces wholesale reads its own length (use `false` for holes there).\n-- An item's `extra` keeps its NBT types when edited in place; a fresh\n-- table reads with default types.\n--\n-- In hud and gui_layer_post, `horizon.time`, `block`, `block_property`,\n-- `light` read the client's world; `player` with no argument reads the\n-- window's own player and `real_time` the wall clock; `players`, `mob`,\n-- `mobs`, `raycast`, `surface_height` need a server and read empty on a\n-- client window; `world_data`, `player_data`, `entity_data`, the acting\n-- player's inventory reads and `summon` raise an error. `held` on the\n-- player tables reads nil there, and `acting_player` answers nil with no\n-- acting player.\n");
     for g in &generated {
         out.push_str(&format!("export type {} = {}\n", g.event_ty, g.event_def));
     }

@@ -189,6 +189,10 @@ const CLIENT_API: &[&str] = &[
     "cancel",
     "require",
     "net_send_to_server",
+    // The reads a client hook with a host answers live: the window's own
+    // player (`player` with no argument) and the wall clock (`real_time`).
+    "player",
+    "real_time",
 ];
 /// The server-only `horizon` names a client state's draw-hook handler
 /// (`hud`, `gui_layer_post`) may still call: the reads that answer through
@@ -322,7 +326,7 @@ const HOST_SLOT: &str = "horizon_host";
 /// of the handlers can leave it out.
 pub(crate) const TIMERS_HANDLER: &str = "horizon_timers";
 /// `horizon.block`, `block_property`, `mob`, `mobs`, `players`, `player`,
-/// `time` and `raycast`: wrappers over the call's read function, which the
+/// `real_time`, `time` and `raycast`: wrappers over the call's read function, which the
 /// runner keeps in the slot while the handlers run; outside a call there is
 /// none, and a read is an error.
 const READS_CODE: &str = r#"
@@ -345,6 +349,7 @@ return function(slot, horizon, base)
   horizon.players = function() return read("players") end
   horizon.player = function(who) return read("player", who) end
   horizon.time = function() return read("time") end
+  horizon.real_time = function() return read("real_time") end
   horizon.raycast = function(who, distance) return read("raycast", who, distance) end
   horizon.world_data = function() return read("world_data") end
   horizon.player_data = function(who) return read("player_data", who) end
@@ -526,6 +531,83 @@ fn player_table_with_held(
             None => Value::Nil,
         },
     )?;
+    Ok(t)
+}
+
+/// A float as a Lua value: the number when finite, nil when not. The
+/// fields come from the game, not a script, so no script-driven NaN can
+/// arrive; a non-finite value is only a broken game state, and a table
+/// with a NaN in it would be silently wrong everywhere below.
+fn finite_or_nil(value: f64) -> Value {
+    if value.is_finite() {
+        Value::Number(value)
+    } else {
+        Value::Nil
+    }
+}
+
+/// The window's own player as a table (`local = true`), beside
+/// `player_table_of`: the native `local_player` answers live on a client
+/// window, with no uuid, name, dimension or game mode (the dimension is on
+/// `horizon.time()`). The crosshair is nil when nothing is in reach;
+/// `selected_slot` is 0..8. Any non-finite field reads as nil.
+fn local_player_table(
+    lua: &Lua,
+    p: &horizon_client::mod_api::NativeLocalPlayer,
+) -> mlua::Result<Table> {
+    let t = lua.create_table()?;
+    t.set("local", true)?;
+    t.set("health", finite_or_nil(f64::from(p.health)))?;
+    t.set("max_health", finite_or_nil(f64::from(p.max_health)))?;
+    t.set("absorption", finite_or_nil(f64::from(p.absorption)))?;
+    t.set("food", p.food)?;
+    t.set("saturation", finite_or_nil(f64::from(p.saturation)))?;
+    t.set("air", p.air)?;
+    t.set("max_air", p.max_air)?;
+    let xp = lua.create_table()?;
+    xp.set("level", p.xp_level)?;
+    xp.set("progress", finite_or_nil(f64::from(p.xp_progress)))?;
+    xp.set("total", p.xp_total)?;
+    t.set("xp", xp)?;
+    t.set("armor", finite_or_nil(p.armor))?;
+    t.set(
+        "position",
+        if p.position.iter().all(|v| v.is_finite()) {
+            Value::Table(goals::vec3(lua, p.position)?)
+        } else {
+            Value::Nil
+        },
+    )?;
+    t.set("yaw", finite_or_nil(f64::from(p.yaw)))?;
+    t.set("pitch", finite_or_nil(f64::from(p.pitch)))?;
+    t.set("selected_slot", p.selected_slot)?;
+    match &p.crosshair {
+        None => t.set("crosshair", Value::Nil)?,
+        Some(c) => {
+            let ch = lua.create_table()?;
+            ch.set("kind", c.kind)?;
+            ch.set("distance", finite_or_nil(f64::from(c.distance)))?;
+            ch.set(
+                "pos",
+                goals::vec3(
+                    lua,
+                    [
+                        f64::from(c.pos[0]),
+                        f64::from(c.pos[1]),
+                        f64::from(c.pos[2]),
+                    ],
+                )?,
+            )?;
+            ch.set(
+                "entity",
+                match c.entity {
+                    Some(id) => Value::Integer(i64::from(id)),
+                    None => Value::Nil,
+                },
+            )?;
+            t.set("crosshair", ch)?;
+        }
+    }
     Ok(t)
 }
 
@@ -832,15 +914,33 @@ impl LuaMod {
                         Value::Table(out)
                     }
                     "player" => {
-                        let who: String = FromLuaMulti::from_lua_multi(rest, lua)?;
-                        let uuid = uuid_parse(&who);
-                        match h
-                            .level_players()
-                            .into_iter()
-                            .find(|p| p.name == who || Some(p.uuid) == uuid)
-                        {
-                            Some(p) => Value::Table(player_table_with_held(lua, h, &p)?),
-                            None => Value::Nil,
+                        // With no name: the window's own player, which only a
+                        // client state has. A server state keeps the old
+                        // required name, so it parses it as before and fails
+                        // the same way.
+                        let who: Option<String> = if self.side == LuaSide::Server {
+                            Some(FromLuaMulti::from_lua_multi(rest, lua)?)
+                        } else {
+                            let (who,): (Option<String>,) =
+                                FromLuaMulti::from_lua_multi(rest, lua)?;
+                            who
+                        };
+                        match who {
+                            Some(who) => {
+                                let uuid = uuid_parse(&who);
+                                match h
+                                    .level_players()
+                                    .into_iter()
+                                    .find(|p| p.name == who || Some(p.uuid) == uuid)
+                                {
+                                    Some(p) => Value::Table(player_table_with_held(lua, h, &p)?),
+                                    None => Value::Nil,
+                                }
+                            }
+                            None => match h.local_player() {
+                                Some(p) => Value::Table(local_player_table(lua, &p)?),
+                                None => Value::Nil,
+                            },
                         }
                     }
                     "time" => {
@@ -853,6 +953,17 @@ impl LuaMod {
                         t.set("time_of_day", day_time.rem_euclid(24000))?;
                         t.set("rain", rain)?;
                         t.set("thunder", thunder)?;
+                        Value::Table(t)
+                    }
+                    "real_time" => {
+                        // The wall clock: unlike `time`, `/tick freeze` does
+                        // not hold it. On a dedicated server there is no
+                        // frame, so `delta` is what the native holds (0
+                        // before a frame).
+                        let clock = h.real_clock();
+                        let t = lua.create_table()?;
+                        t.set("seconds", finite_or_nil(clock.seconds))?;
+                        t.set("delta", finite_or_nil(clock.delta))?;
                         Value::Table(t)
                     }
                     "light" => {
@@ -12134,6 +12245,366 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
             state.globals().get::<String>("__UUID").unwrap(),
             "123e4567-e89b-12d3-a456-426614174000"
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A client window's host: the window's own player and a wall clock, and
+    /// no server's players (`level_players` empty, like a window).
+    struct LocalHost {
+        player: Option<horizon_client::mod_api::NativeLocalPlayer>,
+        clock: horizon_client::mod_api::NativeRealClock,
+    }
+
+    impl LocalHost {
+        fn local_player() -> horizon_client::mod_api::NativeLocalPlayer {
+            horizon_client::mod_api::NativeLocalPlayer {
+                health: 17.5,
+                max_health: 20.0,
+                absorption: 4.0,
+                food: 18,
+                saturation: 5.5,
+                air: 794,
+                max_air: 300,
+                xp_level: 12,
+                xp_progress: 0.25,
+                xp_total: 300,
+                armor: 5.0,
+                position: [1.5, 64.25, -3.75],
+                yaw: 90.0,
+                pitch: -30.0,
+                selected_slot: 3,
+                crosshair: Some(horizon_client::mod_api::NativeCrosshair {
+                    kind: "block",
+                    distance: 4.5,
+                    pos: [1, 64, 3],
+                    entity: None,
+                }),
+            }
+        }
+        fn real_clock() -> horizon_client::mod_api::NativeRealClock {
+            horizon_client::mod_api::NativeRealClock {
+                seconds: 123.5,
+                delta: 0.016,
+            }
+        }
+        fn window() -> Self {
+            Self {
+                player: Some(Self::local_player()),
+                clock: Self::real_clock(),
+            }
+        }
+    }
+
+    impl Host for LocalHost {
+        fn local_player(&self) -> Option<horizon_client::mod_api::NativeLocalPlayer> {
+            self.player.clone()
+        }
+        fn real_clock(&self) -> horizon_client::mod_api::NativeRealClock {
+            self.clock.clone()
+        }
+        fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
+            Vec::new()
+        }
+    }
+
+    fn dispatch_hud(host: &mut LocalHost, mods: &[Box<dyn Hooks>]) {
+        let mut batch = horizon_client::mod_api::HudBatch::new([800, 600]);
+        let mut corners = horizon_client::mod_api::Corners::new(800.0, 600.0, 0.0);
+        horizon_client::mod_api::dispatch_hud(host, mods, &mut batch, &mut corners);
+    }
+
+    #[test]
+    fn a_hud_reads_the_window_own_player_and_the_wall_clock() {
+        let (dir, path) = hmod(
+            "local_player_hud",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("hud", function(event)
+                  __witness = (__witness or 0) + 1
+                  P = horizon.player()
+                  R = horizon.real_time()
+                  NAMED = horizon.player("steve")
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let state = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = LocalHost::window();
+        dispatch_hud(&mut host, &mods);
+        assert_eq!(state.globals().get::<i64>("__witness").unwrap(), 1);
+        // Every field, distinct values: a swapped field fails.
+        let p: Table = state.globals().get("P").unwrap();
+        assert!(p.get::<bool>("local").unwrap());
+        assert_eq!(p.get::<f64>("health").unwrap(), 17.5);
+        assert_eq!(p.get::<f64>("max_health").unwrap(), 20.0);
+        assert_eq!(p.get::<f64>("absorption").unwrap(), 4.0);
+        assert_eq!(p.get::<i64>("food").unwrap(), 18);
+        assert_eq!(p.get::<f64>("saturation").unwrap(), 5.5);
+        assert_eq!(p.get::<i64>("air").unwrap(), 794);
+        assert_eq!(p.get::<i64>("max_air").unwrap(), 300);
+        let xp: Table = p.get("xp").unwrap();
+        assert_eq!(xp.get::<i64>("level").unwrap(), 12);
+        assert_eq!(xp.get::<f64>("progress").unwrap(), 0.25);
+        assert_eq!(xp.get::<i64>("total").unwrap(), 300);
+        assert_eq!(p.get::<f64>("armor").unwrap(), 5.0);
+        let pos: Table = p.get("position").unwrap();
+        assert_eq!(pos.get::<f64>("x").unwrap(), 1.5);
+        assert_eq!(pos.get::<f64>("y").unwrap(), 64.25);
+        assert_eq!(pos.get::<f64>("z").unwrap(), -3.75);
+        assert_eq!(p.get::<f64>("yaw").unwrap(), 90.0);
+        assert_eq!(p.get::<f64>("pitch").unwrap(), -30.0);
+        assert_eq!(p.get::<i64>("selected_slot").unwrap(), 3);
+        // No uuid, name, dimension or game mode: the native does not have them.
+        assert!(p.get::<Value>("uuid").unwrap().is_nil());
+        assert!(p.get::<Value>("name").unwrap().is_nil());
+        assert!(p.get::<Value>("dimension").unwrap().is_nil());
+        assert!(p.get::<Value>("game_mode").unwrap().is_nil());
+        let ch: Table = p.get("crosshair").unwrap();
+        assert_eq!(ch.get::<String>("kind").unwrap(), "block");
+        assert_eq!(ch.get::<f64>("distance").unwrap(), 4.5);
+        let pos: Table = ch.get("pos").unwrap();
+        assert_eq!(pos.get::<f64>("x").unwrap(), 1.0);
+        assert_eq!(pos.get::<f64>("y").unwrap(), 64.0);
+        assert_eq!(pos.get::<f64>("z").unwrap(), 3.0);
+        assert!(ch.get::<Value>("entity").unwrap().is_nil());
+        let r: Table = state.globals().get("R").unwrap();
+        assert_eq!(r.get::<f64>("seconds").unwrap(), 123.5);
+        assert_eq!(r.get::<f64>("delta").unwrap(), 0.016);
+        // Name lookups are empty on a client window.
+        assert!(state.globals().get::<Value>("NAMED").unwrap().is_nil());
+        // An entity hit carries its id.
+        host.player.as_mut().unwrap().crosshair = Some(horizon_client::mod_api::NativeCrosshair {
+            kind: "entity",
+            distance: 2.5,
+            pos: [-2, 65, 4],
+            entity: Some(42),
+        });
+        dispatch_hud(&mut host, &mods);
+        assert_eq!(state.globals().get::<i64>("__witness").unwrap(), 2);
+        let p: Table = state.globals().get("P").unwrap();
+        let ch: Table = p.get("crosshair").unwrap();
+        assert_eq!(ch.get::<String>("kind").unwrap(), "entity");
+        assert_eq!(ch.get::<f64>("distance").unwrap(), 2.5);
+        let pos: Table = ch.get("pos").unwrap();
+        assert_eq!(pos.get::<f64>("x").unwrap(), -2.0);
+        assert_eq!(pos.get::<f64>("y").unwrap(), 65.0);
+        assert_eq!(pos.get::<f64>("z").unwrap(), 4.0);
+        assert_eq!(ch.get::<i64>("entity").unwrap(), 42);
+        // Nothing in reach: nil.
+        host.player.as_mut().unwrap().crosshair = None;
+        dispatch_hud(&mut host, &mods);
+        assert_eq!(state.globals().get::<i64>("__witness").unwrap(), 3);
+        let p: Table = state.globals().get("P").unwrap();
+        assert!(p.get::<Value>("crosshair").unwrap().is_nil());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_client_tick_reads_the_window_own_player() {
+        // `player` and `real_time` are in `CLIENT_API`, so a client tick
+        // hook (not just a draw hook) reads them.
+        let (dir, path) = hmod(
+            "local_player_tick",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("client_tick_post", function(event)
+                  __witness = (__witness or 0) + 1
+                  P = horizon.player()
+                  R = horizon.real_time()
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let state = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = LocalHost::window();
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        assert_eq!(state.globals().get::<i64>("__witness").unwrap(), 1);
+        let p: Table = state.globals().get("P").unwrap();
+        assert!(p.get::<bool>("local").unwrap());
+        assert_eq!(p.get::<f64>("health").unwrap(), 17.5);
+        assert_eq!(p.get::<i64>("selected_slot").unwrap(), 3);
+        let r: Table = state.globals().get("R").unwrap();
+        assert_eq!(r.get::<f64>("seconds").unwrap(), 123.5);
+        assert_eq!(r.get::<f64>("delta").unwrap(), 0.016);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_client_window_without_a_player_reads_nil() {
+        // The title screen: the host answers None, so `player()` is nil.
+        let (dir, path) = hmod(
+            "local_player_none",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("hud", function(event)
+                  __witness = (__witness or 0) + 1
+                  P = horizon.player()
+                  NAMED = horizon.player("steve")
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let state = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = LocalHost {
+            player: None,
+            clock: LocalHost::real_clock(),
+        };
+        dispatch_hud(&mut host, &mods);
+        assert_eq!(state.globals().get::<i64>("__witness").unwrap(), 1);
+        assert!(state.globals().get::<Value>("P").unwrap().is_nil());
+        assert!(state.globals().get::<Value>("NAMED").unwrap().is_nil());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_server_state_player_with_no_name_still_needs_one() {
+        // The host would answer `local_player`, but a server state's
+        // `player()` keeps the old required name.
+        let (dir, path) = hmod(
+            "local_player_server",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("server_tick", function(event)
+                  __witness = (__witness or 0) + 1
+                  local ok, e = pcall(horizon.player)
+                  OK = ok
+                  ERR = tostring(e)
+                  NAMED = horizon.player("steve")
+                  R = horizon.real_time()
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let state = m.lua.clone();
+        let mut host = LocalHost::window();
+        let context = test_events::native_lifecycle_context(
+            horizon_client::mod_api::NativeAuthority::IntegratedServer,
+            horizon_client::mod_api::NativeWorldEpoch::new(1),
+            horizon_client::mod_api::NativeTickId::new(1),
+        );
+        m.server_tick(
+            &mut host,
+            &mut test_events::server_tick_event(
+                &context,
+                ServerTickPhase::ServerTickEnd {
+                    world_running: true,
+                },
+            ),
+        );
+        assert_eq!(state.globals().get::<i64>("__witness").unwrap(), 1);
+        assert!(!state.globals().get::<bool>("OK").unwrap());
+        let err: String = state.globals().get("ERR").unwrap();
+        assert!(!err.contains("local_player"), "{err}");
+        // The named lookup still answers (nil here: the world has no such
+        // player), and `real_time` runs on a server state too.
+        assert!(state.globals().get::<Value>("NAMED").unwrap().is_nil());
+        let r: Table = state.globals().get("R").unwrap();
+        assert_eq!(r.get::<f64>("seconds").unwrap(), 123.5);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn real_time_raises_in_a_hostless_hook() {
+        let (dir, path) = hmod(
+            "real_time_hostless",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("loot_table_load", function()
+                  horizon.real_time()
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let outcome =
+            m.run_handlers_with("loot_table_load", None, Reader::None, (), HANDLER_BUDGET);
+        let err = outcome.unwrap_err().to_string();
+        assert!(
+            err.contains("horizon.real_time: reads work inside a hook with a host"),
+            "{err}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_non_finite_local_player_field_reads_nil() {
+        let (dir, path) = hmod(
+            "local_player_nan",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("hud", function(event)
+                  P = horizon.player()
+                  R = horizon.real_time()
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let state = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = LocalHost::window();
+        {
+            let p = host.player.as_mut().unwrap();
+            p.health = f32::NAN;
+            p.max_health = f32::INFINITY;
+            p.absorption = f32::NEG_INFINITY;
+            p.saturation = f32::NAN;
+            p.xp_progress = f32::INFINITY;
+            p.armor = f64::INFINITY;
+            p.position = [1.5, f64::NAN, -3.75];
+            p.yaw = f32::NAN;
+            p.pitch = f32::INFINITY;
+        }
+        host.clock.seconds = f64::NAN;
+        dispatch_hud(&mut host, &mods);
+        let p: Table = state.globals().get("P").unwrap();
+        for field in [
+            "health",
+            "max_health",
+            "absorption",
+            "saturation",
+            "armor",
+            "position",
+            "yaw",
+            "pitch",
+        ] {
+            assert!(p.get::<Value>(field).unwrap().is_nil(), "{field}");
+        }
+        let xp: Table = p.get("xp").unwrap();
+        assert!(xp.get::<Value>("progress").unwrap().is_nil(), "progress");
+        assert_eq!(xp.get::<i64>("level").unwrap(), 12);
+        assert_eq!(xp.get::<i64>("total").unwrap(), 300);
+        // Finite fields still read.
+        assert_eq!(p.get::<i64>("food").unwrap(), 18);
+        assert_eq!(p.get::<i64>("selected_slot").unwrap(), 3);
+        let r: Table = state.globals().get("R").unwrap();
+        assert!(r.get::<Value>("seconds").unwrap().is_nil());
+        assert_eq!(r.get::<f64>("delta").unwrap(), 0.016);
+        // A non-finite crosshair distance reads nil, the rest stays.
+        host.player.as_mut().unwrap().crosshair = Some(horizon_client::mod_api::NativeCrosshair {
+            kind: "block",
+            distance: f32::INFINITY,
+            pos: [1, 64, 3],
+            entity: None,
+        });
+        dispatch_hud(&mut host, &mods);
+        let p: Table = state.globals().get("P").unwrap();
+        let ch: Table = p.get("crosshair").unwrap();
+        assert!(ch.get::<Value>("distance").unwrap().is_nil());
+        assert_eq!(ch.get::<String>("kind").unwrap(), "block");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -4,11 +4,11 @@
 
 Every native host helper (`native-hooks.json` plus the pending `tools/native-hook-fragments/`, 405 in all) lands in exactly one class: `generated` (plain args and a supported return: the generator can emit the `horizon.*` bridge), `already-lua` (a hand-written Lua helper already stands behind it), `adapter` (a hand-written converter would unblock it: the table names the blocking types), `handle` (an opaque draw/mod handle, needing its own design), or `cannot` (no bridge, with the reason). `docs/api/hook-exposure.md` is the same idea for hook points. This page is `lua-helpers`'s human-readable record; `crates/event-horizon-lua/src/generated_helpers.rs` is its bridge for the enabled helpers. Enabled is every `generated` helper except the [`EXCLUDED`] denylist below.
 
-121 generated (88 enabled, 33 excluded), 64 already-lua, 151 adapter, 29 handle, 40 cannot (405 total). Every generated helper not on the denylist reaches Lua; there is no other not-enabled bucket.
+121 generated (88 enabled, 33 excluded), 66 already-lua, 149 adapter, 29 handle, 40 cannot (405 total). Every generated helper not on the denylist reaches Lua; there is no other not-enabled bucket.
 
 ## What the numbers say
 
-108 distinct blocking types, ranked by how many helpers they block (one conversion each).
+106 distinct blocking types, ranked by how many helpers they block (one conversion each).
 
 | Type | Helpers blocked | Conversion |
 | --- | --- | --- |
@@ -57,7 +57,6 @@ Every native host helper (`native-hooks.json` plus the pending `tools/native-hoo
 | `NativeCommandResult` | 1 | a table of its fields, with the hand-written readers |
 | `NativeEffect` | 1 | a table of its fields, with the hand-written readers |
 | `NativePlayerInput` | 1 | a table of its fields, with the hand-written readers |
-| `NativeRealClock` | 1 | a table of its fields, with the hand-written readers |
 | `NativeUseTarget` | 1 | a table of its fields, with the hand-written readers |
 | `Option<BiomeColors>` | 1 | an optional Lua argument (nil when absent) |
 | `Option<EntityRef>` | 1 | an optional Lua argument (nil when absent) |
@@ -78,7 +77,6 @@ Every native host helper (`native-hooks.json` plus the pending `tools/native-hoo
 | `Option<NativeCommandInfo>` | 1 | an optional Lua argument (nil when absent) |
 | `Option<NativeFakeUse>` | 1 | an optional Lua argument (nil when absent) |
 | `Option<NativeLevelStats>` | 1 | an optional Lua argument (nil when absent) |
-| `Option<NativeLocalPlayer>` | 1 | an optional Lua argument (nil when absent) |
 | `Option<NativeSimulatedMove>` | 1 | an optional Lua argument (nil when absent) |
 | `Option<NativeStructureTemplate>` | 1 | an optional Lua argument (nil when absent) |
 | `Option<RecipeBookCategory>` | 1 | an optional Lua argument (nil when absent) |
@@ -121,7 +119,7 @@ Every native host helper (`native-hooks.json` plus the pending `tools/native-hoo
 | `[u32]` | 1 | an array table, element by element |
 | `u64` | 1 | an id as a string of hex/digits (a Lua number cannot hold it exactly) |
 
-Converting the top 1 (`Option<ItemStack>`) would unblock 2 Adapter helpers; the top 3 (`Option<ItemStack>, ItemStack, Compound`) would unblock 11; the top 5 (`Option<ItemStack>, ItemStack, Compound, EquipmentSlot, Option<BlockStateId>`) would unblock 14; the top 8 would unblock 25; the top 10 would unblock 30; the top 15 would unblock 44; the top 20 would unblock 56; converting all 108 together would unblock 151 (every Adapter helper, as each lists only those types).
+Converting the top 1 (`Option<ItemStack>`) would unblock 2 Adapter helpers; the top 3 (`Option<ItemStack>, ItemStack, Compound`) would unblock 11; the top 5 (`Option<ItemStack>, ItemStack, Compound, EquipmentSlot, Option<BlockStateId>`) would unblock 14; the top 8 would unblock 25; the top 10 would unblock 30; the top 15 would unblock 44; the top 20 would unblock 56; converting all 106 together would unblock 149 (every Adapter helper, as each lists only those types).
 
 What the generator could not express: a `&mut self` helper returning data (a queued action has no way back; it needs the run_command_as callback design); a `Result` return (no error design yet); a callback/closure parameter (needs that same design); an opaque `&mut` draw/mod handle; and every non-plain type above. Native-name types in the adapter list are all small read conversions of the same kinds.
 
@@ -272,7 +270,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 - `set_compass_target` -> `(who: string | ReadPlayer, value: { string, Vec3 }?) -> ()`
 - `set_profile_property` -> `(who: string | ReadPlayer, name: string, value: { value: string, signature: string? }?) -> ()`
 
-## Already Lua (64)
+## Already Lua (66)
 
 | Helper | Reason |
 | --- | --- |
@@ -300,6 +298,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `kill_mob` | already a hand-written Lua helper |
 | `level_players` | already a hand-written Lua helper |
 | `light` | already a hand-written Lua helper |
+| `local_player` | already a hand-written Lua helper |
 | `menu_contents` | already a hand-written Lua helper |
 | `menu_cursor` | already a hand-written Lua helper |
 | `mob_effect` | already a hand-written Lua helper |
@@ -317,6 +316,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `player_raycast` | already a hand-written Lua helper |
 | `player_stacks` | already a hand-written Lua helper |
 | `push_mob` | already a hand-written Lua helper |
+| `real_clock` | already a hand-written Lua helper |
 | `remove_mob` | already a hand-written Lua helper |
 | `run_command` | already a hand-written Lua helper |
 | `run_command_as` | already a hand-written Lua helper |
@@ -341,7 +341,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `title_times` | already a hand-written Lua helper |
 | `weather` | already a hand-written Lua helper |
 
-## Adapter: a converter would unblock it (151)
+## Adapter: a converter would unblock it (149)
 
 | Helper | Reason |
 | --- | --- |
@@ -426,7 +426,6 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `living_equipment` | blocks on `EquipmentSlot`, `LivingRef`, `Option<ItemStack>` |
 | `living_hand_item` | blocks on `Hand`, `LivingRef`, `Option<ItemStack>` |
 | `living_set_equipment` | blocks on `EquipmentSlot`, `LivingRef`, `Option<ItemStack>` |
-| `local_player` | blocks on `Option<NativeLocalPlayer>` |
 | `log_file` | blocks on `Option<PathBuf>` |
 | `machine_destroy_block` | blocks on `Option<ItemStack>`, `Option<Vec<ItemStack>>` |
 | `menu_stacks` | blocks on `Option<Vec<Option<ItemStack>>>` |
@@ -451,7 +450,6 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `poll` | blocks on `Vec<NativeModEvent>` |
 | `pop_resource_pack` | blocks on `Option<u128>` |
 | `push_player` | blocks on `[f32; 3]` |
-| `real_clock` | blocks on `NativeRealClock` |
 | `recipe_book_category` | blocks on `Option<RecipeBookCategory>` |
 | `recipe_ingredient` | blocks on `Option<Ingredient>`, `Value` |
 | `recipe_result` | blocks on `Option<ItemStack>`, `Value` |

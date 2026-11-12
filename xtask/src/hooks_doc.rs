@@ -452,6 +452,10 @@ const LUA_HELPERS: &[(&str, &str)] = &[
     ),
     ("light", "`horizon.light(x, y, z)`"),
     (
+        "local_player",
+        "`horizon.player()` with no argument (the window's own player on a client state; on a server state `horizon.player()` keeps its required name argument)",
+    ),
+    (
         "open_menu",
         "`horizon.open_menu(player, rows, title, items)`",
     ),
@@ -496,6 +500,7 @@ const LUA_HELPERS: &[(&str, &str)] = &[
         "player_stacks",
         "`horizon.inventory(player)`, `horizon.count_items(player, id)`, `horizon.carried_items(player)`",
     ),
+    ("real_clock", "`horizon.real_time()`"),
     ("push_mob", "`horizon.push_mob(dimension, id, x, y, z)`"),
     ("remove_mob", "`horizon.remove_mob(dimension, id)`"),
     ("run_command", "`horizon.run_command(line)`"),

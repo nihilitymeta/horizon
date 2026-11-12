@@ -258,7 +258,7 @@ and it would otherwise wait in the queue for the life of the state.
 
 Some functions take a *player*. A player is a `player` table that a hook handed out, a name or a UUID.
 
-A client state (`scripts/client/`) keeps only a small `horizon` table: `horizon.mod_id`, `horizon.mod_version`, `horizon.side`, `horizon.libraries`, `horizon.log`, `horizon.on`, `horizon.after`, `horizon.every`, `horizon.ticks`, `horizon.config`, `horizon.save_config`, `horizon.dev`, `horizon.distance`, `horizon.handled`, `horizon.cancel`, `horizon.require` and the queued action `horizon.net_send_to_server`. Every other `horizon.*` entry present on a server state (including `horizon.set_block`, `horizon.summon`, `horizon.players`, `horizon.world_data`, `horizon.player_data` and `horizon.entity_data`) is replaced by a stub that raises `horizon.<name> is only available in scripts/server/ (this is the client state of mod <id>)`. The exception is a draw-hook handler (`hud`, `gui_layer_post`), which may still call the read functions (`horizon.time`, `block`, `block_property`, `light`, `surface_height`, `raycast`, `player`, `players`, `acting_player`, `mob`, `mobs`, `inventory`, `count_items`, `carried_items`, `data`) and the two queued chat actions `horizon.tell` and `horizon.broadcast`; every other server-only call — queued actions such as `horizon.set_block` or `horizon.run_command`, and declarations such as `horizon.command`, `horizon.goal` and `horizon.block_entity` — raises the same server-only error even inside a draw hook. (`horizon.world_data`, `horizon.player_data`, `horizon.entity_data` and `horizon.summon` are refused in a draw hook as before, with the draw-hook error.)
+A client state (`scripts/client/`) keeps only a small `horizon` table: `horizon.mod_id`, `horizon.mod_version`, `horizon.side`, `horizon.libraries`, `horizon.log`, `horizon.on`, `horizon.after`, `horizon.every`, `horizon.ticks`, `horizon.config`, `horizon.save_config`, `horizon.dev`, `horizon.distance`, `horizon.handled`, `horizon.cancel`, `horizon.require`, the reads `horizon.player` and `horizon.real_time` (in every client hook that has a host, not only the draw hooks) and the queued action `horizon.net_send_to_server`. Every other `horizon.*` entry present on a server state (including `horizon.set_block`, `horizon.summon`, `horizon.players`, `horizon.world_data`, `horizon.player_data` and `horizon.entity_data`) is replaced by a stub that raises `horizon.<name> is only available in scripts/server/ (this is the client state of mod <id>)`. The exception is a draw-hook handler (`hud`, `gui_layer_post`), which may still call the read functions (`horizon.time`, `block`, `block_property`, `light`, `surface_height`, `raycast`, `players`, `acting_player`, `mob`, `mobs`, `inventory`, `count_items`, `carried_items`, `data`) and the two queued chat actions `horizon.tell` and `horizon.broadcast`; every other server-only call — queued actions such as `horizon.set_block` or `horizon.run_command`, and declarations such as `horizon.command`, `horizon.goal` and `horizon.block_entity` — raises the same server-only error even inside a draw hook. (`horizon.world_data`, `horizon.player_data`, `horizon.entity_data` and `horizon.summon` are refused in a draw hook as before, with the draw-hook error.)
 
 ### The mod
 
@@ -337,9 +337,10 @@ The `out` table of a goal function. Its actions run in order after the call:
 | `horizon.mob(id)` | Gets a living mob's view, as a goal sees it but without `nearby` and `target_position`, or nil |
 | `horizon.mobs()` | Gets the views of every living mob of the level |
 | `horizon.players()` | Gets the players of the world in join order, as `player` tables. A single-player world's owner is among them, under the UUID that the hooks use |
-| `horizon.player(name_or_uuid)` | Gets one player by name or UUID, or nil |
+| `horizon.player([name_or_uuid])` | Gets one player by name or UUID, or nil. On a client state, with no argument, the window's own player instead (see below); a server state's argument stays required |
 | `horizon.acting_player()` | Gets the player whose action or tick the hook is hearing, as a `player` table, or nil. In a hook fired for one player — `player_tick`, the click, use, break, place, attack, hurt, interact, inventory-tick and use-item hooks, the craft, pickup and drop hooks — it is that player. It is nil in hooks with no acting player: `player_chat`, `player_command`, `perform_console_command` (the dedicated-server console hook), `server_tick`, `world_lifecycle`, `entity_tick_post`, `player_died` and the player's `living_death`, hostless hooks, level hooks, and draw hooks on a client. A single-player owner's console command runs as that owner, through `perform_command` as their own command would |
-| `horizon.time()` | Gets `{dimension, day_time, day, time_of_day, rain, thunder}`: the clock in ticks, `day` and `time_of_day` (0 to 23999) from it, and the rain and thunder levels from 0 to 1 |
+| `horizon.time()` | Gets `{dimension, day_time, day, time_of_day, rain, thunder}`: the clock in ticks, `day` and `time_of_day` (0 to 23999) from it, and the rain and thunder levels from 0 to 1. The **game clock**: `/tick freeze` holds it, like vanilla |
+| `horizon.real_time()` | Gets `{seconds, delta}`: the wall clock, monotonic seconds since the game started and the last frame's wall time. It never freezes; see below for which clock a HUD wants |
 | `horizon.raycast(player, distance)` | Gets the first block within *distance* (64 by default, 1024 at most) along the player's look: `{id, x, y, z, block = {x, y, z}}`, the point hit and the block, or nil |
 | `horizon.light(x, y, z)` | Gets `{block, sky}` light at the position, from 0 to 15; both are 0 where nothing is loaded |
 | `horizon.surface_height(x, z[, heightmap])` | Gets the column's height by `world_surface` (the default), `motion_blocking`, `motion_blocking_no_leaves` or `ocean_floor`; nil where nothing is loaded |
@@ -642,15 +643,57 @@ that is the same when done twice, such as lighting a lamp rather than toggling i
 | `gui_layer_post(event)` | every frame, after a screen layer draws. The event holds `layer` (its id) and `batch`, as in `hud` |
 
 The draw hooks run on the frame's 8 ms budget and take no kind. Their reads are the client's: `horizon.time`,
-`block`, `block_property` and `light` read the client's world; `player`, `players`, `mob`, `mobs`, `raycast` and
-`surface_height` need a server and read empty on a client window, with `held` nil and `horizon.acting_player()`
-nil there too; `world_data`, `player_data`, `entity_data` and `summon`
+`block`, `block_property` and `light` read the client's world; `horizon.real_time` reads the wall clock and
+`horizon.player()` with no argument reads the window's own player (see the next section); `players`, `mob`,
+`mobs`, `raycast` and `surface_height` need a server and read empty on a client window, with `held` nil and
+`horizon.acting_player()` nil there too; `world_data`, `player_data`, `entity_data` and `summon`
 raise an error there. The acting player's inventory reads raise an error in a draw hook that has an acting
-player; on a client window, which has none, those reads are empty too, like `player`. The only
+player; on a client window, which has none, those reads are empty too, like the named `player` reads. The only
 actions a draw handler may queue are `horizon.tell` and `horizon.broadcast`; any other
 server-only call raises the server-only error (`horizon.<name> is only available in scripts/server/`)
 even there. A draw hook never waits for its state: when another hook holds the state (for example
 `log_line` on `Log writer`), the frame is skipped silently, with no error line.
+
+### Reading the game from a HUD
+
+A draw hook is the wrong place to feel blind: the window's own player and the wall clock read live there, in
+every client hook that has a host (a draw hook, a client tick, a key handler), not only in draws. On the
+client state, `horizon.player` and `horizon.real_time` never raise the server-only error; in a hook without
+a host they raise like the other reads (`reads work inside a hook with a host`).
+
+`horizon.player()` with no argument answers the window's own player as a `local player` table:
+
+- `local` (true; it tells this table from a server player's)
+- `health`, `max_health`, `absorption`, `food` (0 to 20), `saturation`, `air`, `max_air`, `armor`
+- `xp` as `{ level, progress, total }` (`progress` 0 to 1 towards the next level)
+- `position` as `{ x, y, z }` (the feet), `yaw`, `pitch`
+- `selected_slot` (0 to 8, the hotbar)
+- `crosshair`, nil when nothing is in reach, else `{ kind = "block" or "entity", distance, pos = { x, y, z },
+  entity }` (`entity` the target's network id, nil for a block or an entity without one)
+
+The table has no `uuid`, `name`, `dimension` or `game_mode`: the native does not provide them. The dimension
+is on `horizon.time().dimension`. On the title screen, with no player, `horizon.player()` answers nil rather
+than raising. With a name, `horizon.player(name)` is the other read: on a client window the world has no
+players to name, so it reads nil (the same empty-on-client contract as `players()`, `mob` and `mobs`).
+
+Two clocks, two jobs. `horizon.time()` is the **game clock**: it reports the world's day time (see `Time`),
+and `/tick freeze` holds it, like vanilla — use it for a HUD clock that shows the world's time. `horizon.real_time()`
+is the **wall clock**: monotonic `seconds` since the game started and `delta`, the last frame's wall time in
+seconds; `/tick freeze` never touches it — use it for a HUD animation that keeps pulsing. On a dedicated
+server there is no frame loop, so `delta` is whatever the native holds at the time (0 before a frame).
+
+```lua
+horizon.on("hud", function(event)
+  local p = horizon.player()
+  if not p then return end
+  local pulse = 0.5 + 0.5 * math.sin(horizon.real_time().seconds * 4)
+  event.batch.fill(10, 10, 100, 6, 0xFF000000)
+  event.batch.fill(10, 10, 100 * p.health / p.max_health, 6, 0xFFFF4444)
+  event.batch.fill(10, 18, 100 * p.food / 20, 6, 0xFFCC8833)
+  event.batch.fill(10, 26, 10 + 6 * pulse, 10 + 6 * pulse, 0xFF88CCFF)
+  event.batch.text("lvl " .. p.xp.level, 10, 30, 0xFFFFFFFF, true)
+end)
+```
 
 ### Screen and fog hooks
 
@@ -722,6 +765,9 @@ has these fields:
 A player that the world has no record of at that moment, such as one who is dying, has `uuid`, and the `name` that
 an earlier player hook reported. `player_died` names no player table at all: its `player` is the uuid text.
 
+`horizon.player()` with no argument on a client state hands out a different table instead, the window's own
+player: see [Reading the game from a HUD](#reading-the-game-from-a-hud).
+
 ### Saved tables
 
 A saved table, whether a block entity's, `world_data`, `player_data`, `entity_data` or `save_config`'s, follows
@@ -741,7 +787,7 @@ these rules:
 ### Types for an editor
 
 `docs/api/horizon.d.lua` holds Luau definitions of `horizon` and `registry`: every function above, every hook's
-handler signature, and the tables they hand a script, such as `Player`, `ReadPlayer`, `CommandPlayer`, `MobView`, `Item`, `Block` and `Data`. It is generated by `cargo run -p xtask -- lua-types`; the tests run it with `--check`.
+handler signature, and the tables they hand a script, such as `Player`, `ReadPlayer`, `CommandPlayer`, `LocalPlayer`, `MobView`, `Item`, `Block` and `Data`. It is generated by `cargo run -p xtask -- lua-types`; the tests run it with `--check`.
 
 With [luau-lsp](https://github.com/JohnnyMorganz/luau-lsp), this command reports a misspelled function or hook, and
 an editor completes them:

@@ -26,6 +26,9 @@ export type Component = { text: string?, translate: string?, color: string?, bol
 export type Vec2 = { x: number, y: number }
 export type Chunk = { x: number, z: number }
 export type Time = { dimension: string, day_time: number, day: number, time_of_day: number, rain: number, thunder: number }
+export type LocalXp = { level: number, progress: number?, total: number }
+export type LocalCrosshair = { kind: "block" | "entity", distance: number?, pos: Vec3, entity: number? }
+export type LocalPlayer = { ["local"]: boolean, health: number, max_health: number, absorption: number, food: number, saturation: number, air: number, max_air: number, xp: LocalXp, armor: number, position: Vec3, yaw: number, pitch: number, selected_slot: number, crosshair: LocalCrosshair? }
 export type Raycast = { id: string, x: number, y: number, z: number, block: Vec3 }
 export type Light = { block: number, sky: number }
 export type CommandArgs = { raw: string, [string]: any }
@@ -54,11 +57,13 @@ export type HudCorners = { place: (corner: string, w: number, h: number) -> (num
 -- table reads with default types.
 --
 -- In hud and gui_layer_post, `horizon.time`, `block`, `block_property`,
--- `light` read the client's world; `player`, `players`, `mob`, `mobs`,
--- `raycast`, `surface_height` need a server and read empty on a client
--- window; `world_data`, `player_data`, `entity_data`, the acting player's
--- inventory reads and `summon` raise an error. `held` on the player tables
--- reads nil there, and `acting_player` answers nil with no acting player.
+-- `light` read the client's world; `player` with no argument reads the
+-- window's own player and `real_time` the wall clock; `players`, `mob`,
+-- `mobs`, `raycast`, `surface_height` need a server and read empty on a
+-- client window; `world_data`, `player_data`, `entity_data`, the acting
+-- player's inventory reads and `summon` raise an error. `held` on the
+-- player tables reads nil there, and `acting_player` answers nil with no
+-- acting player.
 export type AddServerReloadListenersEvent = { listeners: { { id: string, folder: string } } }
 export type AnalogOutputEvent = { dimension: string, pos: Vec3, state: string, face: "down" | "up" | "north" | "south" | "west" | "east", output: number, state_props: Props }
 export type AnvilCraftPostEvent = { player: PlayerRef, pos: Vec3, craft: { left: Item?, right: Item?, output: Item } }
@@ -992,8 +997,9 @@ declare horizon: {
     mob: (id: number) -> MobView?,
     mobs: () -> { MobView },
     players: () -> { ReadPlayer },
-    player: (who: string) -> ReadPlayer?,
+    player: (who: string?) -> (ReadPlayer | LocalPlayer)?,
     time: () -> Time,
+    real_time: () -> { seconds: number, delta: number },
     raycast: (player: string, distance: number?) -> Raycast?,
     world_data: () -> Data,
     player_data: (who: string) -> Data?,
