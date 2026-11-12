@@ -482,6 +482,10 @@ const LUA_HELPERS: &[(&str, &str)] = &[
         "net_send_to_server",
         "`horizon.net_send_to_server(channel, data)`",
     ),
+    ("marker_set", "`horizon.marker_set(id, spec)`"),
+    ("marker_move", "`horizon.marker_move(id, pos)`"),
+    ("marker_remove", "`horizon.marker_remove(id)`"),
+    ("marker_clear_owner", "`horizon.marker_clear()`"),
     (
         "particles",
         "`horizon.particles(name, x, y, z[, count, spread, speed])`",

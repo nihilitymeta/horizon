@@ -27,7 +27,7 @@ use horizon_client::mod_api::ModSide;
 use horizon_client::mod_api::NativeCommand;
 use horizon_client::mod_api::{
     AttachmentCodec, AttachmentType, BlockStateId, Compound, Flow, Holder, Hooks, Host,
-    LevelDimension, LevelHost, LevelWriteHost, MobView,
+    LevelDimension, LevelHost, LevelWriteHost, MobView, NativeMarker, NativeMarkerShape,
 };
 use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
@@ -193,6 +193,13 @@ const CLIENT_API: &[&str] = &[
     // player (`player` with no argument) and the wall clock (`real_time`).
     "player",
     "real_time",
+    // The world markers (`horizon.marker_set` et al): queued actions on the
+    // client state, like `net_send_to_server`; a server state stubs them
+    // with the client-only error (see the filter below).
+    "marker_set",
+    "marker_move",
+    "marker_remove",
+    "marker_clear",
 ];
 /// The server-only `horizon` names a client state's draw-hook handler
 /// (`hud`, `gui_layer_post`) may still call: the reads that answer through
@@ -1418,6 +1425,11 @@ pub struct LuaMod {
     /// back into Lua inside the host call, and the depth is capped at
     /// [`CALLBACK_DEPTH`] so the stack does not grow without bound.
     sync_nesting: AtomicU32,
+    /// A reload of this client state succeeded since the last hook firing:
+    /// its markers are cleared at the next firing that has a host, since
+    /// `reload` itself has none. A failed reload keeps the old state and
+    /// its markers, so the flag is set only on success.
+    pending_marker_clear: Mutex<bool>,
 }
 
 /// A mod's goal definitions, shared with the `horizon.goal` function.
@@ -1945,6 +1957,7 @@ impl LuaMod {
             reload_seen: AtomicU32::new(reload_generation()),
             turn: turn::ReentrantTurn::new(),
             sync_nesting: AtomicU32::new(0),
+            pending_marker_clear: Mutex::new(false),
         };
         m.install_api().map_err(|e| e.to_string())?;
         m.run(side.entry()).map_err(|e| e.to_string())?;
@@ -2098,6 +2111,16 @@ impl LuaMod {
         let old_scripts = swap(&self.scripts, scripts);
         let old_library_scripts = swap(&self.library_scripts, library_scripts);
         let Err(e) = self.run(self.side.entry()) else {
+            // The new scripts run: whatever markers the old state drew
+            // clears at the next firing that has a host (this reload has
+            // none). A failed reload keeps the old state and its markers,
+            // so the flag is set only here, never on the error path.
+            if self.side == LuaSide::Client {
+                *self
+                    .pending_marker_clear
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) = true;
+            }
             return Ok(());
         };
         // Whatever the failed script registered is dropped with the fresh
@@ -2496,6 +2519,13 @@ impl LuaMod {
             "net_send_to_player",
             "send_custom_payload_to_player",
             "net_send_to_server",
+            // The world markers (client state only, like `net_send_to_server`
+            // above): the `marker_set`-style calls need a window, and the
+            // closure below refuses them in a draw hook.
+            "marker_set",
+            "marker_move",
+            "marker_remove",
+            "marker_clear",
             "open_menu",
             "open_menu_with_input",
             "set_menu_items",
@@ -2510,6 +2540,17 @@ impl LuaMod {
             api.set(
                 action,
                 lua.create_function(move |lua, args: MultiValue| {
+                    // A draw hook (`hud`, `gui_layer_post`) may queue only
+                    // `tell` and `broadcast`: a marker call there fails at
+                    // the call (`run_action` cannot tell a draw firing from
+                    // any other), as a `&mut` read does.
+                    if action.starts_with("marker_")
+                        && slot.raw_get::<Option<bool>>(4)?.unwrap_or(false)
+                    {
+                        return Err(mlua::Error::runtime(format!(
+                            "horizon.{action}: not available in draw hooks (hud, gui_layer_post)"
+                        )));
+                    }
                     // Outside a hook's handlers nothing would take the
                     // action: it would sit in the queue for the state's life.
                     if slot.raw_get::<Option<i64>>(3)?.unwrap_or(0) == 0 {
@@ -2731,6 +2772,26 @@ impl LuaMod {
                     },
                 )?;
                 api.set(key, stub)?;
+            }
+        }
+        // The mirror for the world markers: a client-only queued action, so
+        // a server state stubs it with the client-only error (the `player`
+        // read branches on the side the same way). Server hooks never set
+        // the draw flag, so no draw-hook arm is needed here.
+        if side == LuaSide::Server {
+            let id = self.id.clone();
+            for name in ["marker_set", "marker_move", "marker_remove", "marker_clear"] {
+                let name = name.to_owned();
+                let id = id.clone();
+                let key = name.clone();
+                api.set(
+                    key.as_str(),
+                    lua.create_function(move |_, _: MultiValue| -> mlua::Result<Value> {
+                        Err(mlua::Error::runtime(format!(
+                            "horizon.{name} is only available in scripts/client/ (this is the server state of mod {id})"
+                        )))
+                    })?,
+                )?;
             }
         }
         lua.globals().set(GLOBAL, &api)?;
@@ -2990,6 +3051,19 @@ impl LuaMod {
         args: impl mlua::IntoLuaMulti,
         apply: &mut dyn FnMut(&mut dyn Host, &str, &Table) -> mlua::Result<()>,
     ) -> mlua::Result<()> {
+        // A reload since the last firing left the old state with markers
+        // and no host to clear them with: clear them now, before whatever
+        // the new handlers queue.
+        if self.side == LuaSide::Client {
+            let pending = self
+                .pending_marker_clear
+                .lock()
+                .map(|mut p| std::mem::take(&mut *p))
+                .unwrap_or(false);
+            if pending {
+                host.marker_clear_owner(&self.id);
+            }
+        }
         let actions = self.run_handlers(hook, kind, Reader::Host(&mut *host), args)?;
         for (action, args) in actions {
             apply(host, &action, &args)?;
@@ -3811,6 +3885,66 @@ impl LuaMod {
                 // later queued actions still run.
                 let _ = host.teleport_player(uuid, &dimension, pos, yaw, pitch);
             }
+            "marker_set" => {
+                let id = marker_id(action, &args.get::<Value>(1)?)?;
+                let spec: Table = match args.get::<Value>(2)? {
+                    Value::Table(t) => t,
+                    Value::Nil => {
+                        return Err(mlua::Error::runtime(format!(
+                            "{action}: spec: missing (a table)"
+                        )));
+                    }
+                    other => {
+                        return Err(mlua::Error::runtime(format!(
+                            "{action}: spec: must be a table, got {}",
+                            other.type_name()
+                        )));
+                    }
+                };
+                let marker = marker_spec(action, &spec)?;
+                // A native refusal (a bad shape, past a cap, off a window)
+                // is ordinary: report it and carry on, so later queued
+                // actions still run.
+                if !host.marker_set(&self.id, &id, &marker) {
+                    self.error(format!(
+                        "{action}: the engine refused the marker (a bad shape, past a cap, or not on a window); it is not drawn"
+                    ));
+                }
+            }
+            "marker_move" => {
+                let id = marker_id(action, &args.get::<Value>(1)?)?;
+                let pos: Table = match args.get::<Value>(2)? {
+                    Value::Table(t) => t,
+                    Value::Nil => {
+                        return Err(mlua::Error::runtime(format!(
+                            "{action}: pos: missing (a table {{x, y, z}})"
+                        )));
+                    }
+                    other => {
+                        return Err(mlua::Error::runtime(format!(
+                            "{action}: pos: must be a table {{x, y, z}}, got {}",
+                            other.type_name()
+                        )));
+                    }
+                };
+                let pos = marker_vec3(action, "pos", &pos)?;
+                if !host.marker_move(&self.id, &id, pos) {
+                    self.error(format!(
+                        "{action}: the engine refused the move (no such marker, or the new anchor is out of range); the marker stays where it was"
+                    ));
+                }
+            }
+            "marker_remove" => {
+                let id = marker_id(action, &args.get::<Value>(1)?)?;
+                if !host.marker_remove(&self.id, &id) {
+                    self.error(format!(
+                        "{action}: the engine refused the remove (no such marker); nothing was removed"
+                    ));
+                }
+            }
+            "marker_clear" => {
+                host.marker_clear_owner(&self.id);
+            }
             other => match crate::generated_helpers::run_generated_action(host, other, args) {
                 Some(ran) => ran?,
                 None => self.warn(format!("unknown action {other}")),
@@ -3930,6 +4064,315 @@ fn table_in(lua: &Lua, table: &Table, key: &str) -> mlua::Result<Table> {
             Ok(t)
         }
     }
+}
+
+/// A marker id from Lua: a string of 1 to 64 characters. The native counts
+/// characters, not bytes, and refuses longer or empty ids; a bad id is a
+/// script error, naming the helper and the field.
+fn marker_id(action: &str, v: &Value) -> mlua::Result<String> {
+    let Value::String(s) = v else {
+        return Err(mlua::Error::runtime(format!(
+            "{action}: id: must be a string, got {}",
+            v.type_name()
+        )));
+    };
+    let Ok(id) = s.to_str() else {
+        return Err(mlua::Error::runtime(format!(
+            "{action}: id: must be UTF-8 text"
+        )));
+    };
+    let id = id.to_owned();
+    let chars = id.chars().count();
+    if id.is_empty() || chars > 64 {
+        return Err(mlua::Error::runtime(format!(
+            "{action}: id: must be 1 to 64 characters, got {chars}"
+        )));
+    }
+    Ok(id)
+}
+
+/// The name of a table key for an error message: a string as itself,
+/// an integer or boolean as its text, any other key by type (a table
+/// key has no text of its own).
+fn marker_key_name(key: &Value) -> String {
+    match key {
+        Value::String(s) => s.to_string_lossy(),
+        Value::Integer(i) => i.to_string(),
+        Value::Boolean(b) => b.to_string(),
+        other => other.type_name().to_owned(),
+    }
+}
+
+/// A `{x, y, z}` table of finite numbers, as `pos` and the box/line offsets
+/// take, naming the field they were given as: exactly the three axes,
+/// never an extra key (`w`), and read as plain data (a metatable never
+/// supplies a component: `raw_get`, and the scan iterates the table's
+/// own keys only).
+fn marker_vec3(action: &str, field: &str, t: &Table) -> mlua::Result<[f64; 3]> {
+    for pair in t.pairs::<Value, Value>() {
+        let (key, _) = pair.map_err(|e| {
+            mlua::Error::runtime(format!("{action}: {field}: keys must be strings, got {e}"))
+        })?;
+        let known = match &key {
+            Value::String(s) => {
+                let s = s.to_string_lossy();
+                ["x", "y", "z"].contains(&s.as_str())
+            }
+            _ => false,
+        };
+        if !known {
+            return Err(mlua::Error::runtime(format!(
+                "{action}: {field}: {}: unknown key",
+                marker_key_name(&key)
+            )));
+        }
+    }
+    fn component(action: &str, field: &str, t: &Table, axis: &str) -> mlua::Result<f64> {
+        match t.raw_get::<Value>(axis)? {
+            Value::Integer(i) => Ok(i as f64),
+            Value::Number(n) if n.is_finite() => Ok(n),
+            Value::Number(n) => Err(mlua::Error::runtime(format!(
+                "{action}: {field}: {axis} must be finite, got {n}"
+            ))),
+            other => Err(mlua::Error::runtime(format!(
+                "{action}: {field}: {axis} must be a finite number, got {}",
+                other.type_name()
+            ))),
+        }
+    }
+    Ok([
+        component(action, field, t, "x")?,
+        component(action, field, t, "y")?,
+        component(action, field, t, "z")?,
+    ])
+}
+
+/// The value `field` of `spec` as a `{x, y, z}` table of finite numbers.
+/// The read is raw: the spec is plain data, its metatable not consulted.
+fn marker_vec3_field(action: &str, spec: &Table, field: &str) -> mlua::Result<[f64; 3]> {
+    match spec.raw_get::<Value>(field)? {
+        Value::Table(t) => marker_vec3(action, field, &t),
+        Value::Nil => Err(mlua::Error::runtime(format!(
+            "{action}: {field}: missing (a table {{x, y, z}})"
+        ))),
+        other => Err(mlua::Error::runtime(format!(
+            "{action}: {field}: must be a table {{x, y, z}}, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+/// An integer Lua value in `[lo, hi]`, as a colour and a lifetime take.
+fn marker_int(action: &str, field: &str, v: &Value, lo: i64, hi: i64) -> mlua::Result<i64> {
+    let n = match v {
+        Value::Integer(i) => *i,
+        Value::Number(n) if n.is_finite() && n.fract() == 0.0 => *n as i64,
+        other => {
+            return Err(mlua::Error::runtime(format!(
+                "{action}: {field}: must be an integer in {lo}..={hi}, got {other:?}"
+            )));
+        }
+    };
+    if !(lo..=hi).contains(&n) {
+        return Err(mlua::Error::runtime(format!(
+            "{action}: {field}: must be an integer in {lo}..={hi}, got {n}"
+        )));
+    }
+    Ok(n)
+}
+
+/// A finite number field of `spec`, or `None` when it is absent (nil).
+/// Raw, like every spec read: a metatable never supplies a field.
+fn marker_opt_number(action: &str, spec: &Table, field: &str) -> mlua::Result<Option<f64>> {
+    match spec.raw_get::<Value>(field)? {
+        Value::Nil => Ok(None),
+        Value::Integer(i) => Ok(Some(i as f64)),
+        Value::Number(n) if n.is_finite() => Ok(Some(n)),
+        other => Err(mlua::Error::runtime(format!(
+            "{action}: {field}: must be a finite number, got {other:?}"
+        ))),
+    }
+}
+
+/// A finite number field of `spec`, which must be there.
+fn marker_number(action: &str, spec: &Table, field: &str) -> mlua::Result<f64> {
+    marker_opt_number(action, spec, field)?.ok_or_else(|| {
+        mlua::Error::runtime(format!("{action}: {field}: missing (a finite number)"))
+    })
+}
+
+/// An integer field of `spec` in `[lo, hi]`, or `None` when absent (a
+/// lifetime above `u32::MAX` is clamped and refused by the native, not
+/// here: the native's range is not duplicated).
+fn marker_opt_int(
+    action: &str,
+    spec: &Table,
+    field: &str,
+    lo: i64,
+    hi: i64,
+) -> mlua::Result<Option<i64>> {
+    match spec.raw_get::<Value>(field)? {
+        Value::Nil => Ok(None),
+        v => marker_int(action, field, &v, lo, hi).map(Some),
+    }
+}
+
+/// A boolean field of `spec`, false when absent (nil). Raw, like every
+/// spec read: a metatable never supplies a field.
+fn marker_opt_bool(action: &str, spec: &Table, field: &str) -> mlua::Result<bool> {
+    match spec.raw_get::<Value>(field)? {
+        Value::Nil => Ok(false),
+        Value::Boolean(b) => Ok(b),
+        other => Err(mlua::Error::runtime(format!(
+            "{action}: {field}: must be a boolean, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+/// The marker `spec` table of `marker_set` as a [`NativeMarker`]: the
+/// settled table shape (docs/lua-bindings.md, "World markers"). Only the
+/// fields of its `kind` may be present; `kind` and `pos` are required for
+/// every kind, and every value is checked for its type and finiteness,
+/// named `marker_set: field: reason`. A spec is plain data: every read
+/// is raw, so a metatable's `__index` never supplies a field. The
+/// native's own ranges (a box side over 256, a scale outside 0.25..=8, a
+/// lifetime over 72,000 ticks) are not duplicated here: the native
+/// refuses those and the refusal is reported.
+fn marker_spec(action: &str, spec: &Table) -> mlua::Result<NativeMarker> {
+    let kind = match spec.raw_get::<Value>("kind")? {
+        Value::String(s) => {
+            let s = s.to_string_lossy();
+            if ["box", "line", "beam", "text"].contains(&s.as_str()) {
+                s
+            } else {
+                return Err(mlua::Error::runtime(format!(
+                    "{action}: kind: must be \"box\", \"line\", \"beam\" or \"text\", got {s:?}"
+                )));
+            }
+        }
+        Value::Nil => {
+            return Err(mlua::Error::runtime(format!(
+                "{action}: kind: missing (\"box\", \"line\", \"beam\" or \"text\")"
+            )));
+        }
+        other => {
+            return Err(mlua::Error::runtime(format!(
+                "{action}: kind: must be a string, got {}",
+                other.type_name()
+            )));
+        }
+    };
+    // Every key the table may carry: a key naming no field is an error (a
+    // typo like `thru_walls` must not be silently ignored), and a field of
+    // another kind is an error naming it.
+    for pair in spec.pairs::<String, Value>() {
+        let (key, _) = pair.map_err(|e| {
+            mlua::Error::runtime(format!("{action}: spec keys must be strings, got {e}"))
+        })?;
+        match key.as_str() {
+            "kind" | "pos" | "color" | "through_walls" | "ttl" => {}
+            "size" | "filled" if kind == "box" => {}
+            "to" if kind == "line" => {}
+            "height" if kind == "beam" => {}
+            "text" | "scale" if kind == "text" => {}
+            "size" | "filled" => {
+                return Err(mlua::Error::runtime(format!(
+                    "{action}: {key}: only valid for kind \"box\", not \"{kind}\""
+                )));
+            }
+            "to" => {
+                return Err(mlua::Error::runtime(format!(
+                    "{action}: {key}: only valid for kind \"line\", not \"{kind}\""
+                )));
+            }
+            "height" => {
+                return Err(mlua::Error::runtime(format!(
+                    "{action}: {key}: only valid for kind \"beam\", not \"{kind}\""
+                )));
+            }
+            "text" | "scale" => {
+                return Err(mlua::Error::runtime(format!(
+                    "{action}: {key}: only valid for kind \"text\", not \"{kind}\""
+                )));
+            }
+            _ => {
+                return Err(mlua::Error::runtime(format!(
+                    "{action}: {key}: unknown key"
+                )));
+            }
+        }
+    }
+    let pos = marker_vec3_field(action, spec, "pos")?;
+    let shape = match kind.as_str() {
+        "box" => NativeMarkerShape::Box {
+            size: marker_vec3_field(action, spec, "size")?,
+            filled: marker_opt_bool(action, spec, "filled")?,
+        },
+        "line" => NativeMarkerShape::Line {
+            to: marker_vec3_field(action, spec, "to")?,
+        },
+        "beam" => NativeMarkerShape::Beam {
+            height: marker_number(action, spec, "height")?,
+        },
+        _ => NativeMarkerShape::Text {
+            text: match spec.raw_get::<Value>("text")? {
+                Value::String(s) => s.to_string_lossy(),
+                Value::Nil => {
+                    return Err(mlua::Error::runtime(format!(
+                        "{action}: text: missing (a string)"
+                    )));
+                }
+                other => {
+                    return Err(mlua::Error::runtime(format!(
+                        "{action}: text: must be a string, got {}",
+                        other.type_name()
+                    )));
+                }
+            },
+            // The native's `scale` is f32: a finite f64 past its range
+            // is a script error here, never an infinite scale there.
+            scale: {
+                let s = marker_opt_number(action, spec, "scale")?.unwrap_or(1.0);
+                let scale = s as f32;
+                if !scale.is_finite() {
+                    return Err(mlua::Error::runtime(format!(
+                        "{action}: scale: must be a finite number that fits in 32 bits, got {s:e}"
+                    )));
+                }
+                scale
+            },
+        },
+    };
+    let argb: u32 = match spec.raw_get::<Value>("color")? {
+        Value::Nil => 0xFFFF_FFFF,
+        Value::Table(t) => {
+            let channel = |axis: &str| -> mlua::Result<u32> {
+                match t.raw_get::<Value>(axis)? {
+                    Value::Nil => Err(mlua::Error::runtime(format!(
+                        "{action}: color.{axis}: missing (an integer in 0..=255)"
+                    ))),
+                    v => Ok(marker_int(action, &format!("color.{axis}"), &v, 0, 255)? as u32),
+                }
+            };
+            let a = match t.raw_get::<Value>("a")? {
+                Value::Nil => 255,
+                v => marker_int(action, "color.a", &v, 0, 255)? as u32,
+            };
+            (a << 24) | (channel("r")? << 16) | (channel("g")? << 8) | channel("b")?
+        }
+        v => marker_int(action, "color", &v, 0, 0xFFFF_FFFF)? as u32,
+    };
+    let through_walls = marker_opt_bool(action, spec, "through_walls")?;
+    let ttl_ticks = marker_opt_int(action, spec, "ttl", 1, i64::MAX)?
+        .map(|t| u32::try_from(t).unwrap_or(u32::MAX));
+    Ok(NativeMarker {
+        pos,
+        shape,
+        argb,
+        through_walls,
+        ttl_ticks,
+    })
 }
 
 #[cfg(test)]
@@ -10307,6 +10750,863 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
             e.contains("net_send_to_player: past 32 messages this tick"),
             "{e}"
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A client host that records every marker call (and `broadcast`), for
+    /// the marker tests: markers reach it exactly as `run_action` hands
+    /// them over, with the mod id as the owner.
+    struct MarkerHost {
+        /// `(owner, id, marker)` for every `marker_set`, in order.
+        sets: Mutex<Vec<(String, String, NativeMarker)>>,
+        /// `(owner, id, pos)` for every `marker_move`.
+        moves: Mutex<Vec<(String, String, [f64; 3])>>,
+        /// `(owner, id)` for every `marker_remove`.
+        removes: Mutex<Vec<(String, String)>>,
+        /// `owner` for every `marker_clear_owner`.
+        clears: Mutex<Vec<String>>,
+        /// One ordered log of every marker call (`marker_set ruby a`,
+        /// `marker_clear_owner ruby`), so a test sees the order the
+        /// host was called in, not just per-call lists.
+        calls: Mutex<Vec<String>>,
+        /// `broadcast` lines.
+        lines: Mutex<Vec<String>>,
+        /// When true, `marker_set` is refused (returns false); the other
+        /// marker calls of the refusal test still answer true.
+        refuse_set: bool,
+    }
+
+    impl MarkerHost {
+        fn new() -> Self {
+            MarkerHost {
+                sets: Mutex::new(Vec::new()),
+                moves: Mutex::new(Vec::new()),
+                removes: Mutex::new(Vec::new()),
+                clears: Mutex::new(Vec::new()),
+                calls: Mutex::new(Vec::new()),
+                lines: Mutex::new(Vec::new()),
+                refuse_set: false,
+            }
+        }
+    }
+
+    impl Host for MarkerHost {
+        fn marker_set(&mut self, owner: &str, id: &str, marker: &NativeMarker) -> bool {
+            self.sets
+                .lock()
+                .unwrap()
+                .push((owner.to_owned(), id.to_owned(), marker.clone()));
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("marker_set {owner} {id}"));
+            !self.refuse_set
+        }
+        fn marker_move(&mut self, owner: &str, id: &str, pos: [f64; 3]) -> bool {
+            self.moves
+                .lock()
+                .unwrap()
+                .push((owner.to_owned(), id.to_owned(), pos));
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("marker_move {owner} {id}"));
+            true
+        }
+        fn marker_remove(&mut self, owner: &str, id: &str) -> bool {
+            self.removes
+                .lock()
+                .unwrap()
+                .push((owner.to_owned(), id.to_owned()));
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("marker_remove {owner} {id}"));
+            true
+        }
+        fn marker_clear_owner(&mut self, owner: &str) {
+            self.clears.lock().unwrap().push(owner.to_owned());
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("marker_clear_owner {owner}"));
+        }
+        fn broadcast(&self, line: horizon_client::mod_api::Text) {
+            self.lines
+                .lock()
+                .unwrap()
+                .push(format!("broadcast {}", line.plain()));
+        }
+    }
+
+    #[test]
+    fn each_marker_kind_reaches_the_host_with_its_fields() {
+        // Every kind through `horizon.marker_set`, with distinct values in
+        // every field so a swapped field fails: only the anchor, shape,
+        // colour, through-walls and lifetime decide what the host gets
+        // (owner is the mod id, id the marker's own).
+        let (dir, path) = hmod(
+            "marker_kinds",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("client_tick_post", function(event)
+                  horizon.marker_set("a", { kind = "box", pos = { x = 1.5, y = 2.5, z = 3.5 },
+                    size = { x = 4, y = 5, z = 6 }, filled = true,
+                    color = { r = 17, g = 34, b = 51, a = 68 }, through_walls = true, ttl = 100 })
+                  horizon.marker_set("b", { kind = "line", pos = { x = -1, y = 0, z = 8 },
+                    to = { x = 1, y = 2, z = 3 }, color = 0x80FF0000 })
+                  horizon.marker_set("c", { kind = "beam", pos = { x = 10, y = 64, z = -20 }, height = 7.5 })
+                  horizon.marker_set("d", { kind = "text", pos = { x = 0, y = 70, z = 0 },
+                    text = "hello", scale = 2 })
+                  horizon.marker_set("e", { kind = "box", pos = { x = 0, y = 0, z = 0 },
+                    size = { x = 1, y = 1, z = 1 } })
+                  horizon.marker_set("f", { kind = "box", pos = { x = 5, y = 6, z = 7 },
+                    size = { x = 2, y = 3, z = 4 }, filled = true, through_walls = false })
+                  horizon.marker_set("g", { kind = "box", pos = { x = -5, y = -6, z = -7 },
+                    size = { x = 8, y = 9, z = 10 }, filled = false, through_walls = true })
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MarkerHost::new();
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        let expected = vec![
+            (
+                "ruby".to_owned(),
+                "a".to_owned(),
+                NativeMarker {
+                    pos: [1.5, 2.5, 3.5],
+                    shape: NativeMarkerShape::Box {
+                        size: [4.0, 5.0, 6.0],
+                        filled: true,
+                    },
+                    argb: 0x4411_2233,
+                    through_walls: true,
+                    ttl_ticks: Some(100),
+                },
+            ),
+            (
+                "ruby".to_owned(),
+                "b".to_owned(),
+                NativeMarker {
+                    pos: [-1.0, 0.0, 8.0],
+                    shape: NativeMarkerShape::Line {
+                        to: [1.0, 2.0, 3.0],
+                    },
+                    argb: 0x80FF_0000,
+                    through_walls: false,
+                    ttl_ticks: None,
+                },
+            ),
+            (
+                "ruby".to_owned(),
+                "c".to_owned(),
+                NativeMarker {
+                    pos: [10.0, 64.0, -20.0],
+                    shape: NativeMarkerShape::Beam { height: 7.5 },
+                    argb: 0xFFFF_FFFF,
+                    through_walls: false,
+                    ttl_ticks: None,
+                },
+            ),
+            (
+                "ruby".to_owned(),
+                "d".to_owned(),
+                NativeMarker {
+                    pos: [0.0, 70.0, 0.0],
+                    shape: NativeMarkerShape::Text {
+                        text: "hello".to_owned(),
+                        scale: 2.0,
+                    },
+                    argb: 0xFFFF_FFFF,
+                    through_walls: false,
+                    ttl_ticks: None,
+                },
+            ),
+            (
+                "ruby".to_owned(),
+                "e".to_owned(),
+                NativeMarker {
+                    pos: [0.0; 3],
+                    shape: NativeMarkerShape::Box {
+                        size: [1.0, 1.0, 1.0],
+                        filled: false,
+                    },
+                    argb: 0xFFFF_FFFF,
+                    through_walls: false,
+                    ttl_ticks: None,
+                },
+            ),
+            // `filled` and `through_walls` disagree in both directions:
+            // reading one from the other fails here.
+            (
+                "ruby".to_owned(),
+                "f".to_owned(),
+                NativeMarker {
+                    pos: [5.0, 6.0, 7.0],
+                    shape: NativeMarkerShape::Box {
+                        size: [2.0, 3.0, 4.0],
+                        filled: true,
+                    },
+                    argb: 0xFFFF_FFFF,
+                    through_walls: false,
+                    ttl_ticks: None,
+                },
+            ),
+            (
+                "ruby".to_owned(),
+                "g".to_owned(),
+                NativeMarker {
+                    pos: [-5.0, -6.0, -7.0],
+                    shape: NativeMarkerShape::Box {
+                        size: [8.0, 9.0, 10.0],
+                        filled: false,
+                    },
+                    argb: 0xFFFF_FFFF,
+                    through_walls: true,
+                    ttl_ticks: None,
+                },
+            ),
+        ];
+        assert_eq!(*host.sets.lock().unwrap(), expected);
+        assert!(host.moves.lock().unwrap().is_empty());
+        assert!(host.removes.lock().unwrap().is_empty());
+        assert!(host.clears.lock().unwrap().is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn marker_set_replaces_by_id_and_move_remove_clear_reach_the_host() {
+        // A second `marker_set` with the same id reaches the host again (the
+        // native replaces), and `marker_move`, `marker_remove` and
+        // `marker_clear` call the host with the owner and the id.
+        let (dir, path) = hmod(
+            "marker_ops",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("client_tick_post", function(event)
+                  horizon.marker_set("a", { kind = "beam", pos = { x = 0, y = 0, z = 0 }, height = 3 })
+                  horizon.marker_set("a", { kind = "beam", pos = { x = 9, y = 9, z = 9 }, height = 4 })
+                  horizon.marker_move("a", { x = 1, y = 2, z = 3 })
+                  horizon.marker_remove("a")
+                  horizon.marker_clear()
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MarkerHost::new();
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        let sets = host.sets.lock().unwrap();
+        assert_eq!(sets.len(), 2);
+        assert_eq!(sets[0].0, "ruby");
+        assert_eq!(sets[1].0, "ruby");
+        assert_eq!(sets[0].1, "a");
+        assert_eq!(sets[1].1, "a");
+        assert_eq!(sets[0].2.shape, NativeMarkerShape::Beam { height: 3.0 });
+        assert_eq!(sets[0].2.pos, [0.0; 3]);
+        assert_eq!(sets[1].2.shape, NativeMarkerShape::Beam { height: 4.0 });
+        assert_eq!(sets[1].2.pos, [9.0, 9.0, 9.0]);
+        drop(sets);
+        assert_eq!(
+            *host.moves.lock().unwrap(),
+            [("ruby".to_owned(), "a".to_owned(), [1.0, 2.0, 3.0])]
+        );
+        assert_eq!(
+            *host.removes.lock().unwrap(),
+            [("ruby".to_owned(), "a".to_owned())]
+        );
+        assert_eq!(*host.clears.lock().unwrap(), ["ruby"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn marker_spec_validation_errors_are_named_and_the_host_is_not_called() {
+        // Bad specs are script errors naming the helper and the field
+        // (`marker_set: size: ...`), never a host call: an unknown key, a
+        // non-string key, a key of another kind, a missing required key,
+        // a wrong type, a non-finite coordinate, a non-integer or
+        // non-positive lifetime, a colour component outside 0..255, a
+        // bad id.
+        let box_ok =
+            "{ kind = \"box\", pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 } }";
+        let cases: &[(&str, String, &str)] = &[
+            (
+                "unknown key",
+                "{ kind = \"box\", pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 }, thru_walls = true }".to_string(),
+                "marker_set: thru_walls: unknown key",
+            ),
+            (
+                "wrong kind key",
+                "{ kind = \"box\", pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 }, height = 3 }".to_string(),
+                "marker_set: height: only valid for kind \"beam\"",
+            ),
+            (
+                "missing pos",
+                "{ kind = \"box\", size = { x = 1, y = 1, z = 1 } }".to_string(),
+                "marker_set: pos: missing",
+            ),
+            (
+                "missing size",
+                "{ kind = \"box\", pos = { x = 0, y = 0, z = 0 } }".to_string(),
+                "marker_set: size: missing",
+            ),
+            (
+                "missing kind",
+                "{ pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 } }".to_string(),
+                "marker_set: kind: missing",
+            ),
+            (
+                "non finite coordinate",
+                "{ kind = \"box\", pos = { x = 0, y = 1 / 0, z = 0 }, size = { x = 1, y = 1, z = 1 } }".to_string(),
+                "marker_set: pos: y must be finite",
+            ),
+            (
+                "wrong type coordinate",
+                "{ kind = \"box\", pos = { x = \"north\", y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 } }".to_string(),
+                "marker_set: pos: x must be a finite number",
+            ),
+            (
+                "wrong type filled",
+                "{ kind = \"box\", pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 }, filled = \"yes\" }".to_string(),
+                "marker_set: filled: must be a boolean",
+            ),
+            (
+                "wrong kind text scale",
+                "{ kind = \"text\", pos = { x = 0, y = 0, z = 0 }, text = \"hi\", scale = \"big\" }".to_string(),
+                "marker_set: scale: must be a finite number",
+            ),
+            (
+                "ttl zero",
+                "{ kind = \"beam\", pos = { x = 0, y = 0, z = 0 }, height = 3, ttl = 0 }".to_string(),
+                "marker_set: ttl: must be an integer in 1..=",
+            ),
+            (
+                "ttl fraction",
+                "{ kind = \"beam\", pos = { x = 0, y = 0, z = 0 }, height = 3, ttl = 1.5 }".to_string(),
+                "marker_set: ttl: must be an integer in 1..=",
+            ),
+            (
+                "ttl negative",
+                "{ kind = \"beam\", pos = { x = 0, y = 0, z = 0 }, height = 3, ttl = -1 }".to_string(),
+                "marker_set: ttl: must be an integer in 1..=",
+            ),
+            (
+                "colour component 256",
+                "{ kind = \"box\", pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 }, color = { r = 256, g = 0, b = 0 } }".to_string(),
+                "marker_set: color.r: must be an integer in 0..=255, got 256",
+            ),
+            (
+                "colour component -1",
+                "{ kind = \"box\", pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 }, color = { r = 0, g = -1, b = 0 } }".to_string(),
+                "marker_set: color.g: must be an integer in 0..=255, got -1",
+            ),
+            (
+                "colour integer -1",
+                "{ kind = \"box\", pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 }, color = -1 }".to_string(),
+                "marker_set: color: must be an integer in 0..=",
+            ),
+            (
+                "integer key",
+                format!("STMT=local spec = {box_ok} spec[1] = \"nope\" horizon.marker_set(\"a\", spec)"),
+                "marker_set: 1: unknown key",
+            ),
+            (
+                "boolean key",
+                format!("STMT=local spec = {box_ok} spec[true] = 1 horizon.marker_set(\"a\", spec)"),
+                "marker_set: spec keys must be strings",
+            ),
+            (
+                "table key",
+                format!("STMT=local spec = {box_ok} spec[{{}}] = 1 horizon.marker_set(\"a\", spec)"),
+                "marker_set: spec keys must be strings",
+            ),
+            (
+                "empty id",
+                format!("ID = \"\" SPEC = {box_ok}"),
+                "marker_set: id: must be 1 to 64 characters, got 0",
+            ),
+            (
+                "long id",
+                format!("ID = string.rep(\"a\", 65) SPEC = {box_ok}"),
+                "marker_set: id: must be 1 to 64 characters, got 65",
+            ),
+        ];
+        for (name, call, want) in cases {
+            let body = if let Some(rest) = call.strip_prefix("ID =") {
+                format!(
+                    "horizon.on(\"client_tick_post\", function(event)\n  horizon.marker_set({})\nend)",
+                    rest.replacen(" SPEC = ", ", ", 1)
+                )
+            } else if let Some(stmt) = call.strip_prefix("STMT=") {
+                format!("horizon.on(\"client_tick_post\", function(event)\n  {stmt}\nend)")
+            } else {
+                format!(
+                    "horizon.on(\"client_tick_post\", function(event)\n  horizon.marker_set(\"a\", {call})\nend)"
+                )
+            };
+            let (dir, path) = hmod(
+                "marker_bad",
+                &[("scripts/client/init.lua", body.as_bytes())],
+            );
+            let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+            set_status(ModStatus {
+                id: m.id().into(),
+                side: m.side().as_str().to_owned(),
+                ..Default::default()
+            });
+            let id = m.id().to_owned();
+            let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+            let mut host = MarkerHost::new();
+            horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+            assert!(
+                host.sets.lock().unwrap().is_empty(),
+                "{name}: the host must not be called"
+            );
+            let e = horizon_client::dev_input::mods::status()
+                .into_iter()
+                .find(|s| s.id == id)
+                .and_then(|s| s.error)
+                .unwrap_or_else(|| panic!("{name}: the error is reported"));
+            assert!(e.contains(want), "{name}: {e} should name {want}");
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn marker_scale_past_f32_is_a_named_error_and_the_host_is_not_called() {
+        // A scale finite as f64 but infinite as f32 is a script error
+        // naming `scale`, never a host call with scale inf; a scale
+        // that fits in f32 reaches the host.
+        let cases: &[(&str, &str)] = &[
+            (
+                "scale 1e300",
+                "{ kind = \"text\", pos = { x = 0, y = 0, z = 0 }, text = \"hi\", scale = 1e300 }",
+            ),
+            (
+                "scale -1e300",
+                "{ kind = \"text\", pos = { x = 0, y = 0, z = 0 }, text = \"hi\", scale = -1e300 }",
+            ),
+            (
+                "scale just over f32 max",
+                "{ kind = \"text\", pos = { x = 0, y = 0, z = 0 }, text = \"hi\", scale = 3.5e38 }",
+            ),
+        ];
+        for (name, spec_call) in cases {
+            let body = format!(
+                "horizon.on(\"client_tick_post\", function(event)\n  horizon.marker_set(\"a\", {spec_call})\nend)"
+            );
+            let (dir, path) = hmod(
+                "marker_scale",
+                &[("scripts/client/init.lua", body.as_bytes())],
+            );
+            let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+            set_status(ModStatus {
+                id: m.id().into(),
+                side: m.side().as_str().to_owned(),
+                ..Default::default()
+            });
+            let id = m.id().to_owned();
+            let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+            let mut host = MarkerHost::new();
+            horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+            assert!(
+                host.sets.lock().unwrap().is_empty(),
+                "{name}: the host must not be called"
+            );
+            let e = horizon_client::dev_input::mods::status()
+                .into_iter()
+                .find(|s| s.id == id)
+                .and_then(|s| s.error)
+                .unwrap_or_else(|| panic!("{name}: the error is reported"));
+            assert!(
+                e.contains("marker_set: scale:") && e.contains("fits in 32 bits"),
+                "{name}: {e} should name scale"
+            );
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+        // 1e30 fits in f32 and passes.
+        let (dir, path) = hmod(
+            "marker_scale_ok",
+            &[(
+                "scripts/client/init.lua",
+                br#"horizon.on("client_tick_post", function(event)
+  horizon.marker_set("a", { kind = "text", pos = { x = 0, y = 0, z = 0 }, text = "hi", scale = 1e30 })
+end)"#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MarkerHost::new();
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        let sets = host.sets.lock().unwrap();
+        assert_eq!(sets.len(), 1, "1e30 fits in f32 and passes");
+        match &sets[0].2.shape {
+            NativeMarkerShape::Text { scale, .. } => {
+                assert!(scale.is_finite(), "scale {scale} is finite");
+            }
+            other => panic!("a text marker, got {other:?}"),
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn marker_spec_through_index_is_not_read() {
+        // A spec is plain data: an empty table whose `__index` carries
+        // valid keys and a typo is missing `kind` (the fields are not
+        // seen) and never reaches the host.
+        let (dir, path) = hmod(
+            "marker_index",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("client_tick_post", function(event)
+                  local proto = { kind = "box", pos = { x = 0, y = 0, z = 0 },
+                    size = { x = 1, y = 1, z = 1 }, thru_walls = true }
+                  horizon.marker_set("a", setmetatable({}, { __index = proto }))
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        set_status(ModStatus {
+            id: m.id().into(),
+            side: m.side().as_str().to_owned(),
+            ..Default::default()
+        });
+        let id = m.id().to_owned();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MarkerHost::new();
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        assert!(
+            host.sets.lock().unwrap().is_empty(),
+            "the host must not be called"
+        );
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.error)
+            .expect("the error is reported");
+        assert!(
+            e.contains("marker_set: kind: missing"),
+            "{e} should name the missing kind"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn marker_metatable_on_a_fully_raw_spec_is_ignored() {
+        // A metatable present but every key set on the spec itself:
+        // the marker is created and the `__index` typo is not applied.
+        let (dir, path) = hmod(
+            "marker_index_raw",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("client_tick_post", function(event)
+                  local spec = { kind = "beam", pos = { x = 0, y = 0, z = 0 }, height = 3 }
+                  setmetatable(spec, { __index = { thru_walls = true } })
+                  horizon.marker_set("a", spec)
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MarkerHost::new();
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        let sets = host.sets.lock().unwrap();
+        assert_eq!(sets.len(), 1, "the raw spec reaches the host");
+        assert!(!sets[0].2.through_walls, "the __index typo is not applied");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn marker_vec3_extra_keys_are_named_errors_and_the_host_is_not_called() {
+        // `pos`, `size` and `to` are exactly {x, y, z}: any other key,
+        // string or not, is an error naming it.
+        let cases: &[(&str, String, &str)] = &[
+            (
+                "pos w",
+                "{ kind = \"box\", pos = { x = 0, y = 0, z = 0, w = 9 }, size = { x = 1, y = 1, z = 1 } }".to_string(),
+                "marker_set: pos: w: unknown key",
+            ),
+            (
+                "pos integer key",
+                "{ kind = \"box\", pos = { x = 0, y = 0, z = 0, [1] = 5 }, size = { x = 1, y = 1, z = 1 } }".to_string(),
+                "marker_set: pos: 1: unknown key",
+            ),
+            (
+                "pos boolean key",
+                "{ kind = \"box\", pos = { x = 0, y = 0, z = 0, [true] = 1 }, size = { x = 1, y = 1, z = 1 } }".to_string(),
+                "marker_set: pos: true: unknown key",
+            ),
+            (
+                "size w",
+                "{ kind = \"box\", pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1, w = 2 } }".to_string(),
+                "marker_set: size: w: unknown key",
+            ),
+            (
+                "to w",
+                "{ kind = \"line\", pos = { x = 0, y = 0, z = 0 }, to = { x = 1, y = 1, z = 1, w = 2 } }".to_string(),
+                "marker_set: to: w: unknown key",
+            ),
+        ];
+        for (name, call, want) in cases {
+            let body = format!(
+                "horizon.on(\"client_tick_post\", function(event)\n  horizon.marker_set(\"a\", {call})\nend)"
+            );
+            let (dir, path) = hmod(
+                "marker_vec3",
+                &[("scripts/client/init.lua", body.as_bytes())],
+            );
+            let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+            set_status(ModStatus {
+                id: m.id().into(),
+                side: m.side().as_str().to_owned(),
+                ..Default::default()
+            });
+            let id = m.id().to_owned();
+            let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+            let mut host = MarkerHost::new();
+            horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+            assert!(
+                host.sets.lock().unwrap().is_empty(),
+                "{name}: the host must not be called"
+            );
+            let e = horizon_client::dev_input::mods::status()
+                .into_iter()
+                .find(|s| s.id == id)
+                .and_then(|s| s.error)
+                .unwrap_or_else(|| panic!("{name}: the error is reported"));
+            assert!(e.contains(want), "{name}: {e} should name {want}");
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+        // And `marker_move`'s pos gets the same rule.
+        let (dir, path) = hmod(
+            "marker_move_vec3",
+            &[(
+                "scripts/client/init.lua",
+                br#"horizon.on("client_tick_post", function(event)
+  horizon.marker_move("a", { x = 1, y = 2, z = 3, w = 4 })
+end)"#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        set_status(ModStatus {
+            id: m.id().into(),
+            side: m.side().as_str().to_owned(),
+            ..Default::default()
+        });
+        let id = m.id().to_owned();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MarkerHost::new();
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        assert!(
+            host.moves.lock().unwrap().is_empty(),
+            "the host must not be called"
+        );
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.error)
+            .expect("the error is reported");
+        assert!(
+            e.contains("marker_move: pos: w: unknown key"),
+            "{e} should name the key"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_refused_marker_is_reported_and_later_actions_still_run() {
+        // A host refusal (`false`: over a cap, out of range, off-window) is
+        // not a script error and never aborts the handler's remaining
+        // queued actions: the refusal is reported and the `marker_remove`
+        // after it still runs. (`broadcast` is server-only and cannot be
+        // queued from a client handler, so the later action is another
+        // marker.) (Driving the real drain, not `run_action`.)
+        let (dir, path) = hmod(
+            "marker_refused",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("client_tick_post", function(event)
+                  horizon.marker_set("a", { kind = "box", pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 } })
+                  horizon.marker_remove("a")
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        set_status(ModStatus {
+            id: m.id().into(),
+            side: m.side().as_str().to_owned(),
+            ..Default::default()
+        });
+        let id = m.id().to_owned();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MarkerHost::new();
+        host.refuse_set = true;
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        assert_eq!(host.sets.lock().unwrap().len(), 1);
+        assert_eq!(
+            *host.removes.lock().unwrap(),
+            [("ruby".to_owned(), "a".to_owned())]
+        );
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.error)
+            .expect("the refusal is reported");
+        assert!(e.contains("marker_set: the engine refused"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_server_state_stubs_the_marker_actions_with_the_client_only_error() {
+        // The markers need a window: a server state's marker calls raise
+        // the client-only error, like `player` branches on the side.
+        let (dir, path) = hmod(
+            "marker_server_stub",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                local function expect_client_only(name, f)
+                  local ok, err = pcall(f)
+                  assert(not ok, name .. " should fail in a server state")
+                  assert(
+                    string.find(tostring(err), "horizon." .. name .. " is only available in scripts/client/", 1, true),
+                    name .. ": " .. tostring(err)
+                  )
+                end
+                expect_client_only("marker_set", function()
+                  horizon.marker_set("a", { kind = "box", pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 } })
+                end)
+                expect_client_only("marker_move", function()
+                  horizon.marker_move("a", { x = 0, y = 0, z = 0 })
+                end)
+                expect_client_only("marker_remove", function()
+                  horizon.marker_remove("a")
+                end)
+                expect_client_only("marker_clear", function()
+                  horizon.marker_clear()
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        assert_eq!(m.side(), LuaSide::Server);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_draw_hook_refuses_the_marker_actions() {
+        // In a client draw hook only `tell` and `broadcast` may queue
+        // actions: a marker call raises at the call and queues nothing.
+        let (dir, path) = hmod(
+            "marker_draw",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("hud", function(event)
+                  local ok, e = pcall(horizon.marker_set, "a", { kind = "box", pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 } })
+                  PA = (not ok) and tostring(e) or "queued"
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let state = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MarkerHost::new();
+        let mut batch = horizon_client::mod_api::HudBatch::new([800, 600]);
+        let mut corners = horizon_client::mod_api::Corners::new(800.0, 600.0, 0.0);
+        horizon_client::mod_api::dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
+        let pa: String = state.globals().get("PA").unwrap();
+        assert!(pa.contains("not available in draw hooks"), "{pa}");
+        assert!(host.sets.lock().unwrap().is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_successful_reload_clears_the_mod_markers() {
+        // The new scripts run: the next client hook with a host clears the
+        // old markers before queuing new ones.
+        let (dir, path) = hmod(
+            "marker_reload",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("client_tick_post", function(event)
+                  horizon.marker_set("a", { kind = "beam", pos = { x = 0, y = 0, z = 0 }, height = 3 })
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        m.reload().unwrap();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MarkerHost::new();
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        assert_eq!(*host.clears.lock().unwrap(), ["ruby"]);
+        assert_eq!(host.sets.lock().unwrap().len(), 1);
+        // The clear must reach the host before the first set of that
+        // firing: clearing after would delete the marker the new
+        // handler just set. The host's one ordered log shows it.
+        let calls = host.calls.lock().unwrap();
+        let clear = calls
+            .iter()
+            .position(|c| c == "marker_clear_owner ruby")
+            .expect("the reload clear ran");
+        let set = calls
+            .iter()
+            .position(|c| c.starts_with("marker_set ruby"))
+            .expect("the new marker was set");
+        assert!(
+            clear < set,
+            "the clear must run before the first set: {calls:?}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_failed_reload_does_not_clear_the_mod_markers() {
+        // A failed reload keeps the old state and its markers: no clear.
+        let (dir, path) = hmod(
+            "marker_reload_fail",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("client_tick_post", function(event)
+                  horizon.marker_set("a", { kind = "beam", pos = { x = 0, y = 0, z = 0 }, height = 3 })
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        std::fs::write(
+            &path,
+            Package::write_files(
+                MANIFEST_TEXT,
+                None,
+                &[("scripts/client/init.lua", b"error('x')")],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let e = m.reload().unwrap_err();
+        assert!(e.contains('x'), "{e}");
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MarkerHost::new();
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        assert!(host.clears.lock().unwrap().is_empty());
+        assert_eq!(host.sets.lock().unwrap().len(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

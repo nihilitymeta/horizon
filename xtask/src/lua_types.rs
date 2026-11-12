@@ -161,6 +161,13 @@ const TYPES: &[(&str, &str)] = &[
         "HudCorners",
         "{ place: (corner: string, w: number, h: number) -> (number, number), shown: (corner: string) -> boolean }",
     ),
+    // The world markers (`horizon.marker_set(id, spec)`): one table type
+    // for every kind, the fields of the other kinds optional and, at
+    // runtime, an error (docs/lua-bindings.md, "World markers").
+    (
+        "MarkerSpec",
+        "{ kind: \"box\" | \"line\" | \"beam\" | \"text\", pos: Vec3, size: Vec3?, filled: boolean?, to: Vec3?, height: number?, text: string?, scale: number?, color: (number | { r: number, g: number, b: number, a: number? })?, through_walls: boolean?, ttl: number? }",
+    ),
 ];
 
 /// The Luau keywords (the language reference's list): a table field named
@@ -594,6 +601,11 @@ const FUNCTIONS: &[(&str, &str)] = &[
         "run_command_as",
         "(who: string | ReadPlayer, line: string, callback: ((result: CommandResult) -> ())?) -> ()",
     ),
+    // The world markers (client state only, docs/lua-bindings.md).
+    ("marker_set", "(id: string, spec: MarkerSpec) -> ()"),
+    ("marker_move", "(id: string, pos: Vec3) -> ()"),
+    ("marker_remove", "(id: string) -> ()"),
+    ("marker_clear", "() -> ()"),
 ];
 
 /// `horizon.*` names the Lua crate installs that are not native
