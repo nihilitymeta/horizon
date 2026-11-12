@@ -2807,7 +2807,7 @@ fn struct_ts_owned(key: &str) -> String {
 
 /// A known tuple shape: its struct key and `.d.lua` type. Anything else
 /// keeps the tuple adapter.
-fn tuple_struct(ty: &syn::Type) -> Option<(String, String)> {
+pub(crate) fn tuple_struct(ty: &syn::Type) -> Option<(String, String)> {
     let syn::Type::Tuple(t) = ty else {
         return None;
     };

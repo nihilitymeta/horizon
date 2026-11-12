@@ -4,18 +4,15 @@
 
 Every native host helper (`native-hooks.json` plus the pending `tools/native-hook-fragments/`, 403 in all) lands in exactly one class: `generated` (plain args and a supported return: the generator can emit the `horizon.*` bridge), `already-lua` (a hand-written Lua helper already stands behind it), `adapter` (a hand-written converter would unblock it: the table names the blocking types), `handle` (an opaque draw/mod handle, needing its own design), or `cannot` (no bridge, with the reason). `docs/api/hook-exposure.md` is the same idea for hook points. This page is `lua-helpers`'s human-readable record; `crates/event-horizon-lua/src/generated_helpers.rs` is its bridge for the enabled helpers. Enabled is every `generated` helper except the [`EXCLUDED`] denylist below.
 
-100 generated (69 enabled, 31 excluded), 64 already-lua, 174 adapter, 29 handle, 36 cannot (403 total). Every generated helper not on the denylist reaches Lua; there is no other not-enabled bucket.
+121 generated (88 enabled, 33 excluded), 64 already-lua, 149 adapter, 29 handle, 40 cannot (403 total). Every generated helper not on the denylist reaches Lua; there is no other not-enabled bucket.
 
 ## What the numbers say
 
-109 distinct blocking types, ranked by how many helpers they block (one conversion each).
+106 distinct blocking types, ranked by how many helpers they block (one conversion each).
 
 | Type | Helpers blocked | Conversion |
 | --- | --- | --- |
-| `Option<(2 elements)>` | 16 | an optional Lua argument (nil when absent) |
-| `LevelRef` | 15 | the hook's level (a dimension name or the acting level) |
 | `Option<ItemStack>` | 11 | an optional Lua argument (nil when absent) |
-| `Direction` | 9 | a string naming the direction |
 | `ItemStack` | 8 | an item table (`id`, `count`, …) |
 | `Compound` | 5 | a table of its fields, with the hand-written readers |
 | `EquipmentSlot` | 4 | a table of its fields, with the hand-written readers |
@@ -25,6 +22,7 @@ Every native host helper (`native-hooks.json` plus the pending `tools/native-hoo
 | `Value` | 4 | a table of its fields, with the hand-written readers |
 | `BlockStateId` | 3 | a table of its fields, with the hand-written readers |
 | `LivingRef` | 3 | a table of its fields, with the hand-written readers |
+| `Option<(2 elements)>` | 3 | an optional Lua argument (nil when absent) |
 | `Option<(3 elements)>` | 3 | an optional Lua argument (nil when absent) |
 | `Option<Compound>` | 3 | an optional Lua argument (nil when absent) |
 | `Option<Text>` | 3 | an optional Lua argument (nil when absent) |
@@ -36,7 +34,6 @@ Every native host helper (`native-hooks.json` plus the pending `tools/native-hoo
 | `[str]` | 3 | an array table, element by element |
 | `[u8]` | 3 | a string of bytes (a Lua string) |
 | `HudMode` | 2 | a table of its fields, with the hand-written readers |
-| `Option<LevelRef>` | 2 | an optional Lua argument (nil when absent) |
 | `Option<Tag>` | 2 | an optional Lua argument (nil when absent) |
 | `Option<Value>` | 2 | an optional Lua argument (nil when absent) |
 | `Option<Vec<Option<ItemStack>>>` | 2 | an optional Lua argument (nil when absent) |
@@ -122,7 +119,7 @@ Every native host helper (`native-hooks.json` plus the pending `tools/native-hoo
 | `[u32]` | 1 | an array table, element by element |
 | `u64` | 1 | an id as a string of hex/digits (a Lua number cannot hold it exactly) |
 
-Converting the top 1 (`Option<(2 elements)>`) would unblock 8 Adapter helpers; the top 3 (`Option<(2 elements)>, LevelRef, Option<ItemStack>`) would unblock 22; the top 5 (`Option<(2 elements)>, LevelRef, Option<ItemStack>, Direction, ItemStack`) would unblock 32; the top 8 would unblock 40; the top 10 would unblock 48; the top 15 would unblock 61; the top 20 would unblock 76; converting all 109 together would unblock 174 (every Adapter helper, as each lists only those types).
+Converting the top 1 (`Option<ItemStack>`) would unblock 2 Adapter helpers; the top 3 (`Option<ItemStack>, ItemStack, Compound`) would unblock 11; the top 5 (`Option<ItemStack>, ItemStack, Compound, EquipmentSlot, Option<BlockStateId>`) would unblock 14; the top 8 would unblock 25; the top 10 would unblock 30; the top 15 would unblock 44; the top 20 would unblock 56; converting all 106 together would unblock 149 (every Adapter helper, as each lists only those types).
 
 What the generator could not express: a `&mut self` helper returning data (a queued action has no way back; it needs the run_command_as callback design); a `Result` return (no error design yet); a callback/closure parameter (needs that same design); an opaque `&mut` draw/mod handle; and every non-plain type above. Native-name types in the adapter list are all small read conversions of the same kinds.
 
@@ -131,11 +128,13 @@ Generator size: this generator plus its model are hand-written; the emitted brid
 Generated but excluded (the denylist): these all have plain args and a supported return (the generator can emit them) but are not emitted: their Lua cell in `docs/api/hook-points.md` stays empty, each for the reason named.
 
 
-## Generated, excluded (31)
+## Generated, excluded (33)
 
 | Helper | Reason |
 | --- | --- |
 | `apply_screen_blur` | client-side helper: needs the client-state gating (issue 50) |
+| `chat_input` | client-side helper: needs the client-state gating (issue 50) |
+| `client_block_obstruction` | client-side helper: needs the client-state gating (issue 50) |
 | `client_entity_move` | client-side helper: needs the client-state gating (issue 50) |
 | `client_visual_clear` | client-side helper: needs the client-state gating (issue 50) |
 | `count_packets` | dev/diagnostic: not for mod scripts |
@@ -167,7 +166,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `watch_server_packets` | dev/diagnostic: not for mod scripts |
 | `window` | client-side helper: needs the client-state gating (issue 50) |
 
-## Generated, enabled (69)
+## Generated, enabled (88)
 
 | Helper | Receiver | Kind | Lua signature |
 | --- | --- | --- | --- |
@@ -194,6 +193,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `entity_is_silent` | entity | read | `(value: number) -> boolean?` |
 | `entity_is_sprinting` | entity | read | `(value: number) -> boolean?` |
 | `entity_kind` | entity | read | `(value: number) -> string?` |
+| `entity_level` | entity | read | `(value: number) -> string?` |
 | `entity_max_air_supply` | entity | read | `(value: number) -> number?` |
 | `entity_name` | entity | read | `(value: number) -> string?` |
 | `entity_on_ground` | entity | read | `(value: number) -> boolean?` |
@@ -209,6 +209,20 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `entity_view_vector` | entity | read | `(value: number) -> Vec3?` |
 | `fluid_flow` | - | read | `(name: string, value: Vec3) -> Vec3?` |
 | `hide_entity_from` | - | action | `(who: string | ReadPlayer, value: number, value2: boolean) -> ()` |
+| `level` | - | read | `(name: string) -> string?` |
+| `level_block` | level | read | `(name: string, value: Vec3) -> string?` |
+| `level_block_property` | level | read | `(name: string, value: Vec3, name2: string) -> string?` |
+| `level_block_state` | level | read | `(name: string, value: Vec3) -> string?` |
+| `level_day_time` | level | read | `(name: string) -> number?` |
+| `level_difficulty` | level | read | `(name: string) -> string?` |
+| `level_game_time` | level | read | `(name: string) -> number?` |
+| `level_height` | level | read | `(name: string) -> { min: number, max: number }?` |
+| `level_is_loaded` | level | read | `(name: string, value: Vec3) -> boolean` |
+| `level_is_raining` | level | read | `(name: string) -> boolean?` |
+| `level_is_thundering` | level | read | `(name: string) -> boolean?` |
+| `level_play_sound` | level | action | `(name: string, name2: string, value: Vec3, value2: number, value3: number, value4: number) -> ()` |
+| `level_seed` | level | read | `(name: string) -> number?` |
+| `level_weather` | level | read | `(name: string) -> { number, number }?` |
 | `lit_block_name` | - | read | `(value: Vec3) -> string?` |
 | `max_players` | - | read | `() -> number?` |
 | `max_stack_size` | - | read | `(name: string) -> number?` |
@@ -222,7 +236,9 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `player_break_block` | - | action | `(who: string | ReadPlayer, value: Vec3, value2: boolean) -> ()` |
 | `player_sneaking` | - | read | `(who: string | ReadPlayer) -> boolean?` |
 | `player_stat` | - | read | `(who: string | ReadPlayer, name: string, name2: string) -> number?` |
+| `player_textures` | - | read | `(who: string | ReadPlayer) -> { value: string, signature: string? }?` |
 | `player_view_distance` | - | read | `(who: string | ReadPlayer) -> number?` |
+| `profile_by_name` | - | read | `(name: string) -> { string, string }?` |
 | `profile_by_uuid` | - | read | `(who: string | ReadPlayer) -> string?` |
 | `refresh_commands` | - | action | `() -> ()` |
 | `refresh_player` | - | action | `(who: string | ReadPlayer) -> ()` |
@@ -233,13 +249,26 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `set_attribute_base` | - | action | `(who: string | ReadPlayer, name: string, value: number) -> ()` |
 | `set_block_property_with` | - | action | `(value: Vec3, name: string, name2: string, value2: number) -> ()` |
 | `set_break_progress` | - | action | `(value: number, value2: Vec3, value3: number) -> ()` |
+| `set_compass_target` | - | action | `(who: string | ReadPlayer, value: { string, Vec3 }?) -> ()` |
 | `set_flight` | - | action | `(who: string | ReadPlayer, value: boolean, value2: boolean) -> ()` |
+| `set_profile_property` | - | action | `(who: string | ReadPlayer, name: string, value: { value: string, signature: string? }?) -> ()` |
 | `sleep_ignored` | - | action | `(who: string | ReadPlayer, value: boolean) -> ()` |
 | `sneaking` | - | read | `() -> boolean` |
 | `teleport_vehicle` | - | action | `(name: string, value: number, value2: Vec3) -> ()` |
 | `update_output_neighbors` | - | action | `(name: string, value: Vec3) -> ()` |
 | `update_signal_neighbors` | - | action | `(name: string, value: Vec3) -> ()` |
 | `world_seed` | - | read | `() -> number?` |
+
+## Plain tuple shapes (8)
+
+- `chat_input` -> `() -> { string, number }? (excluded; no Lua cell)`
+- `client_block_obstruction` -> `(value: Vec3) -> { boolean, boolean }? (excluded; no Lua cell)`
+- `level_height` -> `(name: string) -> { min: number, max: number }?`
+- `level_weather` -> `(name: string) -> { number, number }?`
+- `player_textures` -> `(who: string | ReadPlayer) -> { value: string, signature: string? }?`
+- `profile_by_name` -> `(name: string) -> { string, string }?`
+- `set_compass_target` -> `(who: string | ReadPlayer, value: { string, Vec3 }?) -> ()`
+- `set_profile_property` -> `(who: string | ReadPlayer, name: string, value: { value: string, signature: string? }?) -> ()`
 
 ## Already Lua (64)
 
@@ -310,19 +339,18 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `title_times` | already a hand-written Lua helper |
 | `weather` | already a hand-written Lua helper |
 
-## Adapter: a converter would unblock it (174)
+## Adapter: a converter would unblock it (149)
 
 | Helper | Reason |
 | --- | --- |
 | `add_effect` | blocks on `NativeEffect` |
 | `add_particle` | blocks on `ParticleOptions` |
-| `attribute` | blocks on `Option<(2 elements)>` |
 | `bake_layer` | blocks on `Option<ModelPart>` |
 | `biome_tint` | blocks on `Option<BiomeColors>` |
 | `block_collision` | blocks on `Vec<[f64; 6]>` |
-| `block_face_sprite` | blocks on `BlockStateId`, `Direction`, `Option<(2 elements)>` |
+| `block_face_sprite` | blocks on `BlockStateId` |
 | `block_info` | blocks on `Option<NativeBlockInfo>` |
-| `block_map_color` | blocks on `BlockStateId`, `Option<(2 elements)>` |
+| `block_map_color` | blocks on `BlockStateId` |
 | `block_sprites` | blocks on `Vec<Option<BlockSprites>>`, `[str]` |
 | `block_sprites_version` | blocks on `u64` |
 | `block_state_property` | blocks on `BlockStateId` |
@@ -330,13 +358,11 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `boss_bar` | blocks on `Option<NativeBossBar>` |
 | `built_data` | blocks on `Option<PathBuf>` |
 | `camera` | blocks on `Option<NativeCamera>` |
-| `chat_input` | blocks on `Option<(2 elements)>` |
 | `chunk_snapshot` | blocks on `Option<NativeChunkSnapshot>`, `[i32; 2]` |
 | `claim_items` | blocks on `[String]` |
 | `client_action_bar` | blocks on `Text` |
 | `client_biomes` | blocks on `Option<NativeClientBiomes>` |
 | `client_biomes_changed` | blocks on `NativeClientBiomes` |
-| `client_block_obstruction` | blocks on `Option<(2 elements)>` |
 | `client_chunks_changed` | blocks on `NativeClientChunks`, `Vec<[i32; 2]>` |
 | `client_entities` | blocks on `Vec<NativeClientEntity>` |
 | `client_entity_remove` | blocks on `[i32]` |
@@ -355,7 +381,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `cursor` | blocks on `[f32; 2]` |
 | `data_dir` | blocks on `PathBuf` |
 | `default_state` | blocks on `Option<BlockStateId>` |
-| `dispense_default` | blocks on `Direction`, `ItemStack`, `Option<ItemStack>` |
+| `dispense_default` | blocks on `ItemStack`, `Option<ItemStack>` |
 | `effects` | blocks on `Option<Vec<NativeEffect>>` |
 | `entity` | blocks on `Option<EntityRef>` |
 | `entity_bounding_box` | blocks on `Option<[[f64; 3]; 2]>` |
@@ -363,7 +389,6 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `entity_data_in_place` | blocks on `Option<Compound>` |
 | `entity_data_with_attachments` | blocks on `Option<Compound>` |
 | `entity_dimensions` | blocks on `Option<[f64; 2]>` |
-| `entity_level` | blocks on `Option<LevelRef>` |
 | `entity_merge_nbt` | blocks on `Compound` |
 | `entity_nbt` | blocks on `Option<Compound>` |
 | `entity_rotation` | blocks on `Option<[f32; 2]>` |
@@ -372,17 +397,15 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `entity_uuid` | blocks on `Option<u128>` |
 | `equipment` | blocks on `EquipmentSlot`, `Option<ItemStack>` |
 | `experience_orbs` | blocks on `Vec<NativeExperienceOrb>` |
-| `extract_item` | blocks on `Direction`, `Option<ItemStack>` |
-| `fluid_extract` | blocks on `Direction`, `Option<(2 elements)>` |
-| `fluid_insert` | blocks on `Direction` |
-| `fluid_tanks` | blocks on `Direction`, `Option<Vec<NativeFluidTank>>` |
+| `extract_item` | blocks on `Option<ItemStack>` |
+| `fluid_tanks` | blocks on `Option<Vec<NativeFluidTank>>` |
 | `force_chunk` | blocks on `[i32; 2]` |
 | `force_chunk_in` | blocks on `[i32; 2]` |
 | `forced_chunks` | blocks on `Vec<[i32; 2]>` |
 | `hide_player` | blocks on `Option<u8>` |
 | `hud_mode` | blocks on `HudMode` |
 | `hurt_entity` | blocks on `Option<u32>` |
-| `insert_item` | blocks on `Direction`, `ItemStack`, `Option<ItemStack>` |
+| `insert_item` | blocks on `ItemStack`, `Option<ItemStack>` |
 | `instance_dir` | blocks on `PathBuf` |
 | `is_key_down` | blocks on `KeyCode` |
 | `item_container_extract` | blocks on `ItemStack`, `Option<(2 elements)>` |
@@ -391,26 +414,12 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `item_entities` | blocks on `Vec<NativeItemEntity>` |
 | `item_from_snbt` | blocks on `Option<ItemStack>` |
 | `known_recipes` | blocks on `Arc<[i32]>` |
-| `level` | blocks on `Option<LevelRef>` |
-| `level_block` | blocks on `LevelRef` |
 | `level_block_entities` | blocks on `Vec<(2 elements)>` |
-| `level_block_property` | blocks on `LevelRef` |
-| `level_block_state` | blocks on `LevelRef` |
-| `level_day_time` | blocks on `LevelRef` |
-| `level_difficulty` | blocks on `LevelRef` |
 | `level_entities` | blocks on `Vec<(3 elements)>` |
-| `level_game_rule` | blocks on `LevelRef`, `Option<GameRuleValue>` |
-| `level_game_time` | blocks on `LevelRef` |
-| `level_height` | blocks on `LevelRef`, `Option<(2 elements)>` |
-| `level_is_loaded` | blocks on `LevelRef` |
-| `level_is_raining` | blocks on `LevelRef` |
-| `level_is_thundering` | blocks on `LevelRef` |
-| `level_play_sound` | blocks on `LevelRef` |
+| `level_game_rule` | blocks on `Option<GameRuleValue>` |
 | `level_random` | blocks on `Option<LegacyRandom>` |
-| `level_seed` | blocks on `LevelRef` |
-| `level_send_particles` | blocks on `LevelRef`, `Option<BlockStateId>`, `ParticleOptions` |
+| `level_send_particles` | blocks on `Option<BlockStateId>`, `ParticleOptions` |
 | `level_stats` | blocks on `Option<NativeLevelStats>` |
-| `level_weather` | blocks on `LevelRef`, `Option<(2 elements)>` |
 | `living` | blocks on `Option<LivingRef>` |
 | `living_equipment` | blocks on `EquipmentSlot`, `LivingRef`, `Option<ItemStack>` |
 | `living_hand_item` | blocks on `Hand`, `LivingRef`, `Option<ItemStack>` |
@@ -421,8 +430,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `merge_entity_nbt` | blocks on `Compound` |
 | `mod_block_entity` | blocks on `Option<ModBlockEntity>` |
 | `mod_image` | blocks on `[u8]` |
-| `move_fluids` | blocks on `Direction`, `Option<(2 elements)>` |
-| `move_items` | blocks on `Direction`, `Option<str>` |
+| `move_items` | blocks on `Option<str>` |
 | `muffle_sounds` | blocks on `[str]` |
 | `new_map` | blocks on `[u8; 16384]` |
 | `paint_map` | blocks on `[u8; 16384]` |
@@ -437,10 +445,8 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `player_head` | blocks on `ItemStack` |
 | `player_persistent_data` | blocks on `Option<Tag>` |
 | `player_stats` | blocks on `Option<Value>` |
-| `player_textures` | blocks on `Option<(2 elements)>` |
 | `poll` | blocks on `Vec<NativeModEvent>` |
 | `pop_resource_pack` | blocks on `Option<u128>` |
-| `profile_by_name` | blocks on `Option<(2 elements)>` |
 | `push_player` | blocks on `[f32; 3]` |
 | `recipe_book_category` | blocks on `Option<RecipeBookCategory>` |
 | `recipe_ingredient` | blocks on `Option<Ingredient>`, `Value` |
@@ -459,7 +465,6 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `server_owner` | blocks on `Option<u128>` |
 | `server_players` | blocks on `Vec<NativeServerPlayer>` |
 | `set_attributes` | blocks on `Tag` |
-| `set_compass_target` | blocks on `Option<(2 elements)>` |
 | `set_display_name` | blocks on `Option<Text>` |
 | `set_effects` | blocks on `[NativeEffect]` |
 | `set_entity_data` | blocks on `Compound` |
@@ -476,7 +481,6 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `set_player_stats` | blocks on `Value` |
 | `set_player_status` | blocks on `Option<(3 elements)>`, `Option<f32>` |
 | `set_player_view_distance` | blocks on `Option<i32>` |
-| `set_profile_property` | blocks on `Option<(2 elements)>` |
 | `simulate_player_move` | blocks on `NativePlayerInput`, `Option<NativeSimulatedMove>` |
 | `structure_template` | blocks on `Mirror`, `Option<NativeStructureTemplate>`, `Rotation` |
 | `tab_list` | blocks on `Text` |
@@ -523,11 +527,12 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `world_quad` | a `NativeWorldDraw` handle needs its own design |
 | `world_text` | a `NativeWorldDraw` handle needs its own design |
 
-## Cannot: no bridge (36)
+## Cannot: no bridge (40)
 
 | Helper | Reason |
 | --- | --- |
 | `action_bar` | name collides with an existing horizon.* function |
+| `attribute` | a `&mut self` helper returning data is not a queued action: it needs the run_command_as callback design |
 | `block_name_in_tag` | returns Result<bool, NativeBlockReadError>: no error design |
 | `carried_items` | name collides with an existing horizon.* function |
 | `client_chunks` | returns Result<NativeClientChunks, String>: no error design |
@@ -539,10 +544,13 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `entity_name_in_place` | a `&mut self` helper returning data is not a queued action: it needs the run_command_as callback design |
 | `exchange_items` | returns Result<(0 elements), String>: no error design |
 | `fill` | name collides with an existing horizon.* function |
+| `fluid_extract` | a `&mut self` helper returning data is not a queued action: it needs the run_command_as callback design |
+| `fluid_insert` | a `&mut self` helper returning data is not a queued action: it needs the run_command_as callback design |
 | `frame_stats` | a multi-value return (3 elements): the bridge is one value |
 | `give` | returns Result<(0 elements), String>: no error design |
 | `local_attribute` | a `&mut self` helper returning data is not a queued action: it needs the run_command_as callback design |
 | `mob_navigating` | a `&mut self` helper that answers a query: a queued action would drop the answer (needs a read design) |
+| `move_fluids` | a `&mut self` helper returning data is not a queued action: it needs the run_command_as callback design |
 | `neighbor_signal` | a `&mut self` helper returning data is not a queued action: it needs the run_command_as callback design |
 | `on` | name collides with an existing horizon.* function |
 | `open_chat` | returns Result<(0 elements), String>: no error design |

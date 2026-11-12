@@ -229,7 +229,18 @@ helper's class with its reason and the blocking types; `hook-points.md` marks th
 Entities are named by their network id, the id the hook events carry: the `entity_*` helpers take it as a number,
 resolved against the world (a read with no such entity answers nil, an action does nothing). Positions are
 `{x, y, z}` tables: a `[f64; 3]` component must be finite, and a `[i32; 3]` component that is fractional or out of
-range is an error (it does not saturate, unlike a plain integer argument). Regenerate with
+range is an error (it does not saturate, unlike a plain integer argument). Levels are named by their dimension id
+string (`"minecraft:overworld"`, `"minecraft:the_nether"`): the `level_*` helpers take it as a string, resolved
+against the loaded dimensions (a read with an unknown dimension answers nil, an action does nothing, the same
+rule as an unresolved entity or player). A `Direction` is one of its six lowercase names (`"down"`, `"up"`,
+`"north"`, `"south"`, `"west"`, `"east"`); any other value is an error. A plain pair reads as a positional
+sequence `{a, b}`, or as a named table where a sequence would lose a nil second element: the optional climate and
+profile reads return the pair or nil — e.g. `level_height` returns `{min = ..., max = ...}` and
+`player_textures` returns `{value = ..., signature = ...}` (the signature is nil when unsigned) — and a
+compass target or profile property takes the pair or nil: `set_compass_target` as the sequence
+`{dimension, {x, y, z}}`, `set_profile_property` as the named `{value = ..., signature = ...}`. `docs/api/helper-exposure.md` lists every helper's class; the denylist of generated
+helpers that scripts never see (`EXCLUDED` in `xtask/src/lua_helpers.rs`) is where the client-side and
+diagnostic exclusions live. Regenerate with
 `cargo run -p xtask -- lua-helpers` (its `--check` fails when any of the five outputs — the bridge, its tests, the
 exposure page, `hook-points.md` and `horizon.d.lua` — is stale).
 

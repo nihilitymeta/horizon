@@ -11,7 +11,7 @@ use crate::generated_helpers::{
     GENERATED_ACTIONS, GENERATED_READS, generated_read, run_generated_action,
 };
 use crate::lua_mods::{LuaMod, LuaSide};
-use horizon_client::mod_api::{EntityRef, Host};
+use horizon_client::mod_api::{EntityRef, Host, LevelRef};
 use mlua::{Lua, Table};
 use std::sync::Mutex;
 
@@ -66,6 +66,17 @@ impl Host for GenHost {
             Some(horizon_client::mod_api::EntityRef::new(
                 horizon_client::mod_api::NativeWorldEpoch::new(1),
                 id,
+            ))
+        }
+    }
+    fn level(&self, dimension: &str) -> Option<horizon_client::mod_api::LevelRef> {
+        self.record("level", &[dimension.to_string()]);
+        if self.none || dimension != "minecraft:overworld" {
+            None
+        } else {
+            Some(horizon_client::mod_api::LevelRef::new(
+                horizon_client::mod_api::NativeWorldEpoch::new(1),
+                "minecraft:overworld",
             ))
         }
     }
@@ -178,6 +189,17 @@ impl Host for GenHost {
             Some("ruby:gen".to_owned())
         }
     }
+    fn entity_level(&self, entity: EntityRef) -> Option<LevelRef> {
+        self.record("entity_level", &[entity.id().to_string()]);
+        if self.none {
+            None
+        } else {
+            Some(horizon_client::mod_api::LevelRef::new(
+                horizon_client::mod_api::NativeWorldEpoch::new(1),
+                "minecraft:overworld",
+            ))
+        }
+    }
     fn entity_max_air_supply(&self, entity: EntityRef) -> Option<i32> {
         self.record("entity_max_air_supply", &[entity.id().to_string()]);
         if self.none { None } else { Some(3) }
@@ -278,6 +300,104 @@ impl Host for GenHost {
             &[viewer.to_string(), entity.to_string(), hidden.to_string()],
         );
         !self.refuse
+    }
+    fn level_block(&self, level: LevelRef, pos: [i32; 3]) -> Option<String> {
+        self.record(
+            "level_block",
+            &[level.dimension().to_string(), format!("{:?}", pos)],
+        );
+        if self.none {
+            None
+        } else {
+            Some("ruby:gen".to_owned())
+        }
+    }
+    fn level_block_property(&self, level: LevelRef, pos: [i32; 3], key: &str) -> Option<String> {
+        self.record(
+            "level_block_property",
+            &[
+                level.dimension().to_string(),
+                format!("{:?}", pos),
+                key.to_string(),
+            ],
+        );
+        if self.none {
+            None
+        } else {
+            Some("ruby:gen".to_owned())
+        }
+    }
+    fn level_block_state(&self, level: LevelRef, pos: [i32; 3]) -> Option<String> {
+        self.record(
+            "level_block_state",
+            &[level.dimension().to_string(), format!("{:?}", pos)],
+        );
+        if self.none {
+            None
+        } else {
+            Some("ruby:gen".to_owned())
+        }
+    }
+    fn level_day_time(&self, level: LevelRef) -> Option<i64> {
+        self.record("level_day_time", &[level.dimension().to_string()]);
+        if self.none { None } else { Some(3) }
+    }
+    fn level_difficulty(&self, level: LevelRef) -> Option<&'static str> {
+        self.record("level_difficulty", &[level.dimension().to_string()]);
+        if self.none { None } else { Some("ruby:gen") }
+    }
+    fn level_game_time(&self, level: LevelRef) -> Option<i64> {
+        self.record("level_game_time", &[level.dimension().to_string()]);
+        if self.none { None } else { Some(3) }
+    }
+    fn level_height(&self, level: LevelRef) -> Option<(i32, i32)> {
+        self.record("level_height", &[level.dimension().to_string()]);
+        if self.none { None } else { Some((3, 4)) }
+    }
+    fn level_is_loaded(&self, level: LevelRef, pos: [i32; 3]) -> bool {
+        self.record(
+            "level_is_loaded",
+            &[level.dimension().to_string(), format!("{:?}", pos)],
+        );
+        true
+    }
+    fn level_is_raining(&self, level: LevelRef) -> Option<bool> {
+        self.record("level_is_raining", &[level.dimension().to_string()]);
+        if self.none { None } else { Some(true) }
+    }
+    fn level_is_thundering(&self, level: LevelRef) -> Option<bool> {
+        self.record("level_is_thundering", &[level.dimension().to_string()]);
+        if self.none { None } else { Some(true) }
+    }
+    fn level_play_sound(
+        &mut self,
+        level: LevelRef,
+        sound: &str,
+        at: [f64; 3],
+        source: usize,
+        volume: f32,
+        pitch: f32,
+    ) -> bool {
+        self.record(
+            "level_play_sound",
+            &[
+                level.dimension().to_string(),
+                sound.to_string(),
+                format!("{:?}", at),
+                source.to_string(),
+                volume.to_string(),
+                pitch.to_string(),
+            ],
+        );
+        !self.refuse
+    }
+    fn level_seed(&self, level: LevelRef) -> Option<i64> {
+        self.record("level_seed", &[level.dimension().to_string()]);
+        if self.none { None } else { Some(3) }
+    }
+    fn level_weather(&self, level: LevelRef) -> Option<(f32, f32)> {
+        self.record("level_weather", &[level.dimension().to_string()]);
+        if self.none { None } else { Some((1.5, 2.5)) }
     }
     fn lit_block_name(&self, pos: [i32; 3]) -> Option<&str> {
         self.record("lit_block_name", &[format!("{:?}", pos)]);
@@ -387,9 +507,25 @@ impl Host for GenHost {
         );
         if self.none { None } else { Some(3) }
     }
+    fn player_textures(&self, uuid: u128) -> Option<(String, Option<String>)> {
+        self.record("player_textures", &[uuid.to_string()]);
+        if self.none {
+            None
+        } else {
+            Some(("ruby:tup1_0".to_owned(), Some("ruby:tup1_1".to_owned())))
+        }
+    }
     fn player_view_distance(&self, uuid: u128) -> Option<i32> {
         self.record("player_view_distance", &[uuid.to_string()]);
         if self.none { None } else { Some(3) }
+    }
+    fn profile_by_name(&self, name: &str) -> Option<(u128, String)> {
+        self.record("profile_by_name", &[name.to_string()]);
+        if self.none {
+            None
+        } else {
+            Some((STEVE_UUID, "ruby:tup1_1".to_owned()))
+        }
     }
     fn profile_by_uuid(&self, uuid: u128) -> Option<String> {
         self.record("profile_by_uuid", &[uuid.to_string()]);
@@ -457,10 +593,29 @@ impl Host for GenHost {
             ],
         );
     }
+    fn set_compass_target(&mut self, uuid: u128, target: Option<(&str, [i32; 3])>) -> bool {
+        self.record(
+            "set_compass_target",
+            &[uuid.to_string(), format!("{:?}", target)],
+        );
+        !self.refuse
+    }
     fn set_flight(&mut self, uuid: u128, allow: bool, flying: bool) -> bool {
         self.record(
             "set_flight",
             &[uuid.to_string(), allow.to_string(), flying.to_string()],
+        );
+        !self.refuse
+    }
+    fn set_profile_property(
+        &mut self,
+        player: u128,
+        name: &str,
+        value: Option<(&str, Option<&str>)>,
+    ) -> bool {
+        self.record(
+            "set_profile_property",
+            &[player.to_string(), name.to_string(), format!("{:?}", value)],
         );
         !self.refuse
     }
@@ -2666,6 +2821,100 @@ fn entity_kind_is_generated_and_exact() {
 }
 
 #[test]
+fn entity_level_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "entity_level",
+        rest(&lua, &[mlua::Value::Integer(7)]),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::String(_)), "{v:?}");
+    assert_eq!(h.logged(), ["entity_level 7"]);
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "entity_level",
+            rest(&lua, &[mlua::Value::Integer(7)]),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "entity_level",
+            rest(&lua, &[mlua::Value::Integer(999)]),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert!(h.logged().is_empty());
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "entity_level",
+            rest(&lua, &[mlua::Value::Integer(-1)]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_level.entity"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "entity_level",
+            rest(&lua, &[mlua::Value::Number(1.5)]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_level.entity"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "entity_level",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_level.entity"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "entity_level",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_level"), "{text}");
+        assert!(text.contains("entity"), "{text}");
+    }
+}
+
+#[test]
 fn entity_max_air_supply_is_generated_and_exact() {
     let lua = lua();
     let h = gen_host(false, false);
@@ -4102,6 +4351,52 @@ fn fluid_flow_is_generated_and_exact() {
             "fluid_flow",
             rest(
                 &lua,
+                &[mlua::Value::String(lua.create_string("").unwrap()), {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                }],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("fluid_flow.dimension"), "{text}");
+        assert!(h.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "fluid_flow",
+            rest(
+                &lua,
+                &[mlua::Value::Integer(3), {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                }],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("fluid_flow.dimension"), "{text}");
+        assert!(h.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "fluid_flow",
+            rest(
+                &lua,
                 &[mlua::Value::Table(lua.create_table().unwrap()), {
                     let t = lua.create_table().unwrap();
                     t.set("x", 3).unwrap();
@@ -4220,6 +4515,1969 @@ fn hide_entity_from_is_generated_and_exact() {
         let text = err.to_string();
         assert!(text.contains("hide_entity_from"), "{text}");
         assert!(text.contains("entity"), "{text}");
+    }
+}
+
+#[test]
+fn level_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "level",
+        rest(
+            &lua,
+            &[mlua::Value::String(
+                lua.create_string("minecraft:overworld").unwrap(),
+            )],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::String(_)), "{v:?}");
+    assert_eq!(h.logged(), ["level minecraft:overworld"]);
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:overworld").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level",
+            rest(&lua, &[mlua::Value::String(lua.create_string("").unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level.dimension"), "{text}");
+        assert!(h.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(&lua, &h, "level", rest(&lua, &[mlua::Value::Integer(3)]))
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level.dimension"), "{text}");
+        assert!(h.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level"), "{text}");
+        assert!(text.contains("dimension"), "{text}");
+    }
+}
+
+#[test]
+fn level_block_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "level_block",
+        rest(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                },
+            ],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::String(_)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        [
+            "level minecraft:overworld",
+            "level_block minecraft:overworld [3, 4, 5]"
+        ]
+    );
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_block",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_block",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 1.5).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_block.pos"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_block",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3000000000i64).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_block.pos"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_block",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:nowhere").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert_eq!(h.logged(), ["level minecraft:nowhere"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_block",
+            rest(
+                &lua,
+                &[mlua::Value::Integer(3), {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                }],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_block.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_block",
+            rest(
+                &lua,
+                &[mlua::Value::String(lua.create_string("").unwrap()), {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                }],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_block.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_block",
+            rest(
+                &lua,
+                &[mlua::Value::Table(lua.create_table().unwrap()), {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                }],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_block"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
+fn level_block_property_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "level_block_property",
+        rest(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+            ],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::String(_)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        [
+            "level minecraft:overworld",
+            "level_block_property minecraft:overworld [3, 4, 5] ruby:gen1"
+        ]
+    );
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_block_property",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_block_property",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 1.5).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_block_property.pos"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_block_property",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3000000000i64).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_block_property.pos"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_block_property",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:nowhere").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert_eq!(h.logged(), ["level minecraft:nowhere"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_block_property",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::Integer(3),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_block_property.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_block_property",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_block_property.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_block_property",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::Table(lua.create_table().unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_block_property"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
+fn level_block_state_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "level_block_state",
+        rest(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                },
+            ],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::String(_)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        [
+            "level minecraft:overworld",
+            "level_block_state minecraft:overworld [3, 4, 5]"
+        ]
+    );
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_block_state",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_block_state",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 1.5).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_block_state.pos"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_block_state",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3000000000i64).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_block_state.pos"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_block_state",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:nowhere").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert_eq!(h.logged(), ["level minecraft:nowhere"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_block_state",
+            rest(
+                &lua,
+                &[mlua::Value::Integer(3), {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                }],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_block_state.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_block_state",
+            rest(
+                &lua,
+                &[mlua::Value::String(lua.create_string("").unwrap()), {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                }],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_block_state.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_block_state",
+            rest(
+                &lua,
+                &[mlua::Value::Table(lua.create_table().unwrap()), {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                }],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_block_state"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
+fn level_day_time_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "level_day_time",
+        rest(
+            &lua,
+            &[mlua::Value::String(
+                lua.create_string("minecraft:overworld").unwrap(),
+            )],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Integer(_)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        [
+            "level minecraft:overworld",
+            "level_day_time minecraft:overworld"
+        ]
+    );
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_day_time",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:overworld").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_day_time",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:nowhere").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert_eq!(h.logged(), ["level minecraft:nowhere"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_day_time",
+            rest(&lua, &[mlua::Value::Integer(3)]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_day_time.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_day_time",
+            rest(&lua, &[mlua::Value::String(lua.create_string("").unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_day_time.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_day_time",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_day_time"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
+fn level_difficulty_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "level_difficulty",
+        rest(
+            &lua,
+            &[mlua::Value::String(
+                lua.create_string("minecraft:overworld").unwrap(),
+            )],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::String(_)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        [
+            "level minecraft:overworld",
+            "level_difficulty minecraft:overworld"
+        ]
+    );
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_difficulty",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:overworld").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_difficulty",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:nowhere").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert_eq!(h.logged(), ["level minecraft:nowhere"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_difficulty",
+            rest(&lua, &[mlua::Value::Integer(3)]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_difficulty.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_difficulty",
+            rest(&lua, &[mlua::Value::String(lua.create_string("").unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_difficulty.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_difficulty",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_difficulty"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
+fn level_game_time_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "level_game_time",
+        rest(
+            &lua,
+            &[mlua::Value::String(
+                lua.create_string("minecraft:overworld").unwrap(),
+            )],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Integer(_)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        [
+            "level minecraft:overworld",
+            "level_game_time minecraft:overworld"
+        ]
+    );
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_game_time",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:overworld").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_game_time",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:nowhere").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert_eq!(h.logged(), ["level minecraft:nowhere"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_game_time",
+            rest(&lua, &[mlua::Value::Integer(3)]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_game_time.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_game_time",
+            rest(&lua, &[mlua::Value::String(lua.create_string("").unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_game_time.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_game_time",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_game_time"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
+fn level_height_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "level_height",
+        rest(
+            &lua,
+            &[mlua::Value::String(
+                lua.create_string("minecraft:overworld").unwrap(),
+            )],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Table(_)), "{v:?}");
+    if let mlua::Value::Table(t) = &v {
+        assert_eq!(t.get::<i64>("min").unwrap(), 3);
+        assert_eq!(t.get::<i64>("max").unwrap(), 4);
+    }
+    assert_eq!(
+        h.logged(),
+        [
+            "level minecraft:overworld",
+            "level_height minecraft:overworld"
+        ]
+    );
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_height",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:overworld").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_height",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:nowhere").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert_eq!(h.logged(), ["level minecraft:nowhere"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_height",
+            rest(&lua, &[mlua::Value::Integer(3)]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_height.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_height",
+            rest(&lua, &[mlua::Value::String(lua.create_string("").unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_height.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_height",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_height"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
+fn level_is_loaded_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "level_is_loaded",
+        rest(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                },
+            ],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Boolean(true)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        [
+            "level minecraft:overworld",
+            "level_is_loaded minecraft:overworld [3, 4, 5]"
+        ]
+    );
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_is_loaded",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 1.5).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_is_loaded.pos"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_is_loaded",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3000000000i64).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_is_loaded.pos"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_is_loaded",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:nowhere").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert_eq!(h.logged(), ["level minecraft:nowhere"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_is_loaded",
+            rest(
+                &lua,
+                &[mlua::Value::Integer(3), {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                }],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_is_loaded.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_is_loaded",
+            rest(
+                &lua,
+                &[mlua::Value::String(lua.create_string("").unwrap()), {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                }],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_is_loaded.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_is_loaded",
+            rest(
+                &lua,
+                &[mlua::Value::Table(lua.create_table().unwrap()), {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                }],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_is_loaded"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
+fn level_is_raining_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "level_is_raining",
+        rest(
+            &lua,
+            &[mlua::Value::String(
+                lua.create_string("minecraft:overworld").unwrap(),
+            )],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Boolean(true)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        [
+            "level minecraft:overworld",
+            "level_is_raining minecraft:overworld"
+        ]
+    );
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_is_raining",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:overworld").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_is_raining",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:nowhere").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert_eq!(h.logged(), ["level minecraft:nowhere"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_is_raining",
+            rest(&lua, &[mlua::Value::Integer(3)]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_is_raining.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_is_raining",
+            rest(&lua, &[mlua::Value::String(lua.create_string("").unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_is_raining.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_is_raining",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_is_raining"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
+fn level_is_thundering_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "level_is_thundering",
+        rest(
+            &lua,
+            &[mlua::Value::String(
+                lua.create_string("minecraft:overworld").unwrap(),
+            )],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Boolean(true)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        [
+            "level minecraft:overworld",
+            "level_is_thundering minecraft:overworld"
+        ]
+    );
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_is_thundering",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:overworld").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_is_thundering",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:nowhere").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert_eq!(h.logged(), ["level minecraft:nowhere"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_is_thundering",
+            rest(&lua, &[mlua::Value::Integer(3)]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_is_thundering.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_is_thundering",
+            rest(&lua, &[mlua::Value::String(lua.create_string("").unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_is_thundering.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_is_thundering",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_is_thundering"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
+fn level_play_sound_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(
+        &lua,
+        &[
+            mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+            mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+            {
+                let t = lua.create_table().unwrap();
+                t.set("x", 1.5).unwrap();
+                t.set("y", 2.5).unwrap();
+                t.set("z", 3.5).unwrap();
+                mlua::Value::Table(t)
+            },
+            mlua::Value::Integer(3),
+            mlua::Value::Number(4.5),
+            mlua::Value::Number(5.5),
+        ],
+    );
+    run_generated_action(&mut host, "level_play_sound", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        host.logged(),
+        [
+            "level minecraft:overworld",
+            "level_play_sound minecraft:overworld ruby:gen1 [1.5, 2.5, 3.5] 3 4.5 5.5"
+        ]
+    );
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Integer(-1),
+                mlua::Value::Number(1.5),
+                mlua::Value::Number(1.5),
+            ],
+        );
+        run_generated_action(&mut host, "level_play_sound", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            host.logged(),
+            [
+                "level minecraft:overworld",
+                "level_play_sound minecraft:overworld ruby:gen [1.5, 2.5, 3.5] 0 1.5 1.5"
+            ]
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Integer(300),
+                mlua::Value::Number(1.5),
+                mlua::Value::Number(1.5),
+            ],
+        );
+        run_generated_action(&mut host, "level_play_sound", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            host.logged(),
+            [
+                "level minecraft:overworld",
+                "level_play_sound minecraft:overworld ruby:gen [1.5, 2.5, 3.5] 300 1.5 1.5"
+            ]
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", f64::NAN).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Integer(3),
+                mlua::Value::Number(4.5),
+                mlua::Value::Number(5.5),
+            ],
+        );
+        let err = run_generated_action(&mut host, "level_play_sound", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_play_sound.at"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Integer(3),
+                mlua::Value::Number(4.5),
+                mlua::Value::Number(5.5),
+            ],
+        );
+        let err = run_generated_action(&mut host, "level_play_sound", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_play_sound.at"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:nowhere").unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Integer(3),
+                mlua::Value::Number(4.5),
+                mlua::Value::Number(5.5),
+            ],
+        );
+        run_generated_action(&mut host, "level_play_sound", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            host.logged(),
+            ["level minecraft:nowhere"],
+            "an unresolved level calls nothing past the lookup"
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Integer(3),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Integer(3),
+                mlua::Value::Number(4.5),
+                mlua::Value::Number(5.5),
+            ],
+        );
+        let err = run_generated_action(&mut host, "level_play_sound", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_play_sound.level"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("").unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Integer(3),
+                mlua::Value::Number(4.5),
+                mlua::Value::Number(5.5),
+            ],
+        );
+        let err = run_generated_action(&mut host, "level_play_sound", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_play_sound.level"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Integer(3),
+                mlua::Value::Number(f64::NAN),
+                mlua::Value::Number(5.5),
+            ],
+        );
+        let err = run_generated_action(&mut host, "level_play_sound", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_play_sound.volume"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Integer(3),
+                mlua::Value::Number(4.5),
+                mlua::Value::Number(5.5),
+            ],
+        );
+        let err = run_generated_action(&mut host, "level_play_sound", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_play_sound"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
+fn level_seed_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "level_seed",
+        rest(
+            &lua,
+            &[mlua::Value::String(
+                lua.create_string("minecraft:overworld").unwrap(),
+            )],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Integer(_)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        [
+            "level minecraft:overworld",
+            "level_seed minecraft:overworld"
+        ]
+    );
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_seed",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:overworld").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_seed",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:nowhere").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert_eq!(h.logged(), ["level minecraft:nowhere"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_seed",
+            rest(&lua, &[mlua::Value::Integer(3)]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_seed.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_seed",
+            rest(&lua, &[mlua::Value::String(lua.create_string("").unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_seed.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_seed",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_seed"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
+fn level_weather_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "level_weather",
+        rest(
+            &lua,
+            &[mlua::Value::String(
+                lua.create_string("minecraft:overworld").unwrap(),
+            )],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Table(_)), "{v:?}");
+    if let mlua::Value::Table(t) = &v {
+        assert_eq!(t.get::<f64>(1).unwrap(), 1.5);
+        assert_eq!(t.get::<f64>(2).unwrap(), 2.5);
+    }
+    assert_eq!(
+        h.logged(),
+        [
+            "level minecraft:overworld",
+            "level_weather minecraft:overworld"
+        ]
+    );
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_weather",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:overworld").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_weather",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("minecraft:nowhere").unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert_eq!(h.logged(), ["level minecraft:nowhere"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_weather",
+            rest(&lua, &[mlua::Value::Integer(3)]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_weather.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_weather",
+            rest(&lua, &[mlua::Value::String(lua.create_string("").unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_weather.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_weather",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_weather"), "{text}");
+        assert!(text.contains("level"), "{text}");
     }
 }
 
@@ -4444,6 +6702,40 @@ fn mob_attack_is_generated_and_exact() {
         let t = args(
             &lua,
             &[
+                mlua::Value::String(lua.create_string("").unwrap()),
+                mlua::Value::Integer(3),
+                mlua::Value::Integer(4),
+            ],
+        );
+        let err = run_generated_action(&mut host, "mob_attack", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("mob_attack.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Integer(3),
+                mlua::Value::Integer(3),
+                mlua::Value::Integer(4),
+            ],
+        );
+        let err = run_generated_action(&mut host, "mob_attack", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("mob_attack.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
                 mlua::Value::Table(lua.create_table().unwrap()),
                 mlua::Value::Integer(3),
                 mlua::Value::Integer(4),
@@ -4506,6 +6798,42 @@ fn mob_follow_is_generated_and_exact() {
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["mob_follow ruby:gen 300 300 1.5"]);
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("").unwrap()),
+                mlua::Value::Integer(3),
+                mlua::Value::Integer(4),
+                mlua::Value::Number(1.5),
+            ],
+        );
+        let err = run_generated_action(&mut host, "mob_follow", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("mob_follow.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Integer(3),
+                mlua::Value::Integer(3),
+                mlua::Value::Integer(4),
+                mlua::Value::Number(1.5),
+            ],
+        );
+        let err = run_generated_action(&mut host, "mob_follow", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("mob_follow.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
     }
     {
         let mut host = gen_host(false, false);
@@ -4650,6 +6978,48 @@ fn mob_look_at_is_generated_and_exact() {
             .unwrap_err();
         let text = err.to_string();
         assert!(text.contains("mob_look_at.at"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("").unwrap()),
+                mlua::Value::Integer(3),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+            ],
+        );
+        let err = run_generated_action(&mut host, "mob_look_at", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("mob_look_at.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[mlua::Value::Integer(3), mlua::Value::Integer(3), {
+                let t = lua.create_table().unwrap();
+                t.set("x", 1.5).unwrap();
+                t.set("y", 2.5).unwrap();
+                t.set("z", 3.5).unwrap();
+                mlua::Value::Table(t)
+            }],
+        );
+        let err = run_generated_action(&mut host, "mob_look_at", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("mob_look_at.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
     }
     {
         let mut host = gen_host(false, false);
@@ -4807,6 +7177,56 @@ fn mob_navigate_is_generated_and_exact() {
         let t = args(
             &lua,
             &[
+                mlua::Value::String(lua.create_string("").unwrap()),
+                mlua::Value::Integer(3),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Integer(4),
+                mlua::Value::Number(4.5),
+            ],
+        );
+        let err = run_generated_action(&mut host, "mob_navigate", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("mob_navigate.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Integer(3),
+                mlua::Value::Integer(3),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Integer(4),
+                mlua::Value::Number(4.5),
+            ],
+        );
+        let err = run_generated_action(&mut host, "mob_navigate", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("mob_navigate.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
                 mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
                 mlua::Value::Integer(3),
                 {
@@ -4895,6 +7315,32 @@ fn mob_stop_is_generated_and_exact() {
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["mob_stop ruby:gen 300"]);
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("").unwrap()),
+                mlua::Value::Integer(3),
+            ],
+        );
+        let err = run_generated_action(&mut host, "mob_stop", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("mob_stop.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(&lua, &[mlua::Value::Integer(3), mlua::Value::Integer(3)]);
+        let err = run_generated_action(&mut host, "mob_stop", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("mob_stop.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
     }
     {
         let mut host = gen_host(false, false);
@@ -5085,6 +7531,56 @@ fn move_entity_is_generated_and_exact() {
             .unwrap_err();
         let text = err.to_string();
         assert!(text.contains("move_entity.pos"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("").unwrap()),
+                mlua::Value::Integer(3),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Number(4.5),
+                mlua::Value::Number(5.5),
+            ],
+        );
+        let err = run_generated_action(&mut host, "move_entity", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("move_entity.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Integer(3),
+                mlua::Value::Integer(3),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Number(4.5),
+                mlua::Value::Number(5.5),
+            ],
+        );
+        let err = run_generated_action(&mut host, "move_entity", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("move_entity.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
     }
     {
         let mut host = gen_host(false, false);
@@ -5416,6 +7912,72 @@ fn player_stat_is_generated_and_exact() {
 }
 
 #[test]
+fn player_textures_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "player_textures",
+        rest(
+            &lua,
+            &[mlua::Value::String(
+                lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                    .unwrap(),
+            )],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Table(_)), "{v:?}");
+    if let mlua::Value::Table(t) = &v {
+        assert_eq!(t.get::<String>("value").unwrap(), "ruby:tup1_0");
+        assert_eq!(
+            t.get::<Option<String>>("signature").unwrap().as_deref(),
+            Some("ruby:tup1_1")
+        );
+    }
+    assert_eq!(
+        h.logged(),
+        ["player_textures 24249434048109030647017182301789831168"]
+    );
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "player_textures",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                        .unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "player_textures",
+            rest(
+                &lua,
+                &[mlua::Value::String(lua.create_string("ghost").unwrap())],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert!(h.logged().is_empty());
+    }
+}
+
+#[test]
 fn player_view_distance_is_generated_and_exact() {
     let lua = lua();
     let h = gen_host(false, false);
@@ -5471,6 +8033,61 @@ fn player_view_distance_is_generated_and_exact() {
         .unwrap();
         assert!(matches!(v, mlua::Value::Nil));
         assert!(h.logged().is_empty());
+    }
+}
+
+#[test]
+fn profile_by_name_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "profile_by_name",
+        rest(
+            &lua,
+            &[mlua::Value::String(lua.create_string("ruby:gen1").unwrap())],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Table(_)), "{v:?}");
+    if let mlua::Value::Table(t) = &v {
+        assert_eq!(
+            t.get::<String>(1).unwrap(),
+            "123e4567-e89b-12d3-a456-426614174000"
+        );
+        assert_eq!(t.get::<String>(2).unwrap(), "ruby:tup1_1");
+    }
+    assert_eq!(h.logged(), ["profile_by_name ruby:gen1"]);
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "profile_by_name",
+            rest(
+                &lua,
+                &[mlua::Value::String(lua.create_string("ruby:gen1").unwrap())],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "profile_by_name",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("profile_by_name"), "{text}");
+        assert!(text.contains("name"), "{text}");
     }
 }
 
@@ -5679,6 +8296,32 @@ fn remove_entity_is_generated_and_exact() {
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["remove_entity ruby:gen 300"]);
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("").unwrap()),
+                mlua::Value::Integer(3),
+            ],
+        );
+        let err = run_generated_action(&mut host, "remove_entity", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("remove_entity.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(&lua, &[mlua::Value::Integer(3), mlua::Value::Integer(3)]);
+        let err = run_generated_action(&mut host, "remove_entity", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("remove_entity.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
     }
     {
         let mut host = gen_host(false, false);
@@ -6123,6 +8766,106 @@ fn set_break_progress_is_generated_and_exact() {
 }
 
 #[test]
+fn set_compass_target_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(
+        &lua,
+        &[
+            mlua::Value::String(
+                lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                    .unwrap(),
+            ),
+            {
+                let t = lua.create_table().unwrap();
+                t.set(1, "ruby:tup1_0").unwrap();
+                t.set(2, {
+                    let p = lua.create_table().unwrap();
+                    p.set("x", 13).unwrap();
+                    p.set("y", 14).unwrap();
+                    p.set("z", 15).unwrap();
+                    p
+                })
+                .unwrap();
+                mlua::Value::Table(t)
+            },
+        ],
+    );
+    run_generated_action(&mut host, "set_compass_target", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        host.logged(),
+        [
+            "set_compass_target 24249434048109030647017182301789831168 Some((\"ruby:tup1_0\", [13, 14, 15]))"
+        ]
+    );
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[mlua::Value::String(lua.create_string("ghost").unwrap()), {
+                let t = lua.create_table().unwrap();
+                t.set(1, "ruby:tup1_0").unwrap();
+                t.set(2, {
+                    let p = lua.create_table().unwrap();
+                    p.set("x", 13).unwrap();
+                    p.set("y", 14).unwrap();
+                    p.set("z", 15).unwrap();
+                    p
+                })
+                .unwrap();
+                mlua::Value::Table(t)
+            }],
+        );
+        run_generated_action(&mut host, "set_compass_target", &t)
+            .unwrap()
+            .unwrap();
+        assert!(
+            host.logged().is_empty(),
+            "an unresolvable player calls nothing"
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(
+                    lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                        .unwrap(),
+                ),
+                mlua::Value::Table(lua.create_table().unwrap()),
+            ],
+        );
+        let err = run_generated_action(&mut host, "set_compass_target", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("set_compass_target.target"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(
+                    lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                        .unwrap(),
+                ),
+                mlua::Value::Table(lua.create_table().unwrap()),
+            ],
+        );
+        let err = run_generated_action(&mut host, "set_compass_target", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("set_compass_target"), "{text}");
+        assert!(text.contains("target"), "{text}");
+    }
+}
+
+#[test]
 fn set_flight_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
@@ -6181,6 +8924,104 @@ fn set_flight_is_generated_and_exact() {
         let text = err.to_string();
         assert!(text.contains("set_flight"), "{text}");
         assert!(text.contains("allow"), "{text}");
+    }
+}
+
+#[test]
+fn set_profile_property_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(
+        &lua,
+        &[
+            mlua::Value::String(
+                lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                    .unwrap(),
+            ),
+            mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+            {
+                let t = lua.create_table().unwrap();
+                t.set("value", "ruby:tup1_0").unwrap();
+                t.set("signature", "ruby:tup1_1b").unwrap();
+                mlua::Value::Table(t)
+            },
+        ],
+    );
+    run_generated_action(&mut host, "set_profile_property", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        host.logged(),
+        [
+            "set_profile_property 24249434048109030647017182301789831168 ruby:gen1 Some((\"ruby:tup1_0\", Some(\"ruby:tup1_1b\")))"
+        ]
+    );
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("ghost").unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("value", "ruby:tup1_0").unwrap();
+                    t.set("signature", "ruby:tup1_1b").unwrap();
+                    mlua::Value::Table(t)
+                },
+            ],
+        );
+        run_generated_action(&mut host, "set_profile_property", &t)
+            .unwrap()
+            .unwrap();
+        assert!(
+            host.logged().is_empty(),
+            "an unresolvable player calls nothing"
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(
+                    lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                        .unwrap(),
+                ),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                mlua::Value::Table(lua.create_table().unwrap()),
+            ],
+        );
+        let err = run_generated_action(&mut host, "set_profile_property", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("set_profile_property.value"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(
+                    lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                        .unwrap(),
+                ),
+                mlua::Value::Table(lua.create_table().unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("value", "ruby:tup1_0").unwrap();
+                    t.set("signature", "ruby:tup1_1b").unwrap();
+                    mlua::Value::Table(t)
+                },
+            ],
+        );
+        let err = run_generated_action(&mut host, "set_profile_property", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("set_profile_property"), "{text}");
+        assert!(text.contains("name"), "{text}");
     }
 }
 
@@ -6375,6 +9216,48 @@ fn teleport_vehicle_is_generated_and_exact() {
         let t = args(
             &lua,
             &[
+                mlua::Value::String(lua.create_string("").unwrap()),
+                mlua::Value::Integer(3),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+            ],
+        );
+        let err = run_generated_action(&mut host, "teleport_vehicle", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("teleport_vehicle.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[mlua::Value::Integer(3), mlua::Value::Integer(3), {
+                let t = lua.create_table().unwrap();
+                t.set("x", 1.5).unwrap();
+                t.set("y", 2.5).unwrap();
+                t.set("z", 3.5).unwrap();
+                mlua::Value::Table(t)
+            }],
+        );
+        let err = run_generated_action(&mut host, "teleport_vehicle", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("teleport_vehicle.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
                 mlua::Value::Table(lua.create_table().unwrap()),
                 mlua::Value::Integer(3),
                 {
@@ -6460,6 +9343,44 @@ fn update_output_neighbors_is_generated_and_exact() {
             .unwrap_err();
         let text = err.to_string();
         assert!(text.contains("update_output_neighbors.pos"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[mlua::Value::String(lua.create_string("").unwrap()), {
+                let t = lua.create_table().unwrap();
+                t.set("x", 3).unwrap();
+                t.set("y", 4).unwrap();
+                t.set("z", 5).unwrap();
+                mlua::Value::Table(t)
+            }],
+        );
+        let err = run_generated_action(&mut host, "update_output_neighbors", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("update_output_neighbors.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[mlua::Value::Integer(3), {
+                let t = lua.create_table().unwrap();
+                t.set("x", 3).unwrap();
+                t.set("y", 4).unwrap();
+                t.set("z", 5).unwrap();
+                mlua::Value::Table(t)
+            }],
+        );
+        let err = run_generated_action(&mut host, "update_output_neighbors", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("update_output_neighbors.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
     }
     {
         let mut host = gen_host(false, false);
@@ -6552,6 +9473,44 @@ fn update_signal_neighbors_is_generated_and_exact() {
         let mut host = gen_host(false, false);
         let t = args(
             &lua,
+            &[mlua::Value::String(lua.create_string("").unwrap()), {
+                let t = lua.create_table().unwrap();
+                t.set("x", 3).unwrap();
+                t.set("y", 4).unwrap();
+                t.set("z", 5).unwrap();
+                mlua::Value::Table(t)
+            }],
+        );
+        let err = run_generated_action(&mut host, "update_signal_neighbors", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("update_signal_neighbors.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[mlua::Value::Integer(3), {
+                let t = lua.create_table().unwrap();
+                t.set("x", 3).unwrap();
+                t.set("y", 4).unwrap();
+                t.set("z", 5).unwrap();
+                mlua::Value::Table(t)
+            }],
+        );
+        let err = run_generated_action(&mut host, "update_signal_neighbors", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("update_signal_neighbors.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
             &[mlua::Value::Table(lua.create_table().unwrap()), {
                 let t = lua.create_table().unwrap();
                 t.set("x", 3).unwrap();
@@ -6602,6 +9561,7 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "entity_set_silent",
             "entity_set_velocity",
             "hide_entity_from",
+            "level_play_sound",
             "mob_attack",
             "mob_follow",
             "mob_look_at",
@@ -6619,7 +9579,9 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "set_attribute_base",
             "set_block_property_with",
             "set_break_progress",
+            "set_compass_target",
             "set_flight",
+            "set_profile_property",
             "sleep_ignored",
             "teleport_vehicle",
             "update_output_neighbors",
@@ -6648,6 +9610,7 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "entity_is_silent",
             "entity_is_sprinting",
             "entity_kind",
+            "entity_level",
             "entity_max_air_supply",
             "entity_name",
             "entity_on_ground",
@@ -6656,12 +9619,27 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "entity_velocity",
             "entity_view_vector",
             "fluid_flow",
+            "level",
+            "level_block",
+            "level_block_property",
+            "level_block_state",
+            "level_day_time",
+            "level_difficulty",
+            "level_game_time",
+            "level_height",
+            "level_is_loaded",
+            "level_is_raining",
+            "level_is_thundering",
+            "level_seed",
+            "level_weather",
             "lit_block_name",
             "max_players",
             "max_stack_size",
             "player_sneaking",
             "player_stat",
+            "player_textures",
             "player_view_distance",
+            "profile_by_name",
             "profile_by_uuid",
             "sneaking",
             "world_seed",
@@ -6688,6 +9666,7 @@ fn every_generated_name_is_a_function_on_horizon() {
             "entity_set_silent",
             "entity_set_velocity",
             "hide_entity_from",
+            "level_play_sound",
             "mob_attack",
             "mob_follow",
             "mob_look_at",
@@ -6705,7 +9684,9 @@ fn every_generated_name_is_a_function_on_horizon() {
             "set_attribute_base",
             "set_block_property_with",
             "set_break_progress",
+            "set_compass_target",
             "set_flight",
+            "set_profile_property",
             "sleep_ignored",
             "teleport_vehicle",
             "update_output_neighbors",
@@ -6729,6 +9710,7 @@ fn every_generated_name_is_a_function_on_horizon() {
             "entity_is_silent",
             "entity_is_sprinting",
             "entity_kind",
+            "entity_level",
             "entity_max_air_supply",
             "entity_name",
             "entity_on_ground",
@@ -6737,12 +9719,27 @@ fn every_generated_name_is_a_function_on_horizon() {
             "entity_velocity",
             "entity_view_vector",
             "fluid_flow",
+            "level",
+            "level_block",
+            "level_block_property",
+            "level_block_state",
+            "level_day_time",
+            "level_difficulty",
+            "level_game_time",
+            "level_height",
+            "level_is_loaded",
+            "level_is_raining",
+            "level_is_thundering",
+            "level_seed",
+            "level_weather",
             "lit_block_name",
             "max_players",
             "max_stack_size",
             "player_sneaking",
             "player_stat",
+            "player_textures",
             "player_view_distance",
+            "profile_by_name",
             "profile_by_uuid",
             "sneaking",
             "world_seed",
@@ -6781,6 +9778,7 @@ fn generated_names_raise_in_a_client_state() {
             "entity_set_silent",
             "entity_set_velocity",
             "hide_entity_from",
+            "level_play_sound",
             "mob_attack",
             "mob_follow",
             "mob_look_at",
@@ -6798,7 +9796,9 @@ fn generated_names_raise_in_a_client_state() {
             "set_attribute_base",
             "set_block_property_with",
             "set_break_progress",
+            "set_compass_target",
             "set_flight",
+            "set_profile_property",
             "sleep_ignored",
             "teleport_vehicle",
             "update_output_neighbors",
@@ -6822,6 +9822,7 @@ fn generated_names_raise_in_a_client_state() {
             "entity_is_silent",
             "entity_is_sprinting",
             "entity_kind",
+            "entity_level",
             "entity_max_air_supply",
             "entity_name",
             "entity_on_ground",
@@ -6830,12 +9831,27 @@ fn generated_names_raise_in_a_client_state() {
             "entity_velocity",
             "entity_view_vector",
             "fluid_flow",
+            "level",
+            "level_block",
+            "level_block_property",
+            "level_block_state",
+            "level_day_time",
+            "level_difficulty",
+            "level_game_time",
+            "level_height",
+            "level_is_loaded",
+            "level_is_raining",
+            "level_is_thundering",
+            "level_seed",
+            "level_weather",
             "lit_block_name",
             "max_players",
             "max_stack_size",
             "player_sneaking",
             "player_stat",
+            "player_textures",
             "player_view_distance",
+            "profile_by_name",
             "profile_by_uuid",
             "sneaking",
             "world_seed",
@@ -6879,6 +9895,8 @@ fn generated_helpers_run_from_a_hook() {
               horizon.broadcast("sneaking=" .. tostring(horizon.sneaking()))
               horizon.broadcast("seed=" .. tostring(horizon.world_seed()))
               horizon.broadcast("name=" .. tostring(horizon.entity_name(7)))
+              horizon.broadcast("lv=" .. tostring(horizon.level_block("minecraft:overworld", {x = 1, y = 2, z = 3})))
+              horizon.broadcast("lv999=" .. tostring(horizon.level_block("minecraft:nowhere", {x = 1, y = 2, z = 3})))
               horizon.block_entity_sync({x = 1, y = 2, z = 3})
             end)
             "#,
@@ -6902,12 +9920,17 @@ fn generated_helpers_run_from_a_hook() {
             "sneaking",
             "world_seed",
             "entity_name 7",
+            "level minecraft:overworld",
+            "level_block minecraft:overworld [1, 2, 3]",
+            "level minecraft:nowhere",
             "broadcast pos=1.5,2.5,3.5",
             "broadcast pos999=nil",
             "broadcast vel=1.5,2.5,3.5",
             "broadcast sneaking=true",
             "broadcast seed=3",
             "broadcast name=ruby:gen",
+            "broadcast lv=ruby:gen",
+            "broadcast lv999=nil",
             "block_entity_sync [1, 2, 3]",
         ]
     );

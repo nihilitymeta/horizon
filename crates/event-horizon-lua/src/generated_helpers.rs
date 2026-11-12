@@ -26,6 +26,18 @@ use crate::lua_mods::uuid_of;
 use horizon_client::mod_api::Host;
 use mlua::{Lua, MultiValue, Table, Value};
 
+/// One `LevelRef` argument's Lua value: its dimension id string
+/// (`"minecraft:overworld"`), else a script error naming the helper
+/// and the argument. Shared by the read and queued-action arms.
+fn dimension_of(helper: &str, arg: &str, value: &Value) -> mlua::Result<String> {
+    match value {
+        Value::String(s) if !s.to_string_lossy().is_empty() => Ok(s.to_string_lossy().to_owned()),
+        _ => Err(mlua::Error::runtime(format!(
+            "{helper}.{arg}: expected a dimension id"
+        ))),
+    }
+}
+
 /// The queued actions this generator emits, installed beside the
 /// hand-written ones.
 pub(crate) const GENERATED_ACTIONS: &[&str] = &[
@@ -40,6 +52,7 @@ pub(crate) const GENERATED_ACTIONS: &[&str] = &[
     "entity_set_silent",
     "entity_set_velocity",
     "hide_entity_from",
+    "level_play_sound",
     "mob_attack",
     "mob_follow",
     "mob_look_at",
@@ -57,7 +70,9 @@ pub(crate) const GENERATED_ACTIONS: &[&str] = &[
     "set_attribute_base",
     "set_block_property_with",
     "set_break_progress",
+    "set_compass_target",
     "set_flight",
+    "set_profile_property",
     "sleep_ignored",
     "teleport_vehicle",
     "update_output_neighbors",
@@ -86,6 +101,7 @@ pub(crate) const GENERATED_READS: &[&str] = &[
     "entity_is_silent",
     "entity_is_sprinting",
     "entity_kind",
+    "entity_level",
     "entity_max_air_supply",
     "entity_name",
     "entity_on_ground",
@@ -94,12 +110,27 @@ pub(crate) const GENERATED_READS: &[&str] = &[
     "entity_velocity",
     "entity_view_vector",
     "fluid_flow",
+    "level",
+    "level_block",
+    "level_block_property",
+    "level_block_state",
+    "level_day_time",
+    "level_difficulty",
+    "level_game_time",
+    "level_height",
+    "level_is_loaded",
+    "level_is_raining",
+    "level_is_thundering",
+    "level_seed",
+    "level_weather",
     "lit_block_name",
     "max_players",
     "max_stack_size",
     "player_sneaking",
     "player_stat",
+    "player_textures",
     "player_view_distance",
+    "profile_by_name",
     "profile_by_uuid",
     "sneaking",
     "world_seed",
@@ -351,8 +382,45 @@ pub(crate) fn run_generated_action(
             let _ = host.hide_entity_from(uuid, entity, hidden);
             Ok(())
         })(host)),
+        "level_play_sound" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let level_lua: Value = read_action_arg(args, 1, "level_play_sound", "level")?;
+            let level_dim: String = dimension_of("level_play_sound", "level", &level_lua)?;
+            let sound: String = read_action_arg(args, 2, "level_play_sound", "sound")?;
+            let at: Table = read_action_arg(args, 3, "level_play_sound", "at")?;
+            let at_x: f64 =
+                crate::generated_runtime::req_finite::<f64>(&at, "x", "level_play_sound.at")?;
+            let at_y: f64 =
+                crate::generated_runtime::req_finite::<f64>(&at, "y", "level_play_sound.at")?;
+            let at_z: f64 =
+                crate::generated_runtime::req_finite::<f64>(&at, "z", "level_play_sound.at")?;
+            let at: [f64; 3] = [at_x, at_y, at_z];
+            let n4: i64 = read_action_arg(args, 4, "level_play_sound", "source")?;
+            let source: usize =
+                usize::try_from(n4).unwrap_or(if n4 < 0 { usize::MIN } else { usize::MAX });
+            let volume64: f64 = read_action_arg(args, 5, "level_play_sound", "volume")?;
+            crate::generated_runtime::check_finite("level_play_sound", "volume", volume64)?;
+            let volume = volume64 as f32;
+            crate::generated_runtime::check_finite(
+                "level_play_sound",
+                "volume",
+                f64::from(volume),
+            )?;
+            let pitch64: f64 = read_action_arg(args, 6, "level_play_sound", "pitch")?;
+            crate::generated_runtime::check_finite("level_play_sound", "pitch", pitch64)?;
+            let pitch = pitch64 as f32;
+            crate::generated_runtime::check_finite("level_play_sound", "pitch", f64::from(pitch))?;
+            let Some(level) = host.level(&level_dim) else {
+                log::debug!("[lua] level_play_sound: no such level");
+                return Ok(());
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.level_play_sound(level, &sound, at, source, volume, pitch);
+            Ok(())
+        })(host)),
         "mob_attack" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
-            let dimension: String = read_action_arg(args, 1, "mob_attack", "dimension")?;
+            let dimension_lua: Value = read_action_arg(args, 1, "mob_attack", "dimension")?;
+            let dimension: String = dimension_of("mob_attack", "dimension", &dimension_lua)?;
             let n2: i64 = read_action_arg(args, 2, "mob_attack", "mob")?;
             let mob: u32 = u32::try_from(n2).unwrap_or(if n2 < 0 { u32::MIN } else { u32::MAX });
             let n3: i64 = read_action_arg(args, 3, "mob_attack", "target")?;
@@ -363,7 +431,8 @@ pub(crate) fn run_generated_action(
             Ok(())
         })(host)),
         "mob_follow" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
-            let dimension: String = read_action_arg(args, 1, "mob_follow", "dimension")?;
+            let dimension_lua: Value = read_action_arg(args, 1, "mob_follow", "dimension")?;
+            let dimension: String = dimension_of("mob_follow", "dimension", &dimension_lua)?;
             let n2: i64 = read_action_arg(args, 2, "mob_follow", "mob")?;
             let mob: u32 = u32::try_from(n2).unwrap_or(if n2 < 0 { u32::MIN } else { u32::MAX });
             let n3: i64 = read_action_arg(args, 3, "mob_follow", "target")?;
@@ -376,7 +445,8 @@ pub(crate) fn run_generated_action(
             Ok(())
         })(host)),
         "mob_look_at" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
-            let dimension: String = read_action_arg(args, 1, "mob_look_at", "dimension")?;
+            let dimension_lua: Value = read_action_arg(args, 1, "mob_look_at", "dimension")?;
+            let dimension: String = dimension_of("mob_look_at", "dimension", &dimension_lua)?;
             let n2: i64 = read_action_arg(args, 2, "mob_look_at", "mob")?;
             let mob: u32 = u32::try_from(n2).unwrap_or(if n2 < 0 { u32::MIN } else { u32::MAX });
             let at: Table = read_action_arg(args, 3, "mob_look_at", "at")?;
@@ -393,7 +463,8 @@ pub(crate) fn run_generated_action(
             Ok(())
         })(host)),
         "mob_navigate" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
-            let dimension: String = read_action_arg(args, 1, "mob_navigate", "dimension")?;
+            let dimension_lua: Value = read_action_arg(args, 1, "mob_navigate", "dimension")?;
+            let dimension: String = dimension_of("mob_navigate", "dimension", &dimension_lua)?;
             let n2: i64 = read_action_arg(args, 2, "mob_navigate", "mob")?;
             let mob: u32 = u32::try_from(n2).unwrap_or(if n2 < 0 { u32::MIN } else { u32::MAX });
             let to: Table = read_action_arg(args, 3, "mob_navigate", "to")?;
@@ -414,7 +485,8 @@ pub(crate) fn run_generated_action(
             Ok(())
         })(host)),
         "mob_stop" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
-            let dimension: String = read_action_arg(args, 1, "mob_stop", "dimension")?;
+            let dimension_lua: Value = read_action_arg(args, 1, "mob_stop", "dimension")?;
+            let dimension: String = dimension_of("mob_stop", "dimension", &dimension_lua)?;
             let n2: i64 = read_action_arg(args, 2, "mob_stop", "mob")?;
             let mob: u32 = u32::try_from(n2).unwrap_or(if n2 < 0 { u32::MIN } else { u32::MAX });
             // A native refusal is ordinary: drop the return
@@ -434,7 +506,8 @@ pub(crate) fn run_generated_action(
             Ok(())
         })(host)),
         "move_entity" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
-            let dimension: String = read_action_arg(args, 1, "move_entity", "dimension")?;
+            let dimension_lua: Value = read_action_arg(args, 1, "move_entity", "dimension")?;
+            let dimension: String = dimension_of("move_entity", "dimension", &dimension_lua)?;
             let n2: i64 = read_action_arg(args, 2, "move_entity", "id")?;
             let id: u32 = u32::try_from(n2).unwrap_or(if n2 < 0 { u32::MIN } else { u32::MAX });
             let pos: Table = read_action_arg(args, 3, "move_entity", "pos")?;
@@ -516,7 +589,8 @@ pub(crate) fn run_generated_action(
             Ok(())
         })(host)),
         "remove_entity" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
-            let dimension: String = read_action_arg(args, 1, "remove_entity", "dimension")?;
+            let dimension_lua: Value = read_action_arg(args, 1, "remove_entity", "dimension")?;
+            let dimension: String = dimension_of("remove_entity", "dimension", &dimension_lua)?;
             let n2: i64 = read_action_arg(args, 2, "remove_entity", "id")?;
             let id: u32 = u32::try_from(n2).unwrap_or(if n2 < 0 { u32::MIN } else { u32::MAX });
             // A native refusal is ordinary: drop the return
@@ -597,6 +671,58 @@ pub(crate) fn run_generated_action(
             host.set_break_progress(breaker, pos, progress);
             Ok(())
         })(host)),
+        "set_compass_target" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let uuid: Value = read_action_arg(args, 1, "set_compass_target", "uuid")?;
+            let target_lua: Value = read_action_arg(args, 2, "set_compass_target", "target")?;
+            let target: Option<(String, [i32; 3])> = match target_lua {
+                Value::Nil => None,
+                Value::Table(target_t) => {
+                    let target_e0: String = target_t.get(1i64).map_err(|e| {
+                        mlua::Error::runtime(format!("{}.{}: {e}", "set_compass_target", "target"))
+                    })?;
+                    let target_e1t: Table = target_t.get(2i64).map_err(|e| {
+                        mlua::Error::runtime(format!("{}.{}: {e}", "set_compass_target", "target"))
+                    })?;
+                    let target_e1_x: i32 = crate::generated_runtime::req_key::<i32>(
+                        &target_e1t,
+                        "x",
+                        "set_compass_target.target",
+                    )?;
+                    let target_e1_y: i32 = crate::generated_runtime::req_key::<i32>(
+                        &target_e1t,
+                        "y",
+                        "set_compass_target.target",
+                    )?;
+                    let target_e1_z: i32 = crate::generated_runtime::req_key::<i32>(
+                        &target_e1t,
+                        "z",
+                        "set_compass_target.target",
+                    )?;
+                    let target_e1: [i32; 3] = [target_e1_x, target_e1_y, target_e1_z];
+                    Some((target_e0, target_e1))
+                }
+                _ => {
+                    return Err(mlua::Error::runtime(format!(
+                        "{}.{}: expected a table",
+                        "set_compass_target", "target"
+                    )));
+                }
+            };
+            let Some(uuid) = uuid_of(host, &uuid) else {
+                log::debug!("[lua] set_compass_target: no such player");
+                return Ok(());
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.set_compass_target(
+                uuid,
+                match target {
+                    Some((ref e0, ref e1)) => Some((e0.as_str(), *e1)),
+                    None => None,
+                },
+            );
+            Ok(())
+        })(host)),
         "set_flight" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
             let uuid: Value = read_action_arg(args, 1, "set_flight", "uuid")?;
             let allow: bool = match read_action_arg(args, 2, "set_flight", "allow")? {
@@ -626,6 +752,44 @@ pub(crate) fn run_generated_action(
             let _ = host.set_flight(uuid, allow, flying);
             Ok(())
         })(host)),
+        "set_profile_property" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let player: Value = read_action_arg(args, 1, "set_profile_property", "player")?;
+            let name: String = read_action_arg(args, 2, "set_profile_property", "name")?;
+            let value_lua: Value = read_action_arg(args, 3, "set_profile_property", "value")?;
+            let value: Option<(String, Option<String>)> = match value_lua {
+                Value::Nil => None,
+                Value::Table(value_t) => {
+                    let value_e0: String = value_t.get("value").map_err(|e| {
+                        mlua::Error::runtime(format!("{}.{}: {e}", "set_profile_property", "value"))
+                    })?;
+                    let value_e1: Option<String> = value_t.get("signature").map_err(|e| {
+                        mlua::Error::runtime(format!("{}.{}: {e}", "set_profile_property", "value"))
+                    })?;
+                    Some((value_e0, value_e1))
+                }
+                _ => {
+                    return Err(mlua::Error::runtime(format!(
+                        "{}.{}: expected a table",
+                        "set_profile_property", "value"
+                    )));
+                }
+            };
+            let Some(uuid) = uuid_of(host, &player) else {
+                log::debug!("[lua] set_profile_property: no such player");
+                return Ok(());
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.set_profile_property(
+                uuid,
+                &name,
+                match value {
+                    Some((ref e0, ref e1)) => Some((e0.as_str(), e1.as_deref())),
+                    None => None,
+                },
+            );
+            Ok(())
+        })(host)),
         "sleep_ignored" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
             let uuid: Value = read_action_arg(args, 1, "sleep_ignored", "uuid")?;
             let ignored: bool = match read_action_arg(args, 2, "sleep_ignored", "ignored")? {
@@ -647,7 +811,8 @@ pub(crate) fn run_generated_action(
             Ok(())
         })(host)),
         "teleport_vehicle" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
-            let dimension: String = read_action_arg(args, 1, "teleport_vehicle", "dimension")?;
+            let dimension_lua: Value = read_action_arg(args, 1, "teleport_vehicle", "dimension")?;
+            let dimension: String = dimension_of("teleport_vehicle", "dimension", &dimension_lua)?;
             let n2: i64 = read_action_arg(args, 2, "teleport_vehicle", "id")?;
             let id: u32 = u32::try_from(n2).unwrap_or(if n2 < 0 { u32::MIN } else { u32::MAX });
             let pos: Table = read_action_arg(args, 3, "teleport_vehicle", "pos")?;
@@ -664,8 +829,10 @@ pub(crate) fn run_generated_action(
             Ok(())
         })(host)),
         "update_output_neighbors" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
-            let dimension: String =
+            let dimension_lua: Value =
                 read_action_arg(args, 1, "update_output_neighbors", "dimension")?;
+            let dimension: String =
+                dimension_of("update_output_neighbors", "dimension", &dimension_lua)?;
             let pos: Table = read_action_arg(args, 2, "update_output_neighbors", "pos")?;
             let pos_x: i32 =
                 crate::generated_runtime::req_key::<i32>(&pos, "x", "update_output_neighbors.pos")?;
@@ -680,8 +847,10 @@ pub(crate) fn run_generated_action(
             Ok(())
         })(host)),
         "update_signal_neighbors" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
-            let dimension: String =
+            let dimension_lua: Value =
                 read_action_arg(args, 1, "update_signal_neighbors", "dimension")?;
+            let dimension: String =
+                dimension_of("update_signal_neighbors", "dimension", &dimension_lua)?;
             let pos: Table = read_action_arg(args, 2, "update_signal_neighbors", "pos")?;
             let pos_x: i32 =
                 crate::generated_runtime::req_key::<i32>(&pos, "x", "update_signal_neighbors.pos")?;
@@ -704,6 +873,7 @@ pub(crate) fn run_generated_action(
 /// `no such read` error).
 /// The arms are closures (so `?` widens to the match's `Some`);
 #[allow(clippy::redundant_closure_call)]
+#[allow(unused_variables)]
 pub(crate) fn generated_read(
     lua: &Lua,
     h: &dyn Host,
@@ -934,6 +1104,17 @@ pub(crate) fn generated_read(
                 None => Ok(Value::Nil),
             }
         })(h)),
+        "entity_level" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let entity_id: Value = read_arg(lua, &rest, 1, "entity_level", "entity")?;
+            let entity_id: u32 = entity_id_of("entity_level", "entity", &entity_id)?;
+            let Some(entity) = h.entity(entity_id) else {
+                return Ok(Value::Nil);
+            };
+            match h.entity_level(entity) {
+                Some(v) => Ok(Value::String(lua.create_string(v.dimension())?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
         "entity_max_air_supply" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             let entity_id: Value = read_arg(lua, &rest, 1, "entity_max_air_supply", "entity")?;
             let entity_id: u32 = entity_id_of("entity_max_air_supply", "entity", &entity_id)?;
@@ -1012,7 +1193,8 @@ pub(crate) fn generated_read(
             }
         })(h)),
         "fluid_flow" => Some((|h: &dyn Host| -> mlua::Result<Value> {
-            let dimension: String = read_arg(lua, &rest, 1, "fluid_flow", "dimension")?;
+            let dimension_lua: Value = read_arg(lua, &rest, 1, "fluid_flow", "dimension")?;
+            let dimension: String = dimension_of("fluid_flow", "dimension", &dimension_lua)?;
             let pos: Table = read_arg(lua, &rest, 2, "fluid_flow", "pos")?;
             let pos_x: i32 = crate::generated_runtime::req_key::<i32>(&pos, "x", "fluid_flow.pos")?;
             let pos_y: i32 = crate::generated_runtime::req_key::<i32>(&pos, "y", "fluid_flow.pos")?;
@@ -1020,6 +1202,186 @@ pub(crate) fn generated_read(
             let pos: [i32; 3] = [pos_x, pos_y, pos_z];
             match h.fluid_flow(&dimension, pos) {
                 Some(v) => Ok(Value::Table(crate::lua_mods::goals::vec3(lua, v)?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "level" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let dimension_lua: Value = read_arg(lua, &rest, 1, "level", "dimension")?;
+            let dimension: String = dimension_of("level", "dimension", &dimension_lua)?;
+            match h.level(&dimension) {
+                Some(v) => Ok(Value::String(lua.create_string(v.dimension())?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "level_block" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let level_lua: Value = read_arg(lua, &rest, 1, "level_block", "level")?;
+            let level_dim: String = dimension_of("level_block", "level", &level_lua)?;
+            let pos: Table = read_arg(lua, &rest, 2, "level_block", "pos")?;
+            let pos_x: i32 =
+                crate::generated_runtime::req_key::<i32>(&pos, "x", "level_block.pos")?;
+            let pos_y: i32 =
+                crate::generated_runtime::req_key::<i32>(&pos, "y", "level_block.pos")?;
+            let pos_z: i32 =
+                crate::generated_runtime::req_key::<i32>(&pos, "z", "level_block.pos")?;
+            let pos: [i32; 3] = [pos_x, pos_y, pos_z];
+            let Some(level) = h.level(&level_dim) else {
+                return Ok(Value::Nil);
+            };
+            match h.level_block(level, pos) {
+                Some(v) => Ok(Value::String(lua.create_string(v)?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "level_block_property" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let level_lua: Value = read_arg(lua, &rest, 1, "level_block_property", "level")?;
+            let level_dim: String = dimension_of("level_block_property", "level", &level_lua)?;
+            let pos: Table = read_arg(lua, &rest, 2, "level_block_property", "pos")?;
+            let pos_x: i32 =
+                crate::generated_runtime::req_key::<i32>(&pos, "x", "level_block_property.pos")?;
+            let pos_y: i32 =
+                crate::generated_runtime::req_key::<i32>(&pos, "y", "level_block_property.pos")?;
+            let pos_z: i32 =
+                crate::generated_runtime::req_key::<i32>(&pos, "z", "level_block_property.pos")?;
+            let pos: [i32; 3] = [pos_x, pos_y, pos_z];
+            let key: String = read_arg(lua, &rest, 3, "level_block_property", "key")?;
+            let Some(level) = h.level(&level_dim) else {
+                return Ok(Value::Nil);
+            };
+            match h.level_block_property(level, pos, &key) {
+                Some(v) => Ok(Value::String(lua.create_string(v)?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "level_block_state" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let level_lua: Value = read_arg(lua, &rest, 1, "level_block_state", "level")?;
+            let level_dim: String = dimension_of("level_block_state", "level", &level_lua)?;
+            let pos: Table = read_arg(lua, &rest, 2, "level_block_state", "pos")?;
+            let pos_x: i32 =
+                crate::generated_runtime::req_key::<i32>(&pos, "x", "level_block_state.pos")?;
+            let pos_y: i32 =
+                crate::generated_runtime::req_key::<i32>(&pos, "y", "level_block_state.pos")?;
+            let pos_z: i32 =
+                crate::generated_runtime::req_key::<i32>(&pos, "z", "level_block_state.pos")?;
+            let pos: [i32; 3] = [pos_x, pos_y, pos_z];
+            let Some(level) = h.level(&level_dim) else {
+                return Ok(Value::Nil);
+            };
+            match h.level_block_state(level, pos) {
+                Some(v) => Ok(Value::String(lua.create_string(v)?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "level_day_time" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let level_lua: Value = read_arg(lua, &rest, 1, "level_day_time", "level")?;
+            let level_dim: String = dimension_of("level_day_time", "level", &level_lua)?;
+            let Some(level) = h.level(&level_dim) else {
+                return Ok(Value::Nil);
+            };
+            match h.level_day_time(level) {
+                Some(v) => Ok(Value::Integer(v)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "level_difficulty" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let level_lua: Value = read_arg(lua, &rest, 1, "level_difficulty", "level")?;
+            let level_dim: String = dimension_of("level_difficulty", "level", &level_lua)?;
+            let Some(level) = h.level(&level_dim) else {
+                return Ok(Value::Nil);
+            };
+            match h.level_difficulty(level) {
+                Some(v) => Ok(Value::String(lua.create_string(v)?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "level_game_time" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let level_lua: Value = read_arg(lua, &rest, 1, "level_game_time", "level")?;
+            let level_dim: String = dimension_of("level_game_time", "level", &level_lua)?;
+            let Some(level) = h.level(&level_dim) else {
+                return Ok(Value::Nil);
+            };
+            match h.level_game_time(level) {
+                Some(v) => Ok(Value::Integer(v)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "level_height" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let level_lua: Value = read_arg(lua, &rest, 1, "level_height", "level")?;
+            let level_dim: String = dimension_of("level_height", "level", &level_lua)?;
+            let Some(level) = h.level(&level_dim) else {
+                return Ok(Value::Nil);
+            };
+            match h.level_height(level) {
+                Some(v) => Ok({
+                    let t = lua.create_table()?;
+                    t.set("min", v.0)?;
+                    t.set("max", v.1)?;
+                    Value::Table(t)
+                }),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "level_is_loaded" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let level_lua: Value = read_arg(lua, &rest, 1, "level_is_loaded", "level")?;
+            let level_dim: String = dimension_of("level_is_loaded", "level", &level_lua)?;
+            let pos: Table = read_arg(lua, &rest, 2, "level_is_loaded", "pos")?;
+            let pos_x: i32 =
+                crate::generated_runtime::req_key::<i32>(&pos, "x", "level_is_loaded.pos")?;
+            let pos_y: i32 =
+                crate::generated_runtime::req_key::<i32>(&pos, "y", "level_is_loaded.pos")?;
+            let pos_z: i32 =
+                crate::generated_runtime::req_key::<i32>(&pos, "z", "level_is_loaded.pos")?;
+            let pos: [i32; 3] = [pos_x, pos_y, pos_z];
+            let Some(level) = h.level(&level_dim) else {
+                return Ok(Value::Nil);
+            };
+            Ok(Value::Boolean(h.level_is_loaded(level, pos)))
+        })(h)),
+        "level_is_raining" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let level_lua: Value = read_arg(lua, &rest, 1, "level_is_raining", "level")?;
+            let level_dim: String = dimension_of("level_is_raining", "level", &level_lua)?;
+            let Some(level) = h.level(&level_dim) else {
+                return Ok(Value::Nil);
+            };
+            match h.level_is_raining(level) {
+                Some(v) => Ok(Value::Boolean(v)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "level_is_thundering" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let level_lua: Value = read_arg(lua, &rest, 1, "level_is_thundering", "level")?;
+            let level_dim: String = dimension_of("level_is_thundering", "level", &level_lua)?;
+            let Some(level) = h.level(&level_dim) else {
+                return Ok(Value::Nil);
+            };
+            match h.level_is_thundering(level) {
+                Some(v) => Ok(Value::Boolean(v)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "level_seed" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let level_lua: Value = read_arg(lua, &rest, 1, "level_seed", "level")?;
+            let level_dim: String = dimension_of("level_seed", "level", &level_lua)?;
+            let Some(level) = h.level(&level_dim) else {
+                return Ok(Value::Nil);
+            };
+            match h.level_seed(level) {
+                Some(v) => Ok(Value::Integer(v)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "level_weather" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let level_lua: Value = read_arg(lua, &rest, 1, "level_weather", "level")?;
+            let level_dim: String = dimension_of("level_weather", "level", &level_lua)?;
+            let Some(level) = h.level(&level_dim) else {
+                return Ok(Value::Nil);
+            };
+            match h.level_weather(level) {
+                Some(v) => Ok({
+                    let t = lua.create_table()?;
+                    t.set(1, f64::from(v.0))?;
+                    t.set(2, f64::from(v.1))?;
+                    Value::Table(t)
+                }),
                 None => Ok(Value::Nil),
             }
         })(h)),
@@ -1072,6 +1434,23 @@ pub(crate) fn generated_read(
                 None => Ok(Value::Nil),
             }
         })(h)),
+        "player_textures" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let uuid: Value = read_arg(lua, &rest, 1, "player_textures", "uuid")?;
+            let Some(uuid) = uuid_of(h, &uuid) else {
+                return Ok(Value::Nil);
+            };
+            match h.player_textures(uuid) {
+                Some(v) => Ok({
+                    let t = lua.create_table()?;
+                    t.set("value", v.0)?;
+                    if let Some(e1) = v.1 {
+                        t.set("signature", e1)?;
+                    }
+                    Value::Table(t)
+                }),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
         "player_view_distance" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             let uuid: Value = read_arg(lua, &rest, 1, "player_view_distance", "uuid")?;
             let Some(uuid) = uuid_of(h, &uuid) else {
@@ -1079,6 +1458,18 @@ pub(crate) fn generated_read(
             };
             match h.player_view_distance(uuid) {
                 Some(v) => Ok(Value::Integer(i64::from(v))),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "profile_by_name" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let name: String = read_arg(lua, &rest, 1, "profile_by_name", "name")?;
+            match h.profile_by_name(&name) {
+                Some(v) => Ok({
+                    let t = lua.create_table()?;
+                    t.set(1, crate::generated_runtime::uuid_text(v.0))?;
+                    t.set(2, v.1)?;
+                    Value::Table(t)
+                }),
                 None => Ok(Value::Nil),
             }
         })(h)),

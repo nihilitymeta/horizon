@@ -47,19 +47,31 @@ pub enum HelperClass {
 /// to). `player` marks a `u128` argument, read through `uuid_of` (a player
 /// table, uuid text, or a player name, like every hand-written action's
 /// first argument); `entity` marks an [`EntityRef`] argument, read as an
-/// entity id number and resolved through the `Host::entity` lookup.
+/// entity id number and resolved through the `Host::entity` lookup;
+/// `direction` marks a `Direction`, read from one of its six lowercase
+/// name strings (through the same converter the hooks use,
+/// `LuaStruct for Direction`); `level` marks a [`LevelRef`], read from
+/// the level's dimension id string (`"minecraft:overworld"`) and resolved
+/// through the `Host::level` lookup.
 #[derive(Clone, Debug)]
 pub struct Arg {
     /// The native argument's own name, for the emitted local.
     pub name: String,
     /// The normalized Rust type: `u128` for a player, `EntityRef` for an
-    /// entity, `[f64; 3]`/`[i32; 3]` for a position table, `&str`, an int,
+    /// entity, `[f64; 3]`/`[i32; 3]` for a position table, `Direction`,
+    /// `LevelRef`, an `Option<(A, B)>` plain tuple (a positional
+    /// sequence or a named table, see [`tuple_shape`]), `&str`, an int,
     /// `f32`, `f64`, `bool`, or `String` for a by-value string.
     pub rust: String,
     /// True when the argument is a player (a `u128`), read via `uuid_of`.
     pub player: bool,
     /// True when the argument is an entity (an `EntityRef`).
     pub entity: bool,
+    /// True when the argument is a `Direction` (one of its six lowercase
+    /// name strings).
+    pub direction: bool,
+    /// True when the argument is a `LevelRef` (a dimension id string).
+    pub level: bool,
 }
 
 /// One resolved helper: its signature, class, and doc.
@@ -261,6 +273,198 @@ fn is_entity_ref(ty: &Type) -> bool {
         && p.path.segments[0].ident == "EntityRef")
 }
 
+/// Whether the type is a `Direction`: one of its six lowercase name
+/// strings (`"down"`, `"up"`, `"north"`, `"south"`, `"west"`, `"east"`),
+/// read through the hooks' `LuaStruct for Direction` converter (a wrong
+/// name is a script error naming the argument, as for every argument).
+fn is_direction(ty: &Type) -> bool {
+    matches!(ty, Type::Path(p) if p.qself.is_none()
+        && p.path.segments.len() == 1
+        && p.path.segments[0].ident == "Direction")
+}
+
+/// Whether the type is a [`LevelRef`]: the level's dimension id string
+/// (`"minecraft:overworld"`), resolved through the `Host::level` lookup
+/// (an unknown dimension is nil for a read, a silent no-op for an
+/// action, the same rule as an unresolved entity or player).
+fn is_level_ref(ty: &Type) -> bool {
+    matches!(ty, Type::Path(p) if p.qself.is_none()
+        && p.path.segments.len() == 1
+        && p.path.segments[0].ident == "LevelRef")
+}
+
+/// Whether the type is an `Option<LevelRef>` (the level's dimension
+/// string, or nil), in a return.
+fn is_opt_level_ref(ty: &Type) -> bool {
+    let Type::Path(p) = ty else {
+        return false;
+    };
+    let Some(seg) = p.path.segments.last() else {
+        return false;
+    };
+    seg.ident == "Option"
+        && matches!(&seg.arguments, syn::PathArguments::AngleBracketed(args)
+            if matches!(args.args.first(), Some(syn::GenericArgument::Type(inner)) if is_level_ref(inner)))
+}
+
+/// One plain element of a two-tuple, in normalized form: a scalar (`u128`
+/// is the uuid text), a string borrow (`&str`) or by-value `String`, a
+/// position (`[f64; 3]`/`[i32; 3]`), or an `Option` of one of those
+/// (nil or the value: a named table, since a sequence loses a nil second
+/// element). `None` for a non-plain element (an `ItemStack`, a
+/// `NativeHit`, ...): the tuple then blocks as a whole.
+fn tuple_elem(ty: &Type) -> Option<String> {
+    if let Some(scalar) = scalar_of(ty) {
+        return Some(scalar.to_owned());
+    }
+    if str_borrow(ty) {
+        return Some("&str".to_owned());
+    }
+    if let Some(pos) = vec3_layout(ty) {
+        return Some(pos.to_owned());
+    }
+    let Type::Path(p) = ty else {
+        return None;
+    };
+    let seg = p.path.segments.last()?;
+    if seg.ident != "Option" {
+        return None;
+    }
+    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
+        return None;
+    };
+    let Some(syn::GenericArgument::Type(inner)) = args.args.first() else {
+        return None;
+    };
+    if let Some(scalar) = scalar_of(inner) {
+        return Some(format!("Option<{scalar}>"));
+    }
+    if str_borrow(inner) {
+        return Some("Option<&str>".to_owned());
+    }
+    None
+}
+
+/// The normalized plain elements of an `Option<(A, B)>` type, or `None`
+/// when the type is not an optional two-tuple of plain elements (a bare
+/// tuple is a multi-value return; a non-plain tuple stays as one
+/// blocking type). Used for both returns and arguments: Lua has no
+/// absent argument, but nil for `None` and the table for `Some` is
+/// exactly what an optional argument reads as.
+fn opt_tuple_elems(ty: &Type) -> Option<Vec<String>> {
+    let Type::Path(p) = ty else {
+        return None;
+    };
+    let seg = p.path.segments.last()?;
+    if seg.ident != "Option" {
+        return None;
+    }
+    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
+        return None;
+    };
+    let Some(syn::GenericArgument::Type(inner)) = args.args.first() else {
+        return None;
+    };
+    let Type::Tuple(t) = inner else {
+        return None;
+    };
+    if t.elems.len() != 2 {
+        return None;
+    }
+    let mut elems = Vec::new();
+    for e in &t.elems {
+        elems.push(tuple_elem(e)?);
+    }
+    Some(elems)
+}
+
+/// The elements of a normalized tuple as `(A, B)`, split for the
+/// converters (see [`tuple_shape`]).
+pub fn tuple_elems(inner: &str) -> Vec<String> {
+    inner
+        .strip_prefix('(')
+        .and_then(|s| s.strip_suffix(')'))
+        .unwrap_or(inner)
+        .split(", ")
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Whether a normalized tuple element is an `Option` (nil-or-value: a
+/// named table, since a sequence loses a nil second element).
+fn is_opt_elem(elem: &str) -> bool {
+    elem.starts_with("Option<")
+}
+
+/// The field names of a named tuple shape: from the helper's doc comment
+/// where it names them (`player_textures`'s `(String, Option<String>)`
+/// is "value (base64 JSON naming the skin and cape) and signature", and
+/// `set_profile_property`'s `(&str, Option<&str>)` is the same pair), or
+/// the neutral `first`/`second` when no doc gives good names.
+fn named_tuple_fields(inner: &str) -> Vec<String> {
+    match inner {
+        "(String, Option<String>)" | "(&str, Option<&str>)" => {
+            vec!["value".to_owned(), "signature".to_owned()]
+        }
+        _ => vec!["first".to_owned(), "second".to_owned()],
+    }
+}
+
+/// The shape of a normalized two-tuple `(A, B)`: positional (`{a, b}`,
+/// a sequence) or named (a table of its fields). A tuple with an
+/// `Option` element is always named, since a sequence's nil second
+/// element is `{a}`; the hook model's [`tuple_struct`](super::lua_model::tuple_struct)
+/// names nine known shapes (`(i32, i32)` is `{min, max}`) and those
+/// reuse it where it covers the type.
+#[derive(Clone, Debug)]
+pub struct TupleShape {
+    /// True for the named table, false for the positional sequence.
+    pub named: bool,
+    /// The field names when named (empty when positional).
+    pub fields: Vec<String>,
+    /// The normalized elements, in order.
+    pub elems: Vec<String>,
+}
+
+pub fn tuple_shape(inner: &str) -> TupleShape {
+    let elems = tuple_elems(inner);
+    // The hook model's known shapes name a table; reuse its verdict where
+    // it covers the type.
+    let ty: Option<syn::Type> = syn::parse_str(inner).ok();
+    if let Some(ty) = ty
+        && let Some((_, ts)) = super::lua_model::tuple_struct(&ty)
+    {
+        let fields = ts
+            .trim_start_matches('{')
+            .trim_end_matches('}')
+            .split(',')
+            .filter_map(|field| {
+                field
+                    .split(':')
+                    .next()
+                    .map(|name| name.trim().trim_matches('"').to_owned())
+            })
+            .collect();
+        return TupleShape {
+            named: true,
+            fields,
+            elems,
+        };
+    }
+    if elems.iter().any(|e| is_opt_elem(e)) {
+        return TupleShape {
+            named: true,
+            fields: named_tuple_fields(inner),
+            elems,
+        };
+    }
+    TupleShape {
+        named: false,
+        fields: Vec::new(),
+        elems,
+    }
+}
+
 /// The position layout a type carries: `[f64; 3]` or `[i32; 3]` (a
 /// `{x, y, z}` table), or `None` for anything else.
 fn vec3_layout(ty: &Type) -> Option<&'static str> {
@@ -365,11 +569,18 @@ fn collect_blocks(
         handles.push(blocking_head(ty));
         return;
     }
-    // The converted types: an entity id number (`EntityRef`), a position
-    // table (`[f64; 3]`/`[i32; 3]`), and the value-or-nil of an optional
-    // position in a return. An optional position as an argument still
-    // blocks: Lua has no absent argument.
+    // The converted types: an entity id number (`EntityRef`), a
+    // direction name (`Direction`), a level's dimension id (`LevelRef`),
+    // a position table (`[f64; 3]`/`[i32; 3]`), an optional plain
+    // two-tuple (nil for `None`, the table for `Some`, as an argument
+    // and as a return), and the value-or-nil of an optional position
+    // in a return. An optional position as an argument still blocks:
+    // Lua has no absent argument.
     if is_entity_ref(ty)
+        || is_direction(ty)
+        || is_level_ref(ty)
+        || (in_return && is_opt_level_ref(ty))
+        || opt_tuple_elems(ty).is_some()
         || vec3_layout(ty).is_some()
         || (in_return && opt_vec3_layout(ty).is_some())
     {
@@ -432,11 +643,14 @@ fn blocks_of(f: &syn::ItemFn) -> (Vec<String>, Vec<String>, Vec<String>) {
 /// The supported plain return, in normalized form: `unit`, a scalar
 /// (`bool`, `String`, an int, `f32`, `f64`), a position (`[f64; 3]` or
 /// `[i32; 3]`), a string borrow (`&str` as `String`), or
-/// `Option<scalar>` (with `Option<&str>` as `Option<String>`), or an
-/// optional position (`Option<[f64; 3]>`/`Option<[i32; 3]>`). `None` when
-/// the return is not plain and supported (a wide integer a Lua number
-/// cannot hold, `Option<EntityRef>` (the lookup the bridge uses, never
-/// a Lua function), a `Result`, a nested `Option<other>`, a struct, ...).
+/// `Option<scalar>` (with `Option<&str>` as `Option<String>`), an
+/// optional position (`Option<[f64; 3]>`/`Option<[i32; 3]>`), an
+/// `Option<LevelRef>` (the dimension string, or nil), or an optional
+/// plain two-tuple (`Option<(A, B)>`, nil for `None`, the table for
+/// `Some`). `None` when the return is not plain and supported (a wide
+/// integer a Lua number cannot hold, `Option<EntityRef>` (the lookup the
+/// bridge uses, never a Lua function), a `Result`, a nested
+/// `Option<other>`, a struct, ...).
 fn supported_return(f: &syn::ItemFn) -> Option<String> {
     let ty = match &f.sig.output {
         ReturnType::Default => return Some("unit".to_owned()),
@@ -451,6 +665,23 @@ fn supported_return(f: &syn::ItemFn) -> Option<String> {
             "u128" | "i128" | "u64" => None,
             _ => Some(scalar.to_owned()),
         };
+    }
+    // An optional level: the dimension string (`level.dimension()`), or
+    // nil.
+    if let Type::Path(p) = &**ty
+        && let Some(seg) = p.path.segments.last()
+        && seg.ident == "Option"
+        && let syn::PathArguments::AngleBracketed(args) = &seg.arguments
+        && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
+        && is_level_ref(inner)
+    {
+        return Some("Option<LevelRef>".to_owned());
+    }
+    // An optional plain two-tuple: nil for `None`, the table for `Some`
+    // (a positional sequence, or a named table where a sequence loses a
+    // nil second element; see `tuple_shape`).
+    if let Some(elems) = opt_tuple_elems(ty) {
+        return Some(format!("Option<({})>", elems.join(", ")));
     }
     // `Option<T>`: only the scalars Lua answers (a bool, a number,
     // a string, a string borrow) map to a value-or-nil.
@@ -501,6 +732,14 @@ fn plain_args(f: &syn::ItemFn) -> Vec<Arg> {
 
 /// One argument in the model's terms, or the adapter block it names.
 fn normalize_arg(ty: &Type, name: &str) -> Arg {
+    let mark = |rust: String, direction: bool, level: bool| Arg {
+        name: name.to_owned(),
+        rust,
+        player: false,
+        entity: false,
+        direction,
+        level,
+    };
     match ty {
         Type::Reference(r) => {
             // `&str` / `&String`: the plain string argument.
@@ -508,20 +747,10 @@ fn normalize_arg(ty: &Type, name: &str) -> Arg {
                 && let Some(seg) = p.path.segments.last()
                 && (seg.ident == "str" || seg.ident == "String")
             {
-                return Arg {
-                    name: name.to_owned(),
-                    rust: "&str".to_owned(),
-                    player: false,
-                    entity: false,
-                };
+                return mark("&str".to_owned(), false, false);
             }
             // Any other borrow blocks (the struct, not the borrow).
-            Arg {
-                name: name.to_owned(),
-                rust: blocking_head(ty),
-                player: false,
-                entity: false,
-            }
+            mark(blocking_head(ty), false, false)
         }
         // An entity id number (`EntityRef`): the `Host::entity` lookup.
         Type::Path(_) if is_entity_ref(ty) => Arg {
@@ -529,7 +758,20 @@ fn normalize_arg(ty: &Type, name: &str) -> Arg {
             rust: "EntityRef".to_owned(),
             player: false,
             entity: true,
+            direction: false,
+            level: false,
         },
+        // A `Direction`: one of its six lowercase name strings.
+        Type::Path(_) if is_direction(ty) => mark("Direction".to_owned(), true, false),
+        // A `LevelRef`: the level's dimension id string, resolved
+        // through the `Host::level` lookup.
+        Type::Path(_) if is_level_ref(ty) => mark("LevelRef".to_owned(), false, true),
+        // An optional plain two-tuple: nil for `None`, the table for
+        // `Some` (see `tuple_shape`).
+        Type::Path(_) if opt_tuple_elems(ty).is_some() => {
+            let elems = opt_tuple_elems(ty).unwrap();
+            mark(format!("Option<({})>", elems.join(", ")), false, false)
+        }
         Type::Path(_) if scalar_of(ty).is_some() => {
             let scalar = scalar_of(ty).unwrap();
             match scalar {
@@ -538,46 +780,20 @@ fn normalize_arg(ty: &Type, name: &str) -> Arg {
                     rust: "u128".to_owned(),
                     player: true,
                     entity: false,
+                    direction: false,
+                    level: false,
                 },
-                "String" => Arg {
-                    name: name.to_owned(),
-                    rust: "String".to_owned(),
-                    player: false,
-                    entity: false,
-                },
-                "bool" => Arg {
-                    name: name.to_owned(),
-                    rust: "bool".to_owned(),
-                    player: false,
-                    entity: false,
-                },
-                "f32" | "f64" => Arg {
-                    name: name.to_owned(),
-                    rust: scalar.to_owned(),
-                    player: false,
-                    entity: false,
-                },
-                _ => Arg {
-                    name: name.to_owned(),
-                    rust: scalar.to_owned(),
-                    player: false,
-                    entity: false,
-                },
+                "String" => mark("String".to_owned(), false, false),
+                "bool" => mark("bool".to_owned(), false, false),
+                "f32" | "f64" => mark(scalar.to_owned(), false, false),
+                _ => mark(scalar.to_owned(), false, false),
             }
         }
         // A position table (`[f64; 3]`/`[i32; 3]`).
-        Type::Array(_) if vec3_layout(ty).is_some() => Arg {
-            name: name.to_owned(),
-            rust: vec3_layout(ty).unwrap().to_owned(),
-            player: false,
-            entity: false,
-        },
-        _ => Arg {
-            name: name.to_owned(),
-            rust: blocking_head(ty),
-            player: false,
-            entity: false,
-        },
+        Type::Array(_) if vec3_layout(ty).is_some() => {
+            mark(vec3_layout(ty).unwrap().to_owned(), false, false)
+        }
+        _ => mark(blocking_head(ty), false, false),
     }
 }
 
@@ -810,11 +1026,13 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
         // the return named too. `blocks_of` already names the return,
         // except a supported-looking scalar the bridge rejects (a wide
         // `u64`/`u128`/`i128` a Lua number cannot hold): name it as well.
-        // A `level`/`living` `receiver` tag is a ref type the bridge
-        // cannot name, so a Generated helper never carries one of those.
-        // An `entity` tag names the helper's first argument, an
+        // A `living` `receiver` tag is a ref type the bridge cannot
+        // name. An `entity` tag names the helper's first argument, an
         // `EntityRef` (an id number the bridge converts), so it adds no
-        // blocker of its own.
+        // blocker of its own; a `level` tag names the helper's first
+        // argument, a `LevelRef` (a dimension id string the bridge
+        // converts through the `Host::level` lookup), so it adds none
+        // either.
         let mut eff_blocking = blocking;
         if ret.is_none()
             && let ReturnType::Type(_, ty) = &f.sig.output
@@ -827,13 +1045,24 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
         if let Some(tag) = receiver.as_deref()
             && tag != "entity"
         {
+            // A `level` tag names the helper's `LevelRef` argument,
+            // which the bridge converts; it blocks only when the
+            // signature carries no such argument (none does today, so
+            // the tag is then just the receiver column the docs print).
+            let has_level_ref = f
+                .sig
+                .inputs
+                .iter()
+                .any(|arg| matches!(arg, FnArg::Typed(t) if is_level_ref(&t.ty)))
+                || matches!(ret.as_deref(), Some("Option<LevelRef>"));
             let ref_ty = match tag {
+                "level" if has_level_ref => "",
                 "level" => "LevelRef",
                 "living" => "LivingRef",
                 _ => tag,
             };
             let ref_ty = ref_ty.to_owned();
-            if !eff_blocking.contains(&ref_ty) {
+            if !ref_ty.is_empty() && !eff_blocking.contains(&ref_ty) {
                 eff_blocking.push(ref_ty);
             }
         }
@@ -1081,14 +1310,55 @@ fn cannot_row(
     )
 }
 
+/// The Luau type one normalized tuple element spells.
+fn tuple_elem_ts(elem: &str) -> String {
+    if let Some(inner) = elem
+        .strip_prefix("Option<")
+        .and_then(|s| s.strip_suffix('>'))
+    {
+        return format!("{}?", tuple_elem_ts(inner));
+    }
+    match elem {
+        "String" | "&str" => "string".to_owned(),
+        "bool" => "boolean".to_owned(),
+        "u128" => "string".to_owned(),
+        "f32" | "f64" => "number".to_owned(),
+        "[f64; 3]" | "[i32; 3]" => "Vec3".to_owned(),
+        _ => "number".to_owned(),
+    }
+}
+
+/// The Luau type one normalized `(A, B)` tuple spells: a positional
+/// sequence `{a, b}` or the named table (a tuple with an `Option`
+/// element is always named, and the hook model names nine shapes;
+/// see [`tuple_shape`]).
+fn tuple_ts(inner: &str) -> String {
+    let shape = tuple_shape(inner);
+    if shape.named {
+        let pairs: Vec<String> = shape
+            .fields
+            .iter()
+            .zip(&shape.elems)
+            .map(|(f, e)| format!("{f}: {}", tuple_elem_ts(e)))
+            .collect();
+        format!("{{ {} }}", pairs.join(", "))
+    } else {
+        let elems: Vec<String> = shape.elems.iter().map(|e| tuple_elem_ts(e)).collect();
+        format!("{{ {} }}", elems.join(", "))
+    }
+}
+
 /// The Lua declaration of one generated helper function: its parameters
 /// renamed (`who`, then numbered), matching the emitted Rust reads. A
 /// player argument takes a player table, uuid text, or a player name
 /// (`string | ReadPlayer`, as the hand-written `who` parameters spell
-/// it); an entity argument is its network id (a number); a position is
-/// a `Vec3`; reads return their value type (a `number?` for an optional
-/// number, a `Vec3?` for an optional position, and so on); actions
-/// return `()`.
+/// it); an entity argument is its network id (a number); a level
+/// argument is its dimension id (a string); a direction is one of its
+/// six lowercase names; a position is a `Vec3`; a tuple is its shape
+/// (a positional sequence `{a, b}` or the named table, see
+/// [`tuple_shape`]); reads return their value type (a `number?` for an
+/// optional number, a `Vec3?` for an optional position, a `string?`
+/// for an optional level dimension, and so on); actions return `()`.
 pub fn luau_function(row: &HelperRow) -> (String, String) {
     let mut strings = 0;
     let mut other = 0;
@@ -1096,7 +1366,7 @@ pub fn luau_function(row: &HelperRow) -> (String, String) {
     for a in &row.args {
         match a.rust.as_str() {
             "u128" => params.push("who: string | ReadPlayer".to_owned()),
-            "&str" | "String" => {
+            "&str" | "String" | "LevelRef" => {
                 strings += 1;
                 let name = if strings == 1 {
                     "name".to_owned()
@@ -1104,6 +1374,33 @@ pub fn luau_function(row: &HelperRow) -> (String, String) {
                     format!("name{strings}")
                 };
                 params.push(format!("{name}: string"));
+            }
+            "Direction" => {
+                other += 1;
+                let name = if other == 1 {
+                    "value".to_owned()
+                } else {
+                    format!("value{other}")
+                };
+                params.push(format!(
+                    "{name}: \"down\" | \"up\" | \"north\" | \"south\" | \"west\" | \"east\""
+                ));
+            }
+            // An optional tuple argument: nil for `None`, the table for
+            // `Some`.
+            _ if a.rust.starts_with("Option<(") => {
+                other += 1;
+                let name = if other == 1 {
+                    "value".to_owned()
+                } else {
+                    format!("value{other}")
+                };
+                let inner = a
+                    .rust
+                    .strip_prefix("Option<")
+                    .and_then(|s| s.strip_suffix('>'))
+                    .unwrap_or(&a.rust);
+                params.push(format!("{name}: {}?", tuple_ts(inner)));
             }
             "[f64; 3]" | "[i32; 3]" | "Option<[f64; 3]>" | "Option<[i32; 3]>" => {
                 other += 1;
@@ -1132,27 +1429,36 @@ pub fn luau_function(row: &HelperRow) -> (String, String) {
             }
         }
     }
-    let ret = match row.ret.as_str() {
-        "unit" => "()",
+    let ret: String = match row.ret.as_str() {
+        "unit" => "()".to_owned(),
         // A read's `bool` is its answer; an action's `bool` is its queued
         // success flag, which the queue drops.
-        "bool" => {
-            if matches!(&row.class, HelperClass::Generated(GenKind::Read)) {
-                "boolean"
-            } else {
-                "()"
-            }
+        "bool" => if matches!(&row.class, HelperClass::Generated(GenKind::Read)) {
+            "boolean"
+        } else {
+            "()"
         }
-        "Option<bool>" => "boolean?",
-        "Option<String>" => "string?",
-        "String" => "string",
-        "[f64; 3]" | "[i32; 3]" => "Vec3",
-        "Option<[f64; 3]>" | "Option<[i32; 3]>" => "Vec3?",
-        _ if row.ret.starts_with("Option<") => "number?",
-        _ => "number",
+        .to_owned(),
+        "Option<bool>" => "boolean?".to_owned(),
+        "Option<String>" | "Option<LevelRef>" => "string?".to_owned(),
+        "String" => "string".to_owned(),
+        "[f64; 3]" | "[i32; 3]" => "Vec3".to_owned(),
+        "Option<[f64; 3]>" | "Option<[i32; 3]>" => "Vec3?".to_owned(),
+        // An optional tuple return: nil for `None`, the table for
+        // `Some`.
+        _ if row.ret.starts_with("Option<(") => {
+            let inner = row
+                .ret
+                .strip_prefix("Option<")
+                .and_then(|s| s.strip_suffix('>'))
+                .unwrap_or(&row.ret);
+            format!("{}?", tuple_ts(inner))
+        }
+        _ if row.ret.starts_with("Option<") => "number?".to_owned(),
+        _ => "number".to_owned(),
     };
     let ret = if matches!(&row.class, HelperClass::Generated(GenKind::Action)) {
-        "()"
+        "()".to_owned()
     } else {
         ret
     };
@@ -1329,19 +1635,22 @@ mod tests {
         }
     }
 
-    /// A `Generated` helper carries no `receiver` tag but `entity` (its
-    /// `EntityRef` is its first argument, an id number the bridge
-    /// converts); a `level`/`living` tag still blocks. The string-borrow
-    /// reads and `&self` unit actions classify as Generated after the
-    /// order fix, and the entity/position helpers classify once their
-    /// types convert.
+    /// A `Generated` helper carries no `receiver` tag but `entity` or
+    /// `level` (its `EntityRef` or `LevelRef` is its first argument, an
+    /// id number or a dimension string the bridge converts); a `living`
+    /// tag still blocks. The string-borrow reads and `&self` unit actions
+    /// classify as Generated after the order fix, and the
+    /// entity/position helpers classify once their types convert.
     #[test]
     fn generated_helpers_carry_no_receiver() {
         let rows = classify_helpers(&root()).unwrap();
         for row in &rows {
             if matches!(row.class, HelperClass::Generated(_)) {
                 assert!(
-                    matches!(row.receiver.as_deref(), None | Some("entity")),
+                    matches!(
+                        row.receiver.as_deref(),
+                        None | Some("entity") | Some("level")
+                    ),
                     "{} is Generated but carries receiver {:?}",
                     row.name,
                     row.receiver
@@ -1386,7 +1695,7 @@ mod tests {
                 row.class
             );
         }
-        for name in ["entity_nbt", "level_height", "living_equipment"] {
+        for name in ["entity_nbt", "living_equipment"] {
             let row = rows.iter().find(|r| r.name == name).unwrap();
             assert!(
                 matches!(row.class, HelperClass::Adapter(_)),
@@ -1394,6 +1703,37 @@ mod tests {
                 row.class
             );
         }
+    }
+
+    /// A `&mut self` helper returning data is `Cannot` (a queued action
+    /// has no way back), as are its plain-tuple/`Direction`-only
+    /// variants once this round's converters see through them.
+    #[test]
+    fn mut_self_data_returns_are_cannot() {
+        let rows = classify_helpers(&root()).unwrap();
+        for name in ["attribute", "move_fluids"] {
+            let row = rows.iter().find(|r| r.name == name).unwrap();
+            match &row.class {
+                HelperClass::Cannot(why) => assert_eq!(
+                    why,
+                    "a `&mut self` helper returning data is not a queued \
+                     action: it needs the run_command_as callback design"
+                ),
+                class => panic!("{name} should be Cannot, got {class:?}"),
+            }
+        }
+        let row = rows.iter().find(|r| r.name == "level_height").unwrap();
+        assert!(
+            matches!(&row.class, HelperClass::Generated(GenKind::Read)),
+            "level_height should be Generated(Read), got {:?}",
+            row.class
+        );
+        let row = rows.iter().find(|r| r.name == "entity_level").unwrap();
+        assert!(
+            matches!(&row.class, HelperClass::Generated(GenKind::Read)),
+            "entity_level should be Generated(Read), got {:?}",
+            row.class
+        );
     }
 
     /// A helper named for an existing `horizon.*` function (`on` is

@@ -14,6 +14,8 @@ mod generated_runtime;
 mod generated_hooks;
 mod generated_helpers;
 #[cfg(test)]
+mod generated_helpers_synthetic;
+#[cfg(test)]
 mod generated_helpers_tests;
 pub mod hud_hooks;
 pub mod lua_mods;

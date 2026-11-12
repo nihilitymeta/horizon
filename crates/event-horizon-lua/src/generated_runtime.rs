@@ -259,7 +259,7 @@ pub(crate) fn uuid_value(lua: &Lua, uuid: Option<u128>) -> mlua::Result<Value> {
 
 /// `text` as a UUID is written: `8-4-4-4-12` hex digits. (Mirrors the
 /// private helper in `lua_mods.rs`, which the macros also call directly.)
-fn uuid_text(uuid: u128) -> String {
+pub(crate) fn uuid_text(uuid: u128) -> String {
     let hex = format!("{uuid:032x}");
     [
         &hex[..8],
