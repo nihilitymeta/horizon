@@ -201,6 +201,7 @@ The content check, run by `cargo horizon-mod check` and by the game as it reads 
 | 4 | A `goals` list that names vanilla goals, with their arguments. Mobs declared in data, natural spawning and spawn eggs are built | A parasite is declared in data, as a block is |
 | 5 | A `mob_ai_tick(mob)` listen hook on each AI tick, and `mob_target_changed` | Scripts that react, such as an infection spreading or a host converting, without a goal |
 | 6 | For species with a brain: a hook after the brain's activities are built | Villagers, piglins and wardens use brains, not goals |
+| 7 | Native 3D spatial queries & volumetric navigation (`horizon.query_los`, `horizon.find_path`, `horizon.query_elevation_context`, `horizon.create_flow_field`) | Moving heavy voxel traversal, pitch awareness and 3D navigation out of Lua into Rust ([design/spatial-queries-and-3d-navigation.md](design/spatial-queries-and-3d-navigation.md)) |
 
 Each step is one fragment and one hook or helper. Hooks are named by the NeoForge rules in
 [native-hooks-neoforge.md](native-hooks-neoforge.md) where NeoForge has an event. It has none for `registerGoals`,
