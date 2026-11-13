@@ -175,6 +175,12 @@ enum SourcesCmd {
     /// The sources, what each installed, and whether it updates itself (the default)
     List,
     /// Add a repository (https://github.com/<owner>/<repo>, or <owner>/<repo>)
+    ///
+    /// Unless `--no-auto-update` is given (and the repository is not the default source), the source
+    /// updates itself and Horizon's own automatic game updates turn off: new Horizon game versions are
+    /// no longer installed automatically. The launcher updating itself is not one of them (it comes
+    /// from Event Horizon's own releases) and stays as it is. Turn game updates back on by hand in the
+    /// settings if you want them.
     Add {
         repo: String,
         /// Don't install its new releases when the launcher checks for updates
