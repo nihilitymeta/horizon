@@ -66,6 +66,16 @@
     "horizon-telemetry": "horizon",
     "horizon-telemetry-server": "horizon",
 
+    "event-horizon-debug": "engine",
+    "event-horizon-observe": "engine",
+    "horizon-transport": "engine",
+
+    "event-horizon": "platform",
+    "event-horizon-extras": "platform",
+    "event-horizon-dev-tools": "platform",
+    "event-horizon-lua": "platform",
+    "event-horizon-websocket": "platform",
+
     "horizon-bots": "tool",
     "horizon-perf": "tool",
     "horizon-mod-api-gen-tests": "tool",
@@ -81,6 +91,7 @@
       "horizon-items",
       "horizon-protocol",
       "horizon-threads",
+      "horizon-transport",
       "horizon-world"
     ],
     "forbidden": ["arboard", "cpal", "gilrs", "ureq", "wgpu", "winit"]
