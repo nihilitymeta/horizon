@@ -1177,6 +1177,11 @@ declare horizon: {
     remove_entity: (name: string, value: number) -> (),
     resend_commands: (who: string | ReadPlayer) -> (),
     respawn_player: (who: string | ReadPlayer) -> (),
+    scoreboard_add_objective: (name: string, name2: string) -> (),
+    scoreboard_add_score: (name: string, name2: string, value: number) -> (),
+    scoreboard_remove_objective: (name: string) -> (),
+    scoreboard_score: (name: string, name2: string) -> number?,
+    scoreboard_set_score: (name: string, name2: string, value: number) -> (),
     screen_pos: () -> Vec3?, -- client state only
     screen_title: () -> string?, -- client state only
     set_attribute_base: (who: string | ReadPlayer, name: string, value: number) -> (),

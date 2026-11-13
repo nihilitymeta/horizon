@@ -4140,7 +4140,11 @@ impl LuaMod {
                 host.marker_clear_owner(&self.id);
             }
             other => {
-                match crate::generated_helpers::run_generated_action(&self.lua, host, other, args) {
+                // `self.id` is the calling mod: the bound helpers (`BOUND_MOD_ID`)
+                // take it in place of a script argument.
+                match crate::generated_helpers::run_generated_action(
+                    &self.lua, host, &self.id, other, args,
+                ) {
                     Some(ran) => ran?,
                     None => self.warn(format!("unknown action {other}")),
                 }
@@ -11223,6 +11227,289 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
         }
     }
 
+    /// A scoreboard host for the four write helpers (issue 61). It records
+    /// every write call and keeps a board that applies the rule the native
+    /// host applies (`game/native_scoreboard.rs`: a write only in
+    /// `<mod_id>.<name>`, an existing objective for a score write), so a
+    /// refused write changes nothing. The read answers from the same board.
+    #[derive(Default)]
+    struct BoardHost {
+        /// Every write call, as `set <mod> <holder> <objective> <value>`.
+        calls: Vec<String>,
+        /// `(holder, objective) -> score`.
+        scores: std::collections::BTreeMap<(String, String), i32>,
+        /// `objective -> criteria`.
+        objectives: std::collections::BTreeMap<String, String>,
+    }
+
+    /// Whether `mod_id` may write `name`: its own `<mod_id>.<rest>`.
+    fn own_objective(mod_id: &str, name: &str) -> bool {
+        name.strip_prefix(mod_id)
+            .and_then(|rest| rest.strip_prefix('.'))
+            .is_some_and(|rest| !rest.is_empty())
+    }
+
+    impl Host for BoardHost {
+        fn scoreboard_set_score(
+            &mut self,
+            mod_id: &str,
+            holder: &str,
+            objective: &str,
+            value: i32,
+        ) -> bool {
+            self.calls
+                .push(format!("set {mod_id} {holder} {objective} {value}"));
+            if !own_objective(mod_id, objective) || !self.objectives.contains_key(objective) {
+                return false;
+            }
+            self.scores
+                .insert((holder.to_owned(), objective.to_owned()), value);
+            true
+        }
+        fn scoreboard_add_score(
+            &mut self,
+            mod_id: &str,
+            holder: &str,
+            objective: &str,
+            delta: i32,
+        ) -> bool {
+            self.calls
+                .push(format!("add {mod_id} {holder} {objective} {delta}"));
+            if !own_objective(mod_id, objective) || !self.objectives.contains_key(objective) {
+                return false;
+            }
+            let score = self
+                .scores
+                .entry((holder.to_owned(), objective.to_owned()))
+                .or_insert(0);
+            *score = score.saturating_add(delta);
+            true
+        }
+        fn scoreboard_add_objective(&mut self, mod_id: &str, name: &str, criteria: &str) -> bool {
+            self.calls
+                .push(format!("add_objective {mod_id} {name} {criteria}"));
+            if !own_objective(mod_id, name) || self.objectives.contains_key(name) {
+                return false;
+            }
+            self.objectives.insert(name.to_owned(), criteria.to_owned());
+            true
+        }
+        fn scoreboard_remove_objective(&mut self, mod_id: &str, name: &str) -> bool {
+            self.calls.push(format!("remove_objective {mod_id} {name}"));
+            if !own_objective(mod_id, name) || self.objectives.remove(name).is_none() {
+                return false;
+            }
+            self.scores.retain(|(_, objective), _| objective != name);
+            true
+        }
+        fn scoreboard_score(&self, holder: &str, objective: &str) -> Option<i32> {
+            self.scores
+                .get(&(holder.to_owned(), objective.to_owned()))
+                .copied()
+        }
+    }
+
+    /// One server tick of `m`: its handlers run, then their queued actions.
+    fn one_server_tick(m: &LuaMod, host: &mut BoardHost) {
+        let context = test_events::native_lifecycle_context(
+            horizon_client::mod_api::NativeAuthority::IntegratedServer,
+            horizon_client::mod_api::NativeWorldEpoch::new(1),
+            horizon_client::mod_api::NativeTickId::new(1),
+        );
+        m.server_tick(
+            host,
+            &mut test_events::server_tick_event(
+                &context,
+                ServerTickPhase::ServerTickEnd {
+                    world_running: true,
+                },
+            ),
+        );
+    }
+
+    #[test]
+    fn scoreboard_writes_reach_the_host_with_the_calling_mods_id() {
+        // The script never passes a mod id: the runtime supplies `scorea`,
+        // the id `horizon.mod_id` holds, to all four writes.
+        let (dir, path) = hmod_as(
+            "scorea",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("server_tick", function()
+                  horizon.scoreboard_add_objective("scorea.x", "dummy")
+                  horizon.scoreboard_set_score("Steve", "scorea.x", 5)
+                  horizon.scoreboard_add_score("Steve", "scorea.x", 2)
+                  horizon.scoreboard_remove_objective("scorea.gone")
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        assert_eq!(m.id(), "scorea");
+        let mut host = BoardHost::default();
+        host.objectives
+            .insert("scorea.gone".to_owned(), "dummy".to_owned());
+        one_server_tick(&m, &mut host);
+        assert_eq!(
+            host.calls,
+            [
+                "add_objective scorea scorea.x dummy",
+                "set scorea Steve scorea.x 5",
+                "add scorea Steve scorea.x 2",
+                "remove_objective scorea scorea.gone",
+            ]
+        );
+        assert_eq!(
+            host.scores
+                .get(&("Steve".to_owned(), "scorea.x".to_owned())),
+            Some(&7)
+        );
+        assert!(!host.objectives.contains_key("scorea.gone"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_script_cannot_write_another_mods_objectives_but_reads_them() {
+        // `scoreb` owns `scoreb.x` (Steve at 4). `scorec` tries to write it,
+        // to remove it and to create `scoreb.y`: the host refuses each, the
+        // board does not change, and no error is reported (a refused write
+        // is silent in Lua). The read of the same objective answers 4.
+        let (dir, path) = hmod_as(
+            "scorec",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("server_tick", function()
+                  horizon.scoreboard_set_score("Steve", "scoreb.x", 9)
+                  horizon.scoreboard_add_score("Steve", "scoreb.x", 1)
+                  horizon.scoreboard_add_objective("scoreb.y", "dummy")
+                  horizon.scoreboard_remove_objective("scoreb.x")
+                  READ = horizon.scoreboard_score("Steve", "scoreb.x")
+                end)
+                "#,
+            )],
+        );
+        set_status(ModStatus {
+            id: "scorec".into(),
+            side: "server".to_owned(),
+            ..Default::default()
+        });
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let mut host = BoardHost::default();
+        host.objectives
+            .insert("scoreb.x".to_owned(), "dummy".to_owned());
+        host.scores
+            .insert(("Steve".to_owned(), "scoreb.x".to_owned()), 4);
+        one_server_tick(&m, &mut host);
+        assert_eq!(
+            host.calls,
+            [
+                "set scorec Steve scoreb.x 9",
+                "add scorec Steve scoreb.x 1",
+                "add_objective scorec scoreb.y dummy",
+                "remove_objective scorec scoreb.x",
+            ]
+        );
+        assert_eq!(
+            host.scores
+                .get(&("Steve".to_owned(), "scoreb.x".to_owned())),
+            Some(&4)
+        );
+        assert!(host.objectives.contains_key("scoreb.x"));
+        assert!(!host.objectives.contains_key("scoreb.y"));
+        assert_eq!(m.lua.globals().get::<i32>("READ").unwrap(), 4);
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == "scorec")
+            .and_then(|s| s.error);
+        assert_eq!(e, None, "a refused write is not a script error");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Runs one server tick of a one-handler mod `id` whose handler
+    /// makes `call`, and returns the error the status reports (the host
+    /// must not have been called).
+    fn error_of(id: &str, call: &str) -> String {
+        let body = format!("horizon.on(\"server_tick\", function()\n  {call}\nend)");
+        let (dir, path) = hmod_as(id, &[("scripts/server/init.lua", body.as_bytes())]);
+        set_status(ModStatus {
+            id: id.into(),
+            side: "server".to_owned(),
+            ..Default::default()
+        });
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let mut host = BoardHost::default();
+        one_server_tick(&m, &mut host);
+        assert!(host.calls.is_empty(), "{call}: the host must not be called");
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.error)
+            .unwrap_or_else(|| panic!("{call}: the error is reported"));
+        std::fs::remove_dir_all(&dir).unwrap();
+        e
+    }
+
+    #[test]
+    fn the_old_mod_id_first_form_is_refused_not_shifted() {
+        // Passing the mod id first (the form before this change) is more
+        // arguments than the helper takes: a named error, and the host is
+        // never called, so nothing is written under a shifted list.
+        let cases = [
+            (
+                r#"horizon.scoreboard_set_score("scoreold", "Steve", "scoreold.x", 5)"#,
+                "scoreboard_set_score: takes 3 argument(s), got 4",
+            ),
+            (
+                r#"horizon.scoreboard_add_score("scoreold", "Steve", "scoreold.x", 1)"#,
+                "scoreboard_add_score: takes 3 argument(s), got 4",
+            ),
+            (
+                r#"horizon.scoreboard_add_objective("scoreold", "scoreold.x", "dummy")"#,
+                "scoreboard_add_objective: takes 2 argument(s), got 3",
+            ),
+            (
+                r#"horizon.scoreboard_remove_objective("scoreold", "scoreold.x")"#,
+                "scoreboard_remove_objective: takes 1 argument(s), got 2",
+            ),
+        ];
+        for (call, want) in cases {
+            let e = error_of("scoreold", call);
+            assert!(e.contains(want), "{call}: {e} should name {want}");
+        }
+    }
+
+    #[test]
+    fn scoreboard_wrong_types_and_missing_arguments_name_the_helper_and_field() {
+        let cases = [
+            (
+                r#"horizon.scoreboard_set_score("Steve", "scoretype.x")"#,
+                "scoreboard_set_score: value:",
+            ),
+            (
+                r#"horizon.scoreboard_set_score("Steve", "scoretype.x", "five")"#,
+                "scoreboard_set_score: value:",
+            ),
+            (
+                "horizon.scoreboard_set_score()",
+                "scoreboard_set_score: holder:",
+            ),
+            (
+                r#"horizon.scoreboard_add_objective("scoretype.x")"#,
+                "scoreboard_add_objective: criteria:",
+            ),
+            (
+                r#"horizon.scoreboard_add_score("Steve", "scoretype.x", {})"#,
+                "scoreboard_add_score: delta:",
+            ),
+        ];
+        for (call, want) in cases {
+            let e = error_of("scoretype", call);
+            assert!(e.contains(want), "{call}: {e} should name {want}");
+        }
+    }
+
     #[test]
     fn each_marker_kind_reaches_the_host_with_its_fields() {
         // Every kind through `horizon.marker_set`, with distinct values in
@@ -15114,9 +15401,15 @@ end)"#,
         args.set(2, 3i64).unwrap();
         args.set(3, table).unwrap();
         let mut host = SeededHost::default();
-        crate::generated_helpers::run_generated_action(&lua, &mut host, "set_item_entity", &args)
-            .unwrap()
-            .unwrap();
+        crate::generated_helpers::run_generated_action(
+            &lua,
+            &mut host,
+            "scorea",
+            "set_item_entity",
+            &args,
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(host.stacks.len(), 1);
         let got = host.stacks.pop().unwrap();
         let data = got.extra.expect("the seeded components came back");

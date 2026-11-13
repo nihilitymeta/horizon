@@ -107,11 +107,14 @@ fn read_action_arg<T: mlua::FromLua>(
 /// Runs one queued generated action after a handler (`None` means the
 /// action is not this generator's, and the caller keeps its own `warn`).
 /// The arms are closures (so `?` widens to the match's `Some`);
+/// `mod_id` is the calling mod's own id, passed to the bound helpers
+/// (`BOUND_MOD_ID`) in place of a script argument.
 #[allow(clippy::redundant_closure_call)]
 #[allow(unused_variables)]
 pub(crate) fn run_synthetic_action(
     lua: &Lua,
     host: &mut dyn SyntheticHost,
+    mod_id: &str,
     action: &str,
     args: &Table,
 ) -> Option<mlua::Result<()>> {
@@ -500,7 +503,7 @@ fn synthetic_direction_probe_is_generated_and_exact() {
         &lua,
         &[mlua::Value::String(lua.create_string("north").unwrap())],
     );
-    run_synthetic_action(&lua, &mut host, "synthetic_direction_probe", &t)
+    run_synthetic_action(&lua, &mut host, "a", "synthetic_direction_probe", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["synthetic_direction_probe North"]);
@@ -510,7 +513,7 @@ fn synthetic_direction_probe_is_generated_and_exact() {
             &lua,
             &[mlua::Value::String(lua.create_string("down").unwrap())],
         );
-        run_synthetic_action(&lua, &mut host, "synthetic_direction_probe", &t)
+        run_synthetic_action(&lua, &mut host, "a", "synthetic_direction_probe", &t)
             .unwrap()
             .unwrap();
         let last = host.logged().last().cloned().unwrap_or_default();
@@ -522,7 +525,7 @@ fn synthetic_direction_probe_is_generated_and_exact() {
             &lua,
             &[mlua::Value::String(lua.create_string("up").unwrap())],
         );
-        run_synthetic_action(&lua, &mut host, "synthetic_direction_probe", &t)
+        run_synthetic_action(&lua, &mut host, "a", "synthetic_direction_probe", &t)
             .unwrap()
             .unwrap();
         let last = host.logged().last().cloned().unwrap_or_default();
@@ -534,7 +537,7 @@ fn synthetic_direction_probe_is_generated_and_exact() {
             &lua,
             &[mlua::Value::String(lua.create_string("north").unwrap())],
         );
-        run_synthetic_action(&lua, &mut host, "synthetic_direction_probe", &t)
+        run_synthetic_action(&lua, &mut host, "a", "synthetic_direction_probe", &t)
             .unwrap()
             .unwrap();
         let last = host.logged().last().cloned().unwrap_or_default();
@@ -546,7 +549,7 @@ fn synthetic_direction_probe_is_generated_and_exact() {
             &lua,
             &[mlua::Value::String(lua.create_string("south").unwrap())],
         );
-        run_synthetic_action(&lua, &mut host, "synthetic_direction_probe", &t)
+        run_synthetic_action(&lua, &mut host, "a", "synthetic_direction_probe", &t)
             .unwrap()
             .unwrap();
         let last = host.logged().last().cloned().unwrap_or_default();
@@ -558,7 +561,7 @@ fn synthetic_direction_probe_is_generated_and_exact() {
             &lua,
             &[mlua::Value::String(lua.create_string("west").unwrap())],
         );
-        run_synthetic_action(&lua, &mut host, "synthetic_direction_probe", &t)
+        run_synthetic_action(&lua, &mut host, "a", "synthetic_direction_probe", &t)
             .unwrap()
             .unwrap();
         let last = host.logged().last().cloned().unwrap_or_default();
@@ -570,7 +573,7 @@ fn synthetic_direction_probe_is_generated_and_exact() {
             &lua,
             &[mlua::Value::String(lua.create_string("east").unwrap())],
         );
-        run_synthetic_action(&lua, &mut host, "synthetic_direction_probe", &t)
+        run_synthetic_action(&lua, &mut host, "a", "synthetic_direction_probe", &t)
             .unwrap()
             .unwrap();
         let last = host.logged().last().cloned().unwrap_or_default();
@@ -582,7 +585,7 @@ fn synthetic_direction_probe_is_generated_and_exact() {
             &lua,
             &[mlua::Value::String(lua.create_string("upwards").unwrap())],
         );
-        let err = run_synthetic_action(&lua, &mut host, "synthetic_direction_probe", &t)
+        let err = run_synthetic_action(&lua, &mut host, "a", "synthetic_direction_probe", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -591,7 +594,7 @@ fn synthetic_direction_probe_is_generated_and_exact() {
     {
         let mut host = synthetic_host(false, false);
         let t = args(&lua, &[mlua::Value::Integer(3)]);
-        let err = run_synthetic_action(&lua, &mut host, "synthetic_direction_probe", &t)
+        let err = run_synthetic_action(&lua, &mut host, "a", "synthetic_direction_probe", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -600,7 +603,7 @@ fn synthetic_direction_probe_is_generated_and_exact() {
     {
         let mut host = synthetic_host(false, false);
         let t = args(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]);
-        let err = run_synthetic_action(&lua, &mut host, "synthetic_direction_probe", &t)
+        let err = run_synthetic_action(&lua, &mut host, "a", "synthetic_direction_probe", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -622,14 +625,14 @@ fn synthetic_float_pair_is_generated_and_exact() {
             mlua::Value::Table(t)
         }],
     );
-    run_synthetic_action(&lua, &mut host, "synthetic_float_pair", &t)
+    run_synthetic_action(&lua, &mut host, "a", "synthetic_float_pair", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["synthetic_float_pair Some((1.5, 2.5))"]);
     {
         let mut host = synthetic_host(false, false);
         let t = args(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]);
-        let err = run_synthetic_action(&lua, &mut host, "synthetic_float_pair", &t)
+        let err = run_synthetic_action(&lua, &mut host, "a", "synthetic_float_pair", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -638,7 +641,7 @@ fn synthetic_float_pair_is_generated_and_exact() {
     {
         let mut host = synthetic_host(false, false);
         let t = args(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]);
-        let err = run_synthetic_action(&lua, &mut host, "synthetic_float_pair", &t)
+        let err = run_synthetic_action(&lua, &mut host, "a", "synthetic_float_pair", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -660,14 +663,14 @@ fn synthetic_int_pair_is_generated_and_exact() {
             mlua::Value::Table(t)
         }],
     );
-    run_synthetic_action(&lua, &mut host, "synthetic_int_pair", &t)
+    run_synthetic_action(&lua, &mut host, "a", "synthetic_int_pair", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["synthetic_int_pair Some((3, 4))"]);
     {
         let mut host = synthetic_host(false, false);
         let t = args(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]);
-        let err = run_synthetic_action(&lua, &mut host, "synthetic_int_pair", &t)
+        let err = run_synthetic_action(&lua, &mut host, "a", "synthetic_int_pair", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -676,7 +679,7 @@ fn synthetic_int_pair_is_generated_and_exact() {
     {
         let mut host = synthetic_host(false, false);
         let t = args(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]);
-        let err = run_synthetic_action(&lua, &mut host, "synthetic_int_pair", &t)
+        let err = run_synthetic_action(&lua, &mut host, "a", "synthetic_int_pair", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -712,7 +715,7 @@ fn synthetic_vec_pair_is_generated_and_exact() {
             mlua::Value::Table(t)
         }],
     );
-    run_synthetic_action(&lua, &mut host, "synthetic_vec_pair", &t)
+    run_synthetic_action(&lua, &mut host, "a", "synthetic_vec_pair", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -722,7 +725,7 @@ fn synthetic_vec_pair_is_generated_and_exact() {
     {
         let mut host = synthetic_host(false, false);
         let t = args(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]);
-        let err = run_synthetic_action(&lua, &mut host, "synthetic_vec_pair", &t)
+        let err = run_synthetic_action(&lua, &mut host, "a", "synthetic_vec_pair", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -731,7 +734,7 @@ fn synthetic_vec_pair_is_generated_and_exact() {
     {
         let mut host = synthetic_host(false, false);
         let t = args(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]);
-        let err = run_synthetic_action(&lua, &mut host, "synthetic_vec_pair", &t)
+        let err = run_synthetic_action(&lua, &mut host, "a", "synthetic_vec_pair", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -753,7 +756,7 @@ fn synthetic_text_pair_is_generated_and_exact() {
             mlua::Value::Table(t)
         }],
     );
-    run_synthetic_action(&lua, &mut host, "synthetic_text_pair", &t)
+    run_synthetic_action(&lua, &mut host, "a", "synthetic_text_pair", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -763,7 +766,7 @@ fn synthetic_text_pair_is_generated_and_exact() {
     {
         let mut host = synthetic_host(false, false);
         let t = args(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]);
-        let err = run_synthetic_action(&lua, &mut host, "synthetic_text_pair", &t)
+        let err = run_synthetic_action(&lua, &mut host, "a", "synthetic_text_pair", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -772,7 +775,7 @@ fn synthetic_text_pair_is_generated_and_exact() {
     {
         let mut host = synthetic_host(false, false);
         let t = args(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]);
-        let err = run_synthetic_action(&lua, &mut host, "synthetic_text_pair", &t)
+        let err = run_synthetic_action(&lua, &mut host, "a", "synthetic_text_pair", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -786,7 +789,7 @@ fn synthetic_unit_action_is_generated_and_exact() {
     let lua = lua();
     let mut host = synthetic_host(false, false);
     let t = args(&lua, &[]);
-    run_synthetic_action(&lua, &mut host, "synthetic_unit_action", &t)
+    run_synthetic_action(&lua, &mut host, "a", "synthetic_unit_action", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["synthetic_unit_action"]);
@@ -800,7 +803,7 @@ fn synthetic_state_probe_is_generated_and_exact() {
         &lua,
         &[mlua::Value::String(lua.create_string("ruby:gen").unwrap())],
     );
-    run_synthetic_action(&lua, &mut host, "synthetic_state_probe", &t)
+    run_synthetic_action(&lua, &mut host, "a", "synthetic_state_probe", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -810,7 +813,7 @@ fn synthetic_state_probe_is_generated_and_exact() {
     {
         let mut host = synthetic_host(false, false);
         let t = args(&lua, &[mlua::Value::Nil]);
-        run_synthetic_action(&lua, &mut host, "synthetic_state_probe", &t)
+        run_synthetic_action(&lua, &mut host, "a", "synthetic_state_probe", &t)
             .unwrap()
             .unwrap();
         let last = host.logged().last().cloned().unwrap_or_default();
@@ -824,7 +827,7 @@ fn synthetic_state_probe_is_generated_and_exact() {
                 lua.create_string("ruby:gibberish").unwrap(),
             )],
         );
-        let err = run_synthetic_action(&lua, &mut host, "synthetic_state_probe", &t)
+        let err = run_synthetic_action(&lua, &mut host, "a", "synthetic_state_probe", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -834,7 +837,7 @@ fn synthetic_state_probe_is_generated_and_exact() {
     {
         let mut host = synthetic_host(false, false);
         let t = args(&lua, &[mlua::Value::Integer(3)]);
-        let err = run_synthetic_action(&lua, &mut host, "synthetic_state_probe", &t)
+        let err = run_synthetic_action(&lua, &mut host, "a", "synthetic_state_probe", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -844,7 +847,7 @@ fn synthetic_state_probe_is_generated_and_exact() {
     {
         let mut host = synthetic_host(false, false);
         let t = args(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]);
-        let err = run_synthetic_action(&lua, &mut host, "synthetic_state_probe", &t)
+        let err = run_synthetic_action(&lua, &mut host, "a", "synthetic_state_probe", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();

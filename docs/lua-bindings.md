@@ -251,6 +251,8 @@ any file with `../`; `horizon.config()` is the Lua way to keep settings) and `ru
 runs a console command; `run_command_as` already covers that). Regenerate with
 `cargo run -p xtask -- lua-helpers` (its `--check` fails when any of the five outputs — the bridge, its tests, the
 exposure page, `hook-points.md` and `horizon.d.lua` — is stale).
+The helpers in `BOUND_MOD_ID` (the same file) take the calling mod's id from the runtime, not from the script: their
+first parameter `mod_id` is left out of the Lua signature. Today that is the four scoreboard writes.
 
 ## The `horizon` table
 
@@ -548,6 +550,26 @@ a line for such an inserted command is answered as an unknown command.
 reaches the server. `horizon.cancel()` there drops the line, so the server never sees it and no `perform_command`
 handler runs for it. Hearing and stopping every typed line is a client power, separate from performing mod
 commands, which is what `horizon.command` declares and `perform_command` hears.
+
+### Scoreboard
+
+| Function | Description |
+|---|---|
+| `horizon.scoreboard_score(holder, objective)` | The holder's score in any objective (vanilla's, a command block's, another mod's); nil when the objective or the score does not exist. A read never creates a score |
+| `horizon.scoreboard_set_score(holder, objective, value)` | Sets the score in one of your own objectives |
+| `horizon.scoreboard_add_score(holder, objective, delta)` | Adds to the score in one of your own objectives (saturating at the i32 bounds; a score not yet set starts at 0) |
+| `horizon.scoreboard_add_objective(name, criteria)` | Creates the objective `<your mod id>.<name>` with the criteria (`dummy`, `health`, ...) |
+| `horizon.scoreboard_remove_objective(name)` | Removes your objective `<your mod id>.<name>` and every score in it |
+
+Reads take any objective. A write takes only an objective named `<your mod id>.<name>` that exists (a score write)
+or is free (an add), and not a read-only criteria. The runtime supplies your mod id, the one `horizon.mod_id`
+holds: the script does not pass it. A call that still passes it first (`scoreboard_set_score("me", holder, ...)`)
+is an error naming the helper and the count (`scoreboard_set_score: takes 3 argument(s), got 4`), and nothing is
+written. A write the host refuses (another mod's or a vanilla objective, a missing one, a read-only criteria) changes
+nothing and is silent in Lua: the bridge drops the host's `false`, so a script that needs to know reads the score
+back with `scoreboard_score`. Wrong types and missing arguments are errors naming the helper and the argument
+(`scoreboard_set_score: value: ...`). The board is the server's: the scoreboard helpers exist only in a server state (`scripts/server/`), and a client state that calls one gets the usual server-only error (`horizon.scoreboard_score is only available in scripts/server/ (this is the client state of mod <id>)`).
+A read sees the world's saved board from the moment the world opens, `level_load` included.
 
 ### Timers and saved data
 

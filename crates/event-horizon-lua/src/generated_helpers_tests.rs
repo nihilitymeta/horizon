@@ -753,6 +753,63 @@ impl Host for GenHost {
         self.record("respawn_player", &[uuid.to_string()]);
         !self.refuse
     }
+    fn scoreboard_add_objective(&mut self, mod_id: &str, name: &str, criteria: &str) -> bool {
+        self.record(
+            "scoreboard_add_objective",
+            &[mod_id.to_string(), name.to_string(), criteria.to_string()],
+        );
+        !self.refuse
+    }
+    fn scoreboard_add_score(
+        &mut self,
+        mod_id: &str,
+        holder: &str,
+        objective: &str,
+        delta: i32,
+    ) -> bool {
+        self.record(
+            "scoreboard_add_score",
+            &[
+                mod_id.to_string(),
+                holder.to_string(),
+                objective.to_string(),
+                delta.to_string(),
+            ],
+        );
+        !self.refuse
+    }
+    fn scoreboard_remove_objective(&mut self, mod_id: &str, name: &str) -> bool {
+        self.record(
+            "scoreboard_remove_objective",
+            &[mod_id.to_string(), name.to_string()],
+        );
+        !self.refuse
+    }
+    fn scoreboard_score(&self, holder: &str, objective: &str) -> Option<i32> {
+        self.record(
+            "scoreboard_score",
+            &[holder.to_string(), objective.to_string()],
+        );
+        if self.none { None } else { Some(3) }
+    }
+    fn scoreboard_set_score(
+        &mut self,
+        mod_id: &str,
+        holder: &str,
+        objective: &str,
+        value: i32,
+    ) -> bool {
+        self.record(
+            "scoreboard_set_score",
+            &[
+                mod_id.to_string(),
+                holder.to_string(),
+                objective.to_string(),
+                value.to_string(),
+            ],
+        );
+        !self.refuse
+    }
     fn screen_pos(&self) -> Option<[i32; 3]> {
         self.record("screen_pos", &[]);
         if self.none { None } else { Some([3, 4, 5]) }
@@ -1146,7 +1203,7 @@ fn block_entity_sync_is_generated_and_exact() {
             mlua::Value::Table(t)
         }],
     );
-    run_generated_action(&lua, &mut host, "block_entity_sync", &t)
+    run_generated_action(&lua, &mut host, "a", "block_entity_sync", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["block_entity_sync [3, 4, 5]"]);
@@ -1162,7 +1219,7 @@ fn block_entity_sync_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "block_entity_sync", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "block_entity_sync", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -1180,7 +1237,7 @@ fn block_entity_sync_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "block_entity_sync", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "block_entity_sync", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -1189,7 +1246,7 @@ fn block_entity_sync_is_generated_and_exact() {
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Integer(3)]);
-        let err = run_generated_action(&lua, &mut host, "block_entity_sync", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "block_entity_sync", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -1350,7 +1407,7 @@ fn client_entity_move_is_generated_and_exact() {
             mlua::Value::Number(4.5),
         ],
     );
-    run_generated_action(&lua, &mut host, "client_entity_move", &t)
+    run_generated_action(&lua, &mut host, "a", "client_entity_move", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -1377,7 +1434,7 @@ fn client_entity_move_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        run_generated_action(&lua, &mut host, "client_entity_move", &t)
+        run_generated_action(&lua, &mut host, "a", "client_entity_move", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -1405,7 +1462,7 @@ fn client_entity_move_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        run_generated_action(&lua, &mut host, "client_entity_move", &t)
+        run_generated_action(&lua, &mut host, "a", "client_entity_move", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -1430,7 +1487,7 @@ fn client_entity_move_is_generated_and_exact() {
                 mlua::Value::Number(4.5),
             ],
         );
-        run_generated_action(&lua, &mut host, "client_entity_move", &t)
+        run_generated_action(&lua, &mut host, "a", "client_entity_move", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -1458,7 +1515,7 @@ fn client_entity_move_is_generated_and_exact() {
                 mlua::Value::Number(4.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "client_entity_move", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "client_entity_move", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -1483,7 +1540,7 @@ fn client_entity_move_is_generated_and_exact() {
                 mlua::Value::Number(4.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "client_entity_move", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "client_entity_move", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -1509,7 +1566,7 @@ fn client_entity_move_is_generated_and_exact() {
                 mlua::Value::Number(f64::NAN),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "client_entity_move", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "client_entity_move", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -1535,7 +1592,7 @@ fn client_entity_move_is_generated_and_exact() {
                 mlua::Value::Number(4.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "client_entity_move", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "client_entity_move", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -1564,7 +1621,7 @@ fn client_entity_set_is_generated_and_exact() {
             },
         ],
     );
-    run_generated_action(&lua, &mut host, "client_entity_set", &t)
+    run_generated_action(&lua, &mut host, "a", "client_entity_set", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -1591,7 +1648,7 @@ fn client_entity_set_is_generated_and_exact() {
                 },
             ],
         );
-        run_generated_action(&lua, &mut host, "client_entity_set", &t)
+        run_generated_action(&lua, &mut host, "a", "client_entity_set", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -1619,7 +1676,7 @@ fn client_entity_set_is_generated_and_exact() {
                 },
             ],
         );
-        run_generated_action(&lua, &mut host, "client_entity_set", &t)
+        run_generated_action(&lua, &mut host, "a", "client_entity_set", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -1644,7 +1701,7 @@ fn client_entity_set_is_generated_and_exact() {
                 },
             ],
         );
-        run_generated_action(&lua, &mut host, "client_entity_set", &t)
+        run_generated_action(&lua, &mut host, "a", "client_entity_set", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -1665,7 +1722,7 @@ fn client_entity_set_is_generated_and_exact() {
                 mlua::Value::Integer(3),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "client_entity_set", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "client_entity_set", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -1685,7 +1742,7 @@ fn client_entity_set_is_generated_and_exact() {
                 mlua::Value::String(lua.create_string("ruby:gen").unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "client_entity_set", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "client_entity_set", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -1710,7 +1767,7 @@ fn client_entity_set_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "client_entity_set", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "client_entity_set", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -1896,14 +1953,14 @@ fn dismount_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
     let t = args(&lua, &[mlua::Value::Integer(3)]);
-    run_generated_action(&lua, &mut host, "dismount", &t)
+    run_generated_action(&lua, &mut host, "a", "dismount", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["dismount 3"]);
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Integer(-1)]);
-        run_generated_action(&lua, &mut host, "dismount", &t)
+        run_generated_action(&lua, &mut host, "a", "dismount", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["dismount 0"]);
@@ -1911,7 +1968,7 @@ fn dismount_is_generated_and_exact() {
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Integer(300)]);
-        run_generated_action(&lua, &mut host, "dismount", &t)
+        run_generated_action(&lua, &mut host, "a", "dismount", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["dismount 300"]);
@@ -1919,7 +1976,7 @@ fn dismount_is_generated_and_exact() {
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]);
-        let err = run_generated_action(&lua, &mut host, "dismount", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "dismount", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -1933,14 +1990,14 @@ fn eject_passengers_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
     let t = args(&lua, &[mlua::Value::Integer(3)]);
-    run_generated_action(&lua, &mut host, "eject_passengers", &t)
+    run_generated_action(&lua, &mut host, "a", "eject_passengers", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["eject_passengers 3"]);
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Integer(-1)]);
-        run_generated_action(&lua, &mut host, "eject_passengers", &t)
+        run_generated_action(&lua, &mut host, "a", "eject_passengers", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["eject_passengers 0"]);
@@ -1948,7 +2005,7 @@ fn eject_passengers_is_generated_and_exact() {
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Integer(300)]);
-        run_generated_action(&lua, &mut host, "eject_passengers", &t)
+        run_generated_action(&lua, &mut host, "a", "eject_passengers", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["eject_passengers 300"]);
@@ -1956,7 +2013,7 @@ fn eject_passengers_is_generated_and_exact() {
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]);
-        let err = run_generated_action(&lua, &mut host, "eject_passengers", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "eject_passengers", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -1976,7 +2033,7 @@ fn entity_add_tag_is_generated_and_exact() {
             mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
         ],
     );
-    run_generated_action(&lua, &mut host, "entity_add_tag", &t)
+    run_generated_action(&lua, &mut host, "a", "entity_add_tag", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["entity_add_tag 7 ruby:gen1"]);
@@ -1989,7 +2046,7 @@ fn entity_add_tag_is_generated_and_exact() {
                 mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
             ],
         );
-        run_generated_action(&lua, &mut host, "entity_add_tag", &t)
+        run_generated_action(&lua, &mut host, "a", "entity_add_tag", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -2006,7 +2063,7 @@ fn entity_add_tag_is_generated_and_exact() {
                 mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_add_tag", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_add_tag", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -2021,7 +2078,7 @@ fn entity_add_tag_is_generated_and_exact() {
                 mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_add_tag", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_add_tag", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -2036,7 +2093,7 @@ fn entity_add_tag_is_generated_and_exact() {
                 mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_add_tag", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_add_tag", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -2051,7 +2108,7 @@ fn entity_add_tag_is_generated_and_exact() {
                 mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_add_tag", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_add_tag", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -3985,7 +4042,7 @@ fn entity_merge_nbt_is_generated_and_exact() {
             mlua::Value::Table(t)
         }],
     );
-    run_generated_action(&lua, &mut host, "entity_merge_nbt", &t)
+    run_generated_action(&lua, &mut host, "a", "entity_merge_nbt", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -4003,7 +4060,7 @@ fn entity_merge_nbt_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        run_generated_action(&lua, &mut host, "entity_merge_nbt", &t)
+        run_generated_action(&lua, &mut host, "a", "entity_merge_nbt", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -4022,7 +4079,7 @@ fn entity_merge_nbt_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_merge_nbt", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_merge_nbt", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4039,7 +4096,7 @@ fn entity_merge_nbt_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_merge_nbt", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_merge_nbt", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4056,7 +4113,7 @@ fn entity_merge_nbt_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_merge_nbt", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_merge_nbt", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4065,7 +4122,7 @@ fn entity_merge_nbt_is_generated_and_exact() {
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Integer(7), mlua::Value::Integer(3)]);
-        let err = run_generated_action(&lua, &mut host, "entity_merge_nbt", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_merge_nbt", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4081,7 +4138,7 @@ fn entity_merge_nbt_is_generated_and_exact() {
                 mlua::Value::String(lua.create_string("ruby:gen").unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_merge_nbt", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_merge_nbt", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4099,7 +4156,7 @@ fn entity_merge_nbt_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_merge_nbt", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_merge_nbt", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4504,7 +4561,7 @@ fn entity_push_is_generated_and_exact() {
             mlua::Value::Table(t)
         }],
     );
-    run_generated_action(&lua, &mut host, "entity_push", &t)
+    run_generated_action(&lua, &mut host, "a", "entity_push", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["entity_push 7 [1.5, 2.5, 3.5]"]);
@@ -4520,7 +4577,7 @@ fn entity_push_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        run_generated_action(&lua, &mut host, "entity_push", &t)
+        run_generated_action(&lua, &mut host, "a", "entity_push", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -4540,7 +4597,7 @@ fn entity_push_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_push", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_push", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4558,7 +4615,7 @@ fn entity_push_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_push", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_push", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4576,7 +4633,7 @@ fn entity_push_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_push", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_push", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4594,7 +4651,7 @@ fn entity_push_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_push", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_push", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4611,7 +4668,7 @@ fn entity_push_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_push", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_push", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4629,7 +4686,7 @@ fn entity_push_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_push", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_push", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4649,7 +4706,7 @@ fn entity_remove_tag_is_generated_and_exact() {
             mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
         ],
     );
-    run_generated_action(&lua, &mut host, "entity_remove_tag", &t)
+    run_generated_action(&lua, &mut host, "a", "entity_remove_tag", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["entity_remove_tag 7 ruby:gen1"]);
@@ -4662,7 +4719,7 @@ fn entity_remove_tag_is_generated_and_exact() {
                 mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
             ],
         );
-        run_generated_action(&lua, &mut host, "entity_remove_tag", &t)
+        run_generated_action(&lua, &mut host, "a", "entity_remove_tag", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -4679,7 +4736,7 @@ fn entity_remove_tag_is_generated_and_exact() {
                 mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_remove_tag", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_remove_tag", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4694,7 +4751,7 @@ fn entity_remove_tag_is_generated_and_exact() {
                 mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_remove_tag", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_remove_tag", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4709,7 +4766,7 @@ fn entity_remove_tag_is_generated_and_exact() {
                 mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_remove_tag", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_remove_tag", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4724,7 +4781,7 @@ fn entity_remove_tag_is_generated_and_exact() {
                 mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_remove_tag", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_remove_tag", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4738,14 +4795,14 @@ fn entity_set_head_yaw_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
     let t = args(&lua, &[mlua::Value::Integer(7), mlua::Value::Number(1.5)]);
-    run_generated_action(&lua, &mut host, "entity_set_head_yaw", &t)
+    run_generated_action(&lua, &mut host, "a", "entity_set_head_yaw", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["entity_set_head_yaw 7 1.5"]);
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Integer(999), mlua::Value::Number(1.5)]);
-        run_generated_action(&lua, &mut host, "entity_set_head_yaw", &t)
+        run_generated_action(&lua, &mut host, "a", "entity_set_head_yaw", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -4756,7 +4813,7 @@ fn entity_set_head_yaw_is_generated_and_exact() {
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Integer(-1), mlua::Value::Number(1.5)]);
-        let err = run_generated_action(&lua, &mut host, "entity_set_head_yaw", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_head_yaw", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4765,7 +4822,7 @@ fn entity_set_head_yaw_is_generated_and_exact() {
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Number(1.5), mlua::Value::Number(1.5)]);
-        let err = run_generated_action(&lua, &mut host, "entity_set_head_yaw", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_head_yaw", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4780,7 +4837,7 @@ fn entity_set_head_yaw_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_head_yaw", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_head_yaw", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4792,7 +4849,7 @@ fn entity_set_head_yaw_is_generated_and_exact() {
             &lua,
             &[mlua::Value::Integer(7), mlua::Value::Number(f64::NAN)],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_head_yaw", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_head_yaw", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4807,7 +4864,7 @@ fn entity_set_head_yaw_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_head_yaw", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_head_yaw", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4828,7 +4885,7 @@ fn entity_set_rotation_is_generated_and_exact() {
             mlua::Value::Number(2.5),
         ],
     );
-    run_generated_action(&lua, &mut host, "entity_set_rotation", &t)
+    run_generated_action(&lua, &mut host, "a", "entity_set_rotation", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["entity_set_rotation 7 1.5 2.5"]);
@@ -4842,7 +4899,7 @@ fn entity_set_rotation_is_generated_and_exact() {
                 mlua::Value::Number(2.5),
             ],
         );
-        run_generated_action(&lua, &mut host, "entity_set_rotation", &t)
+        run_generated_action(&lua, &mut host, "a", "entity_set_rotation", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -4860,7 +4917,7 @@ fn entity_set_rotation_is_generated_and_exact() {
                 mlua::Value::Number(2.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_rotation", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_rotation", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4876,7 +4933,7 @@ fn entity_set_rotation_is_generated_and_exact() {
                 mlua::Value::Number(2.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_rotation", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_rotation", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4892,7 +4949,7 @@ fn entity_set_rotation_is_generated_and_exact() {
                 mlua::Value::Number(2.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_rotation", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_rotation", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4908,7 +4965,7 @@ fn entity_set_rotation_is_generated_and_exact() {
                 mlua::Value::Number(2.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_rotation", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_rotation", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4924,7 +4981,7 @@ fn entity_set_rotation_is_generated_and_exact() {
                 mlua::Value::Number(2.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_rotation", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_rotation", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4938,7 +4995,7 @@ fn entity_set_silent_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
     let t = args(&lua, &[mlua::Value::Integer(7), mlua::Value::Boolean(true)]);
-    run_generated_action(&lua, &mut host, "entity_set_silent", &t)
+    run_generated_action(&lua, &mut host, "a", "entity_set_silent", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["entity_set_silent 7 true"]);
@@ -4948,7 +5005,7 @@ fn entity_set_silent_is_generated_and_exact() {
             &lua,
             &[mlua::Value::Integer(999), mlua::Value::Boolean(true)],
         );
-        run_generated_action(&lua, &mut host, "entity_set_silent", &t)
+        run_generated_action(&lua, &mut host, "a", "entity_set_silent", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -4962,7 +5019,7 @@ fn entity_set_silent_is_generated_and_exact() {
             &lua,
             &[mlua::Value::Integer(-1), mlua::Value::Boolean(true)],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_silent", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_silent", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4974,7 +5031,7 @@ fn entity_set_silent_is_generated_and_exact() {
             &lua,
             &[mlua::Value::Number(1.5), mlua::Value::Boolean(true)],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_silent", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_silent", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -4989,7 +5046,7 @@ fn entity_set_silent_is_generated_and_exact() {
                 mlua::Value::Boolean(true),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_silent", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_silent", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -5004,7 +5061,7 @@ fn entity_set_silent_is_generated_and_exact() {
                 mlua::Value::Boolean(true),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_silent", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_silent", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -5027,7 +5084,7 @@ fn entity_set_velocity_is_generated_and_exact() {
             mlua::Value::Table(t)
         }],
     );
-    run_generated_action(&lua, &mut host, "entity_set_velocity", &t)
+    run_generated_action(&lua, &mut host, "a", "entity_set_velocity", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["entity_set_velocity 7 [1.5, 2.5, 3.5]"]);
@@ -5043,7 +5100,7 @@ fn entity_set_velocity_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        run_generated_action(&lua, &mut host, "entity_set_velocity", &t)
+        run_generated_action(&lua, &mut host, "a", "entity_set_velocity", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -5063,7 +5120,7 @@ fn entity_set_velocity_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_velocity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_velocity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -5081,7 +5138,7 @@ fn entity_set_velocity_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_velocity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_velocity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -5099,7 +5156,7 @@ fn entity_set_velocity_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_velocity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_velocity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -5117,7 +5174,7 @@ fn entity_set_velocity_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_velocity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_velocity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -5134,7 +5191,7 @@ fn entity_set_velocity_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_velocity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_velocity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -5152,7 +5209,7 @@ fn entity_set_velocity_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "entity_set_velocity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_velocity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -5583,7 +5640,7 @@ fn flame_particle_is_generated_and_exact() {
             mlua::Value::Boolean(true),
         ],
     );
-    run_generated_action(&lua, &mut host, "flame_particle", &t)
+    run_generated_action(&lua, &mut host, "a", "flame_particle", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["flame_particle [1.5, 2.5, 3.5] true"]);
@@ -5602,7 +5659,7 @@ fn flame_particle_is_generated_and_exact() {
                 mlua::Value::Boolean(true),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "flame_particle", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "flame_particle", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -5622,7 +5679,7 @@ fn flame_particle_is_generated_and_exact() {
                 mlua::Value::Boolean(true),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "flame_particle", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "flame_particle", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -5631,7 +5688,7 @@ fn flame_particle_is_generated_and_exact() {
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Integer(3), mlua::Value::Boolean(true)]);
-        let err = run_generated_action(&lua, &mut host, "flame_particle", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "flame_particle", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -5859,7 +5916,7 @@ fn hide_entity_from_is_generated_and_exact() {
             mlua::Value::Boolean(true),
         ],
     );
-    run_generated_action(&lua, &mut host, "hide_entity_from", &t)
+    run_generated_action(&lua, &mut host, "a", "hide_entity_from", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -5879,7 +5936,7 @@ fn hide_entity_from_is_generated_and_exact() {
                 mlua::Value::Boolean(true),
             ],
         );
-        run_generated_action(&lua, &mut host, "hide_entity_from", &t)
+        run_generated_action(&lua, &mut host, "a", "hide_entity_from", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -5900,7 +5957,7 @@ fn hide_entity_from_is_generated_and_exact() {
                 mlua::Value::Boolean(true),
             ],
         );
-        run_generated_action(&lua, &mut host, "hide_entity_from", &t)
+        run_generated_action(&lua, &mut host, "a", "hide_entity_from", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -5918,7 +5975,7 @@ fn hide_entity_from_is_generated_and_exact() {
                 mlua::Value::Boolean(true),
             ],
         );
-        run_generated_action(&lua, &mut host, "hide_entity_from", &t)
+        run_generated_action(&lua, &mut host, "a", "hide_entity_from", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -5939,7 +5996,7 @@ fn hide_entity_from_is_generated_and_exact() {
                 mlua::Value::Boolean(true),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "hide_entity_from", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "hide_entity_from", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -7556,7 +7613,7 @@ fn level_play_sound_is_generated_and_exact() {
             mlua::Value::Number(5.5),
         ],
     );
-    run_generated_action(&lua, &mut host, "level_play_sound", &t)
+    run_generated_action(&lua, &mut host, "a", "level_play_sound", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -7585,7 +7642,7 @@ fn level_play_sound_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        run_generated_action(&lua, &mut host, "level_play_sound", &t)
+        run_generated_action(&lua, &mut host, "a", "level_play_sound", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -7615,7 +7672,7 @@ fn level_play_sound_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        run_generated_action(&lua, &mut host, "level_play_sound", &t)
+        run_generated_action(&lua, &mut host, "a", "level_play_sound", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -7645,7 +7702,7 @@ fn level_play_sound_is_generated_and_exact() {
                 mlua::Value::Number(5.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "level_play_sound", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "level_play_sound", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -7669,7 +7726,7 @@ fn level_play_sound_is_generated_and_exact() {
                 mlua::Value::Number(5.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "level_play_sound", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "level_play_sound", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -7694,7 +7751,7 @@ fn level_play_sound_is_generated_and_exact() {
                 mlua::Value::Number(5.5),
             ],
         );
-        run_generated_action(&lua, &mut host, "level_play_sound", &t)
+        run_generated_action(&lua, &mut host, "a", "level_play_sound", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -7722,7 +7779,7 @@ fn level_play_sound_is_generated_and_exact() {
                 mlua::Value::Number(5.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "level_play_sound", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "level_play_sound", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -7747,7 +7804,7 @@ fn level_play_sound_is_generated_and_exact() {
                 mlua::Value::Number(5.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "level_play_sound", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "level_play_sound", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -7772,7 +7829,7 @@ fn level_play_sound_is_generated_and_exact() {
                 mlua::Value::Number(5.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "level_play_sound", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "level_play_sound", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -7797,7 +7854,7 @@ fn level_play_sound_is_generated_and_exact() {
                 mlua::Value::Number(5.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "level_play_sound", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "level_play_sound", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8218,7 +8275,7 @@ fn merge_entity_nbt_is_generated_and_exact() {
             },
         ],
     );
-    run_generated_action(&lua, &mut host, "merge_entity_nbt", &t)
+    run_generated_action(&lua, &mut host, "a", "merge_entity_nbt", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -8240,7 +8297,7 @@ fn merge_entity_nbt_is_generated_and_exact() {
                 },
             ],
         );
-        run_generated_action(&lua, &mut host, "merge_entity_nbt", &t)
+        run_generated_action(&lua, &mut host, "a", "merge_entity_nbt", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -8263,7 +8320,7 @@ fn merge_entity_nbt_is_generated_and_exact() {
                 },
             ],
         );
-        run_generated_action(&lua, &mut host, "merge_entity_nbt", &t)
+        run_generated_action(&lua, &mut host, "a", "merge_entity_nbt", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -8286,7 +8343,7 @@ fn merge_entity_nbt_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "merge_entity_nbt", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "merge_entity_nbt", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8304,7 +8361,7 @@ fn merge_entity_nbt_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "merge_entity_nbt", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "merge_entity_nbt", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8321,7 +8378,7 @@ fn merge_entity_nbt_is_generated_and_exact() {
                 mlua::Value::Integer(3),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "merge_entity_nbt", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "merge_entity_nbt", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8338,7 +8395,7 @@ fn merge_entity_nbt_is_generated_and_exact() {
                 mlua::Value::String(lua.create_string("ruby:gen").unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "merge_entity_nbt", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "merge_entity_nbt", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8360,7 +8417,7 @@ fn merge_entity_nbt_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "merge_entity_nbt", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "merge_entity_nbt", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8381,7 +8438,7 @@ fn mob_attack_is_generated_and_exact() {
             mlua::Value::Integer(4),
         ],
     );
-    run_generated_action(&lua, &mut host, "mob_attack", &t)
+    run_generated_action(&lua, &mut host, "a", "mob_attack", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["mob_attack ruby:gen1 3 4"]);
@@ -8395,7 +8452,7 @@ fn mob_attack_is_generated_and_exact() {
                 mlua::Value::Integer(-1),
             ],
         );
-        run_generated_action(&lua, &mut host, "mob_attack", &t)
+        run_generated_action(&lua, &mut host, "a", "mob_attack", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["mob_attack ruby:gen 0 0"]);
@@ -8410,7 +8467,7 @@ fn mob_attack_is_generated_and_exact() {
                 mlua::Value::Integer(300),
             ],
         );
-        run_generated_action(&lua, &mut host, "mob_attack", &t)
+        run_generated_action(&lua, &mut host, "a", "mob_attack", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["mob_attack ruby:gen 300 300"]);
@@ -8425,7 +8482,7 @@ fn mob_attack_is_generated_and_exact() {
                 mlua::Value::Integer(4),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_attack", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_attack", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8442,7 +8499,7 @@ fn mob_attack_is_generated_and_exact() {
                 mlua::Value::Integer(4),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_attack", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_attack", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8459,7 +8516,7 @@ fn mob_attack_is_generated_and_exact() {
                 mlua::Value::Integer(4),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_attack", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_attack", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8481,7 +8538,7 @@ fn mob_follow_is_generated_and_exact() {
             mlua::Value::Number(1.5),
         ],
     );
-    run_generated_action(&lua, &mut host, "mob_follow", &t)
+    run_generated_action(&lua, &mut host, "a", "mob_follow", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["mob_follow ruby:gen1 3 4 1.5"]);
@@ -8496,7 +8553,7 @@ fn mob_follow_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        run_generated_action(&lua, &mut host, "mob_follow", &t)
+        run_generated_action(&lua, &mut host, "a", "mob_follow", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["mob_follow ruby:gen 0 0 1.5"]);
@@ -8512,7 +8569,7 @@ fn mob_follow_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        run_generated_action(&lua, &mut host, "mob_follow", &t)
+        run_generated_action(&lua, &mut host, "a", "mob_follow", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["mob_follow ruby:gen 300 300 1.5"]);
@@ -8528,7 +8585,7 @@ fn mob_follow_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_follow", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_follow", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8546,7 +8603,7 @@ fn mob_follow_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_follow", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_follow", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8564,7 +8621,7 @@ fn mob_follow_is_generated_and_exact() {
                 mlua::Value::Number(f64::NAN),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_follow", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_follow", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8581,7 +8638,7 @@ fn mob_follow_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_follow", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_follow", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8608,7 +8665,7 @@ fn mob_look_at_is_generated_and_exact() {
             },
         ],
     );
-    run_generated_action(&lua, &mut host, "mob_look_at", &t)
+    run_generated_action(&lua, &mut host, "a", "mob_look_at", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["mob_look_at ruby:gen1 3 [1.5, 2.5, 3.5]"]);
@@ -8628,7 +8685,7 @@ fn mob_look_at_is_generated_and_exact() {
                 },
             ],
         );
-        run_generated_action(&lua, &mut host, "mob_look_at", &t)
+        run_generated_action(&lua, &mut host, "a", "mob_look_at", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["mob_look_at ruby:gen 0 [1.5, 2.5, 3.5]"]);
@@ -8649,7 +8706,7 @@ fn mob_look_at_is_generated_and_exact() {
                 },
             ],
         );
-        run_generated_action(&lua, &mut host, "mob_look_at", &t)
+        run_generated_action(&lua, &mut host, "a", "mob_look_at", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["mob_look_at ruby:gen 300 [1.5, 2.5, 3.5]"]);
@@ -8670,7 +8727,7 @@ fn mob_look_at_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_look_at", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_look_at", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8691,7 +8748,7 @@ fn mob_look_at_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_look_at", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_look_at", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8713,7 +8770,7 @@ fn mob_look_at_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_look_at", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_look_at", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8732,7 +8789,7 @@ fn mob_look_at_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_look_at", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_look_at", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8755,7 +8812,7 @@ fn mob_look_at_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_look_at", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_look_at", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8784,7 +8841,7 @@ fn mob_navigate_is_generated_and_exact() {
             mlua::Value::Number(4.5),
         ],
     );
-    run_generated_action(&lua, &mut host, "mob_navigate", &t)
+    run_generated_action(&lua, &mut host, "a", "mob_navigate", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -8809,7 +8866,7 @@ fn mob_navigate_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        run_generated_action(&lua, &mut host, "mob_navigate", &t)
+        run_generated_action(&lua, &mut host, "a", "mob_navigate", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -8835,7 +8892,7 @@ fn mob_navigate_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        run_generated_action(&lua, &mut host, "mob_navigate", &t)
+        run_generated_action(&lua, &mut host, "a", "mob_navigate", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -8861,7 +8918,7 @@ fn mob_navigate_is_generated_and_exact() {
                 mlua::Value::Number(4.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_navigate", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_navigate", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8884,7 +8941,7 @@ fn mob_navigate_is_generated_and_exact() {
                 mlua::Value::Number(4.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_navigate", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_navigate", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8908,7 +8965,7 @@ fn mob_navigate_is_generated_and_exact() {
                 mlua::Value::Number(4.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_navigate", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_navigate", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8933,7 +8990,7 @@ fn mob_navigate_is_generated_and_exact() {
                 mlua::Value::Number(4.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_navigate", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_navigate", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8958,7 +9015,7 @@ fn mob_navigate_is_generated_and_exact() {
                 mlua::Value::Number(f64::NAN),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_navigate", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_navigate", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -8982,7 +9039,7 @@ fn mob_navigate_is_generated_and_exact() {
                 mlua::Value::Number(4.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_navigate", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_navigate", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9002,7 +9059,7 @@ fn mob_stop_is_generated_and_exact() {
             mlua::Value::Integer(3),
         ],
     );
-    run_generated_action(&lua, &mut host, "mob_stop", &t)
+    run_generated_action(&lua, &mut host, "a", "mob_stop", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["mob_stop ruby:gen1 3"]);
@@ -9015,7 +9072,7 @@ fn mob_stop_is_generated_and_exact() {
                 mlua::Value::Integer(-1),
             ],
         );
-        run_generated_action(&lua, &mut host, "mob_stop", &t)
+        run_generated_action(&lua, &mut host, "a", "mob_stop", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["mob_stop ruby:gen 0"]);
@@ -9029,7 +9086,7 @@ fn mob_stop_is_generated_and_exact() {
                 mlua::Value::Integer(300),
             ],
         );
-        run_generated_action(&lua, &mut host, "mob_stop", &t)
+        run_generated_action(&lua, &mut host, "a", "mob_stop", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["mob_stop ruby:gen 300"]);
@@ -9043,7 +9100,7 @@ fn mob_stop_is_generated_and_exact() {
                 mlua::Value::Integer(3),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_stop", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_stop", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9053,7 +9110,7 @@ fn mob_stop_is_generated_and_exact() {
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Integer(3), mlua::Value::Integer(3)]);
-        let err = run_generated_action(&lua, &mut host, "mob_stop", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_stop", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9069,7 +9126,7 @@ fn mob_stop_is_generated_and_exact() {
                 mlua::Value::Integer(3),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mob_stop", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mob_stop", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9154,14 +9211,14 @@ fn mod_screen_close_is_generated_and_exact() {
         &lua,
         &[mlua::Value::String(lua.create_string("ruby:gen1").unwrap())],
     );
-    run_generated_action(&lua, &mut host, "mod_screen_close", &t)
+    run_generated_action(&lua, &mut host, "a", "mod_screen_close", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["mod_screen_close ruby:gen1"]);
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]);
-        let err = run_generated_action(&lua, &mut host, "mod_screen_close", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mod_screen_close", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9178,14 +9235,14 @@ fn mod_screen_open_is_generated_and_exact() {
         &lua,
         &[mlua::Value::String(lua.create_string("ruby:gen1").unwrap())],
     );
-    run_generated_action(&lua, &mut host, "mod_screen_open", &t)
+    run_generated_action(&lua, &mut host, "a", "mod_screen_open", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["mod_screen_open ruby:gen1"]);
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]);
-        let err = run_generated_action(&lua, &mut host, "mod_screen_open", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mod_screen_open", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9199,14 +9256,14 @@ fn mount_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
     let t = args(&lua, &[mlua::Value::Integer(3), mlua::Value::Integer(4)]);
-    run_generated_action(&lua, &mut host, "mount", &t)
+    run_generated_action(&lua, &mut host, "a", "mount", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["mount 3 4"]);
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Integer(-1), mlua::Value::Integer(-1)]);
-        run_generated_action(&lua, &mut host, "mount", &t)
+        run_generated_action(&lua, &mut host, "a", "mount", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["mount 0 0"]);
@@ -9217,7 +9274,7 @@ fn mount_is_generated_and_exact() {
             &lua,
             &[mlua::Value::Integer(300), mlua::Value::Integer(300)],
         );
-        run_generated_action(&lua, &mut host, "mount", &t)
+        run_generated_action(&lua, &mut host, "a", "mount", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["mount 300 300"]);
@@ -9231,7 +9288,7 @@ fn mount_is_generated_and_exact() {
                 mlua::Value::Integer(4),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "mount", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "mount", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9260,7 +9317,7 @@ fn move_entity_is_generated_and_exact() {
             mlua::Value::Number(5.5),
         ],
     );
-    run_generated_action(&lua, &mut host, "move_entity", &t)
+    run_generated_action(&lua, &mut host, "a", "move_entity", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -9285,7 +9342,7 @@ fn move_entity_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        run_generated_action(&lua, &mut host, "move_entity", &t)
+        run_generated_action(&lua, &mut host, "a", "move_entity", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -9311,7 +9368,7 @@ fn move_entity_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        run_generated_action(&lua, &mut host, "move_entity", &t)
+        run_generated_action(&lua, &mut host, "a", "move_entity", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -9337,7 +9394,7 @@ fn move_entity_is_generated_and_exact() {
                 mlua::Value::Number(5.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "move_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "move_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9360,7 +9417,7 @@ fn move_entity_is_generated_and_exact() {
                 mlua::Value::Number(5.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "move_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "move_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9384,7 +9441,7 @@ fn move_entity_is_generated_and_exact() {
                 mlua::Value::Number(5.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "move_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "move_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9409,7 +9466,7 @@ fn move_entity_is_generated_and_exact() {
                 mlua::Value::Number(5.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "move_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "move_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9434,7 +9491,7 @@ fn move_entity_is_generated_and_exact() {
                 mlua::Value::Number(5.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "move_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "move_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9458,7 +9515,7 @@ fn move_entity_is_generated_and_exact() {
                 mlua::Value::Number(5.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "move_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "move_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9487,7 +9544,7 @@ fn play_local_sound_is_generated_and_exact() {
             mlua::Value::Integer(3),
         ],
     );
-    run_generated_action(&lua, &mut host, "play_local_sound", &t)
+    run_generated_action(&lua, &mut host, "a", "play_local_sound", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -9512,7 +9569,7 @@ fn play_local_sound_is_generated_and_exact() {
                 mlua::Value::Integer(-1),
             ],
         );
-        run_generated_action(&lua, &mut host, "play_local_sound", &t)
+        run_generated_action(&lua, &mut host, "a", "play_local_sound", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -9538,7 +9595,7 @@ fn play_local_sound_is_generated_and_exact() {
                 mlua::Value::Integer(300),
             ],
         );
-        run_generated_action(&lua, &mut host, "play_local_sound", &t)
+        run_generated_action(&lua, &mut host, "a", "play_local_sound", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -9564,7 +9621,7 @@ fn play_local_sound_is_generated_and_exact() {
                 mlua::Value::Integer(3),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "play_local_sound", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "play_local_sound", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9587,7 +9644,7 @@ fn play_local_sound_is_generated_and_exact() {
                 mlua::Value::Integer(3),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "play_local_sound", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "play_local_sound", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9611,7 +9668,7 @@ fn play_local_sound_is_generated_and_exact() {
                 mlua::Value::Integer(3),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "play_local_sound", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "play_local_sound", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9635,7 +9692,7 @@ fn play_local_sound_is_generated_and_exact() {
                 mlua::Value::Integer(3),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "play_local_sound", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "play_local_sound", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9665,7 +9722,7 @@ fn player_break_block_is_generated_and_exact() {
             mlua::Value::Boolean(true),
         ],
     );
-    run_generated_action(&lua, &mut host, "player_break_block", &t)
+    run_generated_action(&lua, &mut host, "a", "player_break_block", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -9688,7 +9745,7 @@ fn player_break_block_is_generated_and_exact() {
                 mlua::Value::Boolean(true),
             ],
         );
-        run_generated_action(&lua, &mut host, "player_break_block", &t)
+        run_generated_action(&lua, &mut host, "a", "player_break_block", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -9715,7 +9772,7 @@ fn player_break_block_is_generated_and_exact() {
                 mlua::Value::Boolean(true),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "player_break_block", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "player_break_block", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9740,7 +9797,7 @@ fn player_break_block_is_generated_and_exact() {
                 mlua::Value::Boolean(true),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "player_break_block", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "player_break_block", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -9759,7 +9816,7 @@ fn player_break_block_is_generated_and_exact() {
                 mlua::Value::Boolean(true),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "player_break_block", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "player_break_block", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -10554,7 +10611,7 @@ fn refresh_biome_colors_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
     let t = args(&lua, &[]);
-    run_generated_action(&lua, &mut host, "refresh_biome_colors", &t)
+    run_generated_action(&lua, &mut host, "a", "refresh_biome_colors", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["refresh_biome_colors"]);
@@ -10565,7 +10622,7 @@ fn refresh_commands_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
     let t = args(&lua, &[]);
-    run_generated_action(&lua, &mut host, "refresh_commands", &t)
+    run_generated_action(&lua, &mut host, "a", "refresh_commands", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["refresh_commands"]);
@@ -10582,7 +10639,7 @@ fn refresh_player_is_generated_and_exact() {
                 .unwrap(),
         )],
     );
-    run_generated_action(&lua, &mut host, "refresh_player", &t)
+    run_generated_action(&lua, &mut host, "a", "refresh_player", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -10595,7 +10652,7 @@ fn refresh_player_is_generated_and_exact() {
             &lua,
             &[mlua::Value::String(lua.create_string("ghost").unwrap())],
         );
-        run_generated_action(&lua, &mut host, "refresh_player", &t)
+        run_generated_action(&lua, &mut host, "a", "refresh_player", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -10619,7 +10676,7 @@ fn remove_effect_is_generated_and_exact() {
             mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
         ],
     );
-    run_generated_action(&lua, &mut host, "remove_effect", &t)
+    run_generated_action(&lua, &mut host, "a", "remove_effect", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -10635,7 +10692,7 @@ fn remove_effect_is_generated_and_exact() {
                 mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
             ],
         );
-        run_generated_action(&lua, &mut host, "remove_effect", &t)
+        run_generated_action(&lua, &mut host, "a", "remove_effect", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -10655,7 +10712,7 @@ fn remove_effect_is_generated_and_exact() {
                 mlua::Value::Table(lua.create_table().unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "remove_effect", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "remove_effect", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -10675,7 +10732,7 @@ fn remove_entity_is_generated_and_exact() {
             mlua::Value::Integer(3),
         ],
     );
-    run_generated_action(&lua, &mut host, "remove_entity", &t)
+    run_generated_action(&lua, &mut host, "a", "remove_entity", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["remove_entity ruby:gen1 3"]);
@@ -10688,7 +10745,7 @@ fn remove_entity_is_generated_and_exact() {
                 mlua::Value::Integer(-1),
             ],
         );
-        run_generated_action(&lua, &mut host, "remove_entity", &t)
+        run_generated_action(&lua, &mut host, "a", "remove_entity", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["remove_entity ruby:gen 0"]);
@@ -10702,7 +10759,7 @@ fn remove_entity_is_generated_and_exact() {
                 mlua::Value::Integer(300),
             ],
         );
-        run_generated_action(&lua, &mut host, "remove_entity", &t)
+        run_generated_action(&lua, &mut host, "a", "remove_entity", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["remove_entity ruby:gen 300"]);
@@ -10716,7 +10773,7 @@ fn remove_entity_is_generated_and_exact() {
                 mlua::Value::Integer(3),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "remove_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "remove_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -10726,7 +10783,7 @@ fn remove_entity_is_generated_and_exact() {
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Integer(3), mlua::Value::Integer(3)]);
-        let err = run_generated_action(&lua, &mut host, "remove_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "remove_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -10742,7 +10799,7 @@ fn remove_entity_is_generated_and_exact() {
                 mlua::Value::Integer(3),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "remove_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "remove_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -10762,7 +10819,7 @@ fn resend_commands_is_generated_and_exact() {
                 .unwrap(),
         )],
     );
-    run_generated_action(&lua, &mut host, "resend_commands", &t)
+    run_generated_action(&lua, &mut host, "a", "resend_commands", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -10775,7 +10832,7 @@ fn resend_commands_is_generated_and_exact() {
             &lua,
             &[mlua::Value::String(lua.create_string("ghost").unwrap())],
         );
-        run_generated_action(&lua, &mut host, "resend_commands", &t)
+        run_generated_action(&lua, &mut host, "a", "resend_commands", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -10796,7 +10853,7 @@ fn respawn_player_is_generated_and_exact() {
                 .unwrap(),
         )],
     );
-    run_generated_action(&lua, &mut host, "respawn_player", &t)
+    run_generated_action(&lua, &mut host, "a", "respawn_player", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -10809,13 +10866,73 @@ fn respawn_player_is_generated_and_exact() {
             &lua,
             &[mlua::Value::String(lua.create_string("ghost").unwrap())],
         );
-        run_generated_action(&lua, &mut host, "respawn_player", &t)
+        run_generated_action(&lua, &mut host, "a", "respawn_player", &t)
             .unwrap()
             .unwrap();
         assert!(
             host.logged().is_empty(),
             "an unresolvable player calls nothing"
         );
+    }
+}
+
+#[test]
+fn scoreboard_score_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "scoreboard_score",
+        rest(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen2").unwrap()),
+            ],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Integer(_)), "{v:?}");
+    assert_eq!(h.logged(), ["scoreboard_score ruby:gen1 ruby:gen2"]);
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "scoreboard_score",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                    mlua::Value::String(lua.create_string("ruby:gen2").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "scoreboard_score",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::Table(lua.create_table().unwrap()),
+                    mlua::Value::String(lua.create_string("ruby:gen2").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("scoreboard_score"), "{text}");
+        assert!(text.contains("holder"), "{text}");
     }
 }
 
@@ -10878,7 +10995,7 @@ fn set_attribute_base_is_generated_and_exact() {
             mlua::Value::Number(1.5),
         ],
     );
-    run_generated_action(&lua, &mut host, "set_attribute_base", &t)
+    run_generated_action(&lua, &mut host, "a", "set_attribute_base", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -10895,7 +11012,7 @@ fn set_attribute_base_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        run_generated_action(&lua, &mut host, "set_attribute_base", &t)
+        run_generated_action(&lua, &mut host, "a", "set_attribute_base", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -10916,7 +11033,7 @@ fn set_attribute_base_is_generated_and_exact() {
                 mlua::Value::Number(f64::NAN),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_attribute_base", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_attribute_base", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -10935,7 +11052,7 @@ fn set_attribute_base_is_generated_and_exact() {
                 mlua::Value::Number(1.5),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_attribute_base", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_attribute_base", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -10963,7 +11080,7 @@ fn set_block_property_with_is_generated_and_exact() {
             mlua::Value::Integer(6),
         ],
     );
-    run_generated_action(&lua, &mut host, "set_block_property_with", &t)
+    run_generated_action(&lua, &mut host, "a", "set_block_property_with", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -10987,7 +11104,7 @@ fn set_block_property_with_is_generated_and_exact() {
                 mlua::Value::Integer(-1),
             ],
         );
-        run_generated_action(&lua, &mut host, "set_block_property_with", &t)
+        run_generated_action(&lua, &mut host, "a", "set_block_property_with", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -11012,7 +11129,7 @@ fn set_block_property_with_is_generated_and_exact() {
                 mlua::Value::Integer(300),
             ],
         );
-        run_generated_action(&lua, &mut host, "set_block_property_with", &t)
+        run_generated_action(&lua, &mut host, "a", "set_block_property_with", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -11037,7 +11154,7 @@ fn set_block_property_with_is_generated_and_exact() {
                 mlua::Value::Integer(6),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_block_property_with", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_block_property_with", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11060,7 +11177,7 @@ fn set_block_property_with_is_generated_and_exact() {
                 mlua::Value::Integer(6),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_block_property_with", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_block_property_with", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11077,7 +11194,7 @@ fn set_block_property_with_is_generated_and_exact() {
                 mlua::Value::Integer(6),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_block_property_with", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_block_property_with", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11104,7 +11221,7 @@ fn set_break_progress_is_generated_and_exact() {
             mlua::Value::Integer(7),
         ],
     );
-    run_generated_action(&lua, &mut host, "set_break_progress", &t)
+    run_generated_action(&lua, &mut host, "a", "set_break_progress", &t)
         .unwrap()
         .unwrap();
     assert_eq!(host.logged(), ["set_break_progress 3 [4, 5, 6] 7"]);
@@ -11124,7 +11241,7 @@ fn set_break_progress_is_generated_and_exact() {
                 mlua::Value::Integer(-1),
             ],
         );
-        run_generated_action(&lua, &mut host, "set_break_progress", &t)
+        run_generated_action(&lua, &mut host, "a", "set_break_progress", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["set_break_progress -1 [3, 4, 5] -1"]);
@@ -11145,7 +11262,7 @@ fn set_break_progress_is_generated_and_exact() {
                 mlua::Value::Integer(300),
             ],
         );
-        run_generated_action(&lua, &mut host, "set_break_progress", &t)
+        run_generated_action(&lua, &mut host, "a", "set_break_progress", &t)
             .unwrap()
             .unwrap();
         assert_eq!(host.logged(), ["set_break_progress 300 [3, 4, 5] 300"]);
@@ -11166,7 +11283,7 @@ fn set_break_progress_is_generated_and_exact() {
                 mlua::Value::Integer(7),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_break_progress", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_break_progress", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11188,7 +11305,7 @@ fn set_break_progress_is_generated_and_exact() {
                 mlua::Value::Integer(7),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_break_progress", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_break_progress", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11210,7 +11327,7 @@ fn set_break_progress_is_generated_and_exact() {
                 mlua::Value::Integer(7),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_break_progress", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_break_progress", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11245,7 +11362,7 @@ fn set_compass_target_is_generated_and_exact() {
             },
         ],
     );
-    run_generated_action(&lua, &mut host, "set_compass_target", &t)
+    run_generated_action(&lua, &mut host, "a", "set_compass_target", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -11272,7 +11389,7 @@ fn set_compass_target_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        run_generated_action(&lua, &mut host, "set_compass_target", &t)
+        run_generated_action(&lua, &mut host, "a", "set_compass_target", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -11292,7 +11409,7 @@ fn set_compass_target_is_generated_and_exact() {
                 mlua::Value::Table(lua.create_table().unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_compass_target", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_compass_target", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11310,7 +11427,7 @@ fn set_compass_target_is_generated_and_exact() {
                 mlua::Value::Table(lua.create_table().unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_compass_target", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_compass_target", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11332,7 +11449,7 @@ fn set_entity_data_is_generated_and_exact() {
             mlua::Value::Table(t)
         }],
     );
-    run_generated_action(&lua, &mut host, "set_entity_data", &t)
+    run_generated_action(&lua, &mut host, "a", "set_entity_data", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -11350,7 +11467,7 @@ fn set_entity_data_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        run_generated_action(&lua, &mut host, "set_entity_data", &t)
+        run_generated_action(&lua, &mut host, "a", "set_entity_data", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -11369,7 +11486,7 @@ fn set_entity_data_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        run_generated_action(&lua, &mut host, "set_entity_data", &t)
+        run_generated_action(&lua, &mut host, "a", "set_entity_data", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -11380,7 +11497,7 @@ fn set_entity_data_is_generated_and_exact() {
     {
         let mut host = gen_host(false, false);
         let t = args(&lua, &[mlua::Value::Integer(3), mlua::Value::Integer(3)]);
-        let err = run_generated_action(&lua, &mut host, "set_entity_data", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_entity_data", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11396,7 +11513,7 @@ fn set_entity_data_is_generated_and_exact() {
                 mlua::Value::String(lua.create_string("ruby:gen").unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_entity_data", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_entity_data", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11414,7 +11531,7 @@ fn set_entity_data_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "set_entity_data", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_entity_data", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11438,7 +11555,7 @@ fn set_flight_is_generated_and_exact() {
             mlua::Value::Boolean(false),
         ],
     );
-    run_generated_action(&lua, &mut host, "set_flight", &t)
+    run_generated_action(&lua, &mut host, "a", "set_flight", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -11455,7 +11572,7 @@ fn set_flight_is_generated_and_exact() {
                 mlua::Value::Boolean(false),
             ],
         );
-        run_generated_action(&lua, &mut host, "set_flight", &t)
+        run_generated_action(&lua, &mut host, "a", "set_flight", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -11476,7 +11593,7 @@ fn set_flight_is_generated_and_exact() {
                 mlua::Value::Boolean(false),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_flight", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_flight", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11503,7 +11620,7 @@ fn set_item_entity_is_generated_and_exact() {
             },
         ],
     );
-    run_generated_action(&lua, &mut host, "set_item_entity", &t)
+    run_generated_action(&lua, &mut host, "a", "set_item_entity", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -11528,7 +11645,7 @@ fn set_item_entity_is_generated_and_exact() {
                 },
             ],
         );
-        run_generated_action(&lua, &mut host, "set_item_entity", &t)
+        run_generated_action(&lua, &mut host, "a", "set_item_entity", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -11554,7 +11671,7 @@ fn set_item_entity_is_generated_and_exact() {
                 },
             ],
         );
-        run_generated_action(&lua, &mut host, "set_item_entity", &t)
+        run_generated_action(&lua, &mut host, "a", "set_item_entity", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -11580,7 +11697,7 @@ fn set_item_entity_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_item_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_item_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11599,7 +11716,7 @@ fn set_item_entity_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "set_item_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_item_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11622,7 +11739,7 @@ fn set_item_entity_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_item_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_item_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11645,7 +11762,7 @@ fn set_item_entity_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_item_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_item_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11668,7 +11785,7 @@ fn set_item_entity_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_item_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_item_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11691,7 +11808,7 @@ fn set_item_entity_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_item_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_item_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11715,7 +11832,7 @@ fn set_item_entity_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_item_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_item_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11738,7 +11855,7 @@ fn set_item_entity_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_item_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_item_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11761,7 +11878,7 @@ fn set_item_entity_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_item_entity", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_item_entity", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11790,7 +11907,7 @@ fn set_profile_property_is_generated_and_exact() {
             },
         ],
     );
-    run_generated_action(&lua, &mut host, "set_profile_property", &t)
+    run_generated_action(&lua, &mut host, "a", "set_profile_property", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -11814,7 +11931,7 @@ fn set_profile_property_is_generated_and_exact() {
                 },
             ],
         );
-        run_generated_action(&lua, &mut host, "set_profile_property", &t)
+        run_generated_action(&lua, &mut host, "a", "set_profile_property", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -11835,7 +11952,7 @@ fn set_profile_property_is_generated_and_exact() {
                 mlua::Value::Table(lua.create_table().unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_profile_property", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_profile_property", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11859,7 +11976,7 @@ fn set_profile_property_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "set_profile_property", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "set_profile_property", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11882,7 +11999,7 @@ fn sleep_ignored_is_generated_and_exact() {
             mlua::Value::Boolean(true),
         ],
     );
-    run_generated_action(&lua, &mut host, "sleep_ignored", &t)
+    run_generated_action(&lua, &mut host, "a", "sleep_ignored", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -11898,7 +12015,7 @@ fn sleep_ignored_is_generated_and_exact() {
                 mlua::Value::Boolean(true),
             ],
         );
-        run_generated_action(&lua, &mut host, "sleep_ignored", &t)
+        run_generated_action(&lua, &mut host, "a", "sleep_ignored", &t)
             .unwrap()
             .unwrap();
         assert!(
@@ -11918,7 +12035,7 @@ fn sleep_ignored_is_generated_and_exact() {
                 mlua::Value::Table(lua.create_table().unwrap()),
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "sleep_ignored", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "sleep_ignored", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -11956,7 +12073,7 @@ fn teleport_vehicle_is_generated_and_exact() {
             },
         ],
     );
-    run_generated_action(&lua, &mut host, "teleport_vehicle", &t)
+    run_generated_action(&lua, &mut host, "a", "teleport_vehicle", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -11979,7 +12096,7 @@ fn teleport_vehicle_is_generated_and_exact() {
                 },
             ],
         );
-        run_generated_action(&lua, &mut host, "teleport_vehicle", &t)
+        run_generated_action(&lua, &mut host, "a", "teleport_vehicle", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -12003,7 +12120,7 @@ fn teleport_vehicle_is_generated_and_exact() {
                 },
             ],
         );
-        run_generated_action(&lua, &mut host, "teleport_vehicle", &t)
+        run_generated_action(&lua, &mut host, "a", "teleport_vehicle", &t)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -12027,7 +12144,7 @@ fn teleport_vehicle_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "teleport_vehicle", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "teleport_vehicle", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -12048,7 +12165,7 @@ fn teleport_vehicle_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "teleport_vehicle", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "teleport_vehicle", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -12070,7 +12187,7 @@ fn teleport_vehicle_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "teleport_vehicle", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "teleport_vehicle", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -12089,7 +12206,7 @@ fn teleport_vehicle_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "teleport_vehicle", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "teleport_vehicle", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -12112,7 +12229,7 @@ fn teleport_vehicle_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "teleport_vehicle", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "teleport_vehicle", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -12222,7 +12339,7 @@ fn update_output_neighbors_is_generated_and_exact() {
             },
         ],
     );
-    run_generated_action(&lua, &mut host, "update_output_neighbors", &t)
+    run_generated_action(&lua, &mut host, "a", "update_output_neighbors", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -12244,7 +12361,7 @@ fn update_output_neighbors_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "update_output_neighbors", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "update_output_neighbors", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -12265,7 +12382,7 @@ fn update_output_neighbors_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "update_output_neighbors", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "update_output_neighbors", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -12283,7 +12400,7 @@ fn update_output_neighbors_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "update_output_neighbors", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "update_output_neighbors", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -12302,7 +12419,7 @@ fn update_output_neighbors_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "update_output_neighbors", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "update_output_neighbors", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -12321,7 +12438,7 @@ fn update_output_neighbors_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "update_output_neighbors", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "update_output_neighbors", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -12347,7 +12464,7 @@ fn update_signal_neighbors_is_generated_and_exact() {
             },
         ],
     );
-    run_generated_action(&lua, &mut host, "update_signal_neighbors", &t)
+    run_generated_action(&lua, &mut host, "a", "update_signal_neighbors", &t)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -12369,7 +12486,7 @@ fn update_signal_neighbors_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "update_signal_neighbors", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "update_signal_neighbors", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -12390,7 +12507,7 @@ fn update_signal_neighbors_is_generated_and_exact() {
                 },
             ],
         );
-        let err = run_generated_action(&lua, &mut host, "update_signal_neighbors", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "update_signal_neighbors", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -12408,7 +12525,7 @@ fn update_signal_neighbors_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "update_signal_neighbors", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "update_signal_neighbors", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -12427,7 +12544,7 @@ fn update_signal_neighbors_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "update_signal_neighbors", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "update_signal_neighbors", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -12446,7 +12563,7 @@ fn update_signal_neighbors_is_generated_and_exact() {
                 mlua::Value::Table(t)
             }],
         );
-        let err = run_generated_action(&lua, &mut host, "update_signal_neighbors", &t)
+        let err = run_generated_action(&lua, &mut host, "a", "update_signal_neighbors", &t)
             .unwrap()
             .unwrap_err();
         let text = err.to_string();
@@ -12517,6 +12634,10 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "remove_entity",
             "resend_commands",
             "respawn_player",
+            "scoreboard_add_objective",
+            "scoreboard_add_score",
+            "scoreboard_remove_objective",
+            "scoreboard_set_score",
             "set_attribute_base",
             "set_block_property_with",
             "set_break_progress",
@@ -12589,6 +12710,7 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "player_view_distance",
             "profile_by_name",
             "profile_by_uuid",
+            "scoreboard_score",
             "sneaking",
             "text_allowed",
             "world_seed",
@@ -12665,6 +12787,10 @@ fn every_generated_name_is_a_function_on_horizon() {
             "remove_entity",
             "resend_commands",
             "respawn_player",
+            "scoreboard_add_objective",
+            "scoreboard_add_score",
+            "scoreboard_remove_objective",
+            "scoreboard_set_score",
             "set_attribute_base",
             "set_block_property_with",
             "set_break_progress",
@@ -12732,6 +12858,7 @@ fn every_generated_name_is_a_function_on_horizon() {
             "player_view_distance",
             "profile_by_name",
             "profile_by_uuid",
+            "scoreboard_score",
             "sneaking",
             "text_allowed",
             "world_seed",
@@ -12788,6 +12915,10 @@ fn generated_server_names_raise_in_a_client_state() {
             "remove_entity",
             "resend_commands",
             "respawn_player",
+            "scoreboard_add_objective",
+            "scoreboard_add_score",
+            "scoreboard_remove_objective",
+            "scoreboard_set_score",
             "set_attribute_base",
             "set_block_property_with",
             "set_break_progress",
@@ -12855,6 +12986,7 @@ fn generated_server_names_raise_in_a_client_state() {
             "player_view_distance",
             "profile_by_name",
             "profile_by_uuid",
+            "scoreboard_score",
             "sneaking",
             "text_allowed",
             "world_seed",

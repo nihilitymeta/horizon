@@ -1,0 +1,34 @@
+{
+  "hooks": [],
+  "helpers": [
+    {
+      "name": "scoreboard_score",
+      "target": "horizon_client::game::native_scoreboard::Game<'_>::native_scoreboard_score"
+    },
+    {
+      "name": "scoreboard_set_score",
+      "target": "horizon_client::game::native_scoreboard::Game<'_>::native_scoreboard_set_score"
+    },
+    {
+      "name": "scoreboard_add_score",
+      "target": "horizon_client::game::native_scoreboard::Game<'_>::native_scoreboard_add_score"
+    },
+    {
+      "name": "scoreboard_objectives",
+      "target": "horizon_client::game::native_scoreboard::Game<'_>::native_scoreboard_objectives"
+    },
+    {
+      "name": "scoreboard_add_objective",
+      "target": "horizon_client::game::native_scoreboard::Game<'_>::native_scoreboard_add_objective"
+    },
+    {
+      "name": "scoreboard_remove_objective",
+      "target": "horizon_client::game::native_scoreboard::Game<'_>::native_scoreboard_remove_objective"
+    }
+  ],
+  "rust_summary": "the scoreboard: a score read for any objective, a score written, an objective created or removed only in the mod's own `<mod_id>.<name>` namespace.",
+  "doc_summary": "`scoreboard_score(holder, objective)` reads any objective's score (`None` when missing); `scoreboard_set_score`, `scoreboard_add_score` (saturating), `scoreboard_add_objective` and `scoreboard_remove_objective` write only the mod's own `<mod_id>.<name>` objectives and return `false` when refused; `scoreboard_objectives` lists every objective. Bundles need \"hooks\": @API:scoreboard@.",
+  "comments": [
+    "crates/horizon-client/src/game/native_scoreboard.rs"
+  ]
+}

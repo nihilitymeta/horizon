@@ -317,6 +317,7 @@ mod native_quick_move;
 mod native_recipes;
 mod native_reload_listeners;
 mod native_scene;
+mod native_scoreboard;
 mod native_server;
 mod native_shaders;
 mod native_structures;
@@ -11251,6 +11252,10 @@ impl Game<'_> {
         self.streaming.sky_light = dim != Dim::Nether;
         self.streaming.nether_shading = dim == Dim::Nether;
         self.load_world_state();
+        // The board is read here, not on the first tick: `level_load` hands a
+        // mod the world's scores, and a score read sees only a loaded board
+        // (`native_scoreboard_score` cannot load it itself, it is `&self`).
+        self.load_scoreboard();
         // The level the world opens in, before any of its chunks.
         self.native_level_opened(dim);
         Ok(())

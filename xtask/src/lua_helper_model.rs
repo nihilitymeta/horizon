@@ -1471,7 +1471,9 @@ pub fn luau_function(row: &HelperRow) -> (String, String) {
     let mut strings = 0;
     let mut other = 0;
     let mut params: Vec<String> = Vec::new();
-    for a in &row.args {
+    // A bound `mod_id` is the calling mod's, not a script argument (issue 61).
+    let bound = usize::from(super::lua_helpers::is_bound_mod_id(&row.name));
+    for a in row.args.iter().skip(bound) {
         match a.rust.as_str() {
             "u128" => params.push("who: string | ReadPlayer".to_owned()),
             "&str" | "String" | "LevelRef" => {

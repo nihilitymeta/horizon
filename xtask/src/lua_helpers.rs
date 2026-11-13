@@ -54,6 +54,29 @@ pub const EXCLUDED: &[(&str, &str)] = &[
     ),
 ];
 
+/// The Generated helpers whose first parameter `mod_id: &str` is bound
+/// to the calling mod, not to the script (issue 61): the runtime passes
+/// the mod's own id (the `self.id` of its `LuaMod`, the value `horizon.mod_id`
+/// holds), and the Lua signature, the `.d.lua` type and the exposure doc
+/// leave the parameter out. The reason is the owner's rule that a mod may
+/// write only objectives named `<mod_id>.<name>`: a script that could pass
+/// another mod's id could write that mod's objectives. Every other helper's
+/// `mod_id` (`mod_screen_open`, `mod_key`, ...) stays a script argument.
+/// `run` fails if a name here is not a Generated action whose first
+/// parameter is `mod_id: &str` (a stale entry).
+pub const BOUND_MOD_ID: &[&str] = &[
+    "scoreboard_add_objective",
+    "scoreboard_add_score",
+    "scoreboard_remove_objective",
+    "scoreboard_set_score",
+];
+
+/// Whether `name`'s first parameter is bound to the calling mod (see
+/// [`BOUND_MOD_ID`]).
+pub(crate) fn is_bound_mod_id(name: &str) -> bool {
+    BOUND_MOD_ID.contains(&name)
+}
+
 /// The Generated helpers that belong to the client state (issue 50):
 /// client UI, input, screens, local sound, the window, and the client
 /// reads. Emitted in their own lists, `GENERATED_CLIENT_READS` and
@@ -160,6 +183,27 @@ fn run_with_excluded_check(rows: &[HelperRow]) -> Result<(), String> {
             return Err(format!(
                 "{name} is client-side but classifies as {:?}",
                 row.class
+            ));
+        }
+    }
+    for name in BOUND_MOD_ID {
+        let row = rows
+            .iter()
+            .find(|row| row.name == *name)
+            .ok_or_else(|| format!("{name} is in BOUND_MOD_ID but is not a helper"))?;
+        if !matches!(row.class, HelperClass::Generated(GenKind::Action)) {
+            return Err(format!(
+                "{name} is bound to the calling mod but is not a generated action: {:?}",
+                row.class
+            ));
+        }
+        if !row
+            .args
+            .first()
+            .is_some_and(|a| a.name == "mod_id" && a.rust == "&str")
+        {
+            return Err(format!(
+                "{name} is bound to the calling mod but its first parameter is not `mod_id: &str`"
             ));
         }
     }
@@ -338,8 +382,11 @@ fn arg_names(row: &HelperRow) -> Vec<String> {
 fn read_lines(row: &HelperRow, source: &str) -> Vec<String> {
     let names = arg_names(row);
     let mut out = Vec::new();
-    for (i, (arg, local)) in row.args.iter().zip(&names).enumerate() {
-        let at = i + 1;
+    // A bound `mod_id` is the runtime's, not the script's: it is not read,
+    // and the script's arguments start at index 1 after it (see `call_args`).
+    let skip = usize::from(is_bound_mod_id(&row.name));
+    for (i, (arg, local)) in row.args.iter().zip(&names).enumerate().skip(skip) {
+        let at = i + 1 - skip;
         let raw = if source == "args" {
             format!(
                 "read_action_arg(args, {at}, {:?}, {:?})?",
@@ -752,8 +799,12 @@ fn player_fallback(row: &HelperRow, kind: GenKind) -> Vec<String> {
 fn call_args(row: &HelperRow) -> String {
     let names = arg_names(row);
     let mut parts = Vec::new();
-    for (arg, local) in row.args.iter().zip(&names) {
-        if arg.player {
+    let bound = is_bound_mod_id(&row.name);
+    for (i, (arg, local)) in row.args.iter().zip(&names).enumerate() {
+        if bound && i == 0 {
+            // The calling mod's id: the bridge fn's own `mod_id` parameter.
+            parts.push("mod_id".to_owned());
+        } else if arg.player {
             parts.push("uuid".to_owned());
         } else if arg.rust == "&str" || arg.rust == "&Compound" {
             parts.push(format!("&{local}"));
@@ -951,6 +1002,16 @@ fn action_arm(row: &HelperRow, backend: &Backend) -> String {
         "            {:?} => Some((|host: &mut dyn {}| -> mlua::Result<()> {{\n",
         row.name, backend.host_ty
     );
+    // A bound helper takes one argument fewer than its host method: a
+    // script that still passes the old leading `mod_id` is refused here,
+    // not shifted into the wrong parameters.
+    if is_bound_mod_id(&row.name) {
+        let script_args = row.args.len() - 1;
+        out.push_str(&format!(
+            "                let n = args.raw_len();\n                if n > {script_args} {{\n                    return Err(mlua::Error::runtime(format!(\"{}: takes {script_args} argument(s), got {{n}} (the mod id is the runtime's: do not pass it)\")));\n                }}\n",
+            row.name
+        ));
+    }
     for line in read_lines(row, "args") {
         out.push_str(&format!("                {line}\n"));
     }
@@ -1265,11 +1326,14 @@ fn bridge_of(rows: &[HelperRow], backend: &Backend) -> String {
     out.push_str("/// Runs one queued generated action after a handler (`None` means the\n");
     out.push_str("/// action is not this generator's, and the caller keeps its own `warn`).\n");
     out.push_str("/// The arms are closures (so `?` widens to the match's `Some`);\n");
+    out.push_str("/// `mod_id` is the calling mod's own id, passed to the bound helpers\n");
+    out.push_str("/// (`BOUND_MOD_ID`) in place of a script argument.\n");
     out.push_str("#[allow(clippy::redundant_closure_call)]\n");
     out.push_str("#[allow(unused_variables)]\n");
     out.push_str(&format!("pub(crate) fn {}(\n", backend.action_fn));
     out.push_str("    lua: &Lua,\n");
     out.push_str(&format!("    host: &mut dyn {},\n", backend.host_ty));
+    out.push_str("    mod_id: &str,\n");
     out.push_str("    action: &str,\n");
     out.push_str("    args: &Table,\n");
     out.push_str(") -> Option<mlua::Result<()>> {\n");
@@ -1894,6 +1958,12 @@ fn tests_of(rows: &[HelperRow], backend: &Backend) -> String {
         out.push_str(hmod_helpers());
     }
     for row in rows {
+        // A bound helper's Lua call takes no mod id, so its generated test
+        // (built from the script arguments) cannot be written here; its
+        // tests are hand-written in `lua_mods.rs` (issue 61).
+        if is_bound_mod_id(&row.name) {
+            continue;
+        }
         out.push_str(&helper_test(row, backend));
     }
     if real {
@@ -2351,7 +2421,7 @@ fn residual_blocks(
     let mut out = String::new();
     let call = |lits: &Vec<String>| match kind {
         GenKind::Action => format!(
-            "        let t = args(&lua, &[{}]);\n        let err = {action_fn}(&lua, &mut host, {:?}, &t).unwrap().unwrap_err();",
+            "        let t = args(&lua, &[{}]);\n        let err = {action_fn}(&lua, &mut host, \"a\", {:?}, &t).unwrap().unwrap_err();",
             lits.join(", "),
             row.name
         ),
@@ -2363,7 +2433,7 @@ fn residual_blocks(
     };
     let ok_call = |lits: &Vec<String>| match kind {
         GenKind::Action => format!(
-            "        let t = args(&lua, &[{}]);\n        {action_fn}(&lua, &mut host, {:?}, &t).unwrap().unwrap();",
+            "        let t = args(&lua, &[{}]);\n        {action_fn}(&lua, &mut host, \"a\", {:?}, &t).unwrap().unwrap();",
             lits.join(", "),
             row.name
         ),
@@ -2710,7 +2780,7 @@ fn helper_test(row: &HelperRow, backend: &Backend) -> String {
     match &row.class {
         HelperClass::Generated(GenKind::Action) => {
             out.push_str(&format!(
-                "    let lua = lua();\n    let mut host = {host_new}(false, false);\n    let t = args(&lua, &[{}]);\n    {action_fn}(&lua, &mut host, {:?}, &t).unwrap().unwrap();\n    assert_eq!(host.logged(), [{}]);\n",
+                "    let lua = lua();\n    let mut host = {host_new}(false, false);\n    let t = args(&lua, &[{}]);\n    {action_fn}(&lua, &mut host, \"a\", {:?}, &t).unwrap().unwrap();\n    assert_eq!(host.logged(), [{}]);\n",
                 literals.join(", "),
                 row.name,
                 recorded
@@ -2722,7 +2792,7 @@ fn helper_test(row: &HelperRow, backend: &Backend) -> String {
             if row.args.iter().any(is_int) {
                 for (literals, recorded) in edge_cases(row) {
                     out.push_str(&format!(
-                        "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        {action_fn}(&lua, &mut host, {:?}, &t).unwrap().unwrap();\n        assert_eq!(host.logged(), [{}]);\n    }}\n",
+                        "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        {action_fn}(&lua, &mut host, \"a\", {:?}, &t).unwrap().unwrap();\n        assert_eq!(host.logged(), [{}]);\n    }}\n",
                         literals.join(", "),
                         row.name,
                         recorded
@@ -2738,7 +2808,7 @@ fn helper_test(row: &HelperRow, backend: &Backend) -> String {
                 ghost[pos] =
                     "mlua::Value::String(lua.create_string(\"ghost\").unwrap())".to_owned();
                 out.push_str(&format!(
-                    "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        {action_fn}(&lua, &mut host, {:?}, &t).unwrap().unwrap();\n        assert!(host.logged().is_empty(), \"an unresolvable player calls nothing\");\n    }}\n",
+                    "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        {action_fn}(&lua, &mut host, \"a\", {:?}, &t).unwrap().unwrap();\n        assert!(host.logged().is_empty(), \"an unresolvable player calls nothing\");\n    }}\n",
                     ghost.join(", "),
                     row.name
                 ));
@@ -2753,7 +2823,7 @@ fn helper_test(row: &HelperRow, backend: &Backend) -> String {
                 let pos = row.args.iter().position(|a| std::ptr::eq(a, arg)).unwrap();
                 nan_lua[pos] = "mlua::Value::Number(f64::NAN)".to_owned();
                 out.push_str(&format!(
-                    "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        let err = {action_fn}(&lua, &mut host, {:?}, &t).unwrap().unwrap_err();\n        let text = err.to_string();\n        assert!(text.contains({:?}), \"{{text}}\");\n    }}\n",
+                    "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        let err = {action_fn}(&lua, &mut host, \"a\", {:?}, &t).unwrap().unwrap_err();\n        let text = err.to_string();\n        assert!(text.contains({:?}), \"{{text}}\");\n    }}\n",
                     nan_lua.join(", "),
                     row.name,
                     format!("{}.{}", row.name, arg.name)
@@ -2770,7 +2840,7 @@ fn helper_test(row: &HelperRow, backend: &Backend) -> String {
                 }
                 .to_owned();
                 out.push_str(&format!(
-                    "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        let err = {action_fn}(&lua, &mut host, {:?}, &t).unwrap().unwrap_err();\n        let text = err.to_string();\n        assert!(text.contains({:?}), \"{{text}}\");\n        assert!(text.contains({:?}), \"{{text}}\");\n    }}\n",
+                    "    {{\n        let mut host = {host_new}(false, false);\n        let t = args(&lua, &[{}]);\n        let err = {action_fn}(&lua, &mut host, \"a\", {:?}, &t).unwrap().unwrap_err();\n        let text = err.to_string();\n        assert!(text.contains({:?}), \"{{text}}\");\n        assert!(text.contains({:?}), \"{{text}}\");\n    }}\n",
                     wrong.join(", "),
                     row.name,
                     row.name,
@@ -4003,6 +4073,27 @@ mod tests {
                 "{name} is excluded but classifies as {:?}",
                 row.class
             );
+        }
+    }
+
+    /// A [`BOUND_MOD_ID`] helper is enabled, and its Lua signature (the
+    /// `.d.lua` type and the exposure doc's column) leaves the `mod_id`
+    /// out: a script that passes it would shift the arguments (issue 61).
+    #[test]
+    fn bound_mod_id_helpers_take_no_mod_id_from_the_script() {
+        let rows = classify_helpers(&root()).unwrap();
+        let enabled = enabled_rows(&rows);
+        for name in BOUND_MOD_ID {
+            let row = rows
+                .iter()
+                .find(|r| r.name == *name)
+                .unwrap_or_else(|| panic!("{name} is bound but is not a helper"));
+            assert!(
+                enabled.iter().any(|r| r.name == *name),
+                "{name} is bound but not enabled"
+            );
+            let (_, sig) = luau_function(row);
+            assert!(!sig.contains("mod_id"), "{name}: {sig}");
         }
     }
 
