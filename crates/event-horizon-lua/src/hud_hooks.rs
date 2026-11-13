@@ -1,4 +1,4 @@
-//! The HUD pilot: `hud` and `gui_layer_post` for scripted mods.
+//! The HUD pilot: `hud`, `gui_layer_post` and `gui_layer_pre` for scripted mods.
 //!
 //! The first native hooks whose events carry borrowed render handles (the
 //! `HudBatch` the handler draws into, the `Corners` it stacks boxes in) to
@@ -260,6 +260,49 @@ pub(crate) fn finish(mod_: &LuaMod, host: &mut dyn Host, hook: &str, outcome: Qu
     }
 }
 
+/// Runs a cancelling frame hook's (`gui_layer_pre`) handlers like
+/// `finish`, but a queued `horizon.cancel()` hides the vanilla layer
+/// instead of reaching `run_action` (which would only warn `unknown
+/// action cancel`): first cancel wins within the mod, and the native
+/// dispatch stops at the first cancelling mod. Every other queued action
+/// (`tell`, `broadcast`) still runs after the call. An error is never a
+/// cancel: the frame-overrun count moves as in `finish`, and the firing
+/// answers `Flow::Continue`.
+pub(crate) fn finish_cancel(
+    mod_: &LuaMod,
+    host: &mut dyn Host,
+    hook: &str,
+    outcome: Queued,
+) -> horizon_client::mod_api::Flow {
+    use horizon_client::mod_api::Flow;
+    match outcome {
+        Ok(actions) => {
+            mod_.note_frame_outcome(hook, false);
+            let mut canceled = false;
+            for (action, args) in actions {
+                if action == "cancel" {
+                    canceled = true;
+                    continue;
+                }
+                if let Err(e) = mod_.run_action(host, &action, &args) {
+                    mod_.error(crate::lua_mods::handler_error_text(hook, &e));
+                }
+            }
+            if canceled {
+                Flow::Cancel
+            } else {
+                Flow::Continue
+            }
+        }
+        Err(e) => {
+            let overrun = is_overrun(&e);
+            mod_.error(crate::lua_mods::handler_error_text(hook, &e));
+            mod_.note_frame_outcome(hook, overrun);
+            Flow::Continue
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,7 +311,8 @@ mod tests {
     use horizon_client::mobs::{Mob, MobType};
     use horizon_client::mod_api::{
         BlockStateId, EntityRef, Hooks, HudEvent, ItemStack, MobView, NativeHeightmap, NativeHit,
-        NativeServerPlayer, NativeWorldEpoch, Text, dispatch_gui_layer_post, dispatch_hud,
+        NativeServerPlayer, NativeWorldEpoch, Text, dispatch_gui_layer_post,
+        dispatch_gui_layer_pre, dispatch_hud,
     };
     use horizon_client::test_events;
     use horizon_core::geometry::Vec3;
@@ -700,6 +744,233 @@ mod tests {
         assert_eq!(
             *host.draws.lock().unwrap(),
             ["fill [1.0, 2.0, 3.0, 4.0] 0xff000000"]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The `gui_layer_pre` twin of the layer test above: the handler draws
+    /// below its layer through the same scoped `batch`, and the layer id
+    /// filters in Lua. Nothing is cancelled: the native flag stays down.
+    #[test]
+    fn a_gui_layer_pre_handler_sees_its_layer() {
+        let (m, id, dir) = hmod(
+            "prelayer",
+            "ruby_hud_prelayer",
+            r#"
+            horizon.on("gui_layer_pre", function(event)
+              if event.layer == "test:layer" then event.batch.fill(1, 2, 3, 4, 4278190080) end
+            end)
+            "#,
+        );
+        let mods = boxed(m);
+        let mut host = RecordingHost::default();
+        let mut batch = HudBatch::new([800, 600]);
+        let mut canceled = false;
+        dispatch_gui_layer_pre(&mut host, &mods, "test:layer", &mut batch, &mut canceled);
+        no_error(&id);
+        assert!(!canceled, "drawing below the layer hides nothing");
+        dispatch_gui_layer_pre(&mut host, &mods, "other:layer", &mut batch, &mut canceled);
+        no_error(&id);
+        assert!(!canceled, "the other layer hides nothing either");
+        assert_eq!(
+            *host.draws.lock().unwrap(),
+            ["fill [1.0, 2.0, 3.0, 4.0] 0xff000000"]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A `horizon.cancel()` in a `gui_layer_pre` handler hides the vanilla
+    /// layer: the queued cancel reaches the native `canceled` flag, while
+    /// the drawing below it still reaches the batch.
+    #[test]
+    fn a_gui_layer_pre_cancel_hides_the_layer() {
+        let (m, id, dir) = hmod(
+            "precancel",
+            "ruby_hud_precancel",
+            r#"
+            horizon.on("gui_layer_pre", function(event)
+              event.batch.fill(0, 0, 1, 1, 4278190080)
+              horizon.cancel()
+            end)
+            "#,
+        );
+        let mods = boxed(m);
+        let mut host = RecordingHost::default();
+        let mut batch = HudBatch::new([800, 600]);
+        let mut canceled = false;
+        dispatch_gui_layer_pre(&mut host, &mods, "test:layer", &mut batch, &mut canceled);
+        no_error(&id);
+        assert!(canceled, "the queued cancel hid the layer");
+        assert_eq!(
+            *host.draws.lock().unwrap(),
+            ["fill [0.0, 0.0, 1.0, 1.0] 0xff000000"]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// First cancel wins across mods: the native dispatch stops at the
+    /// first cancelling mod, so a later mod's handler never runs for the
+    /// hidden layer.
+    #[test]
+    fn a_gui_layer_pre_first_cancel_wins() {
+        let (first, first_id, first_dir) = hmod(
+            "precancel_first",
+            "ruby_hud_precancel_first",
+            r#"horizon.on("gui_layer_pre", function(event) horizon.cancel() end)"#,
+        );
+        let (second, second_id, second_dir) = hmod(
+            "precancel_second",
+            "ruby_hud_precancel_second",
+            r#"
+            horizon.on("gui_layer_pre", function(event)
+              __witness = (__witness or 0) + 1
+              event.batch.fill(0, 0, 1, 1, 4278190080)
+            end)
+            "#,
+        );
+        let second_state = second.lua.clone();
+        let mods = vec![
+            Box::new(first) as Box<dyn Hooks>,
+            Box::new(second) as Box<dyn Hooks>,
+        ];
+        let mut host = RecordingHost::default();
+        let mut batch = HudBatch::new([800, 600]);
+        let mut canceled = false;
+        dispatch_gui_layer_pre(&mut host, &mods, "test:layer", &mut batch, &mut canceled);
+        no_error(&first_id);
+        no_error(&second_id);
+        assert!(canceled, "the first mod hid the layer");
+        assert_eq!(
+            second_state.globals().get::<i64>("__witness").unwrap_or(0),
+            0,
+            "the hidden layer never reached the second mod"
+        );
+        assert!(
+            host.draws.lock().unwrap().is_empty(),
+            "nothing drew below the hidden layer"
+        );
+        std::fs::remove_dir_all(&first_dir).unwrap();
+        std::fs::remove_dir_all(&second_dir).unwrap();
+    }
+
+    /// A `gui_layer_pre` handler that never cancels leaves the layer alone:
+    /// the flag stays down and a queued `tell` still runs after the call.
+    #[test]
+    fn a_gui_layer_pre_without_cancel_keeps_the_layer() {
+        let (m, id, dir) = hmod(
+            "prenocancel",
+            "ruby_hud_prenocancel",
+            r#"
+            horizon.on("gui_layer_pre", function(event)
+              horizon.tell("draw_steve", "below the layer")
+            end)
+            "#,
+        );
+        let mods = boxed(m);
+        let mut host = RecordingHost {
+            players: vec![draw_player()],
+            ..Default::default()
+        };
+        let mut batch = HudBatch::new([800, 600]);
+        let mut canceled = false;
+        dispatch_gui_layer_pre(&mut host, &mods, "test:layer", &mut batch, &mut canceled);
+        no_error(&id);
+        assert!(!canceled, "no cancel queued, nothing hidden");
+        let tells = host.tells.lock().unwrap();
+        assert_eq!(tells.len(), 1);
+        assert!(tells[0].contains("below the layer"), "{}", tells[0]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A `gui_layer_pre` batch kept past its call is an error, as the
+    /// `hud` one is: the scope drops the callbacks, and calling one raises
+    /// `CallbackDestructed` instead of drawing.
+    #[test]
+    fn a_pre_batch_kept_past_its_call_is_an_error() {
+        let (m, id, dir) = hmod(
+            "prekept",
+            "ruby_hud_prekept",
+            r#"
+            horizon.on("gui_layer_pre", function(event)
+              if SAVED == nil then SAVED = event.batch
+              else SAVED.fill(0, 0, 1, 1, 4278190080) end
+            end)
+            "#,
+        );
+        let mods = boxed(m);
+        let mut host = RecordingHost::default();
+        let mut batch = HudBatch::new([800, 600]);
+        let mut canceled = false;
+        dispatch_gui_layer_pre(&mut host, &mods, "test:layer", &mut batch, &mut canceled);
+        no_error(&id);
+        assert!(!canceled, "keeping the batch hides nothing");
+        dispatch_gui_layer_pre(&mut host, &mods, "test:layer", &mut batch, &mut canceled);
+        let e = last_error(&id).expect("the kept batch failed");
+        assert!(e.contains("destructed"), "{e}");
+        assert!(
+            host.draws.lock().unwrap().is_empty(),
+            "the expired batch drew nothing"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// An infinite `gui_layer_pre` handler is stopped within the frame
+    /// budget, like the `hud` one: a per-frame hook never gets the 250 ms
+    /// handler budget.
+    #[test]
+    fn an_infinite_gui_layer_pre_handler_is_stopped_within_the_frame_budget() {
+        let (m, id, dir) = hmod(
+            "preloop",
+            "ruby_hud_preloop",
+            r#"horizon.on("gui_layer_pre", function() while true do end end)"#,
+        );
+        let mods = boxed(m);
+        let mut host = RecordingHost::default();
+        let mut batch = HudBatch::new([800, 600]);
+        let mut canceled = false;
+        let started = Instant::now();
+        dispatch_gui_layer_pre(&mut host, &mods, "test:layer", &mut batch, &mut canceled);
+        let elapsed = started.elapsed();
+        println!("gui_layer_pre infinite loop stopped after {elapsed:?}");
+        // The frame budget stopped it, not the 250 ms tick budget.
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "stopped after {elapsed:?}"
+        );
+        assert!(!canceled, "a stopped handler hides nothing");
+        let e = last_error(&id).expect("the loop failed");
+        assert!(e.contains("ran over its time budget"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A `gui_layer_pre` dispatch nobody hears costs no Lua work: no
+    /// scope, no tables, like the unheard `hud` hook.
+    #[test]
+    fn an_unregistered_gui_layer_pre_hook_costs_no_lua_work() {
+        let (m, _id, dir) = hmod(
+            "preidle",
+            "ruby_hud_preidle",
+            "horizon.on(\"gui_layer_post\", function() end)",
+        );
+        let mods = boxed(m);
+        let mut host = RecordingHost::default();
+        let mut batch = HudBatch::new([800, 600]);
+        let mut canceled = false;
+        for _ in 0..10 {
+            dispatch_gui_layer_pre(&mut host, &mods, "test:layer", &mut batch, &mut canceled);
+        }
+        assert!(!canceled, "unheard, nothing hidden");
+        let started = Instant::now();
+        let n = 2000;
+        for _ in 0..n {
+            dispatch_gui_layer_pre(&mut host, &mods, "test:layer", &mut batch, &mut canceled);
+        }
+        let per_call = started.elapsed() / n;
+        println!("gui_layer_pre without a handler: {per_call:?} per call");
+        assert!(!canceled, "an unheard hook hides nothing");
+        assert!(
+            per_call < Duration::from_millis(1),
+            "a hook nobody hears costs {per_call:?} a frame"
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }

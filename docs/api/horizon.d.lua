@@ -57,7 +57,7 @@ export type MarkerSpec = { kind: "box" | "line" | "beam" | "text", pos: Vec3, si
 -- An item's `extra` keeps its NBT types when edited in place; a fresh
 -- table reads with default types.
 --
--- In hud and gui_layer_post, `horizon.time`, `block`, `block_property`,
+-- In hud, gui_layer_post and gui_layer_pre, `horizon.time`, `block`, `block_property`,
 -- `light` read the client's world; `player` with no argument reads the
 -- window's own player and `real_time` the wall clock; `players`, `mob`,
 -- `mobs`, `raycast`, `surface_height` need a server and read empty on a
@@ -210,6 +210,7 @@ export type FurnaceSmeltEvent = { pos: Vec3, item: string, result: string }
 export type FurnaceStartSmeltEvent = { pos: Vec3, item: string }
 export type GameEventEvent = { event: string, pos: Vec3 }
 export type GuiLayerPostEvent = { layer: string, batch: HudBatch }
+export type GuiLayerPreEvent = { layer: string, batch: HudBatch }
 export type HandshakeEvent = { address: string, host: string, intent: number, reason: string?, reason_component: Component? }
 export type HangingBreakEvent = { player: string?, kind: string, pos: Vec3 }
 export type HangingPlaceEvent = { player: PlayerRef, kind: string, pos: Vec3 }
@@ -668,6 +669,7 @@ export type HorizonOn =
     ((name: "furnace_start_smelt", fn: (event: FurnaceStartSmeltEvent) -> ()) -> ()) &
     ((name: "game_event", fn: (event: GameEventEvent) -> ()) -> ()) &
     ((name: "gui_layer_post", fn: (event: GuiLayerPostEvent) -> ()) -> ()) &
+    ((name: "gui_layer_pre", fn: (event: GuiLayerPreEvent) -> ()) -> ()) &
     ((name: "handshake", fn: (event: HandshakeEvent) -> ()) -> ()) &
     ((name: "hanging_break", fn: (event: HangingBreakEvent) -> (), kind: string?) -> ()) &
     ((name: "hanging_place", fn: (event: HangingPlaceEvent) -> (), kind: string?) -> ()) &

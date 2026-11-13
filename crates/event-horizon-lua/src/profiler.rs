@@ -6,7 +6,7 @@
 //! one batch, so it is one `calls` however many handlers the mod has. The
 //! timing covers the same span the budget already times: the whole batch
 //! per hook in `run_handlers_with` (`Budget::run`), frame hooks (`hud`,
-//! `gui_layer_post`) included.
+//! `gui_layer_post`, `gui_layer_pre`) included.
 //!
 //! Cost when nobody reads: two `Instant` reads per hook call and, after
 //! the call, one short lock of a plain map. No lock is ever held while Lua

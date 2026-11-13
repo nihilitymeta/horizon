@@ -38,11 +38,11 @@ const ENTITY_GONE: i64 = 99;
 /// or retyped), and update `LUA_HOOK_SURFACE_FINGERPRINT` beside it.
 /// A mod built for another surface fails at load with both numbers, instead
 /// of failing later on a missing hook name.
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 3;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 4;
 /// The committed fingerprint of the surface `LUA_HOOK_SURFACE_VERSION`
 /// describes: `lua-hooks --check` fails when the freshly computed one
 /// differs, so nobody forgets the bump above.
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "ace1a23ef1dd46d0";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "dffca52ae7d390b5";
 
 /// The macro's host kind for a model host.
 fn host_ident(host: Host) -> &'static str {
@@ -439,9 +439,16 @@ fn invocation(model: &Model, tys: &BTreeMap<String, String>) -> String {
             // A frame hook needs both an allowlist entry (`FRAME_HOOKS`
             // in `lua_model.rs`, which gates the `HudBatch`/`Corners`
             // conversion) and a `gen_frame!` arm whose tokens match its
-            // fields: the two arms' patterns are literal, so any other
-            // shape fails expansion. Nothing else is threaded through.
-            Some("gen_frame")
+            // fields: the arms' patterns are literal, so any other shape
+            // fails expansion. Nothing else is threaded through. The
+            // cancelling frame hook (`gui_layer_pre`) expands through
+            // `gen_frame_cancel!` instead: the same scoped tables, but a
+            // queued `horizon.cancel()` becomes `Flow::Cancel`.
+            Some(if model.contract == "cancel" {
+                "gen_frame_cancel"
+            } else {
+                "gen_frame"
+            })
         } else {
             None
         }
@@ -4204,7 +4211,7 @@ mod tests {
 
     #[test]
     fn the_surface_starts_at_version_one() {
-        assert_eq!(LUA_HOOK_SURFACE_VERSION, 3);
+        assert_eq!(LUA_HOOK_SURFACE_VERSION, 4);
     }
 
     #[test]

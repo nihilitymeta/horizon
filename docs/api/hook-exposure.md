@@ -4,9 +4,9 @@
 
 Every native hook lands in exactly one class: `generated` (a zero-hand-work event table under the native name), `adapter` (a hand-written converter would unblock it), `handle` or `protocol` (a live handle or raw packets, each needing its own design), `tick` (the level-tick host the Lua runtime does not implement), or `cannot` (no event-table mapping exists, with the reason). The Side column is the hook's `side` tag (`client`, `server` or `both`). `HOOK_CLASSIFICATION` in `crates/event-horizon-lua/src/generated_hooks/mod.rs` is the machine-readable record; this page is its human-readable form, so a hook is never silently missing from Lua: it is either generated or listed here with its reason. The two declaration-served hooks (`block_entity` and `block_entity_ticks`) are generated and omitted from the event-table list below: they are served from the `horizon.block_entity` declarations, build no event table, and take no `horizon.on` registration.
 
-460 hooks are generated and omitted below. The rest:
+461 hooks are generated and omitted below. The rest:
 
-## Borrows render state (render thread) (26)
+## Borrows render state (render thread) (25)
 
 No event-table mapping exists: the argument is a render-thread borrow, and Lua runs on the game thread with no drawing API.
 
@@ -17,7 +17,6 @@ No event-table mapping exists: the argument is a render-thread borrow, and Lua r
 | `camera_distance` | client | CameraEntity borrows render state (render thread) |
 | `camera_shake` | client | NativeShake borrows render state (render thread) |
 | `compute_fov_modifier` | client | FovPlayer borrows render state (render thread) |
-| `gui_layer_pre` | client | HudBatch borrows render state (render thread) |
 | `gui_render_post` | client | HudBatch borrows render state (render thread) |
 | `hand_drawn` | client | HandDrawn borrows render state (render thread) |
 | `item_decorations` | client | HudBatch borrows render state (render thread) |

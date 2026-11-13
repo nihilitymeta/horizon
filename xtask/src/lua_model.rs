@@ -224,10 +224,11 @@ pub enum Conv {
     /// A draw hook's `batch`: the event table carries it as a table of
     /// scoped draw functions (`event.batch.fill`...), built from the
     /// borrowed batch by the bespoke frame arm calling the `hud_hooks`
-    /// builders inline. A documentary tag: only `hud` and
-    /// `gui_layer_post` classify a live `&mut HudBatch` (every other
-    /// holder, like `screen_draw`'s or `item_decorations`', stays a
-    /// cannot), so the stock arms must never see it.
+    /// builders inline. A documentary tag: only `hud`,
+    /// `gui_layer_post` and `gui_layer_pre` classify a live `&mut
+    /// HudBatch` (every other holder, like `screen_draw`'s or
+    /// `item_decorations`', stays a cannot), so the stock arms must
+    /// never see it.
     HudBatch,
     /// A draw hook's `corners`: the event table carries it as a table of
     /// scoped stacking functions (`event.corners.place`...), built from
@@ -985,7 +986,7 @@ fn mentions_stack(ty: &syn::Type) -> bool {
 /// here AND a new `gen_frame!` arm whose tokens match its fields; the
 /// `model.frame` flag alone never suffices, and widening this list to a
 /// hook with any other shape fails macro expansion by design.
-const FRAME_HOOKS: &[&str] = &["hud", "gui_layer_post"];
+const FRAME_HOOKS: &[&str] = &["hud", "gui_layer_post", "gui_layer_pre"];
 
 /// `is_out` is the hook's collect out (the only `&mut` whose write-back the
 /// contract owns).
@@ -1110,9 +1111,9 @@ fn mut_of(
     // A draw hook's borrowed handles: the event table carries them as
     // scoped-function tables, seeded inline by the bespoke frame arm
     // calling the `hud_hooks` builders. Name-gated on `FRAME_HOOKS`,
-    // not shape-gated: eight other hooks hold a `&mut HudBatch`
-    // (`screen_draw`, `gui_layer_pre`, `item_decorations`,
-    // `gui_render_post`, `screen_render_post`, `tooltip_component_draw`,
+    // not shape-gated: seven other hooks hold a `&mut HudBatch`
+    // (`screen_draw`, `item_decorations`, `gui_render_post`,
+    // `screen_render_post`, `tooltip_component_draw`,
     // `screen_transparent_background`, `tooltip_render_pre`) with no
     // frame design of their own, and a shape gate would flip them all
     // to generated. They keep the `cannot_id` reason below; `cannot_id`
@@ -4935,14 +4936,20 @@ mod tests {
                 class => panic!("{name} should generate, got {class:?}"),
             }
         }
-        // H5: the two draw hooks generate through the game host with no
+        // H5: the three draw hooks generate through the game host with no
         // kind, carrying their borrowed handles as scoped-function
         // tables, on the frame path (shape-gated, not name-matched).
-        for name in ["hud", "gui_layer_post"] {
+        // `gui_layer_pre` cancels (a queued `horizon.cancel()` hides the
+        // layer); the other two only listen.
+        for (name, contract) in [
+            ("hud", "listen"),
+            ("gui_layer_post", "listen"),
+            ("gui_layer_pre", "cancel"),
+        ] {
             match class_of(name) {
                 Class::Generated(model) => {
                     assert_eq!(model.host, Host::GameMut, "{name} host");
-                    assert_eq!(model.contract, "listen", "{name} contract");
+                    assert_eq!(model.contract, contract, "{name} contract");
                     assert!(matches!(model.kind, Kind::None), "{name} takes no kind");
                     assert!(model.frame, "{name} runs the frame path");
                     assert!(
@@ -4952,6 +4959,16 @@ mod tests {
                 }
                 class => panic!("{name} should generate, got {class:?}"),
             }
+        }
+        match class_of("gui_layer_pre") {
+            Class::Generated(model) => {
+                assert_eq!(
+                    model.cancel_flag.as_deref(),
+                    Some("canceled"),
+                    "gui_layer_pre cancels through the native flag"
+                );
+            }
+            class => panic!("gui_layer_pre should generate, got {class:?}"),
         }
         match class_of("hud") {
             Class::Generated(model) => {
@@ -4984,7 +5001,6 @@ mod tests {
         // reason ever changed shape).
         for name in [
             "screen_draw",
-            "gui_layer_pre",
             "item_decorations",
             "gui_render_post",
             "screen_render_post",

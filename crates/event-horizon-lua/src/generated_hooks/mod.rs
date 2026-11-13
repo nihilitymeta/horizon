@@ -256,10 +256,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("projectile_impact", "generated"),
     ("entity_mount", "generated"),
     ("interaction_key", "generated"),
-    (
-        "gui_layer_pre",
-        "cannot: gui_layer_pre: unsupported: HudBatch borrows render state (render thread)",
-    ),
+    ("gui_layer_pre", "generated"),
     ("gui_layer_post", "generated"),
     ("map_decorations", "generated"),
     ("player_start_tracking", "generated"),
@@ -1236,14 +1233,14 @@ pub fn hook_side(name: &str) -> Option<HookSide> {
 /// of failing later on a missing hook name. Bumped by hand in
 /// `xtask/src/lua_hooks.rs` whenever the surface changes shape.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 3;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 4;
 
 /// The fingerprint of the surface above (every generated hook's
 /// name, kind filter, contract and published field types): `lua-hooks
 /// --check` fails when the freshly computed one differs, so the
 /// version above is bumped with the change.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "ace1a23ef1dd46d0";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "dffca52ae7d390b5";
 
 #[cfg(test)]
 mod test_support;
@@ -1388,6 +1385,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "projectile_impact",
     "entity_mount",
     "interaction_key",
+    "gui_layer_pre",
     "gui_layer_post",
     "map_decorations",
     "player_start_tracking",
@@ -1956,6 +1954,7 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(projectile_impact, game_mut, horizon_client::mod_api::ProjectileImpactEvent<'_>, (field kind), [dimension: cloned, projectile: copy, kind: cloned, owner: copy, entity: copy, entity_kind: cloned, block: pos, face: pos, at: vec3]);
     gen_cancel!(entity_mount, game_mut, horizon_client::mod_api::EntityMountEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, vehicle: copy, vehicle_kind: cloned, mounting: copy]);
     gen_cancel!(interaction_key, game_mut, horizon_client::mod_api::InteractionKeyEvent<'_>, (none), [button: copy, key_mapping: cloned, hand: s_val(horizon_client::mod_api::Hand), swing_hand: copy => mut_scalar]);
+    gen_frame_cancel!(gui_layer_pre, game_mut, horizon_client::mod_api::GuiLayerPreEvent<'_>, (none), [layer: cloned, batch: hud_batch]);
     gen_frame!(gui_layer_post, game_mut, horizon_client::mod_api::GuiLayerPostEvent<'_>, (none), [layer: cloned, batch: hud_batch]);
     gen_collect!(map_decorations, game_ref, horizon_client::mod_api::MapDecorationsEvent<'_>, (none), [map: s_mapinfo, decorations: s_vec(horizon_client::mod_api::NativeMapDecoration) => w_vec(horizon_client::mod_api::NativeMapDecoration)]);
     gen_listen!(player_start_tracking, game_mut, horizon_client::mod_api::PlayerStartTrackingEvent<'_>, (field kind), [player: player, entity: copy, uuid: uuid, kind: cloned]);
@@ -24030,6 +24029,133 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "interaction_key read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_gui_layer_pre() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_gui_layer_pre",
+            "horizon.on(\"gui_layer_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.layer == \"test:layer\", \"layer\")\n    assert(type(event.batch.fill) == \"function\", \"batch\")\n    assert(type(event.batch.text) == \"function\", \"batch\")\n    assert(type(event.batch.sprite) == \"function\", \"batch\")\n    assert(type(event.batch.item) == \"function\", \"batch\")\n    assert(type(event.batch.item_stack) == \"function\", \"batch\")\n    assert(type(event.batch.item_model) == \"function\", \"batch\")\n    assert(type(event.batch.quad) == \"function\", \"batch\")\n    assert(type(event.batch.text_width) == \"function\", \"batch\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut batch = HudBatch::new([800, 600]);
+        let mut canceled = false;
+        dispatch_gui_layer_pre(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:layer",
+            &mut batch,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_gui_layer_pre_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_gui_layer_pre_nocancel",
+            "horizon.on(\"gui_layer_pre\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.layer == \"test:layer\", \"layer\")\n    assert(type(event.batch.fill) == \"function\", \"batch\")\n    assert(type(event.batch.text) == \"function\", \"batch\")\n    assert(type(event.batch.sprite) == \"function\", \"batch\")\n    assert(type(event.batch.item) == \"function\", \"batch\")\n    assert(type(event.batch.item_stack) == \"function\", \"batch\")\n    assert(type(event.batch.item_model) == \"function\", \"batch\")\n    assert(type(event.batch.quad) == \"function\", \"batch\")\n    assert(type(event.batch.text_width) == \"function\", \"batch\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut batch = HudBatch::new([800, 600]);
+        let mut canceled = false;
+        dispatch_gui_layer_pre(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:layer",
+            &mut batch,
+            &mut canceled,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_gui_layer_pre_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_gui_layer_pre_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut batch = HudBatch::new([800, 600]);
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_gui_layer_pre(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:layer",
+                &mut batch,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "gui_layer_pre read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "gui_layer_pre read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "gui_layer_pre read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_gui_layer_pre_cost_live",
+            "horizon.on(\"gui_layer_pre\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut batch = HudBatch::new([800, 600]);
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_gui_layer_pre(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:layer",
+                &mut batch,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "gui_layer_pre built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "gui_layer_pre read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "gui_layer_pre read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -71787,6 +71913,19 @@ mod generated_tests {
                 "test:key_mapping",
                 Hand::Main,
                 &mut swing_hand,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
+        }
+        // gui_layer_pre: unregistered, nothing runs.
+        {
+            let mut batch = HudBatch::new([800, 600]);
+            let mut canceled = false;
+            dispatch_gui_layer_pre(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:layer",
+                &mut batch,
                 &mut canceled,
             );
             assert!(!canceled, "canceled changed with no handler");

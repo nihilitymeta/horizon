@@ -1736,7 +1736,8 @@ pub(crate) fn batch_table<'s, 'e: 's, 'h: 's>(
     Ok(batch_table)
 }
 
-/// A frame hook (`hud`, `gui_layer_post`): like a `game_mut` listen hook,
+/// A frame hook (`hud`, `gui_layer_post`, and through `gen_frame_cancel!`
+/// `gui_layer_pre`): like a `game_mut` listen hook,
 /// but the event carries borrowed draw handles as tables of scoped
 /// functions, the handlers read through the hook's shared host, and the
 /// call runs under the frame budget with the disable counting every frame
@@ -1821,6 +1822,47 @@ macro_rules! gen_frame {
                 self.run_handlers_with(hook, None, Reader::Shared(shared), table, FRAME_BUDGET)
             });
             crate::hud_hooks::finish(self, host, hook, outcome);
+        }
+    };
+}
+
+/// A frame hook that cancels (`gui_layer_pre`): like the `gui_layer_post`
+/// arm of `gen_frame!` above (the same frame turn, the same early-out, the
+/// layer string and the scoped `batch` table, the same `FRAME_BUDGET`),
+/// but a queued `horizon.cancel()` hides the vanilla layer: the arm
+/// returns `Flow::Cancel` through `hud_hooks::finish_cancel`, and the
+/// native dispatch stops at the first cancelling mod (first-cancel-wins,
+/// like the other cancel hooks). Every other queued action (`tell`,
+/// `broadcast`) still runs after the call.
+macro_rules! gen_frame_cancel {
+    ($name:ident, game_mut, $event:ty, $kind:tt, [layer : cloned, batch : hud_batch $(,)?]) => {
+        fn $name(
+            &self,
+            host: &mut dyn horizon_client::mod_api::Host,
+            _event: &mut $event,
+        ) -> horizon_client::mod_api::Flow {
+            let hook = stringify!($name);
+            let Some(_frame_turn) = self.turn.try_acquire(Some(hook)) else {
+                return horizon_client::mod_api::Flow::Continue;
+            };
+            if !self.has_handlers(hook) {
+                self.note_frame_outcome(hook, false);
+                return horizon_client::mod_api::Flow::Continue;
+            }
+            let lua = &self.lua;
+            let batch = std::cell::RefCell::new(&mut *_event.batch);
+            let shared: &dyn horizon_client::mod_api::Host = &*host;
+            let outcome = lua.scope(|scope| {
+                let table = lua.create_table()?;
+                #[cfg(test)]
+                crate::generated_runtime::note_event_table();
+                table.set("layer", _event.layer)?;
+                let batch_table =
+                    crate::generated_runtime::batch_table(scope, lua, shared, &batch)?;
+                table.set("batch", batch_table)?;
+                self.run_handlers_with(hook, None, Reader::Shared(shared), table, FRAME_BUDGET)
+            });
+            crate::hud_hooks::finish_cancel(self, host, hook, outcome)
         }
     };
 }

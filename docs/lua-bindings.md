@@ -736,6 +736,8 @@ that is the same when done twice, such as lighting a lamp rather than toggling i
 | `hud(event)` | every frame, to draw over the game. The event holds `batch` (the draw calls: `fill`, `text`, `sprite`, `item`, `item_stack`, `item_model`, `quad`, `text_width`, each drawn at once) and `corners` (`place`, `shown`). The calls are dot-called (`batch.fill(...)`), draw at once, and expire with the call: keeping `event.batch` and calling it later is an error |
 | `gui_layer_post(event)` | every frame, after a screen layer draws. The event holds `layer` (its id) and `batch`, as in `hud` |
 
+`gui_layer_pre(event)` fires every frame before a screen layer draws, with the same `layer` and scoped `batch`: draw below the layer with the same calls, and call `horizon.cancel()` to hide the layer (first cancel wins). It runs on the same 8 ms frame budget and takes no kind.
+
 The draw hooks run on the frame's 8 ms budget and take no kind. Their reads are the client's: `horizon.time`,
 `block`, `block_property` and `light` read the client's world; `horizon.real_time` reads the wall clock and
 `horizon.player()` with no argument reads the window's own player (see the next section); `players`, `mob`,
