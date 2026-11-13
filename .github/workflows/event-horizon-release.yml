@@ -58,9 +58,13 @@ jobs:
           - os: windows-latest
             name: windows-x64
             exe: .exe
-          - os: ubuntu-latest
+          # Not ubuntu-latest: the programs link the runner's glibc and run only on systems at least as new. 24.04 (glibc
+          # 2.39) runs on Debian 13 and every distribution newer than 2024; ubuntu-latest moved on to a glibc (2.43) that
+          # Debian 13 (2.41) doesn't have. `cache` keeps the build cache of the old runner away from this one.
+          - os: ubuntu-24.04
             name: linux-x86_64
             exe: ''
+            cache: -ubuntu-24.04
     runs-on: ${{ matrix.os }}
     timeout-minutes: 240
     env:
@@ -79,7 +83,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.name }}
+          key: ${{ matrix.name }}${{ matrix.cache }}
           workspaces: |
             . -> target
             launcher -> target
